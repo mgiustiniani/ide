@@ -1,0 +1,60 @@
+# Dependencies and package-manager runtime state
+node_modules/
+.pnpm-builds.json
+
+# Build, coverage, cache, and test output
+dist/
+target/
+coverage/
+.turbo/
+build/
+out/
+tmp/
+temp/
+.cache/
+.vite/
+.vitest/
+playwright-report/
+test-results/
+blob-report/
+*.tsbuildinfo
+*.log
+*.pid
+*.tmp
+*.temp
+*.bak
+
+# Generated Tauri schemas
+**/src-tauri/gen/schemas/
+
+# Local IDE, agent, and RefactorKit runtime state
+.ide/
+.refactorkit/
+
+# Environment and secret-bearing local files
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*.json
+secrets*.json
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.history/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

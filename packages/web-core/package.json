@@ -1,0 +1,28 @@
+{
+  "name": "@ide/web-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Core web application logic for the IDE",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ide/contracts": "workspace:*",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.10.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ports": "./src/ports/index.ts",
+    "./state": "./src/state/index.ts",
+    "./view-models": "./src/view-models/index.ts",
+    "./*": "./src/*.ts"
+  }
+}

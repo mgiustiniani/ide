@@ -1,0 +1,41 @@
+{
+  "name": "ide-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo for a Tauri desktop IDE with reusable web frontend",
+  "scripts": {
+    "build:web": "pnpm --filter @ide/web build",
+    "build:desktop": "pnpm --filter @ide/desktop build",
+    "build:all": "pnpm build:web && pnpm build:desktop",
+    "dev:web": "pnpm --filter @ide/web dev",
+    "dev:desktop": "pnpm --filter @ide/desktop dev",
+    "lint": "pnpm -r exec eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @ide/web exec vitest run --config vitest.e2e.config.ts",
+    "tools:install-jdtls": "scripts/install-jdtls.sh",
+    "tools:verify-jdtls": "scripts/install-jdtls.sh --verify-only",
+    "clean": "pnpm -r exec rimraf dist .turbo",
+    "check:boundaries": "scripts/check-boundaries.sh"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^20.14.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.10.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  }
+}

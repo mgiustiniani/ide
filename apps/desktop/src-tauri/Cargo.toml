@@ -1,0 +1,26 @@
+[package]
+name = "ide-desktop"
+version = "0.1.0"
+description = "IDE Desktop Application"
+authors = ["IDE Team"]
+edition = "2021"
+default-run = "ide-desktop"
+
+[lib]
+name = "ide_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+arc-swap = "1"
+# Text-only clipboard access. arboard is MIT OR Apache-2.0 licensed; image support is disabled.
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+tauri = { version = "2", features = ["default"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

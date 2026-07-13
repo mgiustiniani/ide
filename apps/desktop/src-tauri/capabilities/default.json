@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/capabilities.json",
+  "identifier": "default",
+  "description": "Default IDE capabilities for the main app window",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

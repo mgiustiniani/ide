@@ -1,0 +1,1163 @@
+//! Cross-module behavior, protocol, lifecycle, and facade boundary tests.
+
+use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use tauri::State;
+
+use crate::commands::workspace_registry::workspace_id_for_path;
+
+use super::application::*;
+use super::capability_policy::*;
+use super::contract::*;
+use super::path_policy::*;
+use super::transport::*;
+
+use std::fs;
+use std::sync::{Mutex as TestMutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn temp_workspace(label: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = env::temp_dir().join(format!("ide-rk-{label}-{unique}"));
+    fs::create_dir_all(root.join("src/main/java/example")).unwrap();
+    root.canonicalize().unwrap()
+}
+
+fn preview_request() -> PreviewRequest {
+    PreviewRequest {
+        code: "package incoming; public class Widget {}".into(),
+        target_directory: "src/main/java/example".into(),
+        source_kind: "clipboard".into(),
+        source_url: None,
+        license_policy: "warn".into(),
+        workspace_id: "ws-test".into(),
+        workspace_generation: 7,
+        selection_generation: 9,
+        request_id: "request-1".into(),
+    }
+}
+
+fn rich_plan(status: &str) -> Value {
+    json!({
+        "planId": "plan-1",
+        "status": status,
+        "summary": "Create Widget.java",
+        "confidence": 0.91,
+        "riskLevel": "medium",
+        "evidence": [
+            "source-root",
+            {"kind": "package", "summary": "Package rewritten", "detail": "incoming -> example"}
+        ],
+        "affectedFiles": [{
+            "change": "create", "path": "src/main/java/example/Widget.java",
+            "previousPath": null, "primary": true
+        }],
+        "placement": {"packageName": "example", "sourceRoot": "src/main/java", "moduleName": null},
+        "packageChanges": [
+            {"fromPackage": null, "toPackage": "example"},
+            {"from": "incoming", "to": "example", "path": "src/main/java/example/Widget.java"}
+        ],
+        "renderedDiff": "--- /dev/null\n+++ b/src/main/java/example/Widget.java\n@@ -0,0 +1 @@\n+package example;",
+        "structuredDiff": [{
+            "path": "src/main/java/example/Widget.java", "change": "create",
+            "hunks": [{"oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": 1,
+                "lines": ["+package example;"]}]
+        }],
+        "warnings": ["Review license"],
+        "diagnosticsAfterPreview": [{
+            "severity": "warning", "message": "Example diagnostic", "path": "pom.xml",
+            "line": 1, "column": 2, "code": "RK001"
+        }],
+        "provenance": {"sourceKind": "clipboard", "sourceUrl": null,
+            "detectedLicense": "Apache-2.0", "licensePolicy": "warn", "notices": ["Retain notice"]},
+        "unresolvedDependencies": ["org.example:missing:1"],
+        "conflicts": [{"kind": "existing-file", "summary": "Existing type", "path": "pom.xml"}],
+        "refusalReasons": if status == "preview" { json!([]) } else { json!(["not ready"]) },
+        "applyEligibility": {"eligible": status == "preview", "blockers": if status == "preview" { json!([]) } else { json!(["blocked"]) }},
+        "staleness": {"stale": status == "stale", "reasons": if status == "stale" { json!(["changed"]) } else { json!([]) }},
+        "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+    })
+}
+
+fn complete_capabilities() -> Value {
+    json!({
+        "version": "0.5.0-SNAPSHOT", "apiVersion": "0.2",
+        "protocol": "json-rpc-2.0", "transport": "stdio",
+        "methods": [
+            {"name": "refactor.apply"}, {"name": "refactor.discard"},
+            {"name": "patch.rollback"},
+            {"name": "java.importExternalClass", "stability": "experimental", "features": {
+                "targetDirectory": true, "preview": true, "apply": true,
+                "discard": true, "rollback": true
+            }}
+        ]
+    })
+}
+
+fn actual_language_kernel() -> Value {
+    let in_process = |supports_timeout: bool, request_timeout: Value, max_input: Value| {
+        json!({
+            "executionMode": "in-process",
+            "supportsTimeout": supports_timeout,
+            "supportsCancellation": false,
+            "usesWorkspaceOverlay": false,
+            "recordsProcessProvenance": false,
+            "limits": {
+                "requestTimeoutMillis": request_timeout,
+                "maxInputBytes": max_input,
+                "maxOutputBytes": null,
+                "maxProcesses": null
+            }
+        })
+    };
+    let tree_sitter = |language_id: &str, extension: &str| {
+        json!({
+            "languageId": language_id,
+            "extensions": [extension],
+            "backend": "tree-sitter-jni-0.25.3",
+            "runtime": in_process(true, json!(2_000), json!(16 * 1024 * 1024)),
+            "capabilities": [
+                {"operation": "identifierSearch", "stability": "stable", "evidence": "native-ast", "mutationAuthority": "none"},
+                {"operation": "localRename", "stability": "structural", "evidence": "lexical", "mutationAuthority": "proposal-only"},
+                {"operation": "outline", "stability": "stable", "evidence": "native-ast", "mutationAuthority": "none"}
+            ]
+        })
+    };
+    json!({
+        "schemaVersion": 1,
+        "adapters": [
+            {
+                "languageId": "java",
+                "extensions": ["java"],
+                "backend": "eclipse-jdt-3.44",
+                "runtime": in_process(false, Value::Null, Value::Null),
+                "capabilities": [
+                    {"operation": "changeSignature.addParameter", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "proposal-only"},
+                    {"operation": "changeSignature.removeParameter", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "proposal-only"},
+                    {"operation": "changeSignature.renameParameter", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "proposal-only"},
+                    {"operation": "changeSignature.reorderParameters", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "proposal-only"},
+                    {"operation": "extractMethod", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "proposal-only"},
+                    {"operation": "formatFile", "stability": "stable", "evidence": "structural-parse", "mutationAuthority": "managed-stable"},
+                    {"operation": "moveClass", "stability": "stable", "evidence": "compiler", "mutationAuthority": "managed-stable"},
+                    {"operation": "moveSourceRoot", "stability": "stable", "evidence": "structural-parse", "mutationAuthority": "managed-stable"},
+                    {"operation": "organizeImports", "stability": "stable", "evidence": "structural-parse", "mutationAuthority": "managed-stable"},
+                    {"operation": "renameClass", "stability": "stable", "evidence": "compiler", "mutationAuthority": "managed-stable"},
+                    {"operation": "renameMember", "stability": "stable", "evidence": "compiler", "mutationAuthority": "managed-stable"},
+                    {"operation": "safeDelete", "stability": "stable", "evidence": "compiler", "mutationAuthority": "managed-stable"}
+                ]
+            },
+            tree_sitter("javascript", "js"),
+            tree_sitter("typescript", "ts")
+        ],
+        "vocabulary": {
+            "stability": ["stable", "experimental", "structural", "refused", "not-applicable"],
+            "evidence": ["compiler", "language-server", "native-ast", "structural-parse", "lexical", "none"],
+            "mutationAuthority": ["managed-stable", "proposal-only", "none"],
+            "executionMode": ["in-process", "external-process"]
+        }
+    })
+}
+
+fn actual_capabilities() -> Value {
+    let mut capabilities = complete_capabilities();
+    capabilities["languageKernel"] = actual_language_kernel();
+    capabilities["safety"] = json!({
+        "previewBeforeApply": true,
+        "snapshotValidation": true,
+        "transactionRollback": true,
+        "workspaceScopedWrites": true
+    });
+    capabilities
+}
+
+#[test]
+fn capability_mapping_is_exact_for_available_and_unavailable_installations() {
+    assert_eq!(
+        validate_capabilities(&complete_capabilities()).unwrap(),
+        "0.5.0-SNAPSHOT"
+    );
+    let available =
+        serde_json::to_value(available_capabilities(Some("0.5.0-SNAPSHOT".into()))).unwrap();
+    assert_eq!(
+        available.pointer("/javaImportExternalClass/supported"),
+        Some(&Value::Bool(true))
+    );
+    for flag in ["targetDirectory", "preview", "apply", "rollback"] {
+        assert_eq!(
+            available.pointer(&format!("/javaImportExternalClass/{flag}")),
+            Some(&Value::Bool(true))
+        );
+    }
+    let unavailable = serde_json::to_value(unavailable_capabilities()).unwrap();
+    for flag in [
+        "supported",
+        "targetDirectory",
+        "preview",
+        "apply",
+        "rollback",
+    ] {
+        assert_eq!(
+            unavailable.pointer(&format!("/javaImportExternalClass/{flag}")),
+            Some(&Value::Bool(false))
+        );
+    }
+    assert!(unavailable
+        .pointer("/javaImportExternalClass/updateGuidance")
+        .is_some());
+}
+
+#[test]
+fn provider_version_is_diagnostic_and_cannot_authorize_capabilities() {
+    let decisions: Vec<Value> = ["0.5.0-SNAPSHOT", "0.6.0-SNAPSHOT"]
+        .into_iter()
+        .map(|provider_version| {
+            let mut advertised = actual_capabilities();
+            advertised["version"] = json!(provider_version);
+            let normalized = serde_json::to_value(available_managed_capabilities(
+                normalize_server_capabilities(&advertised).unwrap(),
+            ))
+            .unwrap();
+            assert_eq!(normalized["providerVersion"], provider_version);
+
+            let mut incompatible = advertised;
+            incompatible["methods"][3]["features"]["rollback"] = json!(false);
+            assert_eq!(
+                normalize_server_capabilities(&incompatible)
+                    .err()
+                    .as_deref(),
+                Some(UNAVAILABLE),
+                "provider version {provider_version} must not authorize an incomplete contract"
+            );
+
+            json!({
+                "api": normalized["api"],
+                "apiVersion": normalized["apiVersion"],
+                "provider": normalized["provider"],
+                "javaImportExternalClass": normalized["javaImportExternalClass"],
+                "languageKernel": normalized["languageKernel"],
+                "safety": normalized["safety"]
+            })
+        })
+        .collect();
+
+    assert_eq!(
+        decisions[0], decisions[1],
+        "provider version must not change API, capability, or safety decisions"
+    );
+}
+
+#[test]
+fn actual_schema_v1_language_metadata_and_exact_safety_flags_are_normalized() {
+    let metadata = normalize_server_capabilities(&actual_capabilities()).unwrap();
+    let normalized = serde_json::to_value(available_managed_capabilities(metadata)).unwrap();
+
+    assert_eq!(
+        normalized.pointer("/languageKernel/available"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        normalized.pointer("/languageKernel/schema"),
+        Some(&actual_language_kernel())
+    );
+    let safety_keys: HashSet<&str> = normalized["safety"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        safety_keys,
+        [
+            "previewBeforeApply",
+            "snapshotValidation",
+            "transactionRollback",
+            "workspaceScopedWrites"
+        ]
+        .into_iter()
+        .collect()
+    );
+    for flag in [
+        "previewBeforeApply",
+        "snapshotValidation",
+        "transactionRollback",
+        "workspaceScopedWrites",
+    ] {
+        assert_eq!(
+            normalized.pointer(&format!("/safety/{flag}")),
+            Some(&json!(true))
+        );
+    }
+}
+
+#[test]
+fn provider_neutral_schema_is_the_only_adapter_source_and_retains_advertised_false_safety() {
+    let mut capabilities = complete_capabilities();
+    capabilities["languageKernel"] = json!({
+        "schemaVersion": 1,
+        "adapters": [{
+            "languageId": "kotlin",
+            "extensions": ["kt", "kts"],
+            "backend": "custom-language-kernel-v7",
+            "runtime": {
+                "executionMode": "external-process",
+                "supportsTimeout": true,
+                "supportsCancellation": true,
+                "usesWorkspaceOverlay": true,
+                "recordsProcessProvenance": true,
+                "limits": {
+                    "requestTimeoutMillis": 7_500,
+                    "maxInputBytes": 4_096,
+                    "maxOutputBytes": 8_192,
+                    "maxProcesses": 2
+                }
+            },
+            "capabilities": [
+                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none"},
+                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only"}
+            ],
+            "toolchainReadiness": "ready",
+            "workspaceReadiness": "ready",
+            "sessionReadiness": "ready"
+        }],
+        "vocabulary": {
+            "stability": ["stable", "experimental", "structural", "refused", "not-applicable"],
+            "evidence": ["compiler", "language-server", "native-ast", "structural-parse", "lexical", "none"],
+            "mutationAuthority": ["managed-stable", "proposal-only", "none"],
+            "executionMode": ["in-process", "external-process"]
+        }
+    });
+    capabilities["safety"] = json!({
+        "previewBeforeApply": false,
+        "snapshotValidation": true,
+        "transactionRollback": false,
+        "workspaceScopedWrites": true
+    });
+    capabilities["previewSource"] = json!("private-preview-source-sentinel");
+    capabilities["diagnostics"] = json!(["private-diagnostic-sentinel"]);
+    capabilities["responsePayload"] = json!({"id": "private-response-id-sentinel"});
+    capabilities["nativeErrorDetail"] = json!("private-native-detail-sentinel");
+
+    let metadata = normalize_server_capabilities(&capabilities).unwrap();
+    let normalized = serde_json::to_value(available_managed_capabilities(metadata)).unwrap();
+    assert_eq!(
+        normalized.pointer("/languageKernel/schema/adapters"),
+        Some(&json!([{
+            "languageId": "kotlin",
+            "extensions": ["kt", "kts"],
+            "backend": "custom-language-kernel-v7",
+            "runtime": {
+                "executionMode": "external-process",
+                "supportsTimeout": true,
+                "supportsCancellation": true,
+                "usesWorkspaceOverlay": true,
+                "recordsProcessProvenance": true,
+                "limits": {
+                    "requestTimeoutMillis": 7_500,
+                    "maxInputBytes": 4_096,
+                    "maxOutputBytes": 8_192,
+                    "maxProcesses": 2
+                }
+            },
+            "capabilities": [
+                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none"},
+                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only"}
+            ]
+        }]))
+    );
+    assert_eq!(
+        normalized.get("safety"),
+        Some(&json!({
+            "previewBeforeApply": false,
+            "snapshotValidation": true,
+            "transactionRollback": false,
+            "workspaceScopedWrites": true
+        }))
+    );
+    let serialized = normalized.to_string();
+    for forbidden in [
+        "toolchainReadiness",
+        "workspaceReadiness",
+        "sessionReadiness",
+        "private-preview-source-sentinel",
+        "private-diagnostic-sentinel",
+        "private-response-id-sentinel",
+        "private-native-detail-sentinel",
+    ] {
+        assert!(!serialized.contains(forbidden));
+    }
+
+    capabilities["languageKernel"]["schemaVersion"] = json!(2);
+    assert!(matches!(
+        normalize_server_capabilities(&capabilities),
+        Err(ref error) if error == PROTOCOL_FAILED
+    ));
+}
+
+#[test]
+fn legacy_capabilities_report_language_metadata_unavailable_without_inventing_safety() {
+    let metadata = normalize_server_capabilities(&complete_capabilities()).unwrap();
+    let normalized = serde_json::to_value(available_managed_capabilities(metadata)).unwrap();
+    assert_eq!(
+        normalized.pointer("/languageKernel/available"),
+        Some(&json!(false))
+    );
+    assert_eq!(
+        normalized.pointer("/languageKernel/schema"),
+        Some(&Value::Null)
+    );
+    assert_eq!(
+        normalized.pointer("/languageKernel/reason"),
+        Some(&json!(LANGUAGE_KERNEL_UNAVAILABLE))
+    );
+    assert!(normalized.get("safety").is_none());
+}
+
+#[test]
+fn malformed_language_metadata_fails_closed_for_bounds_identity_vocabulary_and_semantics() {
+    let mut cases: Vec<(&str, Value)> = Vec::new();
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["schemaVersion"] = json!(2);
+    cases.push(("schema version", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["vocabulary"]["stability"] = json!([
+        "experimental",
+        "stable",
+        "structural",
+        "refused",
+        "not-applicable"
+    ]);
+    cases.push(("vocabulary order", value));
+
+    for (name, pointer, replacement) in [
+        (
+            "language id",
+            "/languageKernel/adapters/0/languageId",
+            json!("Java"),
+        ),
+        (
+            "extension",
+            "/languageKernel/adapters/0/extensions/0",
+            json!(".java"),
+        ),
+        (
+            "stability",
+            "/languageKernel/adapters/0/capabilities/0/stability",
+            json!("beta"),
+        ),
+        (
+            "evidence",
+            "/languageKernel/adapters/0/capabilities/0/evidence",
+            json!("guess"),
+        ),
+        (
+            "mutation authority",
+            "/languageKernel/adapters/0/capabilities/0/mutationAuthority",
+            json!("direct"),
+        ),
+        (
+            "execution mode",
+            "/languageKernel/adapters/0/runtime/executionMode",
+            json!("worker"),
+        ),
+        (
+            "timeout bound",
+            "/languageKernel/adapters/1/runtime/limits/requestTimeoutMillis",
+            json!(300_001),
+        ),
+        (
+            "input bound",
+            "/languageKernel/adapters/1/runtime/limits/maxInputBytes",
+            json!(MAX_RUNTIME_BYTES + 1),
+        ),
+        (
+            "process bound",
+            "/languageKernel/adapters/1/runtime/limits/maxProcesses",
+            json!(65),
+        ),
+    ] {
+        let mut value = actual_capabilities();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        cases.push((name, value));
+    }
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][1]["languageId"] = json!("java");
+    cases.push(("duplicate language", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][1]["extensions"] = json!(["java"]);
+    cases.push(("ambiguous extension", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["extensions"] = json!(["java", "java"]);
+    cases.push(("duplicate extension", value));
+
+    let mut value = actual_capabilities();
+    let duplicate = value["languageKernel"]["adapters"][1]["capabilities"][0].clone();
+    value["languageKernel"]["adapters"][1]["capabilities"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    cases.push(("duplicate operation", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"][0]["mutationAuthority"] =
+        json!("managed-stable");
+    cases.push(("managed-stable experimental", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"][5]["evidence"] = json!("lexical");
+    cases.push(("managed-stable lexical", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["runtime"]["recordsProcessProvenance"] = json!(true);
+    cases.push(("in-process provenance", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["runtime"]["usesWorkspaceOverlay"] = json!(true);
+    cases.push(("in-process overlay", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][1]["runtime"]["limits"]["requestTimeoutMillis"] =
+        Value::Null;
+    cases.push(("timeout coherence", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"] = Value::Array(
+        (0..=MAX_LANGUAGE_ADAPTERS)
+            .map(|index| {
+                json!({
+                    "languageId": format!("extra-{index}"),
+                    "extensions": [format!("x{index}")],
+                    "backend": "fixture",
+                    "runtime": actual_language_kernel()["adapters"][0]["runtime"].clone(),
+                    "capabilities": []
+                })
+            })
+            .collect(),
+    );
+    cases.push(("adapter bound", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["extensions"] = Value::Array(
+        (0..=MAX_LANGUAGE_EXTENSIONS)
+            .map(|index| json!(format!("x{index}")))
+            .collect(),
+    );
+    cases.push(("extension bound", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"] = Value::Array(
+        (0..=MAX_LANGUAGE_CAPABILITIES)
+            .map(|index| {
+                json!({
+                    "operation": format!("operation-{index}"),
+                    "stability": "stable", "evidence": "compiler", "mutationAuthority": "none"
+                })
+            })
+            .collect(),
+    );
+    cases.push(("capability bound", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["backend"] = json!("é".repeat(129));
+    cases.push(("UTF-8 string bound", value));
+
+    let mut value = actual_capabilities();
+    value["safety"]["snapshotValidation"] = json!("yes");
+    cases.push(("safety boolean", value));
+
+    for (name, value) in cases {
+        assert!(
+            matches!(normalize_server_capabilities(&value), Err(ref error) if error == PROTOCOL_FAILED),
+            "malformed case was accepted: {name}"
+        );
+    }
+}
+
+#[test]
+fn incomplete_or_false_capabilities_are_rejected() {
+    for pointer in [
+        "/methods/3/features/targetDirectory",
+        "/methods/3/features/preview",
+        "/methods/3/features/apply",
+        "/methods/3/features/discard",
+        "/methods/3/features/rollback",
+    ] {
+        let mut capabilities = complete_capabilities();
+        *capabilities.pointer_mut(pointer).unwrap() = Value::Bool(false);
+        assert_eq!(
+            validate_capabilities(&capabilities),
+            Err(UNAVAILABLE.to_string())
+        );
+    }
+    let mut missing = complete_capabilities();
+    missing["methods"].as_array_mut().unwrap().remove(1);
+    assert_eq!(
+        validate_capabilities(&missing),
+        Err(UNAVAILABLE.to_string())
+    );
+}
+
+#[test]
+fn daemon_params_are_exact_and_source_is_preview_only() {
+    let preview = preview_params("secret source", "src/main/java/example");
+    assert_eq!(
+        preview,
+        json!({
+            "code": "secret source", "targetDirectory": "src/main/java/example",
+            "sourceKind": "clipboard", "sourceUrl": null, "licensePolicy": "warn"
+        })
+    );
+    for forbidden in [
+        "targetPackage",
+        "workspaceId",
+        "workspaceGeneration",
+        "selectionGeneration",
+        "requestId",
+        "approval",
+        "ui",
+    ] {
+        assert!(preview.get(forbidden).is_none());
+    }
+    assert_eq!(plan_params("plan-1"), json!({"planId": "plan-1"}));
+    assert_eq!(transaction_params("tx-1"), json!({"transactionId": "tx-1"}));
+    assert!(transaction_params("tx-1").get("force").is_none());
+}
+
+#[test]
+fn rich_preview_statuses_and_nested_protocol_fields_are_normalized() {
+    let root = temp_workspace("normalize");
+    fs::write(root.join("pom.xml"), "<project/>").unwrap();
+    let request = preview_request();
+    for (wire, normalized_status) in [
+        ("preview", "ready"),
+        ("refused", "refused"),
+        ("stale", "stale"),
+        ("error", "error"),
+    ] {
+        let normalized = normalize_plan(rich_plan(wire), &root, &request).unwrap();
+        assert_eq!(normalized["status"], normalized_status);
+        assert_eq!(normalized.pointer("/packageChanges/0/path"), None);
+        assert_eq!(
+            normalized
+                .pointer("/packageChanges/1/path")
+                .and_then(Value::as_str),
+            Some("src/main/java/example/Widget.java")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/structuredDiff/0/hunks/0/lines/0")
+                .and_then(Value::as_str),
+            Some("+package example;")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/diagnosticsAfterPreview/0/code")
+                .and_then(Value::as_str),
+            Some("RK001")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/provenance/detectedLicense")
+                .and_then(Value::as_str),
+            Some("Apache-2.0")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/conflicts/0/path")
+                .and_then(Value::as_str),
+            Some("pom.xml")
+        );
+        assert_eq!(normalized["workspaceGeneration"], 7);
+        assert!(normalized.get("code").is_none());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn malformed_oversized_ids_paths_and_provenance_are_rejected_without_source_echo() {
+    let root = temp_workspace("invalid");
+    fs::write(root.join("pom.xml"), "<project/>").unwrap();
+    let request = preview_request();
+    let secret = "private clipboard source must not escape";
+    let mut cases = Vec::new();
+    let mut malformed = rich_plan("preview");
+    malformed["confidence"] = json!(2);
+    cases.push(malformed);
+    let mut oversized = rich_plan("preview");
+    oversized["renderedDiff"] = Value::String("x".repeat(MAX_TEXT_BYTES + 1));
+    cases.push(oversized);
+    let mut wrong_id = rich_plan("preview");
+    wrong_id["planId"] = Value::String("/bad/id".into());
+    cases.push(wrong_id);
+    let mut traversal = rich_plan("preview");
+    traversal["affectedFiles"][0]["path"] = Value::String("../Secret.java".into());
+    cases.push(traversal);
+    let mut provenance = rich_plan("preview");
+    provenance["provenance"]["sourceKind"] = Value::String("url".into());
+    cases.push(provenance);
+    for mut raw in cases {
+        raw["backendSource"] = Value::String(secret.into());
+        let error = normalize_plan(raw, &root, &request).unwrap_err();
+        assert!(matches!(
+            error.as_str(),
+            PROTOCOL_FAILED | "Invalid RefactorKit protocol identifier."
+        ));
+        assert!(!error.contains(secret));
+    }
+    assert!(validate_id(&"x".repeat(MAX_ID_BYTES + 1)).is_err());
+    assert!(safe_path("/tmp/secret", &root).is_err());
+    assert!(safe_path("src/../secret", &root).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn request_deserialization_and_all_correlation_guards_are_exact() {
+    let preview_json = json!({
+        "code": "class X {}", "targetDirectory": "src", "sourceKind": "clipboard",
+        "sourceUrl": null, "licensePolicy": "warn", "workspaceId": "w",
+        "workspaceGeneration": 2, "selectionGeneration": 3, "requestId": "r"
+    });
+    assert!(serde_json::from_value::<PreviewRequest>(preview_json.clone()).is_ok());
+    let mut extra = preview_json;
+    extra["targetPackage"] = json!("forbidden");
+    assert!(serde_json::from_value::<PreviewRequest>(extra).is_err());
+    assert!(require_generation(0).is_err());
+    assert!(require_generation(1).is_ok());
+    let root = canonical_workspace().unwrap();
+    assert!(validate_workspace("wrong-workspace", 1).is_err());
+    assert!(validate_workspace(&workspace_id_for_path(&root), 0).is_err());
+
+    let guard = Guard {
+        workspace_id: "w".into(),
+        workspace_generation: 2,
+        selection_generation: 3,
+        request_id: "r".into(),
+    };
+    assert!(guard_matches(&guard, "w", 2, 3, "r"));
+    assert!(!guard_matches(&guard, "other", 2, 3, "r"));
+    assert!(!guard_matches(&guard, "w", 4, 3, "r"));
+    assert!(!guard_matches(&guard, "w", 2, 4, "r"));
+    assert!(!guard_matches(&guard, "w", 2, 3, "other"));
+    let approval = ApprovalEvidence {
+        approval_id: "a".into(),
+        approved_plan_id: "plan-1".into(),
+        approved_at: "time".into(),
+    };
+    assert!(approval_matches(&approval, "plan-1"));
+    assert!(!approval_matches(&approval, "plan-2"));
+}
+
+#[test]
+fn mutation_request_contracts_remain_camel_case_and_closed() {
+    let apply = json!({
+        "planId": "plan-1",
+        "workspaceId": "workspace-1",
+        "workspaceGeneration": 7,
+        "selectionGeneration": 9,
+        "requestId": "request-1",
+        "approval": {
+            "approvalId": "approval-1",
+            "approvedPlanId": "plan-1",
+            "approvedAt": "2026-07-13T00:00:00Z"
+        }
+    });
+    assert!(serde_json::from_value::<ApplyRequest>(apply.clone()).is_ok());
+    let mut extra_apply = apply;
+    extra_apply["approval"]["unexpected"] = json!(true);
+    assert!(serde_json::from_value::<ApplyRequest>(extra_apply).is_err());
+
+    let discard = json!({
+        "planId": "plan-1",
+        "workspaceId": "workspace-1",
+        "workspaceGeneration": 7,
+        "selectionGeneration": 9,
+        "requestId": "request-1"
+    });
+    assert!(serde_json::from_value::<DiscardRequest>(discard.clone()).is_ok());
+    let mut extra_discard = discard;
+    extra_discard["force"] = json!(true);
+    assert!(serde_json::from_value::<DiscardRequest>(extra_discard).is_err());
+
+    let rollback = json!({
+        "transactionId": "transaction-1",
+        "workspaceId": "workspace-1",
+        "workspaceGeneration": 7,
+        "requestId": "request-1"
+    });
+    assert!(serde_json::from_value::<RollbackRequest>(rollback.clone()).is_ok());
+    let mut extra_rollback = rollback;
+    extra_rollback["force"] = json!(true);
+    assert!(serde_json::from_value::<RollbackRequest>(extra_rollback).is_err());
+}
+
+#[test]
+fn discard_retires_local_plan_before_any_daemon_failure() {
+    let mut manager = Manager::default();
+    manager.plans.insert(
+        "plan-1".into(),
+        Guard {
+            workspace_id: "w".into(),
+            workspace_generation: 1,
+            selection_generation: 1,
+            request_id: "r".into(),
+        },
+    );
+    consume_plan(&mut manager, "plan-1");
+    assert!(!manager.plans.contains_key("plan-1"));
+    assert!(manager.consumed_plans.contains("plan-1"));
+    // This is the state retained even if ensure_session/refactor.discard subsequently fails.
+    assert_eq!(plan_params("plan-1"), json!({"planId": "plan-1"}));
+}
+
+#[test]
+fn reset_models_workspace_switch_and_app_exit_cleanup() {
+    let state = RefactorKitDaemonState::default();
+    {
+        let mut manager = state.0.lock().unwrap();
+        manager.plans.insert(
+            "plan".into(),
+            Guard {
+                workspace_id: "w".into(),
+                workspace_generation: 1,
+                selection_generation: 1,
+                request_id: "r".into(),
+            },
+        );
+        manager.transactions.insert(
+            "tx".into(),
+            TransactionGuard {
+                workspace_id: "w".into(),
+                workspace_generation: 1,
+            },
+        );
+        manager.consumed_plans.insert("old".into());
+    }
+    state.shutdown_all();
+    let manager = state.0.lock().unwrap();
+    assert!(
+        manager.session.is_none()
+            && manager.plans.is_empty()
+            && manager.transactions.is_empty()
+            && manager.consumed_plans.is_empty()
+    );
+}
+
+#[cfg(unix)]
+fn daemon_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<TestMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| TestMutex::new(())).lock().unwrap()
+}
+
+#[cfg(unix)]
+fn fake_session(root: &Path, body: &str) -> (Session, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let script = root.join(format!(
+        "fake-daemon-{}.sh",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let mut permissions = fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&script, permissions).unwrap();
+    env::set_var("IDE_REFACTORKIT_DAEMON", &script);
+    let session = spawn_session("fake", 1, root).unwrap();
+    env::remove_var("IDE_REFACTORKIT_DAEMON");
+    (session, script)
+}
+
+#[test]
+#[cfg(unix)]
+fn emitted_json_rpc_frame_has_only_the_exact_protocol_fields() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("frame");
+    let capture = root.join("captured-frame.json");
+    let body = format!(
+            "read line; printf '%s' \"$line\" > '{}'; printf '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"ok\":true}}}}\\n'",
+            capture.display()
+        );
+    let (mut session, script) = fake_session(&root, &body);
+    assert_eq!(
+        session_call(
+            &mut session,
+            "java.importExternalClass",
+            preview_params("class X {}", "src/main/java/example"),
+            Duration::from_secs(1),
+        )
+        .unwrap(),
+        json!({"ok": true})
+    );
+    let frame: Value = serde_json::from_slice(&fs::read(&capture).unwrap()).unwrap();
+    assert_eq!(
+        frame
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>(),
+        ["jsonrpc", "id", "method", "params"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect()
+    );
+    assert_eq!(frame["jsonrpc"], "2.0");
+    assert_eq!(frame["id"], 1);
+    assert_eq!(frame["method"], "java.importExternalClass");
+    assert_eq!(
+        frame["params"],
+        preview_params("class X {}", "src/main/java/example")
+    );
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
+fn malformed_oversized_wrong_id_timeout_and_process_death_kill_sessions() {
+    let _lock = daemon_env_lock();
+    let scenarios = [
+        "read line; printf 'not-json\\n'",
+        "read line; printf '{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{}}\\n'",
+        "read line; head -c 2097153 /dev/zero | tr '\\000' x; printf '\\n'",
+        "read line; exit 0",
+        "read line; sleep 2",
+    ];
+    for body in scenarios {
+        let root = temp_workspace("fake");
+        let (mut session, script) = fake_session(&root, body);
+        let error = session_call(
+            &mut session,
+            "test.method",
+            json!({}),
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert!(matches!(error.as_str(), PROTOCOL_FAILED | SESSION_FAILED));
+        assert!(
+            session.child.try_wait().unwrap().is_some(),
+            "failed session was not killed"
+        );
+        fs::remove_file(script).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn process_death_clears_all_manager_lifecycle_state() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("death");
+    let (session, script) = fake_session(&root, "read line; exit 0");
+    let mut manager = Manager {
+        session: Some(session),
+        ..Manager::default()
+    };
+    manager.plans.insert(
+        "plan".into(),
+        Guard {
+            workspace_id: "w".into(),
+            workspace_generation: 1,
+            selection_generation: 1,
+            request_id: "r".into(),
+        },
+    );
+    manager.transactions.insert(
+        "tx".into(),
+        TransactionGuard {
+            workspace_id: "w".into(),
+            workspace_generation: 1,
+        },
+    );
+    assert_eq!(
+        call(&mut manager, "test", json!({}), Duration::from_millis(200)),
+        Err(SESSION_FAILED.to_string())
+    );
+    assert!(
+        manager.session.is_none() && manager.plans.is_empty() && manager.transactions.is_empty()
+    );
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "requires an installed compatible RefactorKit packaged daemon; creates only a temporary Java workspace"]
+fn packaged_daemon_full_preview_discard_apply_rollback_smoke() {
+    let root = temp_workspace("packaged-smoke");
+    let target = root.join("src/main/java/example");
+    let existing = target.join("Existing.java");
+    let original = b"package example;\npublic class Existing {}\n";
+    fs::write(&existing, original).unwrap();
+    let imported = target.join("ImportedSmoke.java");
+    let before_entries = fs::read_dir(&target).unwrap().count();
+    let mut manager = Manager::default();
+    ensure_session(&mut manager, "smoke-workspace", 1, &root).unwrap();
+    let capabilities = manager
+        .session
+        .as_ref()
+        .unwrap()
+        .capabilities
+        .as_ref()
+        .unwrap();
+    assert!(!capabilities.provider_version.is_empty());
+    assert!(capabilities.provider_version.len() <= 128);
+    assert!(!capabilities.provider_version.chars().any(char::is_control));
+    eprintln!(
+        "running packaged RefactorKit smoke with provider version {}",
+        capabilities.provider_version
+    );
+
+    let first = call(
+        &mut manager,
+        "java.importExternalClass",
+        preview_params(
+            "// MIT License\npackage old.pkg;\npublic class DiscardedSmoke {}\n",
+            "src/main/java/example",
+        ),
+        REQUEST_TIMEOUT,
+    )
+    .unwrap();
+    let first_id = first["planId"].as_str().unwrap().to_string();
+    assert!(!target.join("DiscardedSmoke.java").exists());
+    let discarded = call(
+        &mut manager,
+        "refactor.discard",
+        plan_params(&first_id),
+        REQUEST_TIMEOUT,
+    )
+    .unwrap();
+    assert_eq!(discarded["discarded"], true);
+
+    let raw = call(
+        &mut manager,
+        "java.importExternalClass",
+        preview_params(
+            "// MIT License\npackage old.pkg;\npublic class ImportedSmoke {}\n",
+            "src/main/java/example",
+        ),
+        REQUEST_TIMEOUT,
+    )
+    .unwrap();
+    let request = PreviewRequest {
+        code: String::new(),
+        target_directory: "src/main/java/example".into(),
+        source_kind: "clipboard".into(),
+        source_url: None,
+        license_policy: "warn".into(),
+        workspace_id: "smoke-workspace".into(),
+        workspace_generation: 1,
+        selection_generation: 1,
+        request_id: "smoke-preview".into(),
+    };
+    let preview = normalize_plan(raw, &root, &request).unwrap();
+    assert_eq!(preview["status"], "ready");
+    assert!(!preview["renderedDiff"].as_str().unwrap().is_empty());
+    assert!(!preview["structuredDiff"].as_array().unwrap()[0]["hunks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(preview["diagnosticsAfterPreview"].is_array());
+    assert_eq!(
+        fs::read_dir(&target).unwrap().count(),
+        before_entries,
+        "preview wrote workspace"
+    );
+    assert!(!imported.exists());
+
+    let plan_id = preview["planId"].as_str().unwrap();
+    let applied_raw = call(
+        &mut manager,
+        "refactor.apply",
+        plan_params(plan_id),
+        REQUEST_TIMEOUT,
+    )
+    .unwrap();
+    let applied = normalize_apply(applied_raw, &root, plan_id).unwrap();
+    assert!(imported.exists());
+    let transaction_id = applied["transactionId"].as_str().unwrap();
+    let rollback_raw = call(
+        &mut manager,
+        "patch.rollback",
+        transaction_params(transaction_id),
+        REQUEST_TIMEOUT,
+    )
+    .unwrap();
+    let rollback = normalize_rollback(rollback_raw, &root, transaction_id).unwrap();
+    assert_eq!(rollback["rolledBack"], true);
+    assert!(!imported.exists());
+    assert_eq!(
+        fs::read(&existing).unwrap(),
+        original,
+        "rollback did not restore exact bytes"
+    );
+    assert_eq!(fs::read_dir(&target).unwrap().count(), before_entries);
+    reset(&mut manager);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn command_signatures_remain_stable() {
+    let _: for<'a> fn(
+        State<'a, RefactorKitDaemonState>,
+    ) -> Result<RefactorKitCapabilities, String> = super::get_refactorkit_capabilities;
+    let _: for<'a> fn(PreviewRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
+        super::preview_refactorkit_external_java_import;
+    let _: for<'a> fn(ApplyRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
+        super::apply_refactorkit_plan;
+    let _: for<'a> fn(DiscardRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
+        super::discard_refactorkit_plan;
+    let _: for<'a> fn(RollbackRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
+        super::rollback_refactorkit_transaction;
+    let _: for<'a> fn(State<'a, RefactorKitDaemonState>) -> Result<(), String> =
+        super::shutdown_refactorkit_daemon;
+}
+
+#[test]
+fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
+    let facade = include_str!("../refactorkit_daemon.rs");
+    assert_eq!(
+        facade
+            .lines()
+            .filter(|line| line.trim() == "#[tauri::command]")
+            .count(),
+        6
+    );
+    assert!(facade.lines().count() < 100);
+    for forbidden in [
+        concat!("std::process::", "Command"),
+        concat!("Child", "Stdin"),
+        concat!("workspace_", "root()"),
+        concat!("serde_json::", "to_vec"),
+        "languageKernel",
+        "consumed_plans",
+    ] {
+        assert!(!facade.contains(forbidden), "facade contains {forbidden}");
+    }
+
+    for (name, module) in [
+        ("application", include_str!("application.rs")),
+        ("capability_policy", include_str!("capability_policy.rs")),
+        ("contract", include_str!("contract.rs")),
+        ("path_policy", include_str!("path_policy.rs")),
+        ("transport", include_str!("transport.rs")),
+    ] {
+        assert!(!module.contains("tauri::"), "{name} depends on Tauri");
+        assert!(
+            !module.contains("#[tauri::command]"),
+            "{name} exposes a Tauri command"
+        );
+    }
+}
