@@ -13,6 +13,16 @@
     "lint": "pnpm -r exec eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "test": "vitest run",
+    "test:story": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js",
+    "test:story:implemented": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile implemented",
+    "test:story:web": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile web",
+    "test:story:desktop": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile desktop",
+    "test:spec": "vitest run --config vitest.spec.config.ts",
+    "test:legacy-baseline": "node scripts/check-legacy-test-baseline.mjs",
+    "typecheck:bdd": "tsc --project tsconfig.story.json",
+    "validate:bdd:docs": "python3 scripts/validate-bdd-documentation.py --root .",
+    "validate:bdd:docs:migration": "python3 scripts/validate-bdd-documentation.py --root . --allow-legacy-plan",
+    "validate:bdd:migration": "pnpm test:legacy-baseline && pnpm validate:bdd:docs:migration && pnpm typecheck:bdd && pnpm test:story && pnpm test:spec",
     "test:e2e": "pnpm --filter @ide/web exec vitest run --config vitest.e2e.config.ts",
     "tools:install-jdtls": "scripts/install-jdtls.sh",
     "tools:verify-jdtls": "scripts/install-jdtls.sh --verify-only",
@@ -24,6 +34,8 @@
     "pnpm": ">=9.0.0"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "13.0.0",
+    "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -35,6 +47,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "rimraf": "^6.0.0",
+    "tsx": "4.20.6",
     "typescript": "^5.6.0",
     "vitest": "^3.2.7"
   }
