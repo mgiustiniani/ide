@@ -1,5 +1,7 @@
 # IDE Multi-Language Extension Plan
 
+**Evidence status:** **STALE.** This plan predates the current Monaco-only editor, managed JDT LS semantics and diagnostics, and conditional Problems contribution. Its “Current State” and “What's Missing” sections are retained as migration history, not current implementation status; use [ARC42](../ARC42.md) for current evidence.
+
 ## Overview
 
 Transform the three-panel IDE into a full multi-language development environment supporting **Java**, **JavaScript**, **TypeScript**, and extensible to any language via adapter pattern.

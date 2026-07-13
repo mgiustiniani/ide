@@ -234,14 +234,7 @@ pnpm test -- --coverage
 
 ## Agent Workflow
 
-The project uses a multi-agent workflow (`tauri-full-development`) with the following agents:
-
-| Agent             | Role                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| **tauri-planner** | Primary agent — orchestrates planning, scaffolding, implementation, testing, and documentation |
-| **documenter**    | Documentation — README, ARC42, ADRs, C4 diagrams                                               |
-| **c4model**       | C4 diagram generation (Structurizr DSL)                                                        |
-| **tester**        | Unit and integration testing                                                                   |
+Documentation governance is in **`bdd-ts` migration mode** from Git baseline `53addeb2654ac8e85ac153f5ac10ae99f2816d51`. The `bdd-ts-planner` orchestrates evidence and handoffs; `bdd-ts-architect` owns README and ARC42 integration, requirements reconciliation, risks, glossary, and architecture status; `c4model` owns C4/Structurizr artifacts; and `bdd-ts-adr-writer` owns ADR bodies. `PLAN.md` remains a temporary legacy migration input under the validator exception and is not a current implementation-status source.
 
 ---
 
@@ -249,23 +242,23 @@ The project uses a multi-agent workflow (`tauri-full-development`) with the foll
 
 [ARC42.md](ARC42.md) is the central integrated architecture narrative and mutable implementation-status source. Specialist plans, requirements, and C4 artifacts are bounded satellites; this summary links to them without replacing their detailed narratives. Current facts are evidence-backed, while future work is labeled planned or target.
 
-| Document                                                                               | Description                                                                                                                                                   |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](README.md)                                                                 | Project overview, setup, usage, architecture links                                                                                                            |
-| [SUMMARY.md](SUMMARY.md)                                                               | This file — comprehensive project summary                                                                                                                     |
-| [PLAN.md](PLAN.md)                                                                     | Full architecture plan                                                                                                                                        |
-| [ADR.md](ADR.md)                                                                       | Architecture Decision Records                                                                                                                                 |
-| [ARC42.md](ARC42.md)                                                                   | ARC42 architecture documentation                                                                                                                              |
-| [SKELETON.md](SKELETON.md)                                                             | Package layout skeleton guide                                                                                                                                 |
-| [docs/IDE_EXTENSION_PLAN.md](docs/IDE_EXTENSION_PLAN.md)                               | Bounded IDE extension planning satellite                                                                                                                      |
-| [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md)                       | Bounded Java IntelliSense roadmap and implementation-boundary satellite                                                                                       |
-| [docs/INTELLIJ_ULTIMATE_ROADMAP.md](docs/INTELLIJ_ULTIMATE_ROADMAP.md)                 | Evidence-based IntelliJ IDEA Ultimate domain inventory, Java deep dive, build-vs-sidecar classification, gaps, and delivery roadmap; it does not claim parity |
-| [docs/c4/system-context.md](docs/c4/system-context.md)                                 | C1 System Context diagram                                                                                                                                     |
-| [docs/c4/target-java-intelligence.md](docs/c4/target-java-intelligence.md)             | Mixed current/target Java provider architecture with explicit delivered and remaining slices                                                                  |
-| [docs/c4/containers.md](docs/c4/containers.md)                                         | C2 Container diagram                                                                                                                                          |
-| [docs/c4/components.md](docs/c4/components.md)                                         | C3 Component diagram                                                                                                                                          |
-| [docs/c4/target-xcom2-setup.md](docs/c4/target-xcom2-setup.md)                         | XCOM 2 AS-BUILT concrete SDK transaction and FUTURE/TARGET external interactive/project workflows                                                             |
-| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | XCOM 2 requirements status and implementation traceability                                                                                                    |
+| Document                                                                               | Description                                                                                       |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [README.md](README.md)                                                                 | Project overview, setup, usage, architecture links                                                |
+| [SUMMARY.md](SUMMARY.md)                                                               | This file — comprehensive project summary                                                         |
+| [PLAN.md](PLAN.md)                                                                     | Legacy migration input retained temporarily; not the current architecture-status source           |
+| [ADR.md](ADR.md)                                                                       | Architecture Decision Records                                                                     |
+| [ARC42.md](ARC42.md)                                                                   | Central architecture narrative and current implementation-status source                           |
+| [SKELETON.md](SKELETON.md)                                                             | Stale historical package-layout guide                                                             |
+| [docs/IDE_EXTENSION_PLAN.md](docs/IDE_EXTENSION_PLAN.md)                               | Stale historical IDE extension plan retained for migration context                                |
+| [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md)                       | Java IntelliSense roadmap with stale current-status passages marked for review                    |
+| [docs/INTELLIJ_ULTIMATE_ROADMAP.md](docs/INTELLIJ_ULTIMATE_ROADMAP.md)                 | Bounded capability analysis whose repository-status matrices need review; not a parity claim      |
+| [docs/c4/system-context.md](docs/c4/system-context.md)                                 | C1 System Context diagram                                                                         |
+| [docs/c4/target-java-intelligence.md](docs/c4/target-java-intelligence.md)             | Mixed current/target Java provider architecture with explicit delivered and remaining slices      |
+| [docs/c4/containers.md](docs/c4/containers.md)                                         | C2 Container diagram                                                                              |
+| [docs/c4/components.md](docs/c4/components.md)                                         | C3 Component diagram                                                                              |
+| [docs/c4/target-xcom2-setup.md](docs/c4/target-xcom2-setup.md)                         | XCOM 2 AS-BUILT concrete SDK transaction and FUTURE/TARGET external interactive/project workflows |
+| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | Specialist XCOM 2 requirements whose dated implementation evidence needs review against ARC42     |
 
 ---
 

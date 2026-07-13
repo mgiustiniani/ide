@@ -1,5 +1,7 @@
 # Java IntelliSense Roadmap
 
+**Evidence status:** **NEEDS-REVIEW.** Repository-status passages that describe diagnostics and the conditional Problems contribution as absent are stale; [ARC42](../ARC42.md) records the current guarded diagnostic projection. The target roadmap remains planning input, not the current-status authority.
+
 **Status:** The managed JDT LS lifecycle, versioned Java document synchronization, and the interactive Phase 2 completion/hover/signature-help/cancellation slice are implemented through provider-neutral contracts, typed Tauri adapters, Rust transport, and guarded Monaco providers. Monaco is the only editor and bundles local Java Monarch/basic syntax support. Settings > Java exposes global lifecycle/status and RefactorKit availability/version/path only; native RefactorKit project actions are not globally exposed. The bounded managed RefactorKit external-import transaction is operational with installed RefactorKit `0.5.0-SNAPSHOT` (API `0.2`). Java module activation, contextual tools, definition/references and Monaco gestures, code actions, formatting, rename, hierarchy, diagnostics composition, and general refactoring integration remain FUTURE/TARGET.
 
 **Target experience:** IntelliJ Ultimate-class Java workflows, used as a direction rather than a parity claim

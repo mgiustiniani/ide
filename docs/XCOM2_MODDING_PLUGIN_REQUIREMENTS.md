@@ -1,5 +1,7 @@
 # XCOM 2 WOTC Modding Plugin — Product and Software Requirements
 
+**Evidence status:** **NEEDS-REVIEW.** The requirement catalogue remains specialist planning input, but its dated implementation matrix and “latest” validation counts are stale relative to the evidence ledger in [ARC42 section 10](../ARC42.md#section-10-quality-requirements). Do not infer current implementation status from this document alone.
+
 **Status:** Partially implemented; monitor and concrete repeatable WOTC SDK transaction AS-BUILT, external interactive setup and project tooling FUTURE/TARGET  
 **Implemented increment:** first-party Steam monitor, separate non-executable dry run, concrete 15-operation Prepare/Apply/Restore Vanilla SDK transaction, exact-digest one-transaction approval, and Settings transaction controls; no live Apply or project tooling  
 **Target runtime:** Tauri desktop on Linux first; honest degraded web mode  
@@ -45,7 +47,7 @@ Status labels in this specification are normative: **AS-BUILT** means implemente
 | `FR-X2LANG-*`, `FR-X2BUILD-*`, `FR-X2HL-*`, `FR-X2RUN-*` | **FUTURE/TARGET**                               | No XCOM-specific language, build/cook, Highlander, launch, or log workflow is implemented by this increment.                                                                                                                                                                                        |
 | Java/JDT LS/RefactorKit/IntelliJ roadmap                 | **Separate and unchanged**                      | XCOM work neither replaces nor changes the IDE's core Java capability roadmap.                                                                                                                                                                                                                      |
 
-Architecture traceability: [ADR 0007](../ADR.md#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions), [ADR 0009](../ADR.md#adr-0009--durable-digest-approved-xcom-setup-transactions), [ARC42 current/target boundary](../ARC42.md#53-current-and-target-xcom-2-boundary), [C1](c4/system-context.md), [C2](c4/containers.md), [C3](c4/components.md), and [XCOM 2 target C4](c4/target-xcom2-setup.md).
+Architecture traceability: [ADR 0007](../ADR.md#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions), [ADR 0009](../ADR.md#adr-0009--durable-digest-approved-xcom-setup-transactions), [ARC42 current/target boundary](../ARC42.md#54-current-and-target-xcom-2-boundary), [C1](c4/system-context.md), [C2](c4/containers.md), [C3](c4/components.md), and [XCOM 2 target C4](c4/target-xcom2-setup.md).
 
 ### 2.2 Time-specific validation evidence
 

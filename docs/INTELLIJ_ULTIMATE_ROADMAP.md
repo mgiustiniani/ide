@@ -1,5 +1,7 @@
 # IntelliJ IDEA Ultimate Capability Analysis and Implementation Roadmap
 
+**Evidence status:** **NEEDS-REVIEW.** The bounded capability research remains tied to its stated cut-off, but repository-status matrices that describe Java diagnostics and Problems as absent are stale. Use [ARC42](../ARC42.md) for current implementation evidence.
+
 **Research cut-off and access date:** 2026-07-11  
 **Target:** this repository's Tauri/web IDE  
 **Status vocabulary:** **Implemented**, **Partial**, **Planned**, **Absent**, or **External prerequisite**

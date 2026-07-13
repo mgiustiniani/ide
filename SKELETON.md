@@ -1,10 +1,12 @@
 # Skeleton Guide — Package Layout Overview
 
+**Evidence status:** **STALE.** This historical skeleton omits newer feature modules and may simplify current paths. Verify package contents in the repository and use [ARC42](ARC42.md) for current architecture boundaries.
+
 This file maps the package structure and explains what each package contains and how they relate.
 
 ```
 ide/
-├── PLAN.md                 # Full architecture plan
+├── PLAN.md                 # Legacy migration input; not the current status source
 ├── README.md               # Project overview & setup
 ├── ADR.md                  # Architecture Decision Records
 ├── ARC42.md                # ARC42 architecture documentation

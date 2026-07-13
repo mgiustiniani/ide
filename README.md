@@ -181,19 +181,19 @@ Synthetic transaction fixtures prove two complete apply→rollback cycles restor
 
 [ARC42.md](ARC42.md) is the central integrated architecture narrative and mutable implementation-status source. The specialist plans, requirements, and C4 pages below are bounded satellites: they retain their detailed domain narratives and are linked rather than copied into the central status summary. Current claims require source/test/config or dated validation evidence; planned work is labeled explicitly.
 
-| Document                                                                               | Description                                                                                                                                |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [PLAN.md](PLAN.md)                                                                     | Full architecture plan                                                                                                                     |
-| [ADR.md](ADR.md)                                                                       | Architecture Decision Records                                                                                                              |
-| [ARC42.md](ARC42.md)                                                                   | ARC42 architecture documentation                                                                                                           |
-| [SKELETON.md](SKELETON.md)                                                             | Package layout skeleton guide                                                                                                              |
-| [docs/IDE_EXTENSION_PLAN.md](docs/IDE_EXTENSION_PLAN.md)                               | Bounded IDE extension planning satellite                                                                                                   |
-| [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md)                       | Bounded Java IntelliSense roadmap and implementation-boundary satellite                                                                    |
-| [docs/INTELLIJ_ULTIMATE_ROADMAP.md](docs/INTELLIJ_ULTIMATE_ROADMAP.md)                 | Bounded IntelliJ capability-analysis satellite; a direction, not a parity claim                                                            |
-| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | Requirements and traceability for the AS-BUILT concrete SDK transaction and FUTURE/TARGET external interactive setup and modding workflows |
-| [docs/c4/system-context.md](docs/c4/system-context.md)                                 | CURRENT/AS-BUILT global Settings, core BottomPanel, and external-system boundary                                                           |
-| [docs/c4/target-java-intelligence.md](docs/c4/target-java-intelligence.md)             | Mixed current/target Java view: delivered sync/semantics and remaining activation/navigation/action slices                                 |
-| [docs/c4/target-xcom2-setup.md](docs/c4/target-xcom2-setup.md)                         | XCOM 2 AS-BUILT concrete SDK transaction versus FUTURE/TARGET external interactive setup, activation, language, and build architecture     |
+| Document                                                                               | Description                                                                                                                            |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                                                                     | Legacy migration input retained temporarily; not the current architecture-status source                                                |
+| [ADR.md](ADR.md)                                                                       | Architecture Decision Records                                                                                                          |
+| [ARC42.md](ARC42.md)                                                                   | Central architecture narrative and current implementation-status source                                                                |
+| [SKELETON.md](SKELETON.md)                                                             | Stale historical package-layout guide                                                                                                  |
+| [docs/IDE_EXTENSION_PLAN.md](docs/IDE_EXTENSION_PLAN.md)                               | Stale historical IDE extension plan retained for migration context                                                                     |
+| [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md)                       | Java IntelliSense roadmap with stale current-status passages marked for review                                                         |
+| [docs/INTELLIJ_ULTIMATE_ROADMAP.md](docs/INTELLIJ_ULTIMATE_ROADMAP.md)                 | Bounded capability analysis whose repository-status matrices need review; not a parity claim                                           |
+| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | Specialist XCOM 2 requirements whose dated implementation evidence needs review against ARC42                                          |
+| [docs/c4/system-context.md](docs/c4/system-context.md)                                 | CURRENT/AS-BUILT global Settings, core BottomPanel, and external-system boundary                                                       |
+| [docs/c4/target-java-intelligence.md](docs/c4/target-java-intelligence.md)             | Mixed current/target Java view: delivered sync/semantics and remaining activation/navigation/action slices                             |
+| [docs/c4/target-xcom2-setup.md](docs/c4/target-xcom2-setup.md)                         | XCOM 2 AS-BUILT concrete SDK transaction versus FUTURE/TARGET external interactive setup, activation, language, and build architecture |
 
 ---
 
