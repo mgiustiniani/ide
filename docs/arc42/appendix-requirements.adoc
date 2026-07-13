@@ -1,0 +1,83 @@
+= Appendix: Executable Requirements Traceability
+
+[IMPORTANT]
+====
+Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every currently configured `features/**/*.feature` file. The feature source declares `REQ-WEB-001` as `@implemented-and-validated`; the dated browser result below is separate observed evidence and does not derive from that declaration.
+====
+
+== Governance
+
+The `.feature` files are the authoritative declarations for stable requirement IDs, classification, tags, scenarios, and declared status. This appendix records those declarations alongside independently observed validation:
+
+* one scenario must own one repository-unique `@REQ-*` ID, at least one requirement classification, and exactly one effective status;
+* declared status and observed validation are separate fields: discovery, parsing, execution, or implementation inspection never silently changes a feature tag;
+* actor/stakeholder and capability wording is derived from the feature narrative and scenario, without inventing a more specialized role;
+* browser evidence applies only to the selected web target; it cannot establish desktop behavior; and
+* `ARC42.md` remains the integrated mutable architecture-status narrative. Gherkin, this appendix, test output, ADRs, C4 views, and legacy `PLAN.md` remain bounded evidence sources.
+
+== Feature Inventory
+
+[cols="3,3,1,1,2",options="header"]
+|===
+|Feature path |Feature capability |Scenarios |Requirement IDs |Declared status
+
+|link:../../features/workspace/startup-tooling.feature[`features/workspace/startup-tooling.feature`]
+|Startup tooling appropriate to each workspace
+|1
+|`REQ-WEB-001`
+|`@implemented-and-validated`
+|===
+
+No other `.feature` file was present in the configured feature roots at reconciliation time.
+
+== Requirement Catalogue
+
+=== REQ-WEB-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-WEB-001]]`REQ-WEB-001`
+
+|Classification
+|Functional requirement (`@functional-requirement`)
+
+|Actor / stakeholder
+|A person opening a generic standalone web workspace. The feature identifies people opening workspaces as the stakeholder group; it does not declare a more specialized role.
+
+|Capability
+|Match startup tooling to the running workspace environment. For the generic standalone web target, expose only core web tooling, including the integrated terminal, and omit desktop-only Java and XCOM tooling.
+
+|Scenario
+|_A generic standalone web workspace exposes only core web tooling_
+
+|Feature path
+|link:../../features/workspace/startup-tooling.feature[`features/workspace/startup-tooling.feature`], scenario beginning at line 6
+
+|Tags
+|`@web`, `@REQ-WEB-001`, `@functional-requirement`, `@implemented-and-validated`
+
+|Validation mode
+|Cucumber.js Story BDD through the explicit `implementedWeb` target profile, driving the real standalone `apps/web` application with Playwright in headless Chromium against a loopback Vite server. Assertions inspect the rendered accessible tool-window UI and active terminal state.
+
+|Declared status
+|`@implemented-and-validated` — copied from the feature source. This is the requirement author's declaration, not inferred from the run below.
+
+|Observed real-browser evidence
+|On 2026-07-14, `pnpm test:story:implemented:web` passed 1 scenario and 7/7 steps. The Playwright path launched real headless Chromium, navigated to the loopback web application, observed only the Terminal tool-window tab, observed the integrated terminal and active session, and observed no Java- or XCOM-named tool-window tab. This is Chromium evidence for this web scenario only; it is not proof for every browser, operating system, or IDE capability.
+
+|Desktop evidence / absence
+|No current feature scenario is tagged `@desktop`. The implemented-profile inventory selected 0 desktop/Tauri scenarios on 2026-07-14, and desktop/Tauri Story execution is still unsupported. Therefore this slice provides no desktop execution evidence and makes no desktop parity or desktop absence claim beyond the web UI observations above.
+|===
+
+== Reconciliation and Migration Status
+
+The first characterization slice is independently passing for its explicit web/Playwright validation mode. It establishes executable evidence for one bounded startup-tooling behavior; it does not confirm the inherited Chapter 1 goals, complete BDD migration, validate a desktop runner, or supersede the broader existing frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+
+Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation or plan text exists.
+
+== Reconciliation Checks
+
+The 2026-07-14 reconciliation checked the configured feature inventory, stable ID, classification, effective status, feature-path trace, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs:migration` is the governing documentation check while `PLAN.md` remains and must pass with only the expected legacy-plan warning.

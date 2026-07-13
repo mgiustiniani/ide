@@ -28,6 +28,8 @@ Apply requires the complete digest approval for that single external-SDK transac
 
 #### Evidence and status rule
 
+**IMPLEMENTATION-INFORMED migration status:** the first executable characterization slice, [`REQ-WEB-001`](docs/arc42/appendix-requirements.adoc#REQ-WEB-001), independently exercises the standalone web application in real headless Chromium. Its feature-declared `@implemented-and-validated` status and its dated observed browser result are recorded separately. The slice supplies no desktop/Tauri Story evidence and does not finalize the inherited goals in this chapter.
+
 This ARC42 document is the **central integrated architecture narrative** and the mutable source for implementation status. A statement is **CURRENT/AS-BUILT** only when supported by the repository's source, tests, configuration, or dated validation evidence. Unimplemented work is labeled **FUTURE/TARGET** or **PLANNED**. Validation results are dated observations, not permanent capability guarantees.
 
 Detailed specialist narratives remain bounded satellites and are linked rather than duplicated here:
@@ -35,7 +37,8 @@ Detailed specialist narratives remain bounded satellites and are linked rather t
 - [IDE extension plan](docs/IDE_EXTENSION_PLAN.md);
 - [IntelliJ Ultimate capability roadmap](docs/INTELLIJ_ULTIMATE_ROADMAP.md);
 - [Java IntelliSense plan](docs/JAVA_INTELLISENSE_PLAN.md);
-- [XCOM 2 requirements](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md); and
+- [XCOM 2 requirements](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md);
+- [executable requirements traceability](docs/arc42/appendix-requirements.adoc); and
 - [C4 structural views](docs/c4/system-context.md), whose descriptions contain stable architecture facts rather than mutable test counts.
 
 #### DDD roadmap status
@@ -44,7 +47,7 @@ Detailed specialist narratives remain bounded satellites and are linked rather t
 
 The Rust Java Language boundary is a 123-line Tauri facade over application, contract, path-policy, protocol, semantic, toolchain, and support modules. The RefactorKit daemon boundary is a 63-line Tauri facade over application, capability-policy, contract, path-policy, and transport modules. Public Tauri commands remain inbound facades; process ownership, orchestration, normalization, authorization policy, and transport live behind them.
 
-**PLANNED:** executable requirements/specifications and a real unlocked click-to-open smoke test. The GUI smoke remains pending because the graphical session locked; no click-to-open result is claimed. These outstanding items mean full DDD completion is not claimed.
+**IMPLEMENTATION-INFORMED:** one executable web characterization requirement now exists and passes in real headless Chromium. Broader executable requirements/specifications remain migration work. A real unlocked click-to-open smoke is still pending because the graphical session locked; the web characterization does not exercise click-to-open. These outstanding items mean full DDD completion is not claimed.
 
 ### 1.2 Quality Goals
 
@@ -61,6 +64,10 @@ The Rust Java Language boundary is a 123-line Tauri facade over application, con
 - **End users** — developers using the IDE for coding, file browsing, and terminal access.
 - **Developers** — team building and maintaining the codebase; benefit from clear package boundaries.
 - **Platform maintainers** — those adding or updating desktop/web adapter implementations.
+
+### 1.4 Confirmation Status
+
+**NEEDS-REVIEW:** these inherited goals, quality goals, and stakeholder descriptions have not yet received the explicit user confirmation required by the bdd-ts migration. `REQ-WEB-001` provides implementation-informed evidence for one bounded web behavior only; it neither confirms nor finalizes Chapter 1. Reconfirm this chapter after material migration changes.
 
 ---
 
@@ -442,20 +449,33 @@ See [ADR.md](ADR.md) for the full list of Architecture Decision Records.
 
 ### 10.1 Dated Validation Evidence
 
-| Evidence dated 2026-07-13             | Result                                                              | Scope and limits                                                                                                                                                                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend suite**                    | 719 tests passed across 60 files                                    | Covers the extracted controller slice and existing frontend behavior. TypeScript, lint, formatting, package boundaries, and web/desktop builds passed in the recorded frontend validation.                                             |
-| **Rust default suites**               | 158 unit tests passed; 6 ignored. Integration: 1 passed; 1 ignored. | Formatting, locked check, and strict Clippy passed. Ignored external/live tests are not implied by the default count.                                                                                                                  |
-| **Real JDT LS lifecycle smoke**       | Passed                                                              | Covered discovery, initialization, capability normalization, event polling, workspace-data isolation, and graceful shutdown against the installed external JDK/JDT LS.                                                                 |
-| **Real JDT LS semantic smoke**        | Passed                                                              | Covered repeated completion containing `repeat`, helper hover, signature help containing `substring(int beginIndex)`, cancellation, `didClose`, and managed stop.                                                                      |
-| **Real temporary RefactorKit smokes** | Passed against discovered 0.5 and packaged 0.6 providers            | Both providers were evaluated by the same API/capability/safety decision. Preview performed no write; discard invalidated the plan; exact-plan apply succeeded; rollback restored bytes exactly. Provider version was diagnostic only. |
-| **Unlocked click-to-open GUI smoke**  | **PENDING**                                                         | The graphical session locked before this smoke could be completed. No click-to-open, GUI, or browser visual/e2e result is claimed.                                                                                                     |
+| Evidence (baseline dated 2026-07-13)  | Result                                                              | Scope and limits                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend suite**                    | 719 tests passed across 60 files                                    | Covers the extracted controller slice and existing frontend behavior. TypeScript, lint, formatting, package boundaries, and web/desktop builds passed in the recorded frontend validation.                                                                                                                                                                                  |
+| **Rust default suites**               | 158 unit tests passed; 6 ignored. Integration: 1 passed; 1 ignored. | Formatting, locked check, and strict Clippy passed. Ignored external/live tests are not implied by the default count.                                                                                                                                                                                                                                                       |
+| **Real JDT LS lifecycle smoke**       | Passed                                                              | Covered discovery, initialization, capability normalization, event polling, workspace-data isolation, and graceful shutdown against the installed external JDK/JDT LS.                                                                                                                                                                                                      |
+| **Real JDT LS semantic smoke**        | Passed                                                              | Covered repeated completion containing `repeat`, helper hover, signature help containing `substring(int beginIndex)`, cancellation, `didClose`, and managed stop.                                                                                                                                                                                                           |
+| **Real temporary RefactorKit smokes** | Passed against discovered 0.5 and packaged 0.6 providers            | Both providers were evaluated by the same API/capability/safety decision. Preview performed no write; discard invalidated the plan; exact-plan apply succeeded; rollback restored bytes exactly. Provider version was diagnostic only.                                                                                                                                      |
+| **REQ-WEB-001 web Story**             | 1 scenario and 7/7 steps passed in headless Chromium                | On 2026-07-14, the explicit web/Playwright profile drove the real standalone app through loopback Vite and observed Terminal-only core tooling with no Java- or XCOM-named tool tabs. The feature-declared status is separate from this observed result; see the [requirements appendix](docs/arc42/appendix-requirements.adoc#REQ-WEB-001). No desktop/Tauri scenario ran. |
+| **Unlocked click-to-open GUI smoke**  | **PENDING**                                                         | The graphical session locked before this smoke could be completed. The bounded Chromium Story above does not exercise click-to-open or provide desktop GUI evidence.                                                                                                                                                                                                        |
 
-This documentation follow-up rechecked Markdown formatting, relative link targets, controller/C4 structural alignment, and Structurizr validation on **2026-07-13**. It did not rerun the application suites. Structurizr passed with only the validator's non-fatal cloud-theme end-of-life warnings.
+This documentation follow-up rechecked feature inventory reconciliation, Markdown/AsciiDoc formatting, relative link targets, and the bdd-ts documentation validator in migration mode on **2026-07-14**. It reran the bounded `REQ-WEB-001` web Story, not the broader application suites. C4 content was not changed, so no new Structurizr result is claimed; its previously recorded validation remains unchanged.
 
 ---
 
-## Section 11: Glossary
+## Section 11: Risks and Technical Debt
+
+| ID           | Status                | Risk / debt                                                                                                                                                                             | Mitigation and review point                                                                                                                                                                                |
+| ------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R-BDD-01** | migration-in-progress | Legacy `PLAN.md` remains and can compete with ARC42 for perceived status. Strict documentation admission therefore still fails, while migration mode emits the expected warning.        | Classify useful constraints and decisions into architect-owned or specialist evidence, preserve history in Git/ADRs where appropriate, then remove the legacy file. Review before strict bdd-ts admission. |
+| **R-BDD-02** | needs-review          | The first characterization slice is web-only. Treating its Chromium pass or declared status as desktop parity would hide the absence of a supported desktop/Tauri Story execution path. | Keep web and desktop evidence separate; add supported desktop execution and explicitly tagged requirements before making desktop validation claims.                                                        |
+| **R-BDD-03** | controlled            | `@implemented-and-validated` is a declaration in Gherkin and could be mistaken for independently observed evidence.                                                                     | Maintain separate declared-status and observed-validation fields in the [requirements appendix](docs/arc42/appendix-requirements.adoc); reconcile after every slice.                                       |
+
+The migration remains **implementation-informed and incomplete**. One passing characterization slice reduces uncertainty around generic standalone-web startup tooling but does not confirm Chapter 1, complete requirements coverage, or retire legacy status sources.
+
+---
+
+## Section 12: Glossary
 
 | Term                      | Definition                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -469,5 +489,7 @@ This documentation follow-up rechecked Markdown formatting, relative link target
 | **Monaco model**          | Per-file editor text model retained across active tabs; it is an editing primitive, not proof of Java semantic language-service support                                                                                                                                                                                |
 | **Plugin-shaped feature** | Built-in first-party module with descriptor/contribution-shaped contracts; it is not a generic plugin loader, sandbox, permission grant, or arbitrary code-execution mechanism                                                                                                                                         |
 | **Setup transaction**     | Native, durable, exact-digest-approved sequence of allowlisted reversible operations. The AS-BUILT concrete SDK transaction has 15 operations and exact-baseline restore; external interactive setup remains FUTURE/TARGET.                                                                                            |
+| **Declared status**       | The single effective status tag authored on a Gherkin scenario, such as `@implemented-and-validated`; it is not inferred from test discovery or execution.                                                                                                                                                             |
+| **Observed validation**   | Dated evidence from an actual validation mode and target. It remains separate from declared status and is bounded by the environment and assertions that ran.                                                                                                                                                          |
 
 ---
