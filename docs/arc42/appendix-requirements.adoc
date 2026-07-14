@@ -160,8 +160,14 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 |Packaged GUI/E2E evidence absence
 |No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
 
-|Decision / review point
-|No human decision has been made to permit `.refactorkit/workspace.lock`. Before promotion, upstream must remove or relocate the mutation and the hidden-file audit must pass, or the user must explicitly revise the product requirement. This issue is separate from `REQ-REFACTORKIT-TS-001` diagnostics; its option-A `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` decision remains unchanged.
+|Decision status
+|Option A — wait for upstream. No `.refactorkit/workspace.lock` or other metadata write is authorized. The requirement remains declared `@not-implemented` and blocked despite deterministic 18/18 Story evidence. This issue is separate from `REQ-REFACTORKIT-TS-001` diagnostics; its option-A `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` decision remains unchanged.
+
+|Exact resumption condition
+|Resume only when read-only `project.open` and semantic navigation do not write the workspace, or when the provider capability/contract is corrected and that changed contract is separately approved. The hidden-file byte-tree audit and applicable target evidence must then be rerun before any status promotion.
+
+|Roadmap effect
+|The parked TypeScript/JavaScript RefactorKit requirements are bounded blockers and do not block independent IDE roadmap slices.
 |===
 
 === REQ-WEB-001
@@ -206,9 +212,9 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 
 == Reconciliation and Migration Status
 
-The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented`: real immutable `v0.6.2` evidence violates its no-workspace-write clause, aggregate desktop Story support is absent, and no packaged GUI/E2E evidence exists. These results confirm neither the inherited Chapter 1 goals nor complete BDD migration and do not supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented` and blocked under option A: real immutable `v0.6.2` evidence violates its no-workspace-write clause, aggregate desktop Story support is absent, and no packaged GUI/E2E evidence exists. Parking these TypeScript/JavaScript RefactorKit requirements does not block independent IDE roadmap slices. These results confirm neither the inherited Chapter 1 goals nor complete BDD migration and do not supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
 
-Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation, support code, upstream code, or plan text exists.
+Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation, support code, upstream code, or plan text exists. No final bdd-ts migration admission is claimed while that legacy source and the desktop aggregate Story and packaged GUI/E2E gaps remain.
 
 == Reconciliation Checks
 
