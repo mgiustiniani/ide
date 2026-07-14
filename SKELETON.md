@@ -6,7 +6,6 @@ This file maps the package structure and explains what each package contains and
 
 ```
 ide/
-├── PLAN.md                 # Legacy migration input; not the current status source
 ├── README.md               # Project overview & setup
 ├── ADR.md                  # Architecture Decision Records
 ├── ARC42.md                # ARC42 architecture documentation

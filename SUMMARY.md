@@ -239,7 +239,7 @@ pnpm test -- --coverage
 
 ## Agent Workflow
 
-Documentation governance is in **`bdd-ts` migration mode** from Git baseline `53addeb2654ac8e85ac153f5ac10ae99f2816d51`. The `bdd-ts-planner` orchestrates evidence and handoffs; `bdd-ts-architect` owns README and ARC42 integration, requirements reconciliation, risks, glossary, and architecture status; `c4model` owns C4/Structurizr artifacts; and `bdd-ts-adr-writer` owns ADR bodies. `PLAN.md` remains a temporary legacy migration input under the validator exception and is not a current implementation-status source.
+Documentation governance is in **`bdd-ts` migration mode** from Git baseline `53addeb2654ac8e85ac153f5ac10ae99f2816d51`. The `bdd-ts-planner` orchestrates evidence and handoffs; `bdd-ts-architect` owns README and ARC42 integration, requirements reconciliation, risks, glossary, and architecture status; `c4model` owns C4/Structurizr artifacts; and `bdd-ts-adr-writer` owns ADR bodies.
 
 ---
 
@@ -251,7 +251,6 @@ Documentation governance is in **`bdd-ts` migration mode** from Git baseline `53
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | [README.md](README.md)                                                                 | Project overview, setup, usage, architecture links                                                |
 | [SUMMARY.md](SUMMARY.md)                                                               | This file — comprehensive project summary                                                         |
-| [PLAN.md](PLAN.md)                                                                     | Legacy migration input retained temporarily; not the current architecture-status source           |
 | [ADR.md](ADR.md)                                                                       | Architecture Decision Records                                                                     |
 | [ARC42.md](ARC42.md)                                                                   | Central architecture narrative and current implementation-status source                           |
 | [SKELETON.md](SKELETON.md)                                                             | Stale historical package-layout guide                                                             |
@@ -263,7 +262,7 @@ Documentation governance is in **`bdd-ts` migration mode** from Git baseline `53
 | [docs/c4/containers.md](docs/c4/containers.md)                                         | C2 Container diagram                                                                              |
 | [docs/c4/components.md](docs/c4/components.md)                                         | C3 Component diagram                                                                              |
 | [docs/c4/target-xcom2-setup.md](docs/c4/target-xcom2-setup.md)                         | XCOM 2 AS-BUILT concrete SDK transaction and FUTURE/TARGET external interactive/project workflows |
-| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | Specialist XCOM 2 requirements whose dated implementation evidence needs review against ARC42     |
+| [docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md](docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md) | Specialist XCOM 2 requirements separating CURRENT/AS-BUILT SDK work from FUTURE/TARGET workflows  |
 
 ---
 
