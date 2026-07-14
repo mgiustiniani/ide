@@ -8,6 +8,7 @@ import {
   useRefactorKitStatusController,
   type RefactorKitStatusController,
 } from "../../../apps/desktop/src/features/refactorkit-status/useRefactorKitStatusController.js";
+import { BrowserRefactorKitAdapter } from "../../../packages/browser-adapters/src/refactorkit-browser.js";
 import type {
   RefactorKitCapabilities,
   RefactorKitCommandResult,
@@ -54,6 +55,17 @@ const DIAGNOSTICS_CAPABILITY = {
   runtime: QUALIFIED_RUNTIME,
 } as const;
 
+const DEFINITION_CAPABILITY = {
+  ...DIAGNOSTICS_CAPABILITY,
+  operation: "definition",
+  evidence: "language-server",
+} as const;
+
+const WORKSPACE_SYMBOLS_CAPABILITY = {
+  ...DEFINITION_CAPABILITY,
+  operation: "workspaceSymbols",
+} as const;
+
 function advertisedScriptAdapter(languageId: "javascript" | "typescript") {
   const extensions = languageId === "typescript" ? ["ts", "tsx"] : ["js", "jsx"];
   return {
@@ -61,7 +73,11 @@ function advertisedScriptAdapter(languageId: "javascript" | "typescript") {
     extensions,
     backend: "tree-sitter-jni-0.25.3+typescript-lsp-explicit-v1",
     runtime: QUALIFIED_RUNTIME,
-    capabilities: [{ ...DIAGNOSTICS_CAPABILITY, extensions }],
+    capabilities: [
+      { ...DEFINITION_CAPABILITY, extensions },
+      { ...DIAGNOSTICS_CAPABILITY, extensions },
+      { ...WORKSPACE_SYMBOLS_CAPABILITY, extensions },
+    ],
   };
 }
 
@@ -101,6 +117,40 @@ const READY_REFACTORKIT_STATUS = {
   checkedAt: "2026-07-14T00:00:00.000Z",
 } as const;
 
+const AUTHORITY = {
+  workspaceId: "workspace:authorized",
+  workspaceGeneration: 1,
+  sessionId: "typescript-session:1",
+  snapshotHash: "sha256:current-saved-workspace-snapshot",
+} as const;
+
+const APPROVED_TOOLCHAIN = {
+  nodeExecutable: "/opt/refactorkit-toolchains/node/bin/node",
+  languageServerPackageRoot: "/opt/refactorkit-toolchains/typescript-language-server",
+  typeScriptPackageRoot: "/opt/refactorkit-toolchains/typescript",
+  allowPathNodeDiscovery: false,
+  allowWorkspaceLocalToolchain: false,
+} as const;
+
+const PARTICIPATING_BUFFERS = [
+  {
+    path: "src/service.ts",
+    languageId: "typescript",
+    savedContentHash: "sha256:saved-service-source",
+    bufferContentHash: "sha256:saved-service-source",
+    saved: true,
+  },
+  {
+    path: "src/runtime.js",
+    languageId: "javascript",
+    savedContentHash: "sha256:saved-runtime-source",
+    bufferContentHash: "sha256:saved-runtime-source",
+    saved: true,
+  },
+] as const;
+
+const OPAQUE_SYMBOL_ID = `lsp-symbol-v1:${"a".repeat(64)}`;
+
 const LEGACY_DIAGNOSTICS_RESULT = {
   stdout:
     '[{"severity":"ERROR","message":"Type \\"string\\" is not assignable to type \\"number\\".","code":"TS2322","file":"src/broken.ts","line":1}]',
@@ -118,6 +168,41 @@ const LEGACY_DIAGNOSTICS_RESULT = {
     workspaceRoot: "/workspace/authorized",
     timeoutMs: 60_000,
     outputLimitBytes: 512 * 1024,
+  },
+} as const;
+
+const LEGACY_SYMBOLS_RESULT = {
+  ...LEGACY_DIAGNOSTICS_RESULT,
+  stdout: JSON.stringify([
+    {
+      id: OPAQUE_SYMBOL_ID,
+      name: "Service",
+      kind: "CLASS",
+      file: "src/service.ts",
+      line: 3,
+    },
+  ]),
+  locations: [{ path: "src/service.ts", line: 3 }],
+  command: {
+    ...LEGACY_DIAGNOSTICS_RESULT.command,
+    args: ["symbols", "/workspace/authorized"],
+  },
+} as const;
+
+const LEGACY_DEFINITION_RESULT = {
+  ...LEGACY_DIAGNOSTICS_RESULT,
+  stdout: JSON.stringify({
+    id: OPAQUE_SYMBOL_ID,
+    name: "Service",
+    kind: "CLASS",
+    file: "src/service.ts",
+    line: 3,
+    character: 13,
+  }),
+  locations: [{ path: "src/service.ts", line: 3, column: 14 }],
+  command: {
+    ...LEGACY_DIAGNOSTICS_RESULT.command,
+    args: ["definition", OPAQUE_SYMBOL_ID, "/workspace/authorized"],
   },
 } as const;
 
@@ -146,6 +231,36 @@ interface StructuredDiagnosticsResult {
   readonly fallback?: unknown;
 }
 
+interface StructuredSymbol {
+  readonly id?: unknown;
+  readonly name?: unknown;
+  readonly kind?: unknown;
+  readonly path?: unknown;
+  readonly range?: unknown;
+}
+
+interface ProviderRange {
+  readonly start: { readonly line: number; readonly character: number };
+  readonly end: { readonly line: number; readonly character: number };
+}
+
+interface StructuredSymbolNavigationResult {
+  readonly symbols?: unknown;
+  readonly symbolId?: unknown;
+  readonly path?: unknown;
+  readonly range?: unknown;
+  readonly workspaceId?: unknown;
+  readonly workspaceGeneration?: unknown;
+  readonly sessionId?: unknown;
+  readonly snapshotHash?: unknown;
+  readonly providerVersion?: unknown;
+  readonly backend?: unknown;
+  readonly fallback?: unknown;
+  readonly bufferPolicy?: unknown;
+  readonly compatibility?: unknown;
+  readonly effects?: unknown;
+}
+
 /**
  * Deterministic desktop harness for the published RefactorKit 0.6.2 protocol slice.
  * It enters through the desktop adapter composition and the application-owned status
@@ -159,6 +274,12 @@ export class RefactorKit062ProtocolFixture {
   readonly #statusController: RefactorKitStatusControllerHarness;
   #capabilities?: RefactorKitCapabilities;
   #diagnostics?: RefactorKitCommandResult;
+  #symbolSearch?: RefactorKitCommandResult;
+  #definition?: RefactorKitCommandResult;
+  #buffersMatchSavedFiles = false;
+  #toolchainApproved = false;
+  #searchRequested = false;
+  #selectionRequested = false;
   #disposed = false;
 
   constructor() {
@@ -185,6 +306,12 @@ export class RefactorKit062ProtocolFixture {
         }
         if (command === "run_refactorkit_diagnostics") {
           return structuredClone(LEGACY_DIAGNOSTICS_RESULT);
+        }
+        if (command === "run_refactorkit_symbols") {
+          return structuredClone(LEGACY_SYMBOLS_RESULT);
+        }
+        if (command === "run_refactorkit_definition") {
+          return structuredClone(LEGACY_DEFINITION_RESULT);
         }
         throw new Error(
           `The RefactorKit 0.6.2 fixture does not implement Tauri command ${command}`,
@@ -217,6 +344,191 @@ export class RefactorKit062ProtocolFixture {
     this.#diagnostics = await this.#adapter.diagnostics();
   }
 
+  confirmParticipatingBuffersMatchSavedFiles(): void {
+    assert.ok(PARTICIPATING_BUFFERS.every(({ saved }) => saved));
+    assert.ok(
+      PARTICIPATING_BUFFERS.every(
+        ({ bufferContentHash, savedContentHash }) => bufferContentHash === savedContentHash,
+      ),
+    );
+    this.#buffersMatchSavedFiles = true;
+  }
+
+  async discoverSymbolNavigationCapabilities(): Promise<void> {
+    await this.discoverCapabilities();
+    const capabilities = this.#requireCapabilities();
+    assert.equal(capabilities.providerVersion, "0.6.2");
+    assert.equal(capabilities.languageKernel?.available, true);
+    if (!capabilities.languageKernel?.available) return;
+
+    for (const adapter of capabilities.languageKernel.schema.adapters) {
+      for (const operation of ["workspaceSymbols", "definition"] as const) {
+        const observed = adapter.capabilities.find(
+          (capability) => capability.operation === operation,
+        );
+        const advertised = REFACTORKIT_062_ADVERTISEMENT.languageKernel.schema.adapters
+          .find(({ languageId }) => languageId === adapter.languageId)
+          ?.capabilities.find((capability) => capability.operation === operation);
+        assert.deepEqual(
+          observed,
+          advertised,
+          `The IDE did not retain the experimental language-server ${operation} capability for ${adapter.languageId}`,
+        );
+      }
+    }
+  }
+
+  approveExplicitExternalToolchain(): void {
+    for (const path of [
+      APPROVED_TOOLCHAIN.nodeExecutable,
+      APPROVED_TOOLCHAIN.languageServerPackageRoot,
+      APPROVED_TOOLCHAIN.typeScriptPackageRoot,
+    ]) {
+      assert.ok(path.startsWith("/opt/refactorkit-toolchains/"));
+      assert.equal(path.startsWith("/workspace/authorized/"), false);
+    }
+    this.#toolchainApproved = true;
+  }
+
+  async searchWorkspaceSymbol(): Promise<void> {
+    assert.equal(this.#buffersMatchSavedFiles, true);
+    assert.equal(this.#toolchainApproved, true);
+    this.#requireSemanticCapability("workspaceSymbols");
+    this.#searchRequested = true;
+    this.#symbolSearch = await this.#adapter.symbols();
+  }
+
+  selectSemanticSearchResult(): void {
+    assert.equal(this.#searchRequested, true);
+    assert.ok(this.#symbolSearch, "The workspace-symbol request returned no result");
+    this.#selectionRequested = true;
+  }
+
+  async assertSemanticDefinitionOpenedAtProviderPoint(): Promise<void> {
+    assert.equal(this.#selectionRequested, true);
+    const invocation = this.#symbolsInvocation();
+    assert.deepEqual(
+      invocation.args,
+      {
+        request: {
+          languageId: "typescript",
+          query: "Service",
+          ...AUTHORITY,
+          providerVersion: "0.6.2",
+          backend: "typescript-lsp-explicit-v1",
+          toolchain: APPROVED_TOOLCHAIN,
+        },
+      },
+      "The IDE still used legacy RefactorKitPort.symbols() without a typed, capability-gated saved-snapshot request binding the query, workspace generation, semantic session, provider, backend, and explicitly approved external toolchain",
+    );
+
+    const symbol = this.#selectedStructuredSymbol();
+    assert.equal(typeof symbol.id, "string");
+    this.#definition = await this.#adapter.definition(symbol.id as string);
+    const definition = this.#definition as StructuredSymbolNavigationResult;
+    assert.equal(definition.path, "src/service.ts");
+    const range = this.#providerRange(definition.range);
+    assert.deepEqual(range.start, { line: 2, character: 13 });
+  }
+
+  assertSymbolNavigationAuthorityCorrelated(): void {
+    const search = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    const definition = this.#definition as StructuredSymbolNavigationResult | undefined;
+    for (const field of [
+      "workspaceId",
+      "workspaceGeneration",
+      "sessionId",
+      "snapshotHash",
+    ] as const) {
+      assert.equal(search?.[field], AUTHORITY[field]);
+      assert.equal(definition?.[field], AUTHORITY[field]);
+    }
+  }
+
+  assertOpaqueSymbolIdentityIsTransient(): void {
+    const symbol = this.#selectedStructuredSymbol();
+    assert.match(String(symbol.id), /^lsp-symbol-v1:[a-f0-9]{64}$/);
+    const invocation = this.#definitionInvocation();
+    assert.deepEqual(invocation.args, {
+      request: {
+        languageId: "typescript",
+        symbolId: symbol.id,
+        ...AUTHORITY,
+        providerVersion: "0.6.2",
+        backend: "typescript-lsp-explicit-v1",
+      },
+    });
+    assert.equal(this.#dom.window.localStorage.length, 0);
+    assert.equal(this.#dom.window.document.body.textContent?.includes(String(symbol.id)), false);
+  }
+
+  assertUnsafeBuffersRefused(): void {
+    const result = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    assert.deepEqual(result?.bufferPolicy, {
+      requiresSavedBuffers: true,
+      dirty: "refused",
+      neverSaved: "refused",
+    });
+  }
+
+  assertSearchCompatibilityDisclosure(): void {
+    const result = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    assert.deepEqual(result?.compatibility, {
+      stability: "experimental",
+      warning: "Results may be incomplete for dynamic or mixed JavaScript.",
+    });
+  }
+
+  assertOnlyApprovedExternalToolchainEligible(): void {
+    const request = this.#symbolsInvocation().args?.request as
+      { readonly toolchain?: unknown } | undefined;
+    assert.deepEqual(request?.toolchain, APPROVED_TOOLCHAIN);
+  }
+
+  assertNoStructuralIdentifierFallback(): void {
+    this.#requireSemanticCapability("workspaceSymbols");
+    this.#requireSemanticCapability("definition");
+    const search = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    const definition = this.#definition as StructuredSymbolNavigationResult | undefined;
+    assert.equal(search?.fallback, undefined);
+    assert.equal(definition?.fallback, undefined);
+  }
+
+  assertReadOnlySymbolNavigation(): void {
+    const search = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    const definition = this.#definition as StructuredSymbolNavigationResult | undefined;
+    const expected = { projectScriptsExecuted: false, workspaceWrites: [] };
+    assert.deepEqual(search?.effects, expected);
+    assert.deepEqual(definition?.effects, expected);
+  }
+
+  assertNoScriptSpecificPanel(): void {
+    const panelCommands = this.#invocations.filter(({ command }) =>
+      /(typescript|javascript).*(panel|surface)|(panel|surface).*(typescript|javascript)/i.test(
+        command,
+      ),
+    );
+    assert.deepEqual(panelCommands, []);
+  }
+
+  assertNoProjectActionInGlobalSettings(): void {
+    const settingsCommands = this.#invocations.filter(({ command }) =>
+      /settings.*(typescript|javascript|refactorkit)/i.test(command),
+    );
+    assert.deepEqual(settingsCommands, []);
+  }
+
+  async assertUnsimmulatedBrowserUnavailable(): Promise<void> {
+    const browser = new BrowserRefactorKitAdapter();
+    const capabilities = await browser.getCapabilities();
+    assert.deepEqual(capabilities.languageKernel, {
+      available: false,
+      schema: null,
+      reason: "Local RefactorKit daemon access is desktop-only and unavailable in browser clients.",
+    });
+    await assert.rejects(browser.symbols(), { code: "BROWSER_REFACTORKIT_UNAVAILABLE" });
+  }
+
   assertOperationMetadataPreserved(): void {
     const capabilities = this.#requireCapabilities();
     assert.equal(capabilities.providerVersion, "0.6.2");
@@ -239,7 +551,7 @@ export class RefactorKit062ProtocolFixture {
         );
       assert.deepEqual(
         observedDiagnostics,
-        advertisedAdapter.capabilities[0],
+        advertisedAdapter.capabilities.find(({ operation }) => operation === "diagnostics"),
         `The IDE dropped RefactorKit 0.6.2 per-operation capability metadata for ${advertisedAdapter.languageId} diagnostics`,
       );
     }
@@ -337,6 +649,56 @@ export class RefactorKit062ProtocolFixture {
     );
     assert.ok(invocation, "The IDE did not invoke its RefactorKit diagnostics boundary");
     return invocation;
+  }
+
+  #symbolsInvocation(): FixtureInvocation {
+    const invocation = this.#invocations.find(
+      ({ command }) => command === "run_refactorkit_symbols",
+    );
+    assert.ok(invocation, "The IDE did not invoke its RefactorKit workspace-symbol boundary");
+    return invocation;
+  }
+
+  #definitionInvocation(): FixtureInvocation {
+    const invocation = this.#invocations.find(
+      ({ command }) => command === "run_refactorkit_definition",
+    );
+    assert.ok(invocation, "The IDE did not invoke its RefactorKit semantic-definition boundary");
+    return invocation;
+  }
+
+  #requireSemanticCapability(operation: "definition" | "workspaceSymbols"): void {
+    const capabilities = this.#requireCapabilities();
+    assert.equal(capabilities.languageKernel?.available, true);
+    if (!capabilities.languageKernel?.available) return;
+    const capability = capabilities.languageKernel.schema.adapters
+      .find(({ languageId }) => languageId === "typescript")
+      ?.capabilities.find((candidate) => candidate.operation === operation);
+    assert.deepEqual(capability, {
+      ...(operation === "definition" ? DEFINITION_CAPABILITY : WORKSPACE_SYMBOLS_CAPABILITY),
+      extensions: ["ts", "tsx"],
+    });
+  }
+
+  #selectedStructuredSymbol(): StructuredSymbol {
+    const result = this.#symbolSearch as StructuredSymbolNavigationResult | undefined;
+    assert.ok(
+      Array.isArray(result?.symbols),
+      "The RefactorKit workspace-symbol result must be structured; legacy stdout is not a semantic result",
+    );
+    const symbol = result.symbols[0] as StructuredSymbol | undefined;
+    assert.ok(symbol, "No structured semantic workspace-symbol result was returned");
+    return symbol;
+  }
+
+  #providerRange(value: unknown): ProviderRange {
+    assert.ok(value && typeof value === "object", "The semantic definition has no provider range");
+    const range = value as ProviderRange;
+    for (const point of [range.start, range.end]) {
+      assert.ok(point && Number.isSafeInteger(point.line) && point.line >= 0);
+      assert.ok(Number.isSafeInteger(point.character) && point.character >= 0);
+    }
+    return range;
   }
 
   #restoreProperty(name: string, descriptor: PropertyDescriptor | undefined): void {
