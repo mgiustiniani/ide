@@ -5,26 +5,28 @@
 // transitions on collapse/expand and stable flex sizing for embedded editors.
 // ---------------------------------------------------------------------------
 
-import type { ReactNode } from 'react';
-import type { PanelLayout as PanelLayoutType } from '@ide/contracts';
+import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import type { PanelLayout as PanelLayoutType } from "@ide/contracts";
+
+export type PanelLayoutActivity = "explorer" | "search";
+type ActivityRailTabId = PanelLayoutActivity | "docs" | "settings";
 
 interface ActivityRailTab {
-  id: string;
+  id: ActivityRailTabId;
   label: string;
   isActive: boolean;
   disabled?: boolean;
 }
 
-const ACTIVITY_RAIL_TABS: ActivityRailTab[] = [
-  { id: 'explorer', label: 'Explorer', isActive: true },
-  { id: 'search', label: 'Search', isActive: false, disabled: true },
-  { id: 'docs', label: 'Docs', isActive: false, disabled: true },
-  { id: 'settings', label: 'Settings', isActive: false, disabled: true },
-];
-
 export interface PanelLayoutProps {
-  /** Left sidebar content (file tree). */
+  /** Left sidebar content used by the default Explorer activity. */
   leftSidebar: ReactNode;
+  /** Optional host-composed content for the generic Search activity. */
+  searchActivityContent?: ReactNode;
+  /** Host-controlled selected activity. Defaults to Explorer. */
+  activeActivity?: PanelLayoutActivity;
+  /** Enables activity selection when supplied with searchActivityContent. */
+  onActivityChange?: (activity: PanelLayoutActivity) => void;
   /** Main content area (editor). */
   mainContent: ReactNode;
   /** Bottom panel content (terminal). */
@@ -56,6 +58,9 @@ export interface PanelLayoutProps {
 
 export function PanelLayout({
   leftSidebar,
+  searchActivityContent,
+  activeActivity = "explorer",
+  onActivityChange,
   mainContent,
   bottomContent,
   layout,
@@ -66,10 +71,60 @@ export function PanelLayout({
   rightSidebarContent,
   rightSidebarWidth = 420,
   rightSidebarMinWidth = 320,
-  rightSidebarAriaLabel = 'Secondary side panel',
+  rightSidebarAriaLabel = "Secondary side panel",
   showBottomPanel = true,
 }: PanelLayoutProps): JSX.Element {
+  const activityIdPrefix = useId();
+  const activityTabRefs = useRef<Record<PanelLayoutActivity, HTMLButtonElement | null>>({
+    explorer: null,
+    search: null,
+  });
   const { visibility, sizes, minSizes } = layout;
+
+  const searchEnabled = searchActivityContent !== undefined && Boolean(onActivityChange);
+  const selectedActivity: PanelLayoutActivity =
+    activeActivity === "search" && searchEnabled ? "search" : "explorer";
+  const selectedActivityContent =
+    selectedActivity === "search" ? searchActivityContent : leftSidebar;
+  const activityPanelId = `${activityIdPrefix}-activity-panel`;
+  const activityTabs: ActivityRailTab[] = [
+    { id: "explorer", label: "Explorer", isActive: selectedActivity === "explorer" },
+    {
+      id: "search",
+      label: "Search",
+      isActive: selectedActivity === "search",
+      disabled: !searchEnabled,
+    },
+    { id: "docs", label: "Docs", isActive: false, disabled: true },
+    { id: "settings", label: "Settings", isActive: false, disabled: true },
+  ];
+
+  const handleActivityKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    activity: PanelLayoutActivity,
+  ): void => {
+    if (!searchEnabled) return;
+
+    const activities: PanelLayoutActivity[] = ["explorer", "search"];
+    const currentIndex = activities.indexOf(activity);
+    let nextActivity: PanelLayoutActivity | undefined;
+
+    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      nextActivity = activities[(currentIndex - 1 + activities.length) % activities.length];
+    } else if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      nextActivity = activities[(currentIndex + 1) % activities.length];
+    } else if (event.key === "Home") {
+      nextActivity = activities[0];
+    } else if (event.key === "End") {
+      nextActivity = activities[activities.length - 1];
+    }
+
+    if (nextActivity) {
+      event.preventDefault();
+      activityTabRefs.current[nextActivity]?.focus();
+      onActivityChange?.(nextActivity);
+    }
+  };
 
   const sidebarVisible = visibility.leftSidebar.visible;
   const bottomMounted = visibility.bottomPanel.visible;
@@ -82,30 +137,56 @@ export function PanelLayout({
     <div className="ide-shell h-full w-full min-h-0 min-w-0 overflow-hidden flex flex-col">
       {/* Main content area: activity rail + sidebar + editor */}
       <div className="ide-workspace flex-1 min-h-0 min-w-0 flex overflow-hidden">
-        {/* Kate/KDE-style side tabs. Placeholder tabs are disabled until wired. */}
+        {/* Kate/KDE-style side tabs. Docs and Settings remain placeholders. */}
         <nav className="activity-rail" aria-label="Primary activity">
           <div className="activity-rail-tabs" role="tablist" aria-orientation="vertical">
-            {ACTIVITY_RAIL_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`activity-rail-tab ${tab.isActive ? 'activity-rail-tab--active' : ''}`}
-                role="tab"
-                aria-selected={tab.isActive}
-                aria-disabled={tab.disabled ? true : undefined}
-                aria-label={tab.label}
-                disabled={tab.disabled}
-                title={tab.disabled ? `${tab.label} (coming soon)` : tab.label}
-              >
-                <span className="activity-rail-label" aria-hidden="true" data-label={tab.label} />
-              </button>
-            ))}
+            {activityTabs.map((tab) => {
+              const selectableActivity =
+                tab.id === "explorer" || tab.id === "search" ? tab.id : undefined;
+
+              return (
+                <button
+                  key={tab.id}
+                  id={`${activityIdPrefix}-${tab.id}-tab`}
+                  ref={
+                    selectableActivity
+                      ? (element) => {
+                          activityTabRefs.current[selectableActivity] = element;
+                        }
+                      : undefined
+                  }
+                  type="button"
+                  className={`activity-rail-tab ${tab.isActive ? "activity-rail-tab--active" : ""}`}
+                  role="tab"
+                  tabIndex={tab.isActive ? 0 : -1}
+                  aria-selected={tab.isActive}
+                  aria-controls={tab.disabled ? undefined : activityPanelId}
+                  aria-disabled={tab.disabled ? true : undefined}
+                  aria-label={tab.label}
+                  disabled={tab.disabled}
+                  title={tab.disabled ? `${tab.label} (coming soon)` : tab.label}
+                  onClick={
+                    selectableActivity ? () => onActivityChange?.(selectableActivity) : undefined
+                  }
+                  onKeyDown={
+                    selectableActivity
+                      ? (event) => handleActivityKeyDown(event, selectableActivity)
+                      : undefined
+                  }
+                >
+                  <span className="activity-rail-label" aria-hidden="true" data-label={tab.label} />
+                </button>
+              );
+            })}
           </div>
         </nav>
 
         {/* Left sidebar with smooth width transition */}
         <div
+          id={activityPanelId}
           className="ide-sidebar relative min-h-0 overflow-hidden bg-[var(--surface-sidebar)] panel-transition-width glass-panel panel-shadow"
+          role="tabpanel"
+          aria-labelledby={`${activityIdPrefix}-${selectedActivity}-tab`}
           style={{
             width: sidebarWidth,
             minWidth: sidebarWidth > 0 ? minSizes.leftSidebarWidth : 0,
@@ -114,7 +195,7 @@ export function PanelLayout({
           }}
         >
           <div className="h-full min-h-0 w-full min-w-0 panel-transition-opacity">
-            {sidebarVisible ? leftSidebar : null}
+            {sidebarVisible ? selectedActivityContent : null}
           </div>
         </div>
 
@@ -129,15 +210,21 @@ export function PanelLayout({
             aria-valuemin={minSizes.leftSidebarWidth}
             aria-valuenow={sizes.leftSidebarWidth}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                 e.preventDefault();
-                const delta = e.key === 'ArrowLeft' ? -10 : 10;
+                const delta = e.key === "ArrowLeft" ? -10 : 10;
                 onResizeLeft(Math.max(minSizes.leftSidebarWidth, sizes.leftSidebarWidth + delta));
               }
             }}
             onMouseDown={(e) => {
               e.preventDefault();
-              startResize('horizontal', e.clientX, sizes.leftSidebarWidth, minSizes.leftSidebarWidth, onResizeLeft);
+              startResize(
+                "horizontal",
+                e.clientX,
+                sizes.leftSidebarWidth,
+                minSizes.leftSidebarWidth,
+                onResizeLeft,
+              );
             }}
           />
         )}
@@ -157,7 +244,7 @@ export function PanelLayout({
             style={{
               width: rightSidebarWidth,
               minWidth: rightSidebarMinWidth,
-              maxWidth: '100%',
+              maxWidth: "100%",
               flexShrink: 1,
             }}
           >
@@ -177,15 +264,21 @@ export function PanelLayout({
           aria-valuemin={minSizes.bottomPanelHeight}
           aria-valuenow={sizes.bottomPanelHeight}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
               e.preventDefault();
-              const delta = e.key === 'ArrowUp' ? 10 : -10;
+              const delta = e.key === "ArrowUp" ? 10 : -10;
               onResizeBottom(Math.max(minSizes.bottomPanelHeight, sizes.bottomPanelHeight + delta));
             }
           }}
           onMouseDown={(e) => {
             e.preventDefault();
-            startResize('vertical', e.clientY, sizes.bottomPanelHeight, minSizes.bottomPanelHeight, onResizeBottom);
+            startResize(
+              "vertical",
+              e.clientY,
+              sizes.bottomPanelHeight,
+              minSizes.bottomPanelHeight,
+              onResizeBottom,
+            );
           }}
         />
       )}
@@ -199,7 +292,7 @@ export function PanelLayout({
           height: bottomHeight,
           minHeight: bottomHeight > 0 ? minSizes.bottomPanelHeight : 0,
           flexShrink: 0,
-          boxSizing: 'border-box',
+          boxSizing: "border-box",
           borderWidth: bottomExpanded ? undefined : 0,
         }}
       >
@@ -210,12 +303,8 @@ export function PanelLayout({
 
       {/* Status bar */}
       <div className="statusbar statusbar-gradient">
-        <div className="statusbar-left">
-          {statusBarLeft}
-        </div>
-        <div className="statusbar-right">
-          {statusBarRight}
-        </div>
+        <div className="statusbar-left">{statusBarLeft}</div>
+        <div className="statusbar-right">{statusBarRight}</div>
       </div>
     </div>
   );
@@ -226,7 +315,7 @@ export function PanelLayout({
  * --------------------------------------------------------------------------- */
 
 function startResize(
-  direction: 'horizontal' | 'vertical',
+  direction: "horizontal" | "vertical",
   startPos: number,
   startSize: number,
   minSize: number,
@@ -236,22 +325,20 @@ function startResize(
   const initialSize = startSize;
 
   const handleMouseMove = (e: MouseEvent) => {
-    const delta = direction === 'horizontal'
-      ? e.clientX - initialPos
-      : initialPos - e.clientY;
+    const delta = direction === "horizontal" ? e.clientX - initialPos : initialPos - e.clientY;
     const newSize = Math.max(minSize, initialSize + delta);
     onResize(newSize);
   };
 
   const handleMouseUp = () => {
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
   };
 
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
-  document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
-  document.body.style.userSelect = 'none';
+  document.addEventListener("mousemove", handleMouseMove);
+  document.addEventListener("mouseup", handleMouseUp);
+  document.body.style.cursor = direction === "horizontal" ? "col-resize" : "row-resize";
+  document.body.style.userSelect = "none";
 }

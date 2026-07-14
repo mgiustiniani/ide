@@ -20,6 +20,7 @@ export * from "./components/RefactorKitLanguageLab";
 export * from "./components/ProblemsPanel";
 export * from "./components/Xcom2SetupPanel";
 export * from "./components/WorkspaceExplorer";
+export * from "./components/SemanticSymbolSearchPanel";
 export type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
 
 // WelcomePage – re-export explicitly
@@ -35,6 +36,7 @@ export {
   StatusBar as PanelStatusBar,
 } from "./components/PanelLayout";
 export type {
+  PanelLayoutActivity,
   PanelLayoutProps,
   LeftSidebarProps,
   BottomPanelBadgeMetadata,
