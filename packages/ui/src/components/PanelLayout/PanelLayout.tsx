@@ -132,6 +132,8 @@ export function PanelLayout({
   const sidebarWidth = sidebarVisible ? sizes.leftSidebarWidth : 0;
   const bottomHeight = bottomExpanded ? sizes.bottomPanelHeight : 0;
   const rightSidebarVisible = Boolean(rightSidebarContent);
+  const rightSidebarResponsiveMinWidth = `min(${rightSidebarMinWidth}px, 50%)`;
+  const rightSidebarResponsiveMaxWidth = `min(${rightSidebarWidth}px, 50%)`;
 
   return (
     <div className="ide-shell h-full w-full min-h-0 min-w-0 overflow-hidden flex flex-col">
@@ -246,8 +248,8 @@ export function PanelLayout({
                 aria-label={rightSidebarAriaLabel}
                 style={{
                   width: rightSidebarWidth,
-                  minWidth: rightSidebarMinWidth,
-                  maxWidth: "100%",
+                  minWidth: rightSidebarResponsiveMinWidth,
+                  maxWidth: rightSidebarResponsiveMaxWidth,
                   flexShrink: 1,
                 }}
               >
