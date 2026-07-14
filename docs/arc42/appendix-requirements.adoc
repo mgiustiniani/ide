@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every currently configured `features/**/*.feature` file. The feature source declares `REQ-WEB-001` as `@implemented-and-validated`; the dated browser result below is separate observed evidence and does not derive from that declaration.
+Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and `REQ-REFACTORKIT-TS-001` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change either declaration.
 ====
 
 == Governance
@@ -10,16 +10,23 @@ Status: *implementation-informed; Chapter 1 goals remain needs-review*. This app
 The `.feature` files are the authoritative declarations for stable requirement IDs, classification, tags, scenarios, and declared status. This appendix records those declarations alongside independently observed validation:
 
 * one scenario must own one repository-unique `@REQ-*` ID, at least one requirement classification, and exactly one effective status;
-* declared status and observed validation are separate fields: discovery, parsing, execution, or implementation inspection never silently changes a feature tag;
+* declared status and observed validation are separate fields: discovery, parsing, execution, supporting implementation, or inspection never silently changes a feature tag;
+* supporting Spec, contract, adapter, metadata, or UI tests do not establish full Story GREEN;
 * actor/stakeholder and capability wording is derived from the feature narrative and scenario, without inventing a more specialized role;
-* browser evidence applies only to the selected web target; it cannot establish desktop behavior; and
-* `ARC42.md` remains the integrated mutable architecture-status narrative. Gherkin, this appendix, test output, ADRs, C4 views, and legacy `PLAN.md` remain bounded evidence sources.
+* browser, fixture, desktop/Tauri, native GUI, and packaged-daemon evidence remain separate target/mode fields; and
+* `ARC42.md` remains the integrated mutable architecture-status narrative. Gherkin, this appendix, test output, ADRs, C4 views, upstream release artifacts, and legacy `PLAN.md` remain bounded evidence sources.
 
 == Feature Inventory
 
-[cols="3,3,1,1,2",options="header"]
+[cols="3,3,1,2,2",options="header"]
 |===
 |Feature path |Feature capability |Scenarios |Requirement IDs |Declared status
+
+|link:../../features/refactorkit/typescript-compiler-diagnostics.feature[`features/refactorkit/typescript-compiler-diagnostics.feature`]
+|Trustworthy RefactorKit TypeScript/JavaScript compiler diagnostics in existing desktop problem surfaces
+|1
+|`REQ-REFACTORKIT-TS-001`
+|`@not-implemented`
 
 |link:../../features/workspace/startup-tooling.feature[`features/workspace/startup-tooling.feature`]
 |Startup tooling appropriate to each workspace
@@ -28,9 +35,67 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-No other `.feature` file was present in the configured feature roots at reconciliation time.
+NOTE: The configured inventory contains two feature files, two scenarios, and two repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
 
 == Requirement Catalogue
+
+=== REQ-REFACTORKIT-TS-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-REFACTORKIT-TS-001]]`REQ-REFACTORKIT-TS-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`)
+
+|Actor / stakeholder
+|A TypeScript developer using an authorized desktop workspace. The Business Need also names TypeScript and JavaScript compiler errors as the bounded language scope.
+
+|Capability
+|Request exact, non-writing compiler diagnostics for the current authorized source snapshot; reject stale workspace/session/snapshot results; present readiness honestly; reuse Problems and Monaco diagnostics without fallback output or a TypeScript-specific panel.
+
+|Scenario
+|_View trustworthy compiler diagnostics in the existing IDE problem surfaces_
+
+|Feature path
+|link:../../features/refactorkit/typescript-compiler-diagnostics.feature[`features/refactorkit/typescript-compiler-diagnostics.feature`], scenario beginning at line 6
+
+|Tags
+|`@desktop`, `@REQ-REFACTORKIT-TS-001`, `@functional-requirement`, `@non-functional-requirement`, `@not-implemented`
+
+|Declared status
+|`@not-implemented` — copied from the feature source. Passing support tests and expected RED Story evidence do not promote it.
+
+|Intended validation target
+|Desktop/Tauri Story BDD through the explicit `desktop` profile. The target is the existing desktop composition, qualified native RefactorKit request boundary, existing Problems experience, and Monaco diagnostics; it is not a browser-only or TypeScript-specific panel target.
+
+|Completed supporting metadata evidence
+|On 2026-07-14, 113/113 focused contract, Tauri-adapter, and UI tests passed. They prove strict schema-v1 operation metadata preservation/rejection, all seven required fields (`operation`, `stability`, `evidence`, `mutationAuthority`, `backend`, `runtime`, `extensions`), nested cloning/immutability, and runtime-before-extensions presentation. Rust canonicalizes adapters, operations, and extensions after validation, so the Language Lab receives deterministic canonical order rather than provider-supplied order. It labels discovery metadata separately from workspace/toolchain/session readiness.
+
+|Completed supporting Spec evidence
+|The readiness Spec passed 27/27 cases. The pure policy can authorize one immutable request bound to TypeScript, authorized workspace/generation, semantic session, snapshot hash, provider version, and exact operation backend; it refuses stale, ambiguous, incomplete, mismatched, unsupported, or unqualified evidence before invocation. This is policy evidence only: the Spec starts no daemon, receives no real diagnostic result, and renders no Problems or Monaco marker.
+
+|Expected meaningful RED evidence
+|On 2026-07-14, `pnpm test:story:desktop` selected this scenario and produced the required meaningful RED: 1 failed scenario, 5 passed steps, and 6 skipped steps. The fixture entered through desktop adapter composition and the RefactorKit Status controller, preserved the exact advertisement, and then reached `run_refactorkit_diagnostics`. The current adapter invoked it with no qualified request (`{}`) instead of the required language/workspace/generation/session/snapshot/provider/backend fields. The failure is at the intended missing integration boundary rather than at feature discovery or stale metadata shape.
+
+|Native GUI / full Story evidence absence
+|No native Tauri WebView or packaged-daemon GUI run has completed this scenario. No run has shown exact RefactorKit TypeScript diagnostics for the current editor snapshot in both Problems and Monaco. The expected RED is not full Story GREEN, and the supporting jsdom/Tauri-invoke fixture is not native GUI evidence.
+
+|Upstream immutable `v0.6.2` evidence
+|An isolated packaged daemon whose 424 source blobs matched immutable tag commit `110b605` with zero mismatches passed Java preview/no-write, discard, exact apply, and byte-for-byte rollback smoke under OpenJDK 21. This validates that isolated package/import path only. The globally installed runtime, launcher, and checksum still report `0.5.0-SNAPSHOT`; no global `v0.6.2` promotion is claimed.
+
+|Operation stability / unsupported scope
+|RefactorKit `v0.6.2` TypeScript/JavaScript operations are not universally stable. Structural outline and identifier search are stable; semantic definition, references, workspace symbols, and diagnostics are experimental; semantic rename is experimental proposal-only. Format, move, organize imports, change signature, extract, and inline remain unsupported for TypeScript/JavaScript.
+
+|Open upstream compatibility blockers
+|The daemon diagnostics response drops start character and end range; lacks workspace/generation/session/snapshot correlation and exact compiler attestation; cannot receive the unsaved editor snapshot; advertises the TypeScript LSP backend/runtime rather than the separate exact compiler-diagnostics backend; advertises 10-second/64 MiB LSP limits while the compiler bridge uses 30 seconds/8 MiB; and can encode tool failure as ordinary diagnostics. These prevent exact current-buffer marker authorization.
+
+|Decision status
+|`HUMAN_DECISION_REQUIRED`: waiting for an upstream RefactorKit fix is recommended. A narrowed Problems-only fallback for explicitly saved disk snapshots is possible only by explicit product/architecture decision with visible scope and typed failure handling. Exact Monaco markers are not authorized.
+|===
 
 === REQ-WEB-001
 
@@ -69,15 +134,15 @@ No other `.feature` file was present in the configured feature roots at reconcil
 |On 2026-07-14, `pnpm test:story:implemented:web` passed 1 scenario and 7/7 steps. The Playwright path launched real headless Chromium, navigated to the loopback web application, observed only the Terminal tool-window tab, observed the integrated terminal and active session, and observed no Java- or XCOM-named tool-window tab. This is Chromium evidence for this web scenario only; it is not proof for every browser, operating system, or IDE capability.
 
 |Desktop evidence / absence
-|No current feature scenario is tagged `@desktop`. The implemented-profile inventory selected 0 desktop/Tauri scenarios on 2026-07-14, and desktop/Tauri Story execution is still unsupported. Therefore this slice provides no desktop execution evidence and makes no desktop parity or desktop absence claim beyond the web UI observations above.
+|This scenario is not tagged `@desktop`; its browser result supplies no desktop parity evidence. The separately tagged RefactorKit desktop scenario has its own expected RED evidence and must not be merged into this result.
 |===
 
 == Reconciliation and Migration Status
 
-The first characterization slice is independently passing for its explicit web/Playwright validation mode. It establishes executable evidence for one bounded startup-tooling behavior; it does not confirm the inherited Chapter 1 goals, complete BDD migration, validate a desktop runner, or supersede the broader existing frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit desktop requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. Neither result confirms the inherited Chapter 1 goals, completes BDD migration, or supersedes broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
 
-Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation or plan text exists.
+Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation, support code, upstream code, or plan text exists.
 
 == Reconciliation Checks
 
-The 2026-07-14 reconciliation checked the configured feature inventory, stable ID, classification, effective status, feature-path trace, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs:migration` is the governing documentation check while `PLAN.md` remains and must pass with only the expected legacy-plan warning.
+The 2026-07-14 reconciliation checked every configured feature path, scenario, stable ID, classification, effective declared status, target-specific observed evidence, relative link target, and AsciiDoc table delimiter. `pnpm validate:bdd:docs:migration` is the governing documentation check while `PLAN.md` remains and must pass with only the expected legacy-plan warning.
