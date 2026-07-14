@@ -131,11 +131,15 @@ Enforce **package isolation boundaries** through tooling and conventions:
 
 ## ADR 0005 — Hybrid Java Intelligence with JDT LS and RefactorKit
 
+**Status:** Accepted as-built decision; active-roadmap scope amended by the user on 2026-07-14.
+
 ### Context
 
 The desktop has managed JDT LS and fixed RefactorKit foundations with different scopes. JDK/JDT LS lifecycle/status and RefactorKit availability/version/path are global tooling concerns; scan/query/navigation and contextual project workflows require future Java module activation. The interactive edit loop now includes versioned document synchronization, completion, hover, signature help, and cancellation. RefactorKit remains the deterministic Java and controlled-transformation provider rather than being forced to own low-latency editor semantics. The browser target remains independent of Tauri and does not simulate local semantic support.
 
 The desktop also has **Paste Java Class from Clipboard** for a selected directory. This introduces a sensitive clipboard boundary and a potentially multi-file write. Installed RefactorKit `0.5.0-SNAPSHOT` (API `0.2`) now supplies `bin/refactorkit-daemon` and the required directory-authoritative transaction, but old or incomplete installations still exist. Treating version alone or target-package support as sufficient, deriving a package in the IDE, applying provider output through direct IDE writes, or keeping source-bearing plans after invalidation would violate provider authority, privacy, and exact-preview approval.
+
+On 2026-07-14, the user narrowed the active roadmap without withdrawing this as-built architecture. The policy preserves the implemented Java lifecycle, synchronized-document flow, existing diagnostics/Problems behavior, completion, hover, signature help, cancellation, and stale-result guards. It removes further IntelliSense and JDT LS expansion from active milestones until relevant RefactorKit capability is released and validated. This amendment changes scheduling and capability-claim rules; it does not erase the rationale for the existing hybrid boundary or deprecate its validated behavior.
 
 ### Decision
 
@@ -156,7 +160,18 @@ The native RefactorKit foundation includes fixed status, scan, diagnostics, symb
 
 The implemented JDT LS portion now includes provider-neutral lifecycle, document-sync, completion, hover, signature-help, and cancellation contracts; full-JDK and valid external JDT LS discovery; fixed no-shell per-workspace launch with isolated data; LSP initialization and bounded transport; typed Tauri adapters; versioned open/change/save/close; and guarded Monaco providers. Providers activate only for the exact synchronized Java model. Workspace/session/path/URI/version/request/cancel guards, optimistic versions, serialized full-text `didChange` flush-before-request, cancellation, and stale/late suppression protect the flow. Completion maps only the primary edit and suppresses additional/workspace edits and commands. Markdown is untrusted with HTML disabled; managed configuration sets `java.signatureHelp.enabled=true`. The selected JDT LS release remains external, checksum-pinned, non-bundled EPL-2.0 software; the full JDK is separately installed/licensed.
 
-A real JDT LS smoke passed repeated completion containing `repeat`, helper hover, signature help containing `substring(int beginIndex)`, cancellation, `didClose`, and managed stop. Diagnostics composition, definition/references and Monaco gestures, code actions, formatting, rename, hierarchy, Java activation, and contextual project tools remain future work recorded in [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md). The external-class clipboard workflow is separately operational with the installed full-capability daemon; its real temporary-workspace smoke proved preview/no-write, discard, exact apply, and byte-for-byte rollback. RefactorKit remains the only custom Java intelligence tool; its project model remains internal until extraction criteria emerge.
+A real JDT LS smoke passed repeated completion containing `repeat`, helper hover, signature help containing `substring(int beginIndex)`, cancellation, `didClose`, and managed stop. Diagnostics composition, definition/references and Monaco gestures, code actions, formatting, rename, hierarchy, Java activation, and contextual project tools were originally recorded as future work in [docs/JAVA_INTELLISENSE_PLAN.md](docs/JAVA_INTELLISENSE_PLAN.md). The external-class clipboard workflow is separately operational with the installed full-capability daemon; its real temporary-workspace smoke proved preview/no-write, discard, exact apply, and byte-for-byte rollback. RefactorKit remains the only custom Java intelligence tool; its project model remains internal until extraction criteria emerge.
+
+#### 2026-07-14 roadmap lifecycle amendment
+
+The preceding future-work statement is retained as historical rationale, but those items are no longer active milestones. Apply the following policy:
+
+- Preserve and maintain the already-as-built Java lifecycle, synchronized documents, diagnostics/Problems behavior, completion, hover, signature help, cancellation, and workspace/session/path/URI/version/request/cancel stale guards.
+- Do not schedule further IntelliSense or JDT LS expansion until RefactorKit exposes the relevant released capability and immutable real acceptance evidence validates both the provider contract and the integrated behavior. Definition/references, symbols/hierarchy, code actions, formatting, rename, Java module activation, and contextual Java tooling are unscheduled TODO inventory, not active roadmap milestones.
+- Claim a RefactorKit integration only for the exact capability that works now and passes immutable real validation. Unsupported or unintegrated operations remain TODO and are never simulated. A confirmed provider or protocol bug parks the affected requirement and is reported rather than hidden behind a fallback, approximation, or status promotion.
+- The current audited IDE-capability bucket contains RefactorKit capability discovery and the validated Java external-class import workflow described above. The parked bucket contains [REQ-REFACTORKIT-TS-001 diagnostics](features/refactorkit/typescript-compiler-diagnostics.feature), because the confirmed protocol loses required range, failure, snapshot, attestation, and authority-correlation semantics, and [REQ-REFACTORKIT-TS-002 semantic navigation](features/refactorkit/typescript-javascript-symbol-definition.feature), because immutable `v0.6.2` validation confirmed an unauthorized `.refactorkit/workspace.lock` write. Both requirements remain not implemented until corrected released capability and applicable real acceptance evidence exist.
+- Structural outline and identifier search are stable provider foundations in the audited RefactorKit release, while TypeScript references are experimental and TypeScript rename is experimental proposal-only. None is thereby an IDE capability. Their IDE integrations, and general Java refactor operations beyond the separately validated import workflow, remain unscheduled TODO unless each exact provider operation is discovered, integrated, and immutably validated.
+- Planned upstream RefactorKit search operations with optional JSON output remain TODO until a released capability exposes strict, typed, bounded, and versioned machine-readable JSON, or an equivalent daemon DTO, that represents errors, truncation, locations, and request/result correlation. Human-oriented stdout must never be parsed as an IDE protocol.
 
 ### Consequences
 
@@ -168,6 +183,8 @@ A real JDT LS smoke passed repeated completion containing `repeat`, helper hover
 - Capability-first clipboard access avoids reading sensitive source when the provider cannot perform the requested workflow.
 - Exact-plan approval and backend-authoritative transactions preserve preview/apply/rollback integrity without IDE-owned Java writes.
 - Providers can degrade or evolve independently behind stable capability contracts.
+- The roadmap amendment preserves validated editor behavior while preventing provider foundations, experimental operations, or support code from being presented as completed IDE capability.
+- Typed machine-readable protocol evidence remains a hard boundary; human output cannot become an accidental integration contract.
 
 **Negative:**
 
@@ -177,6 +194,7 @@ A real JDT LS smoke passed repeated completion containing `repeat`, helper hover
 - Browser Java support will remain materially below desktop support unless a separately secured remote provider is introduced.
 - RefactorKit installation and daemon lifecycle add a local runtime dependency; older or incomplete providers remain unavailable rather than being forced or adapted.
 - Refused, stale, blocked, mismatched, or failed plans require a new preview or provider correction rather than fallback mutation.
+- Previously listed IntelliSense, activation, navigation, and refactoring work now has no schedule; confirmed upstream defects can keep requirements parked indefinitely.
 - This direction improves selected workflows but does not establish IntelliJ IDEA Ultimate parity.
 
 ---
