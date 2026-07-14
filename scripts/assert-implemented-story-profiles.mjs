@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import * as cucumberProfiles from "../cucumber.js";
+import { evaluateDeclaredStoryRouting, scenarioKey } from "./story-profile-policy.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const cucumberEntry = path.join(repositoryRoot, "node_modules/@cucumber/cucumber/bin/cucumber.js");
 const desktopStatusOnly = process.argv.slice(2).includes("--desktop-status");
-
-function scenarioKey(scenario) {
-  return `${scenario.uri}:${scenario.line} ${scenario.name}`;
-}
 
 function discover(profile) {
   const result = spawnSync(
@@ -32,16 +30,17 @@ function discover(profile) {
     {
       cwd: repositoryRoot,
       encoding: "utf8",
+      killSignal: "SIGTERM",
       maxBuffer: 16 * 1024 * 1024,
+      timeout: 30_000,
     },
   );
 
-  if (result.status !== 0) {
-    process.stdout.write(result.stdout);
-    process.stderr.write(result.stderr);
-    throw new Error(
-      `Cucumber profile ${profile} discovery failed with exit code ${result.status ?? "unknown"}`,
-    );
+  if (result.error || result.status !== 0) {
+    process.stdout.write(result.stdout ?? "");
+    process.stderr.write(result.stderr ?? "");
+    const outcome = result.error?.message ?? `exit code ${result.status ?? "unknown"}`;
+    throw new Error(`Cucumber profile ${profile} discovery failed with ${outcome}`);
   }
 
   const scenariosByPickleId = new Map();
@@ -59,14 +58,19 @@ function discover(profile) {
     }
     if (envelope.testCase) selectedPickleIds.add(envelope.testCase.pickleId);
   }
-  return [...selectedPickleIds].map((pickleId) => scenariosByPickleId.get(pickleId));
+
+  return [...selectedPickleIds].map((pickleId) => {
+    const scenario = scenariosByPickleId.get(pickleId);
+    if (!scenario) throw new Error(`${profile} selected unknown Cucumber pickle ${pickleId}`);
+    return scenario;
+  });
 }
 
-function assertProfileTarget(profileName, expectedName, expectedDriver, failures) {
-  const target = cucumberProfiles[profileName]?.worldParameters?.target;
-  if (target?.name !== expectedName || target?.driver !== expectedDriver) {
+function assertWorldParameters(profileName, expected, failures) {
+  const actual = cucumberProfiles[profileName]?.worldParameters;
+  if (!isDeepStrictEqual(actual, expected)) {
     failures.push(
-      `${profileName} must use ${expectedName}/${expectedDriver}, received ${target?.name ?? "missing"}/${target?.driver ?? "missing"}`,
+      `${profileName} world parameters must be ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
     );
   }
 }
@@ -89,60 +93,70 @@ function printScenarios(heading, scenarios) {
 }
 
 try {
-  const implemented = discover("implementedDiscovery");
+  const declared = discover("declaredDiscovery");
+  const validated = discover("implementedDiscovery");
   const web = discover("implementedWeb");
-  const desktop = discover("implementedDesktop");
-  const expectedWeb = implemented.filter(({ tags }) => tags.has("@web") && !tags.has("@desktop"));
-  const expectedDesktop = implemented.filter(
-    ({ tags }) => tags.has("@desktop") && !tags.has("@web"),
+  const validatedDesktop = discover("implementedDesktop");
+  const desktopTauriHarness = discover("implementedDesktopTauriHarness");
+  const routing = evaluateDeclaredStoryRouting(declared);
+  const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
+  const failures = [...routing.failures];
+  const unselected = { target: { name: "unselected", driver: "unselected" } };
+  const webPlaywright = { target: { name: "web", driver: "playwright" } };
+  const desktopTauri = { target: { name: "desktop", driver: "tauri" } };
+  const desktopTauriHarnessEvidence = {
+    ...desktopTauri,
+    evidence: { kind: "tauri-harness", nativeGui: false, e2e: false },
+  };
+
+  assertWorldParameters("default", unselected, failures);
+  assertWorldParameters("declaredDiscovery", unselected, failures);
+  assertWorldParameters("implementedDiscovery", unselected, failures);
+  assertWorldParameters("implementedWeb", webPlaywright, failures);
+  assertWorldParameters("implementedDesktop", desktopTauri, failures);
+  assertWorldParameters("implementedDesktopTauriHarness", desktopTauriHarnessEvidence, failures);
+  assertWorldParameters("desktop", desktopTauri, failures);
+
+  compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
+  compareProfileSelection("implementedWeb", web, routing.expectedWeb, failures);
+  compareProfileSelection(
+    "implementedDesktop",
+    validatedDesktop,
+    routing.unsupportedValidatedDesktop,
+    failures,
   );
-  const invalidTargets = implemented.filter(({ tags }) => {
-    const targetCount = Number(tags.has("@web")) + Number(tags.has("@desktop"));
-    return targetCount !== 1;
-  });
-  const failures = [];
-
-  assertProfileTarget("implementedDiscovery", "unselected", "unselected", failures);
-  assertProfileTarget("implementedWeb", "web", "playwright", failures);
-  assertProfileTarget("implementedDesktop", "desktop", "tauri", failures);
-  compareProfileSelection("implementedWeb", web, expectedWeb, failures);
-  compareProfileSelection("implementedDesktop", desktop, expectedDesktop, failures);
-
-  if (invalidTargets.length > 0) {
-    failures.push(
-      "implemented scenarios must select exactly one supported target tag: @web or @desktop",
-    );
-  }
+  compareProfileSelection(
+    "implementedDesktopTauriHarness",
+    desktopTauriHarness,
+    routing.expectedDesktopTauriHarness,
+    failures,
+  );
 
   console.log(
-    `Implemented Story profiles: ${web.length} web/playwright, ${desktop.length} desktop/tauri, ${invalidTargets.length} invalid target selection.`,
+    `Declared Story routes: ${web.length} web/playwright E2E, ${desktopTauriHarness.length} desktop/tauri-harness (not native GUI/E2E), ${validatedDesktop.length} unsupported validated desktop, ${failures.length} routing failure(s).`,
   );
 
   if (failures.length > 0) {
-    console.error("Implemented Story profile assertions: FAIL");
+    console.error("Declared Story profile assertions: FAIL");
     for (const failure of failures) console.error(`- ${failure}`);
-    if (invalidTargets.length > 0) printScenarios("Invalid implemented scenarios:", invalidTargets);
-    process.exit(1);
-  }
-
-  if (desktop.length > 0) {
-    console.error("Implemented desktop Story status: UNSUPPORTED");
-    console.error(
-      "Desktop/tauri Story execution is not supported yet; implemented desktop scenarios cannot be included in the aggregate command.",
-    );
-    printScenarios("Unsupported implemented desktop scenarios:", desktop);
+    if (routing.unsupportedValidatedDesktop.length > 0) {
+      printScenarios(
+        "Unsupported @implemented-and-validated desktop scenarios:",
+        routing.unsupportedValidatedDesktop,
+      );
+    }
     process.exit(1);
   }
 
   if (desktopStatusOnly) {
     console.log(
-      "Implemented desktop Story status: UNSUPPORTED (no implemented desktop scenarios selected).",
+      "Implemented-and-validated desktop Story status: UNSUPPORTED (no scenarios selected; no packaged native GUI/E2E profile exists).",
     );
   } else {
-    console.log("Implemented Story profile assertions: PASS");
+    console.log("Declared Story profile assertions: PASS");
   }
 } catch (error) {
-  console.error("Implemented Story profile assertions: FAIL");
+  console.error("Declared Story profile assertions: FAIL");
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 }
