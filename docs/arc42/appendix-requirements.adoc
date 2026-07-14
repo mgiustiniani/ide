@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change those declarations.
+Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change those declarations. The two RefactorKit requirements are parked outside the active roadmap under the architecture policy; this scheduling decision does not alter Gherkin status.
 ====
 
 == Governance
@@ -94,7 +94,7 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 |An isolated packaged daemon whose 424 source blobs matched immutable tag commit `110b605` with zero mismatches passed Java preview/no-write, discard, exact apply, and byte-for-byte rollback smoke under OpenJDK 21. This validates that isolated package/import path only. The globally installed runtime, launcher, and checksum still report `0.5.0-SNAPSHOT`; no global `v0.6.2` promotion is claimed.
 
 |Operation stability / unsupported scope
-|RefactorKit `v0.6.2` TypeScript/JavaScript operations are not universally stable. Structural outline and identifier search are stable; semantic definition, references, workspace symbols, and diagnostics are experimental; semantic rename is experimental proposal-only. Format, move, organize imports, change signature, extract, and inline remain unsupported for TypeScript/JavaScript.
+|RefactorKit `v0.6.2` TypeScript/JavaScript operations are not universally stable. Structural outline and identifier search are working provider foundations, not IDE capabilities. Semantic definition, references, workspace symbols, and diagnostics are experimental provider foundations; semantic rename is experimental proposal-only. Format, move, organize imports, change signature, extract, and inline remain unsupported for TypeScript/JavaScript. All unintegrated operations remain unscheduled TODO and are not simulated.
 
 |Open upstream compatibility blockers
 |The daemon diagnostics response drops start character and end range; lacks request/result workspace, generation, session, and snapshot authority correlation plus exact compiler attestation; does not define saved/unsaved snapshot semantics; advertises the TypeScript LSP backend/runtime rather than the separate exact compiler-diagnostics backend; advertises 10-second/64 MiB LSP limits while the compiler bridge uses 30 seconds/8 MiB; and can encode readiness or tool failure as ordinary diagnostics. These prevent trustworthy existing-surface projection.
@@ -167,7 +167,7 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 |Resume only when read-only `project.open` and semantic navigation do not write the workspace, or when the provider capability/contract is corrected and that changed contract is separately approved. The hidden-file byte-tree audit and applicable target evidence must then be rerun before any status promotion.
 
 |Roadmap effect
-|The parked TypeScript/JavaScript RefactorKit requirements are bounded blockers and do not block independent IDE roadmap slices.
+|The requirement is parked outside the active roadmap. Deterministic support remains evidence, but no IntelliSense/JDT LS expansion or RefactorKit navigation milestone is scheduled from it.
 |===
 
 === REQ-WEB-001
@@ -212,7 +212,7 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 
 == Reconciliation and Migration Status
 
-The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented` and blocked under option A: real immutable `v0.6.2` evidence violates its no-workspace-write clause, aggregate desktop Story support is absent, and no packaged GUI/E2E evidence exists. Parking these TypeScript/JavaScript RefactorKit requirements does not block independent IDE roadmap slices. These results confirm neither the inherited Chapter 1 goals nor complete BDD migration and do not supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented` and blocked under option A: real immutable `v0.6.2` evidence violates its no-workspace-write clause, aggregate desktop Story support is absent, and no packaged GUI/E2E evidence exists. Both TypeScript/JavaScript requirements are parked outside the active roadmap. Structural outline/identifier search remain provider foundations, while TypeScript references/rename and general Java refactoring remain provider-foundation or IDE TODO according to observed support. Announced search operations with optional JSON remain TODO until a released strict typed bounded versioned machine-readable JSON contract or equivalent daemon DTO carries structured errors, truncation, authorized locations, and request/result correlation and passes immutable real acceptance evidence; human stdout is never an IDE protocol. These results confirm neither the inherited Chapter 1 goals nor complete BDD migration and do not supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
 
 Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation, support code, upstream code, or plan text exists. No final bdd-ts migration admission is claimed while that legacy source and the desktop aggregate Story and packaged GUI/E2E gaps remain.
 

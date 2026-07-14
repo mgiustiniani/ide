@@ -1,6 +1,10 @@
-# IDE Multi-Language Extension Plan
+# IDE Multi-Language Extension Plan — Frozen Historical Inventory
 
-**Evidence status:** **STALE.** This plan predates the current Monaco-only editor, managed JDT LS semantics and diagnostics, and conditional Problems contribution. Its “Current State” and “What's Missing” sections are retained as migration history, not current implementation status; use [ARC42](../ARC42.md) for current evidence.
+**Evidence status:** **STALE / FROZEN.** This document predates the current Monaco-only editor, managed JDT LS semantics/diagnostics, conditional Problems contribution, and validated RefactorKit import transaction. It is retained as migration history only; use [ARC42](../ARC42.md) for current evidence.
+
+**2026-07-14 policy:** none of the phases, steps, file lists, LSP sketches, provider-support tables, or command examples below is active scheduling or current capability evidence. Preserve the as-built Java lifecycle, synchronized documents, diagnostics/Problems, completion, hover, signature help, cancellation, and stale guards. Definition/references, symbols/hierarchy, code actions, formatting, rename, Java module activation, contextual Java tooling, general refactoring, and broader JDT LS expansion are unscheduled TODO. Integrate only exact released RefactorKit capabilities that pass immutable real acceptance evidence; park confirmed provider/protocol bugs; never simulate unsupported behavior.
+
+Current RefactorKit IDE capability is limited to status/capability discovery and the validated Java external-class import transaction. TypeScript diagnostics and semantic navigation are parked. Structural outline and identifier search are provider foundations, TypeScript references/rename are experimental foundations, and general Java refactoring remains unintegrated TODO. Announced search operations with optional JSON remain TODO until a released strict typed bounded versioned machine-readable JSON contract or equivalent daemon DTO includes structured errors, truncation, authorized locations, request/result correlation, and real acceptance evidence. Human-oriented stdout must never be parsed as an IDE protocol.
 
 ## Overview
 
@@ -24,9 +28,10 @@ Transform the three-panel IDE into a full multi-language development environment
 
 ---
 
-## Phase 1 — Modern Graphic Redesign
+## Frozen Historical Phase 1 — Modern Graphic Redesign
 
 ### Design Principles
+
 - **Glassmorphism**: Frosted glass effect on panels (backdrop-filter: blur)
 - **Subtle gradients**: Panel headers with gradient tints
 - **Smooth micro-interactions**: Button ripples, tab underlines, panel transitions
@@ -38,6 +43,7 @@ Transform the three-panel IDE into a full multi-language development environment
 ### Specific Changes
 
 #### PanelLayout
+
 - Add glassmorphism backdrop blur on panels
 - Gradient accent on active tab borders
 - Smooth spring animations for panel resize
@@ -45,29 +51,34 @@ Transform the three-panel IDE into a full multi-language development environment
 - Add panel shadows for depth
 
 #### FileTree
+
 - Glassmorphism sidebar background
 - Gradient folder icons
 - Smooth tree node animations (staggered entry)
 - Better indent guides with gradient lines
 
 #### Editor
+
 - Gradient tab bar background
 - Tab close button with hover animation
 - Editor background with subtle grid pattern
 - Loading shimmer with gradient animation
 
 #### Terminal
+
 - Glassmorphism terminal background
 - Gradient status indicators
 - Smooth scroll animations
 - Command history with fade-in
 
 #### StatusBar
+
 - Gradient background
 - Glassmorphism effect
 - Better icon spacing
 
 #### Global
+
 - Add Inter font
 - Smooth theme transition (dark/light toggle)
 - Animated background gradient (subtle)
@@ -75,7 +86,7 @@ Transform the three-panel IDE into a full multi-language development environment
 
 ---
 
-## Phase 2 — Multi-Language Architecture
+## Frozen Historical Phase 2 — Multi-Language Architecture
 
 ### Language Support Layers
 
@@ -107,20 +118,20 @@ interface LanguageService {
   // Identification
   languageId: string;
   extensions: string[];
-  
+
   // Syntax
   getSyntaxHighlights(content: string): HighlightToken[];
-  
+
   // Intelligence
   getCompletions(params: CompletionParams): Completion[];
   getHoverInfo(params: HoverParams): HoverInfo | null;
   getDefinition(params: LocationParams): Location[];
   getReferences(params: LocationParams): Location[];
-  
+
   // Refactoring
   getAvailableRefactorings(params: RefactorParams): Refactoring[];
   executeRefactoring(params: ExecuteRefactor): RefactorResult;
-  
+
   // Diagnostics
   getDiagnostics(content: string): Diagnostic[];
 }
@@ -128,18 +139,18 @@ interface LanguageService {
 
 ### Language Adapter Implementations
 
-| Language | Syntax Highlighting | IntelliSense | Refactoring |
-|---|---|---|---|
-| TypeScript | Monaco built-in | TypeScript Language Server (LSP) | TypeScript compiler services |
-| JavaScript | Monaco built-in | TypeScript Language Server (LSP) | TypeScript compiler services |
-| Java | Monaco built-in (Java tokenizer) | JDT Language Server (LSP) | **RefactorKit** (daemon/MCP) |
-| Future (Python, Rust, Go) | Monaco built-in | LSP server per language | Per-language tooling |
+| Language                  | Syntax Highlighting              | IntelliSense                     | Refactoring                  |
+| ------------------------- | -------------------------------- | -------------------------------- | ---------------------------- |
+| TypeScript                | Monaco built-in                  | TypeScript Language Server (LSP) | TypeScript compiler services |
+| JavaScript                | Monaco built-in                  | TypeScript Language Server (LSP) | TypeScript compiler services |
+| Java                      | Monaco built-in (Java tokenizer) | JDT Language Server (LSP)        | **RefactorKit** (daemon/MCP) |
+| Future (Python, Rust, Go) | Monaco built-in                  | LSP server per language          | Per-language tooling         |
 
 ---
 
-## Phase 3 — RefactorKit Integration
+## Frozen Historical Phase 3 — RefactorKit Integration
 
-### Integration Strategy: LSP Bridge
+### Historical Integration Sketch: LSP Bridge (Not Current)
 
 RefactorKit exposes an **LSP server** (`modules/refactorkit-lsp`) over stdio. The IDE communicates with it via the standard LSP protocol.
 
@@ -181,12 +192,12 @@ async fn refactorkit_execute(
 // packages/web-core/src/language/java-refactorkit.ts
 class JavaRefactorKitService implements RefactoringService {
   private adapter: TauriRefactorKitAdapter | BrowserRefactorKitAdapter;
-  
+
   async getAvailableRefactorings(params: RefactorParams): Promise<Refactoring[]> {
     // Forward to RefactorKit daemon
     return this.adapter.getAvailableRefactorings(params);
   }
-  
+
   async executeRefactoring(params: ExecuteRefactor): Promise<RefactorResult> {
     // Forward to RefactorKit daemon
     return this.adapter.executeRefactoring(params);
@@ -194,22 +205,16 @@ class JavaRefactorKitService implements RefactoringService {
 }
 ```
 
-#### What RefactorKit Provides for Java
+#### Historical RefactorKit Claims (Not IDE Capability Evidence)
 
-| Refactoring | RefactorKit Support | Status |
-|---|---|---|
-| Rename class | ✅ `renameClass` | MVP |
-| Rename member | ✅ `renameMember` | MVP |
-| Extract method | ✅ `extractMethod` | MVP |
-| Change signature | ✅ `changeSignature.renameParameter` | MVP |
-| Move class | ✅ `moveClass` | MVP |
-| Organize imports | ✅ `organizeImports` | MVP |
-| Safe delete | ✅ `safeDelete` | MVP |
-| Multi-language outline | ✅ `GenericOutline` (TS, JS, Python, Rust, Go, C#) | Level 1 |
-| Local rename (any language) | ✅ `GenericLocalRenamePlanner` | Level 1 |
-| LSP-backed (any language) | ✅ `ExternalLspAdapter` (stub) | Level 2 |
+| Historical item                                                                                  | Current classification                                                                                                 |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Rename class/member, extract method, change signature, move class, organize imports, safe delete | General Java provider/IDE TODO beyond the separately validated import transaction; no support claim from this document |
+| Multi-language structural outline / identifier search                                            | Working provider foundation in the audited release; IDE integration remains unscheduled TODO                           |
+| TypeScript references / rename                                                                   | Experimental provider foundation; IDE integration remains unscheduled TODO                                             |
+| Generic external-LSP adapter                                                                     | Historical proposal/stub; not a current IDE capability                                                                 |
 
-#### Proposed Changes to RefactorKit for IDE Integration
+#### Frozen Historical RefactorKit Proposals
 
 1. **Add Tauri plugin target** — New Gradle module `refactorkit-tauri` that builds a native Rust library wrapping the daemon JSON-RPC interface
 2. **Improve LSP server startup** — Add `--lsp` flag that starts the LSP server with configurable workspace path
@@ -219,9 +224,10 @@ class JavaRefactorKitService implements RefactoringService {
 
 ---
 
-## Phase 4 — Implementation Plan
+## Frozen Historical Phase 4 — Implementation Inventory
 
-### Step 1: Graphic Redesign (packages/ui)
+### Frozen Inventory 1: Graphic Redesign (`packages/ui`)
+
 - Update `globals.css` with glassmorphism, gradients, animations
 - Update `PanelLayout.tsx` with glass effects and spring transitions
 - Update `FileTree` with gradient icons and staggered animations
@@ -230,19 +236,22 @@ class JavaRefactorKitService implements RefactoringService {
 - Update `StatusBar.tsx` with gradient background
 - Update `Icon.tsx` with gradient-compatible SVGs
 
-### Step 2: Language Service Registry (packages/web-core)
+### Frozen Inventory 2: Language Service Registry (`packages/web-core`)
+
 - Create `language/registry.ts` — LanguageServiceRegistry
 - Create `language/types.ts` — LanguageService interface
 - Create `language/java-adapter.ts` — Java language service (LSP bridge)
 - Create `language/ts-adapter.ts` — TS/JS language service (LSP bridge)
 
-### Step 3: RefactorKit Integration (packages/tauri-adapters + packages/web-core)
+### Frozen Inventory 3: RefactorKit Integration (`packages/tauri-adapters` + `packages/web-core`)
+
 - Create `refactorkit-adapter.ts` — Tauri adapter for RefactorKit daemon
 - Create `refactorkit-browser.ts` — Browser mock adapter
 - Add Rust commands in `src-tauri/commands/refactorkit.rs`
 - Wire into editor via context menu / keybindings
 
-### Step 4: Editor Integration
+### Frozen Inventory 4: Editor Integration
+
 - Add language service to Editor component (IntelliSense via LSP)
 - Add refactoring menu (right-click context menu)
 - Add keybindings (F2 rename, Ctrl+Shift+R extract method)
@@ -250,9 +259,10 @@ class JavaRefactorKitService implements RefactoringService {
 
 ---
 
-## File Changes Summary
+## Frozen Historical File-Change Inventory
 
 ### packages/ui/src/styles/globals.css
+
 - Add glassmorphism classes (`.glass-panel`, `.glass-header`)
 - Add gradient classes (`.gradient-accent`, `.gradient-border`)
 - Add animation keyframes (`.spring-transition`, `.fade-in`, `.slide-up`)
@@ -261,47 +271,55 @@ class JavaRefactorKitService implements RefactoringService {
 - Add backdrop blur utility
 
 ### packages/ui/src/components/PanelLayout/PanelLayout.tsx
+
 - Add glassmorphism backdrop blur on panels
 - Add gradient accents on resize handles
 - Add spring-like CSS transitions
 - Add panel shadow depth
 
 ### packages/ui/src/components/PanelLayout/StatusBar.tsx
+
 - Add gradient background
 - Add glassmorphism effect
 - Add animated status indicators
 
 ### packages/ui/src/components/FileTree/FileTreeItem.tsx
+
 - Add gradient file icons
 - Add staggered entry animation
 - Add glass hover effect
 
 ### packages/ui/src/components/Editor/Editor.tsx
+
 - Add gradient tab bar background
 - Add grid background pattern
 - Add animated tab close button
 
 ### packages/ui/src/components/Terminal/Terminal.tsx
+
 - Add glassmorphism terminal background
 - Add gradient session indicator
 - Add animated command history entries
 
 ### packages/web-core/src/language/ (new directory)
+
 - `registry.ts` — Language service registry
 - `types.ts` — Language service interfaces
 - `java-adapter.ts` — Java LSP adapter
 - `ts-adapter.ts` — TypeScript LSP adapter
 
 ### packages/tauri-adapters/src/ (new files)
+
 - `refactorkit.ts` — Tauri RefactorKit adapter
 - `language-service.ts` — Tauri language service adapter
 
 ### apps/desktop/src-tauri/src/commands/
+
 - `refactorkit.rs` — Rust commands for RefactorKit daemon communication
 
 ---
 
-## How RefactorKit Runs Inside the IDE
+## Historical Runtime Sketch (Not Current)
 
 ```bash
 # User opens a Java project
@@ -315,10 +333,6 @@ refactorkit --lsp --workspace /path/to/project
 # Frontend starts RefactorKit daemon via WebAssembly or mock adapter
 ```
 
-## Summary
+## Historical Summary
 
-This plan transforms the IDE from a three-panel editor shell into a full multi-language development environment with:
-1. **Modern glassmorphism design** — Visual refresh with gradients, blur, animations
-2. **Multi-language support** — Java, TypeScript, JavaScript as first-class citizens
-3. **RefactorKit integration** — Deterministic Java refactoring engine via LSP
-4. **Extensible architecture** — New languages added via adapter pattern
+The original proposal described a visual redesign, multi-language adapters, broad RefactorKit integration, and extensibility. Those ideas remain frozen historical inventory. They do not establish an active roadmap, supported provider operation, RefactorKit LSP integration, browser execution, file-change plan, or IntelliJ-class target. Current and parked capability status is governed by [ARC42](../ARC42.md), [ADR 0005](../ADR.md#adr-0005--hybrid-java-intelligence-with-jdt-ls-and-refactorkit), and the [current Java boundary](JAVA_INTELLISENSE_PLAN.md).
