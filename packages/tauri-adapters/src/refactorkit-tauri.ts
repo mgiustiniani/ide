@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   normalizeSavedSnapshotDefinitionResult,
+  normalizeSavedSnapshotSemanticSessionStartResult,
+  normalizeSavedSnapshotSemanticSessionStopResult,
   normalizeSavedSnapshotSymbolSearchResult,
 } from "@ide/contracts";
 import type {
@@ -27,6 +29,12 @@ import type {
   SavedSnapshotDefinitionRequest,
   SavedSnapshotDefinitionResult,
   SavedSnapshotDefinitionResultCandidate,
+  SavedSnapshotSemanticSessionStartRequest,
+  SavedSnapshotSemanticSessionStartResult,
+  SavedSnapshotSemanticSessionStartResultCandidate,
+  SavedSnapshotSemanticSessionStopRequest,
+  SavedSnapshotSemanticSessionStopResult,
+  SavedSnapshotSemanticSessionStopResultCandidate,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
   SavedSnapshotSymbolSearchResultCandidate,
@@ -54,6 +62,10 @@ const MAX_SAVED_SNAPSHOT_QUERY = 1_024;
 const MAX_SAVED_SNAPSHOT_IDENTITY = 512;
 const MAX_SAVED_SNAPSHOT_METADATA = 256;
 const OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID = /^lsp-symbol-v1:[a-f0-9]{64}$/u;
+const OPAQUE_SEMANTIC_SESSION_ID = /^refactorkit-semantic-session-v1:[a-f0-9]{64}$/u;
+const SHA256_IDENTITY = /^sha256:[a-f0-9]{64}$/u;
+const SHA256_DIGEST = /^[a-f0-9]{64}$/u;
+const SOURCE_EXTENSION = /^[a-z0-9]+$/u;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const LANGUAGE_STABILITY = [
   "stable",
@@ -122,6 +134,26 @@ export class TauriRefactorKitSymbolNavigationError extends TauriAdapterError {
   ) {
     super(command, message);
     this.name = "TauriRefactorKitSymbolNavigationError";
+  }
+}
+
+export type TauriRefactorKitSemanticSessionErrorCode =
+  | "REFACTORKIT_SEMANTIC_SESSION_START_REQUEST_REJECTED"
+  | "REFACTORKIT_SEMANTIC_SESSION_START_FAILED"
+  | "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED"
+  | "REFACTORKIT_SEMANTIC_SESSION_STOP_REQUEST_REJECTED"
+  | "REFACTORKIT_SEMANTIC_SESSION_STOP_FAILED"
+  | "REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED";
+
+/** Sanitized failure for the native semantic-session lifecycle boundary. */
+export class TauriRefactorKitSemanticSessionError extends TauriAdapterError {
+  constructor(
+    command: string,
+    public readonly code: TauriRefactorKitSemanticSessionErrorCode,
+    message: string,
+  ) {
+    super(command, message);
+    this.name = "TauriRefactorKitSemanticSessionError";
   }
 }
 
@@ -424,6 +456,485 @@ function validExternalToolchainPath(value: unknown): value is string {
 
 function validOpaqueSymbolId(value: unknown): value is string {
   return typeof value === "string" && OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID.test(value);
+}
+
+function semanticSessionError(
+  command: string,
+  code: TauriRefactorKitSemanticSessionErrorCode,
+): TauriRefactorKitSemanticSessionError {
+  const messages: Record<TauriRefactorKitSemanticSessionErrorCode, string> = {
+    REFACTORKIT_SEMANTIC_SESSION_START_REQUEST_REJECTED:
+      "The RefactorKit semantic-session start request was rejected.",
+    REFACTORKIT_SEMANTIC_SESSION_START_FAILED:
+      "RefactorKit could not start the saved-snapshot semantic session.",
+    REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED:
+      "The RefactorKit semantic-session start response was rejected.",
+    REFACTORKIT_SEMANTIC_SESSION_STOP_REQUEST_REJECTED:
+      "The RefactorKit semantic-session stop request was rejected.",
+    REFACTORKIT_SEMANTIC_SESSION_STOP_FAILED:
+      "RefactorKit could not stop the saved-snapshot semantic session.",
+    REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED:
+      "The RefactorKit semantic-session stop response was rejected.",
+  };
+  return new TauriRefactorKitSemanticSessionError(command, code, messages[code]);
+}
+
+function semanticSessionRecord(
+  command: string,
+  value: unknown,
+  code: TauriRefactorKitSemanticSessionErrorCode,
+): RecordValue {
+  if (!isRecord(value) || !plainRecord(value)) throw semanticSessionError(command, code);
+  return value;
+}
+
+function exactSemanticSessionFields(
+  command: string,
+  record: RecordValue,
+  expected: readonly string[],
+  code: TauriRefactorKitSemanticSessionErrorCode,
+): void {
+  const actual = Reflect.ownKeys(record);
+  if (
+    actual.length !== expected.length ||
+    actual.some((key) => typeof key !== "string") ||
+    expected.some((key) => !Object.prototype.hasOwnProperty.call(record, key))
+  ) {
+    throw semanticSessionError(command, code);
+  }
+}
+
+function positiveBoundedInteger(value: unknown, maximum: number): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= maximum;
+}
+
+function parseSemanticSessionRuntime(
+  command: string,
+  value: unknown,
+  code: TauriRefactorKitSemanticSessionErrorCode,
+): RefactorKitLanguageAdapterRuntime {
+  const runtime = semanticSessionRecord(command, value, code);
+  exactSemanticSessionFields(
+    command,
+    runtime,
+    [
+      "executionMode",
+      "supportsTimeout",
+      "supportsCancellation",
+      "usesWorkspaceOverlay",
+      "recordsProcessProvenance",
+      "limits",
+    ],
+    code,
+  );
+  const limits = semanticSessionRecord(command, runtime.limits, code);
+  exactSemanticSessionFields(
+    command,
+    limits,
+    ["requestTimeoutMillis", "maxInputBytes", "maxOutputBytes", "maxProcesses"],
+    code,
+  );
+  if (
+    runtime.executionMode !== "external-process" ||
+    runtime.supportsTimeout !== true ||
+    runtime.supportsCancellation !== true ||
+    runtime.usesWorkspaceOverlay !== true ||
+    runtime.recordsProcessProvenance !== true ||
+    !positiveBoundedInteger(limits.requestTimeoutMillis, MAX_RUNTIME_TIMEOUT_MILLIS) ||
+    !positiveBoundedInteger(limits.maxInputBytes, MAX_RUNTIME_BYTES) ||
+    !positiveBoundedInteger(limits.maxOutputBytes, MAX_RUNTIME_BYTES) ||
+    !positiveBoundedInteger(limits.maxProcesses, MAX_RUNTIME_PROCESSES)
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  return Object.freeze({
+    executionMode: "external-process",
+    supportsTimeout: true,
+    supportsCancellation: true,
+    usesWorkspaceOverlay: true,
+    recordsProcessProvenance: true,
+    limits: Object.freeze({
+      requestTimeoutMillis: limits.requestTimeoutMillis,
+      maxInputBytes: limits.maxInputBytes,
+      maxOutputBytes: limits.maxOutputBytes,
+      maxProcesses: limits.maxProcesses,
+    }),
+  });
+}
+
+function isExactDenseArray(value: unknown, minimum: number, maximum: number): value is unknown[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) return false;
+  const actual = Reflect.ownKeys(value);
+  return (
+    actual.length === value.length + 1 &&
+    actual.every((key) => typeof key === "string") &&
+    Object.prototype.hasOwnProperty.call(value, "length") &&
+    Array.from({ length: value.length }, (_, index) => String(index)).every((key) =>
+      Object.prototype.hasOwnProperty.call(value, key),
+    )
+  );
+}
+
+function parseSemanticSessionExtensions(
+  command: string,
+  value: unknown,
+  code: TauriRefactorKitSemanticSessionErrorCode,
+): readonly string[] {
+  if (!isExactDenseArray(value, 1, MAX_LANGUAGE_EXTENSIONS)) {
+    throw semanticSessionError(command, code);
+  }
+  const extensions = value.map((extension) => {
+    if (typeof extension !== "string" || !SOURCE_EXTENSION.test(extension)) {
+      throw semanticSessionError(command, code);
+    }
+    return extension;
+  });
+  if (new Set(extensions).size !== extensions.length) throw semanticSessionError(command, code);
+  return Object.freeze(extensions);
+}
+
+function comparableSemanticPath(value: string): string {
+  const normalized = value.replaceAll("\\", "/").replace(/\/+$/u, "");
+  return /^(?:[A-Za-z]:\/|\/\/)/u.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+function externalToWorkspace(path: string, workspaceRoot: string): boolean {
+  const candidate = comparableSemanticPath(path);
+  const root = comparableSemanticPath(workspaceRoot);
+  return candidate !== root && !candidate.startsWith(`${root}/`);
+}
+
+function validateSemanticSessionStartRequest(
+  request: SavedSnapshotSemanticSessionStartRequest,
+  command: string,
+): SavedSnapshotSemanticSessionStartRequest {
+  const code = "REFACTORKIT_SEMANTIC_SESSION_START_REQUEST_REJECTED" as const;
+  const record = semanticSessionRecord(command, request, code);
+  exactSemanticSessionFields(
+    command,
+    record,
+    [
+      "languageId",
+      "workspaceRoot",
+      "workspaceId",
+      "workspaceGeneration",
+      "provider",
+      "providerVersion",
+      "backend",
+      "runtime",
+      "extensions",
+      "toolchain",
+      "acceptedSemanticCompleteness",
+    ],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validExternalToolchainPath(record.workspaceRoot) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
+    !validSavedSnapshotMetadata(record.provider) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend)
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  const runtime = parseSemanticSessionRuntime(command, record.runtime, code);
+  const extensions = parseSemanticSessionExtensions(command, record.extensions, code);
+  const toolchain = semanticSessionRecord(command, record.toolchain, code);
+  exactSemanticSessionFields(
+    command,
+    toolchain,
+    [
+      "nodeExecutable",
+      "languageServerPackageRoot",
+      "typeScriptPackageRoot",
+      "allowPathNodeDiscovery",
+      "allowWorkspaceLocalToolchain",
+    ],
+    code,
+  );
+  const toolchainPaths = [
+    toolchain.nodeExecutable,
+    toolchain.languageServerPackageRoot,
+    toolchain.typeScriptPackageRoot,
+  ];
+  if (
+    toolchainPaths.some(
+      (path) =>
+        !validExternalToolchainPath(path) ||
+        !externalToWorkspace(path, record.workspaceRoot as string),
+    ) ||
+    toolchain.allowPathNodeDiscovery !== false ||
+    toolchain.allowWorkspaceLocalToolchain !== false
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  const acceptedSemanticCompleteness = record.acceptedSemanticCompleteness;
+  if (
+    !isExactDenseArray(acceptedSemanticCompleteness, 1, 2) ||
+    (record.languageId === "typescript"
+      ? acceptedSemanticCompleteness.length !== 1 ||
+        acceptedSemanticCompleteness[0] !== "full-typescript"
+      : !(
+          (acceptedSemanticCompleteness.length === 1 &&
+            acceptedSemanticCompleteness[0] === "checked-javascript") ||
+          (acceptedSemanticCompleteness.length === 2 &&
+            acceptedSemanticCompleteness[0] === "dynamic-javascript" &&
+            acceptedSemanticCompleteness[1] === "mixed-javascript")
+        ))
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  const exactAcceptedSemanticCompleteness = Object.freeze(
+    record.languageId === "typescript"
+      ? (["full-typescript"] as const)
+      : acceptedSemanticCompleteness[0] === "checked-javascript"
+        ? (["checked-javascript"] as const)
+        : (["dynamic-javascript", "mixed-javascript"] as const),
+  );
+  return Object.freeze({
+    languageId: record.languageId,
+    workspaceRoot: record.workspaceRoot,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    provider: record.provider,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+    runtime,
+    extensions,
+    toolchain: Object.freeze({
+      nodeExecutable: toolchain.nodeExecutable as string,
+      languageServerPackageRoot: toolchain.languageServerPackageRoot as string,
+      typeScriptPackageRoot: toolchain.typeScriptPackageRoot as string,
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    }),
+    acceptedSemanticCompleteness: exactAcceptedSemanticCompleteness,
+  });
+}
+
+function parseSemanticSessionStartCandidate(
+  command: string,
+  response: unknown,
+): SavedSnapshotSemanticSessionStartResultCandidate {
+  const code = "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED" as const;
+  const record = semanticSessionRecord(command, response, code);
+  exactSemanticSessionFields(
+    command,
+    record,
+    [
+      "languageId",
+      "workspaceRoot",
+      "workspaceId",
+      "workspaceGeneration",
+      "sessionId",
+      "providerProjectSnapshotIdentity",
+      "provider",
+      "providerVersion",
+      "backend",
+      "toolchain",
+      "semanticCompleteness",
+      "processProvenance",
+    ],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validExternalToolchainPath(record.workspaceRoot) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
+    typeof record.sessionId !== "string" ||
+    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId) ||
+    typeof record.providerProjectSnapshotIdentity !== "string" ||
+    !SHA256_IDENTITY.test(record.providerProjectSnapshotIdentity) ||
+    !validSavedSnapshotMetadata(record.provider) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend) ||
+    !["full-typescript", "checked-javascript", "dynamic-javascript", "mixed-javascript"].includes(
+      record.semanticCompleteness as string,
+    )
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  const toolchain = semanticSessionRecord(command, record.toolchain, code);
+  exactSemanticSessionFields(
+    command,
+    toolchain,
+    [
+      "backend",
+      "runtime",
+      "extensions",
+      "nodeExecutable",
+      "languageServerPackageRoot",
+      "typeScriptPackageRoot",
+    ],
+    code,
+  );
+  const runtime = parseSemanticSessionRuntime(command, toolchain.runtime, code);
+  const extensions = parseSemanticSessionExtensions(command, toolchain.extensions, code);
+  const toolchainPaths = [
+    toolchain.nodeExecutable,
+    toolchain.languageServerPackageRoot,
+    toolchain.typeScriptPackageRoot,
+  ];
+  if (
+    !validSavedSnapshotMetadata(toolchain.backend) ||
+    toolchainPaths.some(
+      (path) =>
+        !validExternalToolchainPath(path) ||
+        !externalToWorkspace(path, record.workspaceRoot as string),
+    )
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  const processProvenance = semanticSessionRecord(command, record.processProvenance, code);
+  exactSemanticSessionFields(
+    command,
+    processProvenance,
+    [
+      "serverName",
+      "serverVersion",
+      "capabilitiesSha256",
+      "executableSha256",
+      "argumentsSha256",
+      "processId",
+    ],
+    code,
+  );
+  if (
+    !(
+      processProvenance.serverName === null ||
+      validSavedSnapshotMetadata(processProvenance.serverName)
+    ) ||
+    !(
+      processProvenance.serverVersion === null ||
+      validSavedSnapshotMetadata(processProvenance.serverVersion)
+    ) ||
+    typeof processProvenance.capabilitiesSha256 !== "string" ||
+    !SHA256_DIGEST.test(processProvenance.capabilitiesSha256) ||
+    typeof processProvenance.executableSha256 !== "string" ||
+    !SHA256_DIGEST.test(processProvenance.executableSha256) ||
+    typeof processProvenance.argumentsSha256 !== "string" ||
+    !SHA256_DIGEST.test(processProvenance.argumentsSha256) ||
+    !positiveBoundedInteger(processProvenance.processId, Number.MAX_SAFE_INTEGER)
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  return {
+    languageId: record.languageId,
+    workspaceRoot: record.workspaceRoot,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    providerProjectSnapshotIdentity: record.providerProjectSnapshotIdentity,
+    provider: record.provider,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+    toolchain: {
+      backend: toolchain.backend as string,
+      runtime,
+      extensions: [...extensions],
+      nodeExecutable: toolchain.nodeExecutable as string,
+      languageServerPackageRoot: toolchain.languageServerPackageRoot as string,
+      typeScriptPackageRoot: toolchain.typeScriptPackageRoot as string,
+    },
+    semanticCompleteness: record.semanticCompleteness as
+      "full-typescript" | "checked-javascript" | "dynamic-javascript" | "mixed-javascript",
+    processProvenance: {
+      serverName: processProvenance.serverName as string | null,
+      serverVersion: processProvenance.serverVersion as string | null,
+      capabilitiesSha256: processProvenance.capabilitiesSha256,
+      executableSha256: processProvenance.executableSha256,
+      argumentsSha256: processProvenance.argumentsSha256,
+      processId: processProvenance.processId,
+    },
+  };
+}
+
+function validateSemanticSessionStopRequest(
+  request: SavedSnapshotSemanticSessionStopRequest,
+  command: string,
+): SavedSnapshotSemanticSessionStopRequest {
+  const code = "REFACTORKIT_SEMANTIC_SESSION_STOP_REQUEST_REJECTED" as const;
+  const record = semanticSessionRecord(command, request, code);
+  exactSemanticSessionFields(
+    command,
+    record,
+    ["languageId", "workspaceId", "workspaceGeneration", "sessionId"],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
+    typeof record.sessionId !== "string" ||
+    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId)
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  return Object.freeze({
+    languageId: record.languageId,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+  });
+}
+
+function parseSemanticSessionStopCandidate(
+  command: string,
+  response: unknown,
+): SavedSnapshotSemanticSessionStopResultCandidate {
+  const code = "REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED" as const;
+  const record = semanticSessionRecord(command, response, code);
+  exactSemanticSessionFields(
+    command,
+    record,
+    ["languageId", "workspaceId", "workspaceGeneration", "sessionId", "stopped"],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
+    typeof record.sessionId !== "string" ||
+    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId) ||
+    typeof record.stopped !== "boolean"
+  ) {
+    throw semanticSessionError(command, code);
+  }
+  return {
+    languageId: record.languageId,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    stopped: record.stopped,
+  };
+}
+
+async function invokeSemanticSession(
+  command: string,
+  request: object,
+  failureCode:
+    "REFACTORKIT_SEMANTIC_SESSION_START_FAILED" | "REFACTORKIT_SEMANTIC_SESSION_STOP_FAILED",
+): Promise<unknown> {
+  try {
+    return await invoke<unknown>(command, { request });
+  } catch {
+    throw semanticSessionError(command, failureCode);
+  }
+}
+
+function enforceSemanticSessionBoundary<T>(
+  command: string,
+  code: TauriRefactorKitSemanticSessionErrorCode,
+  enforce: () => T,
+): T {
+  try {
+    return enforce();
+  } catch {
+    throw semanticSessionError(command, code);
+  }
 }
 
 function validSavedSnapshotLanguage(value: unknown): value is TypeScriptJavaScriptLanguageId {
@@ -1544,6 +2055,77 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   async references(symbol: string): Promise<RefactorKitCommandResult> {
     const command = "run_refactorkit_references";
     return normalizeCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
+  }
+
+  async startSavedSnapshotSemanticSession(
+    request: SavedSnapshotSemanticSessionStartRequest,
+  ): Promise<SavedSnapshotSemanticSessionStartResult> {
+    const command = "start_refactorkit_saved_snapshot_semantic_session";
+    const exactRequest = enforceSemanticSessionBoundary(
+      command,
+      "REFACTORKIT_SEMANTIC_SESSION_START_REQUEST_REJECTED",
+      () => validateSemanticSessionStartRequest(request, command),
+    );
+    this.currentSavedSnapshotSymbolSearchResult = undefined;
+    ++this.savedSnapshotSearchSequence;
+    const response = await invokeSemanticSession(
+      command,
+      exactRequest,
+      "REFACTORKIT_SEMANTIC_SESSION_START_FAILED",
+    );
+    const candidate = enforceSemanticSessionBoundary(
+      command,
+      "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
+      () => parseSemanticSessionStartCandidate(command, response),
+    );
+    const decision = normalizeSavedSnapshotSemanticSessionStartResult({
+      request: exactRequest,
+      candidate,
+    });
+    if (decision.kind === "refused") {
+      throw semanticSessionError(command, "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED");
+    }
+    return decision.result;
+  }
+
+  async stopSavedSnapshotSemanticSession(
+    request: SavedSnapshotSemanticSessionStopRequest,
+  ): Promise<SavedSnapshotSemanticSessionStopResult> {
+    const command = "stop_refactorkit_saved_snapshot_semantic_session";
+    const exactRequest = enforceSemanticSessionBoundary(
+      command,
+      "REFACTORKIT_SEMANTIC_SESSION_STOP_REQUEST_REJECTED",
+      () => validateSemanticSessionStopRequest(request, command),
+    );
+    const response = await invokeSemanticSession(
+      command,
+      exactRequest,
+      "REFACTORKIT_SEMANTIC_SESSION_STOP_FAILED",
+    );
+    const candidate = enforceSemanticSessionBoundary(
+      command,
+      "REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED",
+      () => parseSemanticSessionStopCandidate(command, response),
+    );
+    const decision = normalizeSavedSnapshotSemanticSessionStopResult({
+      request: exactRequest,
+      candidate,
+    });
+    if (decision.kind === "refused") {
+      throw semanticSessionError(command, "REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED");
+    }
+    if (
+      decision.result.stopped &&
+      this.currentSavedSnapshotSymbolSearchResult?.languageId === decision.result.languageId &&
+      this.currentSavedSnapshotSymbolSearchResult.workspaceId === decision.result.workspaceId &&
+      this.currentSavedSnapshotSymbolSearchResult.workspaceGeneration ===
+        decision.result.workspaceGeneration &&
+      this.currentSavedSnapshotSymbolSearchResult.sessionId === decision.result.sessionId
+    ) {
+      this.currentSavedSnapshotSymbolSearchResult = undefined;
+      ++this.savedSnapshotSearchSequence;
+    }
+    return decision.result;
   }
 
   async searchSavedSnapshotSymbols(
