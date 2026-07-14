@@ -1,5 +1,5 @@
 import { detectDocumentKind } from "@ide/contracts";
-import type { DocumentKind, FileNode, LanguageRange } from "@ide/contracts";
+import type { DocumentKind, EditorPoint, FileNode, LanguageRange } from "@ide/contracts";
 import type { EditorRevealRequest } from "@ide/ui";
 import { useCallback, useRef, useState } from "react";
 
@@ -7,6 +7,9 @@ export interface UseDocumentNavigationControllerDependencies {
   displayedFilePath: string | null;
   openFileProgrammatically(node: FileNode, rejectOnError?: boolean): Promise<boolean>;
 }
+
+export type DocumentNavigationLocation =
+  { kind: "point"; point: EditorPoint } | { kind: "range"; range: LanguageRange };
 
 /** Owns per-document preview visibility and diagnostic reveal requests. */
 export function useDocumentNavigationController({
@@ -40,8 +43,8 @@ export function useDocumentNavigationController({
     setClosedPreviewFilePaths(new Set());
   }, []);
 
-  const navigateToProblem = useCallback(
-    async (filePath: string, range: LanguageRange): Promise<void> => {
+  const navigateToLocation = useCallback(
+    async (filePath: string, location: DocumentNavigationLocation): Promise<void> => {
       try {
         await openFileProgrammatically(
           {
@@ -52,11 +55,20 @@ export function useDocumentNavigationController({
           },
           true,
         );
+        const point =
+          location.kind === "point"
+            ? {
+                line: Math.max(1, location.point.lineNumber),
+                column: Math.max(1, location.point.column),
+              }
+            : {
+                line: Math.max(0, location.range.start.line) + 1,
+                column: Math.max(0, location.range.start.character) + 1,
+              };
         revealSequenceRef.current += 1;
         setEditorRevealRequest({
           filePath,
-          line: Math.max(0, range.start.line) + 1,
-          column: Math.max(0, range.start.character) + 1,
+          ...point,
           requestId: revealSequenceRef.current,
         });
       } catch (error) {
@@ -68,6 +80,12 @@ export function useDocumentNavigationController({
     [openFileProgrammatically],
   );
 
+  const navigateToProblem = useCallback(
+    (filePath: string, range: LanguageRange): Promise<void> =>
+      navigateToLocation(filePath, { kind: "range", range }),
+    [navigateToLocation],
+  );
+
   return {
     preview: {
       filePath: displayedFilePath,
@@ -77,6 +95,7 @@ export function useDocumentNavigationController({
     editorRevealRequest,
     closeDisplayedPreview,
     clearClosedPreviews,
+    navigateToLocation,
     navigateToProblem,
   };
 }

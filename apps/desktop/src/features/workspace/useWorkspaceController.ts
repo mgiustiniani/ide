@@ -28,6 +28,10 @@ export interface WorkspaceControllerCollaborators {
     resetWorkspace(): void;
   };
   refactorKitStatus: RefactorKitStatusWorkspaceCollaborator;
+  semanticSymbols?: {
+    /** Stops and invalidates the old saved-snapshot session before authorization changes. */
+    resetWorkspace(nextWorkspaceGeneration: WorkspaceGeneration): Promise<void>;
+  };
   xcom: {
     beginWorkspaceSwitch(workspaceGeneration: WorkspaceGeneration): WorkspaceXcomSwitchToken;
     activateWorkspace(workspace: WorkspaceInfo): void;
@@ -278,8 +282,11 @@ export function useWorkspaceController(
       collaborators.xcom.activateWorkspace(ensuredWorkspace);
       collaborators.java.attach(ensuredWorkspace, workspaceGeneration);
       const workspaceKey = collaborators.ai.activateWorkspace(ensuredWorkspace);
+      const resetSemanticSymbols =
+        collaborators.semanticSymbols?.resetWorkspace(workspaceGeneration) ?? Promise.resolve();
 
       await Promise.all([
+        resetSemanticSymbols,
         ...(collaborators.editor.restoreWorkspace ? [collaborators.editor.restoreWorkspace()] : []),
         loadFileTree(collaborators.shell.loadFileTree),
         collaborators.java.load(ensuredWorkspace.id, workspaceGeneration),
@@ -338,6 +345,8 @@ export function useWorkspaceController(
       collaborators.refactorKitImport.resetWorkspace();
 
       const javaDetach = collaborators.java.detach(workspaceGeneration);
+      const semanticSymbolsReset =
+        collaborators.semanticSymbols?.resetWorkspace(workspaceGeneration) ?? Promise.resolve();
       const xcomToken = collaborators.xcom.beginWorkspaceSwitch(workspaceGeneration);
       const refactorKitStatusGeneration =
         collaborators.refactorKitStatus.beginWorkspaceSwitch(workspaceGeneration);
@@ -347,7 +356,8 @@ export function useWorkspaceController(
       setError(null);
 
       try {
-        await javaDetach;
+        // Both old language processes must settle before native workspace authorization changes.
+        await Promise.all([javaDetach, semanticSymbolsReset]);
         if (generationRef.current !== workspaceGeneration) return;
 
         const switchedWorkspace = await dependencies.workspace.switchWorkspace(workspaceId);

@@ -5,8 +5,8 @@
 // FileTree, Editor, and Terminal.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef } from "react";
-import type { BottomPanelTab } from "@ide/ui";
+import { useMemo, useRef, useState } from "react";
+import type { BottomPanelTab, PanelLayoutActivity } from "@ide/ui";
 
 // ── Store creation ──────────────────────────────────────────────────────
 import { createFileTreeStore } from "@ide/web-core/state";
@@ -39,6 +39,7 @@ import {
   useRefactorKitImportController,
 } from "./features/refactorkit-import/useRefactorKitImportController";
 import { useRefactorKitStatusController } from "./features/refactorkit-status/useRefactorKitStatusController";
+import { useRefactorKitSymbolNavigationController } from "./features/refactorkit-symbol-navigation/useRefactorKitSymbolNavigationController";
 import {
   useWorkspaceController,
   type WorkspaceControllerCollaborators,
@@ -63,6 +64,7 @@ import { AiAgentResponsePanel } from "@ide/ui";
 import { Icon } from "@ide/ui";
 import { ProblemsPanel } from "@ide/ui";
 import { ExternalJavaImportPreviewDialog } from "@ide/ui";
+import { SemanticSymbolSearchPanel } from "@ide/ui";
 
 // ── Store hooks ──────────────────────────────────────────────────────────
 // Zustand stores are created once and exposed as singletons for the app.
@@ -167,6 +169,7 @@ export function App(): JSX.Element {
   const terminalState = useTerminalState();
   const panelState = usePanelState();
   const workspaceCollaboratorsRef = useRef<WorkspaceControllerCollaborators | null>(null);
+  const [activeActivity, setActiveActivity] = useState<PanelLayoutActivity>("explorer");
   const settings = useSettingsController();
 
   const refactorKitStatus = useRefactorKitStatusController({
@@ -322,6 +325,38 @@ export function App(): JSX.Element {
     displayedFilePath: activeFilePath,
     openFileProgrammatically: desktopEditorController.openFileProgrammatically,
   });
+  const refactorKitSymbolNavigation = useRefactorKitSymbolNavigationController({
+    refactorKit: refactorKitAdapter,
+    status: refactorKitStatus.status,
+    capabilities: refactorKitStatus.capabilities,
+    isCheckingCapabilities: refactorKitStatus.isChecking,
+    workspaceInfo,
+    workspaceGeneration: workspace.generation,
+    getWorkspaceContext: workspace.getContext,
+    getRelevantBuffers: () => {
+      const state = editorStore.getState();
+      return state.openFiles
+        .filter(({ filePath, language }) => {
+          const normalizedLanguage = language.toLowerCase();
+          return (
+            normalizedLanguage === "typescript" ||
+            normalizedLanguage === "javascript" ||
+            /\.(?:[cm]?[jt]sx?)$/iu.test(filePath)
+          );
+        })
+        .map(({ filePath, language }) => ({
+          path: filePath,
+          languageId:
+            language.toLowerCase() === "javascript" || /\.(?:cjs|mjs|jsx|js)$/iu.test(filePath)
+              ? ("javascript" as const)
+              : ("typescript" as const),
+          savedState: "saved" as const,
+          dirty: state.tabs.find((tab) => tab.filePath === filePath)?.isDirty ?? false,
+        }));
+    },
+    navigateToPoint: (filePath, point) =>
+      documentNavigation.navigateToLocation(filePath, { kind: "point", point }),
+  });
   const editorCommands = useEditorCommandController({
     activeFilePath: editorState.activeFilePath,
     activeContent,
@@ -363,6 +398,7 @@ export function App(): JSX.Element {
       resetWorkspace: refactorKitImport.resetWorkspace,
     },
     refactorKitStatus: refactorKitStatus.workspaceCollaborator,
+    semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
     xcom: xcom2SetupWorkspaceCollaborator,
     ai: aiAgentWorkspaceCollaborator,
     shell: {
@@ -459,6 +495,34 @@ export function App(): JSX.Element {
       <div className="min-h-0 flex-1">
         <PanelLayout
           layout={panelState.layout}
+          activeActivity={activeActivity}
+          onActivityChange={setActiveActivity}
+          searchActivityContent={
+            <SemanticSymbolSearchPanel
+              language={refactorKitSymbolNavigation.language}
+              query={refactorKitSymbolNavigation.query}
+              toolchainPaths={refactorKitSymbolNavigation.toolchainPaths}
+              approvedForSession={refactorKitSymbolNavigation.approvedForSession}
+              snapshotState={refactorKitSymbolNavigation.snapshotState}
+              evidenceState={refactorKitSymbolNavigation.evidenceState}
+              availability={refactorKitSymbolNavigation.availability}
+              availabilityReason={refactorKitSymbolNavigation.availabilityReason}
+              results={refactorKitSymbolNavigation.results}
+              resultLimit={refactorKitSymbolNavigation.resultLimit}
+              isBusy={refactorKitSymbolNavigation.isBusy}
+              canSubmit={refactorKitSymbolNavigation.canSubmit}
+              error={refactorKitSymbolNavigation.error}
+              refusal={refactorKitSymbolNavigation.refusal}
+              onLanguageChange={refactorKitSymbolNavigation.setLanguage}
+              onQueryChange={refactorKitSymbolNavigation.setQuery}
+              onToolchainPathChange={refactorKitSymbolNavigation.setToolchainPath}
+              onApprovalChange={refactorKitSymbolNavigation.setApprovedForSession}
+              onSubmit={refactorKitSymbolNavigation.submit}
+              onCancel={refactorKitSymbolNavigation.cancel}
+              onStop={refactorKitSymbolNavigation.stop}
+              onResultSelect={refactorKitSymbolNavigation.selectResult}
+            />
+          }
           onResizeLeft={shell.resizeLeft}
           onResizeBottom={shell.resizeBottom}
           leftSidebar={
