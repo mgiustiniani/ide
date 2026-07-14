@@ -10,7 +10,11 @@ import type {
   RefactorKitStatus,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
-} from '@ide/contracts';
+  SavedSnapshotDefinitionRequest,
+  SavedSnapshotDefinitionResult,
+  SavedSnapshotSymbolSearchRequest,
+  SavedSnapshotSymbolSearchResult,
+} from "@ide/contracts";
 
 /** Provider-neutral boundary. Adapters alone translate these calls to an installed API. */
 export interface RefactorKitPort {
@@ -21,7 +25,15 @@ export interface RefactorKitPort {
   symbols(): Promise<RefactorKitCommandResult>;
   definition(symbol: string): Promise<RefactorKitCommandResult>;
   references(symbol: string): Promise<RefactorKitCommandResult>;
-  previewExternalJavaImport(request: PreviewExternalJavaImportRequest): Promise<RefactorKitPatchPlan>;
+  searchSavedSnapshotSymbols(
+    request: SavedSnapshotSymbolSearchRequest,
+  ): Promise<SavedSnapshotSymbolSearchResult>;
+  resolveSavedSnapshotDefinition(
+    request: SavedSnapshotDefinitionRequest,
+  ): Promise<SavedSnapshotDefinitionResult>;
+  previewExternalJavaImport(
+    request: PreviewExternalJavaImportRequest,
+  ): Promise<RefactorKitPatchPlan>;
   applyPlan(request: ApplyRefactorKitPlanRequest): Promise<ApplyRefactorKitPlanResult>;
   /** Adapters must reject this call when rollback is not advertised. */
   rollbackTransaction(
