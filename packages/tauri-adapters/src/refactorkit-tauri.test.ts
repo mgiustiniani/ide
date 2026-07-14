@@ -617,7 +617,8 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
     expect(normalized).toEqual(providerNeutralCapabilities);
     expect(normalized.languageKernel?.available).toBe(true);
-    if (!normalized.languageKernel?.available) throw new Error("expected available language kernel");
+    if (!normalized.languageKernel?.available)
+      throw new Error("expected available language kernel");
     const kotlinAdapter = normalized.languageKernel.schema.adapters[0];
     const renameCapability = kotlinAdapter.capabilities[1];
     expect(renameCapability).toMatchObject({
@@ -640,7 +641,8 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     invokeMock.mockResolvedValueOnce(response);
 
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
-    if (!normalized.languageKernel?.available) throw new Error("expected available language kernel");
+    if (!normalized.languageKernel?.available)
+      throw new Error("expected available language kernel");
     const normalizedCapability = normalized.languageKernel.schema.adapters[0].capabilities[0];
 
     expect(normalizedCapability.runtime).not.toBe(sourceCapability.runtime);
@@ -833,7 +835,8 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     [
       "wrong runtime limit",
       (value: any) => {
-        value.languageKernel.schema.adapters[0].capabilities[0].runtime.limits.maxInputBytes = "4096";
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.limits.maxInputBytes =
+          "4096";
       },
     ],
     [
