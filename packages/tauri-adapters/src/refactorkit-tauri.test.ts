@@ -1,3 +1,9 @@
+import type {
+  SavedSnapshotDefinitionRequest,
+  SavedSnapshotSemanticSessionStartRequest,
+  SavedSnapshotSemanticSessionStopRequest,
+  SavedSnapshotSymbolSearchRequest,
+} from "@ide/contracts";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -161,6 +167,172 @@ const rustCommandResult = {
     outputLimitBytes: 524_288,
   },
 };
+
+const SEMANTIC_SESSION_ID = `refactorkit-semantic-session-v1:${"a".repeat(64)}`;
+const SNAPSHOT_IDENTITY = `sha256:${"b".repeat(64)}`;
+const PRIVATE_NATIVE_DETAIL = "private-native-toolchain-detail-sentinel";
+
+function semanticRuntime() {
+  return {
+    executionMode: "external-process" as const,
+    supportsTimeout: true,
+    supportsCancellation: true,
+    usesWorkspaceOverlay: true,
+    recordsProcessProvenance: true,
+    limits: {
+      requestTimeoutMillis: 30_000,
+      maxInputBytes: 16 * 1024 * 1024,
+      maxOutputBytes: 4 * 1024 * 1024,
+      maxProcesses: 1,
+    },
+  };
+}
+
+function semanticSessionStartRequest(): SavedSnapshotSemanticSessionStartRequest {
+  return {
+    languageId: "typescript",
+    workspaceRoot: "/workspace/project",
+    workspaceId: "workspace:1",
+    workspaceGeneration: 7,
+    provider: "refactorkit",
+    providerVersion: "0.5.0-SNAPSHOT",
+    backend: "typescript-language-server-4.3.4",
+    runtime: semanticRuntime(),
+    extensions: ["ts", "tsx"],
+    toolchain: {
+      nodeExecutable: "/opt/refactorkit/node/bin/node",
+      languageServerPackageRoot: "/opt/refactorkit/typescript-language-server",
+      typeScriptPackageRoot: "/opt/refactorkit/typescript",
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    },
+    acceptedSemanticCompleteness: ["full-typescript"],
+  };
+}
+
+function semanticSessionStartResponse() {
+  const request = semanticSessionStartRequest();
+  return {
+    languageId: request.languageId,
+    workspaceRoot: request.workspaceRoot,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: SEMANTIC_SESSION_ID,
+    providerProjectSnapshotIdentity: SNAPSHOT_IDENTITY,
+    provider: request.provider,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    toolchain: {
+      backend: request.backend,
+      runtime: structuredClone(request.runtime),
+      extensions: [...request.extensions],
+      nodeExecutable: request.toolchain.nodeExecutable,
+      languageServerPackageRoot: request.toolchain.languageServerPackageRoot,
+      typeScriptPackageRoot: request.toolchain.typeScriptPackageRoot,
+    },
+    semanticCompleteness: "full-typescript",
+    processProvenance: {
+      serverName: "typescript-language-server",
+      serverVersion: "4.3.4",
+      capabilitiesSha256: "c".repeat(64),
+      executableSha256: "d".repeat(64),
+      argumentsSha256: "e".repeat(64),
+      processId: 4242,
+    },
+  };
+}
+
+function semanticSessionStopRequest(): SavedSnapshotSemanticSessionStopRequest {
+  return {
+    languageId: "typescript",
+    workspaceId: "workspace:1",
+    workspaceGeneration: 7,
+    sessionId: SEMANTIC_SESSION_ID,
+  };
+}
+
+function semanticSessionStopResponse() {
+  return { ...semanticSessionStopRequest(), stopped: true };
+}
+
+function opaqueSymbolId(index = 1): string {
+  return `lsp-symbol-v1:${index.toString(16).padStart(64, "0")}`;
+}
+
+function savedSnapshotSearchRequest(): SavedSnapshotSymbolSearchRequest {
+  return {
+    languageId: "typescript",
+    query: "Widget",
+    workspaceId: "workspace:1",
+    workspaceGeneration: 7,
+    sessionId: SEMANTIC_SESSION_ID,
+    snapshotIdentity: SNAPSHOT_IDENTITY,
+    providerVersion: "0.5.0-SNAPSHOT",
+    backend: "typescript-language-server-4.3.4",
+    toolchain: {
+      nodeExecutable: "/opt/refactorkit/node/bin/node",
+      languageServerPackageRoot: "/opt/refactorkit/typescript-language-server",
+      typeScriptPackageRoot: "/opt/refactorkit/typescript",
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    },
+  };
+}
+
+function savedSnapshotSearchResponse(symbolCount = 2) {
+  const request = savedSnapshotSearchRequest();
+  return {
+    languageId: request.languageId,
+    query: request.query,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: request.sessionId,
+    snapshotIdentity: request.snapshotIdentity,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    completeness: {
+      resultCompleteness: "unknown",
+      truncation: "unknown",
+      semanticCompleteness: "full-typescript",
+      experimentalDisclosure: "shown",
+    },
+    symbols: Array.from({ length: symbolCount }, (_, index) => ({
+      id: opaqueSymbolId(index + 1),
+      name: `Widget${index + 1}`,
+      kind: "class",
+    })),
+  };
+}
+
+function savedSnapshotDefinitionRequest(): SavedSnapshotDefinitionRequest {
+  const search = savedSnapshotSearchRequest();
+  return {
+    languageId: search.languageId,
+    symbolId: opaqueSymbolId(1),
+    workspaceId: search.workspaceId,
+    workspaceGeneration: search.workspaceGeneration,
+    sessionId: search.sessionId,
+    snapshotIdentity: search.snapshotIdentity,
+    providerVersion: search.providerVersion,
+    backend: search.backend,
+  };
+}
+
+function savedSnapshotDefinitionResponse() {
+  const request = savedSnapshotDefinitionRequest();
+  return {
+    languageId: request.languageId,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: request.sessionId,
+    snapshotIdentity: request.snapshotIdentity,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    selectedSymbol: { id: request.symbolId, name: "Widget1", kind: "class" },
+    file: "src/Widget.ts",
+    point: { line: 12, character: 7 },
+  };
+}
 
 describe("TauriRefactorKitAdapter", () => {
   beforeEach(() => {
@@ -1367,5 +1539,504 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     } finally {
       for (const loggingSpy of loggingSpies) loggingSpy.mockRestore();
     }
+  });
+});
+
+describe("TauriRefactorKitAdapter saved-snapshot semantic lifecycle boundary", () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  it("sends the exact start envelope without caller-minted identities and returns an immutable clone", async () => {
+    const adapter = new TauriRefactorKitAdapter();
+    const request = semanticSessionStartRequest();
+    const nativeResponse = semanticSessionStartResponse();
+    invokeMock.mockResolvedValueOnce(nativeResponse);
+
+    const pending = adapter.startSavedSnapshotSemanticSession(request);
+    (request.runtime.limits as { maxInputBytes: number }).maxInputBytes = 1;
+    (request.extensions as string[]).push("js");
+    (request.toolchain as { nodeExecutable: string }).nodeExecutable = "/mutated/node";
+    const result = await pending;
+
+    expect(invokeMock.mock.calls).toEqual([
+      [
+        "start_refactorkit_saved_snapshot_semantic_session",
+        { request: semanticSessionStartRequest() },
+      ],
+    ]);
+    const wireRequest = (
+      invokeMock.mock.calls[0]?.[1] as { request: SavedSnapshotSemanticSessionStartRequest }
+    ).request;
+    expect(wireRequest).not.toBe(request);
+    expect(wireRequest.runtime).not.toBe(request.runtime);
+    expect(wireRequest.runtime.limits).not.toBe(request.runtime.limits);
+    expect(wireRequest.extensions).not.toBe(request.extensions);
+    expect(wireRequest.toolchain).not.toBe(request.toolchain);
+    expect(wireRequest).not.toHaveProperty("sessionId");
+    expect(wireRequest).not.toHaveProperty("snapshotIdentity");
+    expect(wireRequest).not.toHaveProperty("providerProjectSnapshotIdentity");
+    expect(wireRequest.toolchain).toMatchObject({
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    });
+
+    expect(result).toEqual(semanticSessionStartResponse());
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.toolchain)).toBe(true);
+    expect(Object.isFrozen(result.toolchain.runtime)).toBe(true);
+    expect(Object.isFrozen(result.toolchain.runtime.limits)).toBe(true);
+    expect(Object.isFrozen(result.toolchain.extensions)).toBe(true);
+    expect(Object.isFrozen(result.processProvenance)).toBe(true);
+
+    nativeResponse.toolchain.runtime.limits.maxInputBytes = 2;
+    nativeResponse.toolchain.extensions.push("js");
+    nativeResponse.processProvenance.processId = 9;
+    expect(result.toolchain.runtime.limits.maxInputBytes).toBe(16 * 1024 * 1024);
+    expect(result.toolchain.extensions).toEqual(["ts", "tsx"]);
+    expect(result.processProvenance.processId).toBe(4242);
+  });
+
+  it.each([
+    ["caller session identity", (request: any) => (request.sessionId = SEMANTIC_SESSION_ID)],
+    ["caller snapshot identity", (request: any) => (request.snapshotIdentity = SNAPSHOT_IDENTITY)],
+    ["PATH discovery", (request: any) => (request.toolchain.allowPathNodeDiscovery = true)],
+    [
+      "workspace-local discovery",
+      (request: any) => (request.toolchain.allowWorkspaceLocalToolchain = true),
+    ],
+    [
+      "workspace-local node",
+      (request: any) =>
+        (request.toolchain.nodeExecutable = "/workspace/project/node_modules/.bin/node"),
+    ],
+    ["relative node", (request: any) => (request.toolchain.nodeExecutable = "node")],
+    ["extra runtime field", (request: any) => (request.runtime.internalHandle = 7)],
+    ["extra request field", (request: any) => (request.internalDetail = PRIVATE_NATIVE_DETAIL)],
+  ])("rejects an invalid start request before invoke: %s", async (_name, mutate) => {
+    const request = semanticSessionStartRequest() as any;
+    mutate(request);
+
+    const error = await new TauriRefactorKitAdapter()
+      .startSavedSnapshotSemanticSession(request)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      name: "TauriRefactorKitSemanticSessionError",
+      command: "start_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_START_REQUEST_REJECTED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["authority mismatch", (response: any) => (response.workspaceGeneration = 8)],
+    ["non-opaque session", (response: any) => (response.sessionId = "session-from-caller")],
+    [
+      "non-digest snapshot",
+      (response: any) => (response.providerProjectSnapshotIdentity = "snapshot"),
+    ],
+    [
+      "workspace-local returned toolchain",
+      (response: any) =>
+        (response.toolchain.typeScriptPackageRoot = "/workspace/project/node_modules/typescript"),
+    ],
+    ["fabricated compiler attestation", (response: any) => (response.compilerAttestation = "yes")],
+    ["extra internal field", (response: any) => (response.internalDetail = PRIVATE_NATIVE_DETAIL)],
+  ])("rejects and redacts an invalid start response: %s", async (_name, mutate) => {
+    const response = semanticSessionStartResponse() as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .startSavedSnapshotSemanticSession(semanticSessionStartRequest())
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "start_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
+      cause: undefined,
+    });
+    expect(String(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+  });
+
+  it("redacts native start failures without retaining request, toolchain, or internal detail", async () => {
+    const request = semanticSessionStartRequest();
+    invokeMock.mockRejectedValueOnce({
+      message: `${PRIVATE_NATIVE_DETAIL}: ${request.workspaceRoot}`,
+      toolchain: request.toolchain,
+      request,
+    });
+
+    const error = await new TauriRefactorKitAdapter()
+      .startSavedSnapshotSemanticSession(request)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "start_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_START_FAILED",
+      cause: undefined,
+    });
+    expect(error).not.toHaveProperty("request");
+    expect(error).not.toHaveProperty("toolchain");
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(request.workspaceRoot);
+  });
+
+  it("sends the exact stop envelope and accepts only a correlated immutable result", async () => {
+    const request = semanticSessionStopRequest();
+    const nativeResponse = semanticSessionStopResponse();
+    invokeMock.mockResolvedValueOnce(nativeResponse);
+
+    const pending = new TauriRefactorKitAdapter().stopSavedSnapshotSemanticSession(request);
+    (request as { workspaceId: string }).workspaceId = "mutated-workspace";
+    const result = await pending;
+
+    expect(invokeMock.mock.calls).toEqual([
+      [
+        "stop_refactorkit_saved_snapshot_semantic_session",
+        { request: semanticSessionStopRequest() },
+      ],
+    ]);
+    expect(result).toEqual(semanticSessionStopResponse());
+    expect(Object.isFrozen(result)).toBe(true);
+    nativeResponse.sessionId = `refactorkit-semantic-session-v1:${"f".repeat(64)}`;
+    expect(result.sessionId).toBe(SEMANTIC_SESSION_ID);
+  });
+
+  it.each([
+    ["extra field", (request: any) => (request.force = true)],
+    ["non-opaque identity", (request: any) => (request.sessionId = "session-1")],
+    ["zero generation", (request: any) => (request.workspaceGeneration = 0)],
+  ])("rejects an invalid stop request before invoke: %s", async (_name, mutate) => {
+    const request = semanticSessionStopRequest() as any;
+    mutate(request);
+
+    await expect(
+      new TauriRefactorKitAdapter().stopSavedSnapshotSemanticSession(request),
+    ).rejects.toMatchObject({
+      command: "stop_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_STOP_REQUEST_REJECTED",
+      cause: undefined,
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["workspace authority", (response: any) => (response.workspaceId = "workspace:other")],
+    [
+      "session correlation",
+      (response: any) => (response.sessionId = `refactorkit-semantic-session-v1:${"f".repeat(64)}`),
+    ],
+    ["fabricated field", (response: any) => (response.internalDetail = PRIVATE_NATIVE_DETAIL)],
+    ["malformed stopped flag", (response: any) => (response.stopped = "yes")],
+  ])("rejects and redacts an invalid stop response: %s", async (_name, mutate) => {
+    const response = semanticSessionStopResponse() as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .stopSavedSnapshotSemanticSession(semanticSessionStopRequest())
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "stop_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_STOP_RESPONSE_REJECTED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+  });
+
+  it("redacts native stop failures without retaining session or internal detail", async () => {
+    const request = semanticSessionStopRequest();
+    invokeMock.mockRejectedValueOnce({ message: PRIVATE_NATIVE_DETAIL, request });
+
+    const error = await new TauriRefactorKitAdapter()
+      .stopSavedSnapshotSemanticSession(request)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "stop_refactorkit_saved_snapshot_semantic_session",
+      code: "REFACTORKIT_SEMANTIC_SESSION_STOP_FAILED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(request.sessionId);
+  });
+});
+
+describe("TauriRefactorKitAdapter saved-snapshot symbol search boundary", () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  it("sends one exact no-discovery envelope, accepts exactly 200 symbols, and isolates mutations", async () => {
+    const adapter = new TauriRefactorKitAdapter();
+    const request = savedSnapshotSearchRequest();
+    const nativeResponse = savedSnapshotSearchResponse(200);
+    invokeMock.mockResolvedValueOnce(nativeResponse);
+
+    const pending = adapter.searchSavedSnapshotSymbols(request);
+    (request as { query: string }).query = "mutated";
+    (request.toolchain as { nodeExecutable: string }).nodeExecutable = "/mutated/node";
+    const result = await pending;
+
+    expect(invokeMock.mock.calls).toEqual([
+      ["search_refactorkit_saved_snapshot_symbols", { request: savedSnapshotSearchRequest() }],
+    ]);
+    const wireRequest = (
+      invokeMock.mock.calls[0]?.[1] as { request: SavedSnapshotSymbolSearchRequest }
+    ).request;
+    expect(wireRequest).not.toBe(request);
+    expect(wireRequest.toolchain).not.toBe(request.toolchain);
+    expect(wireRequest.toolchain).toMatchObject({
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    });
+    expect(result.symbols).toHaveLength(200);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.completeness)).toBe(true);
+    expect(Object.isFrozen(result.symbols)).toBe(true);
+    expect(Object.isFrozen(result.symbols[0])).toBe(true);
+
+    nativeResponse.symbols[0]!.name = "mutated native name";
+    nativeResponse.completeness.experimentalDisclosure = "not-shown";
+    expect(result.symbols[0]?.name).toBe("Widget1");
+    expect(result.completeness.experimentalDisclosure).toBe("shown");
+  });
+
+  it.each([
+    ["empty query", (request: any) => (request.query = "")],
+    ["extra field", (request: any) => (request.limit = 200)],
+    ["PATH discovery", (request: any) => (request.toolchain.allowPathNodeDiscovery = true)],
+    [
+      "workspace-local discovery",
+      (request: any) => (request.toolchain.allowWorkspaceLocalToolchain = true),
+    ],
+    ["relative toolchain", (request: any) => (request.toolchain.nodeExecutable = "node")],
+    ["fabricated session identity", (request: any) => (request.sessionId = "caller-session")],
+    [
+      "fabricated snapshot identity",
+      (request: any) => (request.snapshotIdentity = "caller-snapshot"),
+    ],
+  ])("rejects an invalid search request before invoke: %s", async (_name, mutate) => {
+    const request = savedSnapshotSearchRequest() as any;
+    mutate(request);
+
+    const error = await new TauriRefactorKitAdapter()
+      .searchSavedSnapshotSymbols(request)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "search_refactorkit_saved_snapshot_symbols",
+      cause: undefined,
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "201st result",
+      (response: any) =>
+        response.symbols.push({ id: opaqueSymbolId(201), name: "Overflow", kind: "class" }),
+    ],
+    [
+      "false completeness claim",
+      (response: any) => (response.completeness.resultCompleteness = "complete"),
+    ],
+    [
+      "false truncation claim",
+      (response: any) => (response.completeness.truncation = "not-truncated"),
+    ],
+    [
+      "semantic completeness mismatch",
+      (response: any) => (response.completeness.semanticCompleteness = "checked-javascript"),
+    ],
+    [
+      "missing disclosure",
+      (response: any) => (response.completeness.experimentalDisclosure = "not-shown"),
+    ],
+    ["request authority mismatch", (response: any) => (response.query = "Other")],
+    [
+      "session mismatch",
+      (response: any) => (response.sessionId = `refactorkit-semantic-session-v1:${"f".repeat(64)}`),
+    ],
+    [
+      "snapshot mismatch",
+      (response: any) => (response.snapshotIdentity = `sha256:${"f".repeat(64)}`),
+    ],
+    ["provider mismatch", (response: any) => (response.providerVersion = "other")],
+    ["non-opaque symbol", (response: any) => (response.symbols[0].id = "src/Widget.ts#Widget")],
+    [
+      "duplicate opaque symbol",
+      (response: any) => (response.symbols[1].id = response.symbols[0].id),
+    ],
+    ["extra symbol field", (response: any) => (response.symbols[0].file = "src/Widget.ts")],
+    ["extra response field", (response: any) => (response.internalDetail = PRIVATE_NATIVE_DETAIL)],
+  ])("rejects malformed, uncorrelated, or fabricated search output: %s", async (_name, mutate) => {
+    const response = savedSnapshotSearchResponse(_name === "201st result" ? 200 : 2) as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .searchSavedSnapshotSymbols(savedSnapshotSearchRequest())
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "search_refactorkit_saved_snapshot_symbols",
+      code: "REFACTORKIT_SYMBOL_SEARCH_RESPONSE_REJECTED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+  });
+
+  it("redacts search transport failures including request, toolchain, and native detail", async () => {
+    const request = savedSnapshotSearchRequest();
+    invokeMock.mockRejectedValueOnce({
+      message: PRIVATE_NATIVE_DETAIL,
+      request,
+      executable: request.toolchain.nodeExecutable,
+    });
+
+    const error = await new TauriRefactorKitAdapter()
+      .searchSavedSnapshotSymbols(request)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      command: "search_refactorkit_saved_snapshot_symbols",
+      code: "REFACTORKIT_SYMBOL_SEARCH_FAILED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(request.toolchain.nodeExecutable);
+  });
+});
+
+describe("TauriRefactorKitAdapter saved-snapshot definition boundary", () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  async function adapterWithCurrentSearch(): Promise<TauriRefactorKitAdapter> {
+    const adapter = new TauriRefactorKitAdapter();
+    invokeMock.mockResolvedValueOnce(savedSnapshotSearchResponse());
+    await adapter.searchSavedSnapshotSymbols(savedSnapshotSearchRequest());
+    invokeMock.mockClear();
+    return adapter;
+  }
+
+  it("sends the exact definition envelope and returns an immutable normalized location", async () => {
+    const adapter = await adapterWithCurrentSearch();
+    const request = savedSnapshotDefinitionRequest();
+    const nativeResponse = savedSnapshotDefinitionResponse();
+    invokeMock.mockResolvedValueOnce(nativeResponse);
+
+    const pending = adapter.resolveSavedSnapshotDefinition(request);
+    (request as { workspaceId: string }).workspaceId = "mutated-workspace";
+    const result = await pending;
+
+    expect(invokeMock.mock.calls).toEqual([
+      [
+        "resolve_refactorkit_saved_snapshot_definition",
+        { request: savedSnapshotDefinitionRequest() },
+      ],
+    ]);
+    expect(result).toEqual(savedSnapshotDefinitionResponse());
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.selectedSymbol)).toBe(true);
+    expect(Object.isFrozen(result.point)).toBe(true);
+
+    nativeResponse.selectedSymbol.name = "mutated native name";
+    nativeResponse.point.line = 999;
+    expect(result.selectedSymbol.name).toBe("Widget1");
+    expect(result.point).toEqual({ line: 12, character: 7 });
+  });
+
+  it.each([
+    ["non-opaque symbol", (request: any) => (request.symbolId = "src/Widget.ts#Widget")],
+    ["symbol outside current result", (request: any) => (request.symbolId = opaqueSymbolId(99))],
+    ["workspace authority mismatch", (request: any) => (request.workspaceId = "workspace:other")],
+    [
+      "session authority mismatch",
+      (request: any) => (request.sessionId = `refactorkit-semantic-session-v1:${"f".repeat(64)}`),
+    ],
+    [
+      "snapshot authority mismatch",
+      (request: any) => (request.snapshotIdentity = `sha256:${"f".repeat(64)}`),
+    ],
+    ["extra range", (request: any) => (request.range = { start: 0, end: 1 })],
+  ])(
+    "rejects invalid or unauthorized definition input before invoke: %s",
+    async (_name, mutate) => {
+      const adapter = await adapterWithCurrentSearch();
+      const request = savedSnapshotDefinitionRequest() as any;
+      mutate(request);
+
+      const error = await adapter.resolveSavedSnapshotDefinition(request).catch((value) => value);
+      expect(error).toMatchObject({
+        name: "TauriAdapterError",
+        command: "resolve_refactorkit_saved_snapshot_definition",
+        cause: undefined,
+      });
+      expect(invokeMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["authority mismatch", (response: any) => (response.workspaceGeneration = 8)],
+    [
+      "selected opaque ID mismatch",
+      (response: any) => (response.selectedSymbol.id = opaqueSymbolId(2)),
+    ],
+    ["selected metadata mismatch", (response: any) => (response.selectedSymbol.name = "Other")],
+    ["absolute file", (response: any) => (response.file = "/workspace/project/src/Widget.ts")],
+    ["traversal file", (response: any) => (response.file = "src/../Secret.ts")],
+    ["backslash file", (response: any) => (response.file = "src\\Widget.ts")],
+    ["negative line", (response: any) => (response.point.line = -1)],
+    ["fractional character", (response: any) => (response.point.character = 1.5)],
+    ["overflowing line", (response: any) => (response.point.line = Number.MAX_SAFE_INTEGER)],
+    [
+      "fabricated range",
+      (response: any) => (response.range = { start: response.point, end: response.point }),
+    ],
+    ["fabricated attestation", (response: any) => (response.attestation = "compiler")],
+    ["extra internal detail", (response: any) => (response.internalDetail = PRIVATE_NATIVE_DETAIL)],
+  ])("rejects unsafe, uncorrelated, or fabricated definition output: %s", async (_name, mutate) => {
+    const adapter = await adapterWithCurrentSearch();
+    const response = savedSnapshotDefinitionResponse() as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await adapter
+      .resolveSavedSnapshotDefinition(savedSnapshotDefinitionRequest())
+      .catch((value) => value);
+    expect(error).toMatchObject({
+      command: "resolve_refactorkit_saved_snapshot_definition",
+      code: "REFACTORKIT_DEFINITION_RESPONSE_REJECTED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+  });
+
+  it("redacts definition transport failures without retaining request or internal details", async () => {
+    const adapter = await adapterWithCurrentSearch();
+    const request = savedSnapshotDefinitionRequest();
+    invokeMock.mockRejectedValueOnce({ message: PRIVATE_NATIVE_DETAIL, request });
+
+    const error = await adapter.resolveSavedSnapshotDefinition(request).catch((value) => value);
+    expect(error).toMatchObject({
+      command: "resolve_refactorkit_saved_snapshot_definition",
+      code: "REFACTORKIT_DEFINITION_FAILED",
+      cause: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(request.symbolId);
+  });
+
+  it("invalidates the correlated current search after a successful stop", async () => {
+    const adapter = await adapterWithCurrentSearch();
+    invokeMock.mockResolvedValueOnce(semanticSessionStopResponse());
+    await expect(
+      adapter.stopSavedSnapshotSemanticSession(semanticSessionStopRequest()),
+    ).resolves.toEqual(semanticSessionStopResponse());
+    invokeMock.mockClear();
+
+    await expect(
+      adapter.resolveSavedSnapshotDefinition(savedSnapshotDefinitionRequest()),
+    ).rejects.toMatchObject({
+      command: "resolve_refactorkit_saved_snapshot_definition",
+      cause: undefined,
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });
