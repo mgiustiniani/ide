@@ -10,19 +10,23 @@ import type {
   RefactorKitStatus,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
-} from '@ide/contracts';
-import type { RefactorKitPort } from '@ide/web-core/ports';
+  SavedSnapshotDefinitionRequest,
+  SavedSnapshotDefinitionResult,
+  SavedSnapshotSymbolSearchRequest,
+  SavedSnapshotSymbolSearchResult,
+} from "@ide/contracts";
+import type { RefactorKitPort } from "@ide/web-core/ports";
 
 const UNAVAILABLE_REASON =
-  'Local RefactorKit daemon access is desktop-only and unavailable in browser clients.';
+  "Local RefactorKit daemon access is desktop-only and unavailable in browser clients.";
 
 /** Error raised when browser code requests a local RefactorKit operation. */
 export class BrowserRefactorKitUnavailableError extends Error {
-  readonly code = 'BROWSER_REFACTORKIT_UNAVAILABLE';
+  readonly code = "BROWSER_REFACTORKIT_UNAVAILABLE";
 
   constructor() {
     super(UNAVAILABLE_REASON);
-    this.name = 'BrowserRefactorKitUnavailableError';
+    this.name = "BrowserRefactorKitUnavailableError";
   }
 }
 
@@ -32,9 +36,9 @@ function unavailable<T>(): Promise<T> {
 
 function unavailableCapabilities(): RefactorKitCapabilities {
   return {
-    api: 'refactorkit',
-    apiVersion: 'unknown',
-    provider: 'refactorkit',
+    api: "refactorkit",
+    apiVersion: "unknown",
+    provider: "refactorkit",
     providerVersion: null,
     javaImportExternalClass: {
       supported: false,
@@ -42,7 +46,7 @@ function unavailableCapabilities(): RefactorKitCapabilities {
       preview: false,
       apply: false,
       rollback: false,
-      stability: 'experimental',
+      stability: "experimental",
     },
     languageKernel: {
       available: false,
@@ -85,6 +89,18 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
     return unavailable();
   }
 
+  searchSavedSnapshotSymbols(
+    _request: SavedSnapshotSymbolSearchRequest,
+  ): Promise<SavedSnapshotSymbolSearchResult> {
+    return unavailable();
+  }
+
+  resolveSavedSnapshotDefinition(
+    _request: SavedSnapshotDefinitionRequest,
+  ): Promise<SavedSnapshotDefinitionResult> {
+    return unavailable();
+  }
+
   previewExternalJavaImport(
     _request: PreviewExternalJavaImportRequest,
   ): Promise<RefactorKitPatchPlan> {
@@ -101,9 +117,7 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
     return unavailable();
   }
 
-  discardPlan(
-    _request: DiscardRefactorKitPlanRequest,
-  ): Promise<DiscardRefactorKitPlanResult> {
+  discardPlan(_request: DiscardRefactorKitPlanRequest): Promise<DiscardRefactorKitPlanResult> {
     return unavailable();
   }
 }
