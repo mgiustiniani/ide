@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and `REQ-REFACTORKIT-TS-001` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change either declaration.
+Status: *implementation-informed; Chapter 1 goals remain needs-review*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change those declarations.
 ====
 
 == Governance
@@ -28,6 +28,12 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`REQ-REFACTORKIT-TS-001`
 |`@not-implemented`
 
+|link:../../features/refactorkit/typescript-javascript-symbol-definition.feature[`features/refactorkit/typescript-javascript-symbol-definition.feature`]
+|Trusted saved-snapshot semantic navigation for TypeScript and JavaScript workspaces
+|1
+|`REQ-REFACTORKIT-TS-002`
+|`@not-implemented`
+
 |link:../../features/workspace/startup-tooling.feature[`features/workspace/startup-tooling.feature`]
 |Startup tooling appropriate to each workspace
 |1
@@ -35,7 +41,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains two feature files, two scenarios, and two repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
+NOTE: The configured inventory contains three feature files, three scenarios, and three repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
 
 == Requirement Catalogue
 
@@ -79,7 +85,7 @@ NOTE: The configured inventory contains two feature files, two scenarios, and tw
 |The readiness Spec passed 27/27 cases. The pure policy can authorize one immutable request bound to TypeScript, authorized workspace/generation, semantic session, snapshot hash, provider version, and exact operation backend; it refuses stale, ambiguous, incomplete, mismatched, unsupported, or unqualified evidence before invocation. This is policy evidence only: the Spec starts no daemon, receives no real diagnostic result, and renders no Problems or Monaco marker.
 
 |Expected meaningful RED evidence
-|On 2026-07-14, `pnpm test:story:desktop` selected this scenario and produced the required meaningful RED: 1 failed scenario, 5 passed steps, and 6 skipped steps. The fixture entered through desktop adapter composition and the RefactorKit Status controller, preserved the exact advertisement, and then reached `run_refactorkit_diagnostics`. The current adapter invoked it with no qualified request (`{}`) instead of the required language/workspace/generation/session/snapshot/provider/backend fields. The failure is at the intended missing integration boundary rather than at feature discovery or stale metadata shape.
+|On 2026-07-14, focused diagnostics Story execution produced the required meaningful RED: 1 failed scenario, 5 passed steps, and 6 skipped steps. The independent full quality rerun retained that expected failure. The fixture entered through desktop adapter composition and the RefactorKit Status controller, preserved the exact advertisement, and then reached `run_refactorkit_diagnostics`. The current adapter invoked it with no qualified request (`{}`) instead of the required language/workspace/generation/session/snapshot/provider/backend fields. The failure is at the intended missing integration boundary rather than at feature discovery or stale metadata shape.
 
 |Native GUI / full Story evidence absence
 |No native Tauri WebView or packaged-daemon GUI run has completed this scenario. No run has shown exact RefactorKit TypeScript diagnostics for the current editor snapshot in both Problems and Monaco. The expected RED is not full Story GREEN, and the supporting jsdom/Tauri-invoke fixture is not native GUI evidence.
@@ -98,6 +104,64 @@ NOTE: The configured inventory contains two feature files, two scenarios, and tw
 
 |Upstream conditions before resumption
 |Upstream must provide (1) exact bounded UTF-16 ranges or explicit enforceable precision, (2) request/result authority correlation, (3) exact compiler attestation, (4) explicit saved/unsaved snapshot semantics, (5) structured readiness/refusal/failure outcomes, and (6) compatible advertised/observed runtime and response bounds.
+|===
+
+=== REQ-REFACTORKIT-TS-002
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-REFACTORKIT-TS-002]]`REQ-REFACTORKIT-TS-002`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`)
+
+|Actor / stakeholder
+|A TypeScript or JavaScript developer using an authorized desktop workspace.
+
+|Capability
+|Search workspace symbols through the existing generic Search surface and open a selected semantic definition at the exact provider point, bound to the same authorized workspace, generation, semantic session, and saved snapshot. Refuse dirty/never-saved or stale work; keep opaque identity transient; disclose compatibility limits; avoid fallback, tool discovery, project scripts, workspace writes, language-specific panels, and global Settings actions; report browser unavailability.
+
+|Scenario
+|_Open a searched workspace symbol at its semantic definition_
+
+|Feature path
+|link:../../features/refactorkit/typescript-javascript-symbol-definition.feature[`features/refactorkit/typescript-javascript-symbol-definition.feature`], scenario beginning at line 6
+
+|Tags
+|`@desktop`, `@REQ-REFACTORKIT-TS-002`, `@functional-requirement`, `@non-functional-requirement`, `@compatibility`, `@security`, `@not-implemented`
+
+|Declared status
+|`@not-implemented` — copied from the feature source. Completed implementation and deterministic GREEN evidence do not promote it.
+
+|Intended validation target
+|Desktop/Tauri Story BDD through focused and future aggregate desktop profiles, plus a real immutable RefactorKit daemon audit and packaged Tauri GUI/E2E. The operation includes provider `project.open`, saved-snapshot semantic start/search/definition/stop, generic Search interaction, editor reveal, lifecycle cleanup, and the complete workspace byte tree.
+
+|Completed implementation evidence
+|By IDE HEAD `a7fee4b4e8d2934f81bbec5e0992269cf8c72039`, contracts, browser refusal, typed Tauri adapters, the Rust saved-snapshot semantic backend, explicit external-tool authorization, application controller/composition, generic Search UI, exact provider-point document navigation, dirty/never-saved and stale refusal, transient opaque identity, compatibility disclosure, and cleanup were implemented. The independent gate passed 847/847 frontend tests, 120/120 Spec tests, 171 Rust tests with 8 ignored, TypeScript checks, lint, boundaries, all workspace builds, formatting, strict Clippy, and a Tauri no-bundle build. These are implementation/suite results, not real-provider no-write or packaged GUI/E2E proof.
+
+|Deterministic desktop Story evidence
+|On 2026-07-14, the focused desktop Story passed 1 scenario and 18/18 steps. Its Tauri-invoke fixture composed the real `useRefactorKitSymbolNavigationController` and `SemanticSymbolSearchPanel` over exact `v0.6.2` start/search/definition/stop DTOs. It verified exact point reveal; workspace/generation/session/snapshot identity; transient opaque identity; dirty/never-saved and stale refusal; cleanup; compatibility disclosure; no discovery, fallback, persistence, scripts, special panel, or Settings action; and browser unavailability. This is deterministic desktop composition evidence, not packaged GUI/E2E or actual daemon filesystem evidence.
+
+|Real immutable `v0.6.2` semantic evidence
+|An isolated immutable daemon at tag commit `110b605` ran with JDK 21.0.11, Node 22.23.0, TypeScript language server 5.1.3, and TypeScript 5.9.3. Start→search→definition→stop returned the expected semantic result, and no project-script, PATH-node, or workspace-node marker was observed. The semantic result path passed, but the no-workspace-write audit failed.
+
+|Observed no-workspace-write failure
+|A before/after hidden-file byte-tree audit found that `project.open` added `.refactorkit/workspace.lock`. Immutable `v0.6.2` `DaemonSession.projectOpen` invokes `PatchEngine(path).recover()` despite capability evidence advertising `project.open` with `writesWorkspace:false`. This violates the scenario's clause that the operation does not write to the workspace. Later search/definition operations being read-only does not erase the lifecycle write.
+
+|Current support level
+|Evidence supports at most partial behavior. The declared status remains `@not-implemented`; neither implemented status is claimed. The documentation does not accept, permit, ignore, or normalize the lock write.
+
+|Aggregate desktop Story infrastructure gap
+|The implemented-desktop aggregate is explicitly unsupported and selects zero desktop scenarios. Focused 18/18 GREEN must not be treated as aggregate regression evidence. Aggregate desktop/Tauri Story support must exist and pass before any future status promotion.
+
+|Packaged GUI/E2E evidence absence
+|No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
+
+|Decision / review point
+|No human decision has been made to permit `.refactorkit/workspace.lock`. Before promotion, upstream must remove or relocate the mutation and the hidden-file audit must pass, or the user must explicitly revise the product requirement. This issue is separate from `REQ-REFACTORKIT-TS-001` diagnostics; its option-A `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` decision remains unchanged.
 |===
 
 === REQ-WEB-001
@@ -137,15 +201,15 @@ NOTE: The configured inventory contains two feature files, two scenarios, and tw
 |On 2026-07-14, `pnpm test:story:implemented:web` passed 1 scenario and 7/7 steps. The Playwright path launched real headless Chromium, navigated to the loopback web application, observed only the Terminal tool-window tab, observed the integrated terminal and active session, and observed no Java- or XCOM-named tool-window tab. This is Chromium evidence for this web scenario only; it is not proof for every browser, operating system, or IDE capability.
 
 |Desktop evidence / absence
-|This scenario is not tagged `@desktop`; its browser result supplies no desktop parity evidence. The separately tagged RefactorKit desktop scenario has its own expected RED evidence and must not be merged into this result.
+|This scenario is not tagged `@desktop`; its browser result supplies no desktop parity evidence. The separately tagged RefactorKit desktop scenarios have their own diagnostics-RED and symbol-navigation evidence boundaries and must not be merged into this result.
 |===
 
 == Reconciliation and Migration Status
 
-The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit desktop requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. Neither result confirms the inherited Chapter 1 goals, completes BDD migration, or supersedes broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented`: real immutable `v0.6.2` evidence violates its no-workspace-write clause, aggregate desktop Story support is absent, and no packaged GUI/E2E evidence exists. These results confirm neither the inherited Chapter 1 goals nor complete BDD migration and do not supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
 
 Legacy `PLAN.md` remains a migration input and causes the documentation validator's expected migration warning. Its architecture content still needs classification into ARC42, ADR, specialist evidence, or removable history before strict bdd-ts admission; no requirement is promoted merely because legacy implementation, support code, upstream code, or plan text exists.
 
 == Reconciliation Checks
 
-The 2026-07-14 reconciliation checked every configured feature path, scenario, stable ID, classification, effective declared status, target-specific observed evidence, relative link target, and AsciiDoc table delimiter. `pnpm validate:bdd:docs:migration` is the governing documentation check while `PLAN.md` remains and must pass with only the expected legacy-plan warning.
+The 2026-07-14 reconciliation checked all three configured feature paths, scenarios, stable IDs, classifications, effective declared statuses, target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs:migration` is the governing documentation check while `PLAN.md` remains and must pass with only the expected legacy-plan warning.
