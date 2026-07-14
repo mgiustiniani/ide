@@ -29,7 +29,7 @@ export interface RefactorKitCommandResult {
   command: string[];
 }
 
-export type RefactorKitCapabilityStability = 'experimental' | 'preview' | 'stable';
+export type RefactorKitCapabilityStability = "experimental" | "preview" | "stable";
 
 export interface RefactorKitExternalClassImportCapability {
   supported: boolean;
@@ -42,22 +42,13 @@ export interface RefactorKitExternalClassImportCapability {
 }
 
 export type RefactorKitLanguageCapabilityStability =
-  | 'stable'
-  | 'experimental'
-  | 'structural'
-  | 'refused'
-  | 'not-applicable';
+  "stable" | "experimental" | "structural" | "refused" | "not-applicable";
 
 export type RefactorKitLanguageCapabilityEvidence =
-  | 'compiler'
-  | 'language-server'
-  | 'native-ast'
-  | 'structural-parse'
-  | 'lexical'
-  | 'none';
+  "compiler" | "language-server" | "native-ast" | "structural-parse" | "lexical" | "none";
 
-export type RefactorKitLanguageMutationAuthority = 'managed-stable' | 'proposal-only' | 'none';
-export type RefactorKitLanguageAdapterExecutionMode = 'in-process' | 'external-process';
+export type RefactorKitLanguageMutationAuthority = "managed-stable" | "proposal-only" | "none";
+export type RefactorKitLanguageAdapterExecutionMode = "in-process" | "external-process";
 
 /** Nullable resource limits from RefactorKit language-kernel schema v1. */
 export interface RefactorKitLanguageAdapterResourceLimits {
@@ -147,18 +138,18 @@ export interface PreviewExternalJavaImportRequest {
   code: string;
   /** Selected workspace-relative directory. It is not a Java package name. */
   targetDirectory: string;
-  sourceKind: 'clipboard';
+  sourceKind: "clipboard";
   sourceUrl: null;
-  licensePolicy: 'warn';
+  licensePolicy: "warn";
   workspaceId: string;
   workspaceGeneration: number;
   selectionGeneration: number;
   requestId: string;
 }
 
-export type RefactorKitPatchPlanStatus = 'ready' | 'refused' | 'stale' | 'error';
-export type RefactorKitRiskLevel = 'low' | 'medium' | 'high' | 'unknown';
-export type RefactorKitFileChangeKind = 'create' | 'edit' | 'move' | 'delete';
+export type RefactorKitPatchPlanStatus = "ready" | "refused" | "stale" | "error";
+export type RefactorKitRiskLevel = "low" | "medium" | "high" | "unknown";
+export type RefactorKitFileChangeKind = "create" | "edit" | "move" | "delete";
 
 export interface RefactorKitEvidence {
   kind: string;
@@ -204,7 +195,7 @@ export interface RefactorKitStructuredDiff {
   hunks: RefactorKitStructuredDiffHunk[];
 }
 
-export type RefactorKitDiagnosticSeverity = 'error' | 'warning' | 'information' | 'hint';
+export type RefactorKitDiagnosticSeverity = "error" | "warning" | "information" | "hint";
 
 export interface RefactorKitPlanDiagnostic {
   severity: RefactorKitDiagnosticSeverity;
@@ -216,10 +207,10 @@ export interface RefactorKitPlanDiagnostic {
 }
 
 export interface RefactorKitProvenance {
-  sourceKind: 'clipboard';
+  sourceKind: "clipboard";
   sourceUrl: null;
   detectedLicense: string | null;
-  licensePolicy: 'warn';
+  licensePolicy: "warn";
   notices: string[];
 }
 

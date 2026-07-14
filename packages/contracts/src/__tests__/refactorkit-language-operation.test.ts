@@ -1,12 +1,12 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type {
   RefactorKitLanguageAdapterRuntime,
   RefactorKitLanguageCapability,
-} from '../refactorkit';
+} from "../refactorkit";
 
 const runtime = Object.freeze({
-  executionMode: 'external-process',
+  executionMode: "external-process",
   supportsTimeout: true,
   supportsCancellation: true,
   usesWorkspaceOverlay: true,
@@ -19,48 +19,48 @@ const runtime = Object.freeze({
   }),
 }) satisfies RefactorKitLanguageAdapterRuntime;
 
-const extensions = Object.freeze(['ts', 'tsx']);
+const extensions = Object.freeze(["ts", "tsx"]);
 
 const diagnosticsCapability = {
-  operation: 'diagnostics',
-  stability: 'experimental',
-  evidence: 'compiler',
-  mutationAuthority: 'none',
-  backend: 'typescript-lsp-explicit-v1',
+  operation: "diagnostics",
+  stability: "experimental",
+  evidence: "compiler",
+  mutationAuthority: "none",
+  backend: "typescript-lsp-explicit-v1",
   runtime: { ...runtime, limits: { ...runtime.limits } },
   extensions: [...extensions],
 } satisfies RefactorKitLanguageCapability;
 
-describe('RefactorKit schema-v1 language operation capability', () => {
-  it('requires the exact seven-field RefactorKit 0.6.2 wire contract', () => {
+describe("RefactorKit schema-v1 language operation capability", () => {
+  it("requires the exact seven-field RefactorKit 0.6.2 wire contract", () => {
     expectTypeOf<keyof RefactorKitLanguageCapability>().toEqualTypeOf<
-      | 'operation'
-      | 'stability'
-      | 'evidence'
-      | 'mutationAuthority'
-      | 'backend'
-      | 'runtime'
-      | 'extensions'
+      | "operation"
+      | "stability"
+      | "evidence"
+      | "mutationAuthority"
+      | "backend"
+      | "runtime"
+      | "extensions"
     >();
 
     expect(Object.keys(diagnosticsCapability)).toEqual([
-      'operation',
-      'stability',
-      'evidence',
-      'mutationAuthority',
-      'backend',
-      'runtime',
-      'extensions',
+      "operation",
+      "stability",
+      "evidence",
+      "mutationAuthority",
+      "backend",
+      "runtime",
+      "extensions",
     ]);
   });
 
-  it('preserves explicit operation metadata in independent arrays and runtime values', () => {
+  it("preserves explicit operation metadata in independent arrays and runtime values", () => {
     expect(diagnosticsCapability).toEqual({
-      operation: 'diagnostics',
-      stability: 'experimental',
-      evidence: 'compiler',
-      mutationAuthority: 'none',
-      backend: 'typescript-lsp-explicit-v1',
+      operation: "diagnostics",
+      stability: "experimental",
+      evidence: "compiler",
+      mutationAuthority: "none",
+      backend: "typescript-lsp-explicit-v1",
       runtime,
       extensions,
     });
@@ -69,15 +69,15 @@ describe('RefactorKit schema-v1 language operation capability', () => {
     expect(diagnosticsCapability.extensions).not.toBe(extensions);
   });
 
-  it('does not accept a wire operation with missing materialized metadata', () => {
+  it("does not accept a wire operation with missing materialized metadata", () => {
     // @ts-expect-error RefactorKit 0.6.2 wire entries always materialize backend, runtime, and extensions.
     const incomplete: RefactorKitLanguageCapability = {
-      operation: 'diagnostics',
-      stability: 'experimental',
-      evidence: 'compiler',
-      mutationAuthority: 'none',
+      operation: "diagnostics",
+      stability: "experimental",
+      evidence: "compiler",
+      mutationAuthority: "none",
     };
 
-    expect(incomplete.operation).toBe('diagnostics');
+    expect(incomplete.operation).toBe("diagnostics");
   });
 });
