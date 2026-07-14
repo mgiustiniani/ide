@@ -17,6 +17,20 @@ const LANGUAGE_VOCABULARY = {
   executionMode: ["in-process", "external-process"],
 };
 
+const JAVA_RUNTIME = {
+  executionMode: "in-process",
+  supportsTimeout: false,
+  supportsCancellation: false,
+  usesWorkspaceOverlay: false,
+  recordsProcessProvenance: false,
+  limits: {
+    requestTimeoutMillis: null,
+    maxInputBytes: null,
+    maxOutputBytes: null,
+    maxProcesses: null,
+  },
+};
+
 const javaCapabilities = [
   ["changeSignature.addParameter", "experimental", "compiler", "proposal-only"],
   ["changeSignature.removeParameter", "experimental", "compiler", "proposal-only"],
@@ -35,44 +49,56 @@ const javaCapabilities = [
   stability,
   evidence,
   mutationAuthority,
+  backend: "eclipse-jdt-3.44",
+  runtime: structuredClone(JAVA_RUNTIME),
+  extensions: ["java"],
 }));
 
 function treeSitterAdapter(languageId: "javascript" | "typescript", extension: "js" | "ts") {
+  const runtime = {
+    executionMode: "in-process",
+    supportsTimeout: true,
+    supportsCancellation: false,
+    usesWorkspaceOverlay: false,
+    recordsProcessProvenance: false,
+    limits: {
+      requestTimeoutMillis: 2_000,
+      maxInputBytes: 16 * 1024 * 1024,
+      maxOutputBytes: null,
+      maxProcesses: null,
+    },
+  };
+  const operationMetadata = () => ({
+    backend: "tree-sitter-jni-0.25.3",
+    runtime: structuredClone(runtime),
+    extensions: [extension],
+  });
   return {
     languageId,
     extensions: [extension],
     backend: "tree-sitter-jni-0.25.3",
-    runtime: {
-      executionMode: "in-process",
-      supportsTimeout: true,
-      supportsCancellation: false,
-      usesWorkspaceOverlay: false,
-      recordsProcessProvenance: false,
-      limits: {
-        requestTimeoutMillis: 2_000,
-        maxInputBytes: 16 * 1024 * 1024,
-        maxOutputBytes: null,
-        maxProcesses: null,
-      },
-    },
+    runtime,
     capabilities: [
       {
         operation: "identifierSearch",
         stability: "stable",
         evidence: "native-ast",
         mutationAuthority: "none",
+        ...operationMetadata(),
       },
       {
         operation: "localRename",
         stability: "structural",
         evidence: "lexical",
         mutationAuthority: "proposal-only",
+        ...operationMetadata(),
       },
       {
         operation: "outline",
         stability: "stable",
         evidence: "native-ast",
         mutationAuthority: "none",
+        ...operationMetadata(),
       },
     ],
   };
@@ -100,19 +126,7 @@ const actualSchemaV1Capabilities = {
           languageId: "java",
           extensions: ["java"],
           backend: "eclipse-jdt-3.44",
-          runtime: {
-            executionMode: "in-process",
-            supportsTimeout: false,
-            supportsCancellation: false,
-            usesWorkspaceOverlay: false,
-            recordsProcessProvenance: false,
-            limits: {
-              requestTimeoutMillis: null,
-              maxInputBytes: null,
-              maxOutputBytes: null,
-              maxProcesses: null,
-            },
-          },
+          runtime: structuredClone(JAVA_RUNTIME),
           capabilities: javaCapabilities,
         },
         treeSitterAdapter("javascript", "js"),
@@ -548,12 +562,42 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
                   stability: "refused",
                   evidence: "none",
                   mutationAuthority: "none",
+                  backend: "custom-language-kernel-v7",
+                  runtime: {
+                    executionMode: "external-process",
+                    supportsTimeout: true,
+                    supportsCancellation: true,
+                    usesWorkspaceOverlay: true,
+                    recordsProcessProvenance: true,
+                    limits: {
+                      requestTimeoutMillis: 7_500,
+                      maxInputBytes: 4_096,
+                      maxOutputBytes: 8_192,
+                      maxProcesses: 2,
+                    },
+                  },
+                  extensions: ["kt", "kts"],
                 },
                 {
                   operation: "renameModule",
                   stability: "experimental",
                   evidence: "language-server",
                   mutationAuthority: "proposal-only",
+                  backend: "kotlin-analysis-server-v2",
+                  runtime: {
+                    executionMode: "in-process",
+                    supportsTimeout: false,
+                    supportsCancellation: false,
+                    usesWorkspaceOverlay: false,
+                    recordsProcessProvenance: false,
+                    limits: {
+                      requestTimeoutMillis: null,
+                      maxInputBytes: 2_048,
+                      maxOutputBytes: null,
+                      maxProcesses: null,
+                    },
+                  },
+                  extensions: ["kt"],
                 },
               ],
             },
@@ -570,10 +614,43 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     };
     invokeMock.mockResolvedValueOnce(structuredClone(providerNeutralCapabilities));
 
-    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual(
-      providerNeutralCapabilities,
-    );
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized).toEqual(providerNeutralCapabilities);
+    expect(normalized.languageKernel?.available).toBe(true);
+    if (!normalized.languageKernel?.available) throw new Error("expected available language kernel");
+    const kotlinAdapter = normalized.languageKernel.schema.adapters[0];
+    const renameCapability = kotlinAdapter.capabilities[1];
+    expect(renameCapability).toMatchObject({
+      backend: "kotlin-analysis-server-v2",
+      runtime: {
+        executionMode: "in-process",
+        limits: { maxInputBytes: 2_048 },
+      },
+      extensions: ["kt"],
+    });
+    expect(renameCapability.backend).not.toBe(kotlinAdapter.backend);
+    expect(renameCapability.runtime).not.toEqual(kotlinAdapter.runtime);
+    expect(renameCapability.extensions).not.toEqual(kotlinAdapter.extensions);
     expect(invokeMock.mock.calls).toEqual([["get_refactorkit_capabilities", undefined]]);
+  });
+
+  it("clones operation runtime limits and extensions instead of retaining wire references", async () => {
+    const response = structuredClone(actualSchemaV1Capabilities);
+    const sourceCapability = response.languageKernel.schema.adapters[0].capabilities[0];
+    invokeMock.mockResolvedValueOnce(response);
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    if (!normalized.languageKernel?.available) throw new Error("expected available language kernel");
+    const normalizedCapability = normalized.languageKernel.schema.adapters[0].capabilities[0];
+
+    expect(normalizedCapability.runtime).not.toBe(sourceCapability.runtime);
+    expect(normalizedCapability.runtime.limits).not.toBe(sourceCapability.runtime.limits);
+    expect(normalizedCapability.extensions).not.toBe(sourceCapability.extensions);
+
+    sourceCapability.runtime.limits.requestTimeoutMillis = 1;
+    (sourceCapability.extensions as string[]).push("jav");
+    expect(normalizedCapability.runtime.limits.requestTimeoutMillis).toBeNull();
+    expect(normalizedCapability.extensions).toEqual(["java"]);
   });
 
   it("normalizes explicit language-kernel unavailability and keeps legacy metadata absent", async () => {
@@ -637,6 +714,162 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
 
   it.each([
     [
+      "missing backend",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].backend;
+      },
+    ],
+    [
+      "missing runtime",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].runtime;
+      },
+    ],
+    [
+      "missing extensions",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].extensions;
+      },
+    ],
+    [
+      "extra operation field",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].inferred = true;
+      },
+    ],
+    [
+      "wrong backend type",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].backend = 7;
+      },
+    ],
+    [
+      "wrong runtime type",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime = "in-process";
+      },
+    ],
+    [
+      "wrong extensions type",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].extensions = "java";
+      },
+    ],
+    [
+      "empty backend",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].backend = "";
+      },
+    ],
+    [
+      "control character in backend",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].backend = "jdt\u0000private";
+      },
+    ],
+    [
+      "UTF-8 backend bound",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].backend = "é".repeat(129);
+      },
+    ],
+    [
+      "non-canonical extension",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].extensions = [".java"];
+      },
+    ],
+    [
+      "duplicate extension",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].extensions = ["java", "java"];
+      },
+    ],
+    [
+      "empty extensions",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].extensions = [];
+      },
+    ],
+    [
+      "operation extension bound",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].extensions = Array.from(
+          { length: 65 },
+          (_, index) => `x${index}`,
+        );
+      },
+    ],
+    [
+      "missing runtime field",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].runtime.supportsCancellation;
+      },
+    ],
+    [
+      "extra runtime field",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.threadCount = 1;
+      },
+    ],
+    [
+      "wrong runtime boolean",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.supportsCancellation = "no";
+      },
+    ],
+    [
+      "missing runtime limit",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].runtime.limits.maxInputBytes;
+      },
+    ],
+    [
+      "extra runtime limit",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.limits.maxThreads = 1;
+      },
+    ],
+    [
+      "wrong runtime limit",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.limits.maxInputBytes = "4096";
+      },
+    ],
+    [
+      "incoherent in-process provenance",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].runtime.recordsProcessProvenance = true;
+      },
+    ],
+    [
+      "incoherent timeout limit",
+      (value: any) => {
+        value.languageKernel.schema.adapters[1].capabilities[0].runtime.limits.requestTimeoutMillis =
+          null;
+      },
+    ],
+  ])("rejects strict operation metadata: %s", async (_name, mutate) => {
+    const response = structuredClone(actualSchemaV1Capabilities) as any;
+    const source = "private operation metadata must stay redacted";
+    mutate(response);
+    response.source = source;
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .getCapabilities()
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_capabilities",
+      cause: undefined,
+    });
+    expect(String(error)).not.toContain(source);
+    expect(JSON.stringify(error)).not.toContain(source);
+  });
+
+  it.each([
+    [
       "adapter bound",
       (value: any) =>
         value.languageKernel.schema.adapters.push(
@@ -666,6 +899,9 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
             stability: "stable",
             evidence: "compiler",
             mutationAuthority: "none",
+            backend: "eclipse-jdt-3.44",
+            runtime: structuredClone(JAVA_RUNTIME),
+            extensions: ["java"],
           }),
         );
       },
