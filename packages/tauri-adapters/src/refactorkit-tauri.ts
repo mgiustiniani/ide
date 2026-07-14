@@ -458,6 +458,14 @@ function validOpaqueSymbolId(value: unknown): value is string {
   return typeof value === "string" && OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID.test(value);
 }
 
+function validOpaqueSemanticSessionId(value: unknown): value is string {
+  return typeof value === "string" && OPAQUE_SEMANTIC_SESSION_ID.test(value);
+}
+
+function validSha256Identity(value: unknown): value is string {
+  return typeof value === "string" && SHA256_IDENTITY.test(value);
+}
+
 function semanticSessionError(
   command: string,
   code: TauriRefactorKitSemanticSessionErrorCode,
@@ -744,10 +752,8 @@ function parseSemanticSessionStartCandidate(
     !validExternalToolchainPath(record.workspaceRoot) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
     !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
-    typeof record.sessionId !== "string" ||
-    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId) ||
-    typeof record.providerProjectSnapshotIdentity !== "string" ||
-    !SHA256_IDENTITY.test(record.providerProjectSnapshotIdentity) ||
+    !validOpaqueSemanticSessionId(record.sessionId) ||
+    !validSha256Identity(record.providerProjectSnapshotIdentity) ||
     !validSavedSnapshotMetadata(record.provider) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
@@ -868,8 +874,7 @@ function validateSemanticSessionStopRequest(
     !validSavedSnapshotLanguage(record.languageId) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
     !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
-    typeof record.sessionId !== "string" ||
-    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId)
+    !validOpaqueSemanticSessionId(record.sessionId)
   ) {
     throw semanticSessionError(command, code);
   }
@@ -897,8 +902,7 @@ function parseSemanticSessionStopCandidate(
     !validSavedSnapshotLanguage(record.languageId) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
     !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
-    typeof record.sessionId !== "string" ||
-    !OPAQUE_SEMANTIC_SESSION_ID.test(record.sessionId) ||
+    !validOpaqueSemanticSessionId(record.sessionId) ||
     typeof record.stopped !== "boolean"
   ) {
     throw semanticSessionError(command, code);
@@ -961,8 +965,8 @@ function validateSearchRequest(
     !validSavedSnapshotLanguage(record.languageId) ||
     !validSavedSnapshotQuery(record.query) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
-    !validSavedSnapshotIdentity(record.sessionId) ||
-    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validOpaqueSemanticSessionId(record.sessionId) ||
+    !validSha256Identity(record.snapshotIdentity) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
     typeof record.workspaceGeneration !== "number" ||
@@ -1026,8 +1030,8 @@ function validateDefinitionRequest(
     !validSavedSnapshotLanguage(record.languageId) ||
     !validOpaqueSymbolId(record.symbolId) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
-    !validSavedSnapshotIdentity(record.sessionId) ||
-    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validOpaqueSemanticSessionId(record.sessionId) ||
+    !validSha256Identity(record.snapshotIdentity) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
     typeof record.workspaceGeneration !== "number" ||
