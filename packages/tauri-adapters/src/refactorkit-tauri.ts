@@ -391,8 +391,30 @@ function nullableBoundedRuntimeInteger(
   return value;
 }
 
-function normalizeLanguageRuntime(command: string, value: unknown): RefactorKitLanguageAdapterRuntime {
-  const runtime = protocolRecord(command, value, 'languageKernel.adapters.runtime');
+function normalizeLanguageExtensions(command: string, value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_LANGUAGE_EXTENSIONS) {
+    throw invalidProtocolShape(command, `invalid ${field}`);
+  }
+  const uniqueExtensions = new Set<string>();
+  return value.map((extension) => {
+    if (
+      typeof extension !== 'string'
+      || !/^[a-z0-9][a-z0-9+_-]{0,15}$/.test(extension)
+      || uniqueExtensions.has(extension)
+    ) {
+      throw invalidProtocolShape(command, `invalid or duplicate ${field}`);
+    }
+    uniqueExtensions.add(extension);
+    return extension;
+  });
+}
+
+function normalizeLanguageRuntime(
+  command: string,
+  value: unknown,
+  field = 'languageKernel.adapters.runtime',
+): RefactorKitLanguageAdapterRuntime {
+  const runtime = protocolRecord(command, value, field);
   exactProtocolFields(command, runtime, [
     'executionMode',
     'supportsTimeout',
@@ -400,14 +422,15 @@ function normalizeLanguageRuntime(command: string, value: unknown): RefactorKitL
     'usesWorkspaceOverlay',
     'recordsProcessProvenance',
     'limits',
-  ], 'languageKernel.adapters.runtime');
-  const limitsRecord = protocolRecord(command, runtime.limits, 'languageKernel.adapters.runtime.limits');
+  ], field);
+  const limitsField = `${field}.limits`;
+  const limitsRecord = protocolRecord(command, runtime.limits, limitsField);
   exactProtocolFields(command, limitsRecord, [
     'requestTimeoutMillis',
     'maxInputBytes',
     'maxOutputBytes',
     'maxProcesses',
-  ], 'languageKernel.adapters.runtime.limits');
+  ], limitsField);
   const limits: RefactorKitLanguageAdapterResourceLimits = {
     requestTimeoutMillis: nullableBoundedRuntimeInteger(
       command,
@@ -432,7 +455,7 @@ function normalizeLanguageRuntime(command: string, value: unknown): RefactorKitL
       && (normalized.recordsProcessProvenance || normalized.usesWorkspaceOverlay))
     || (normalized.supportsTimeout && normalized.limits.requestTimeoutMillis === null)
   ) {
-    throw invalidProtocolShape(command, 'incoherent languageKernel adapter runtime');
+    throw invalidProtocolShape(command, `incoherent ${field}`);
   }
   return normalized;
 }
@@ -446,7 +469,7 @@ function normalizeLanguageCapability(
   exactProtocolFields(
     command,
     capability,
-    ['operation', 'stability', 'evidence', 'mutationAuthority'],
+    ['operation', 'stability', 'evidence', 'mutationAuthority', 'backend', 'runtime', 'extensions'],
     field,
   );
   const normalized: RefactorKitLanguageCapability = {
@@ -459,6 +482,9 @@ function normalizeLanguageCapability(
       'mutationAuthority',
       LANGUAGE_MUTATION_AUTHORITY,
     ),
+    backend: boundedLanguageString(command, capability, 'backend'),
+    runtime: normalizeLanguageRuntime(command, capability.runtime, `${field}.runtime`),
+    extensions: normalizeLanguageExtensions(command, capability.extensions, `${field}.extensions`),
   };
   if (
     normalized.mutationAuthority === 'managed-stable'
@@ -524,24 +550,13 @@ function normalizeLanguageKernel(command: string, value: unknown): RefactorKitLa
     }
     languageIds.add(languageId);
 
-    if (
-      !Array.isArray(adapter.extensions)
-      || adapter.extensions.length === 0
-      || adapter.extensions.length > MAX_LANGUAGE_EXTENSIONS
-    ) {
-      throw invalidProtocolShape(command, 'invalid languageKernel extensions');
-    }
-    const extensions = adapter.extensions.map((extension) => {
-      if (
-        typeof extension !== 'string'
-        || !/^[a-z0-9][a-z0-9+_-]{0,15}$/.test(extension)
-        || ownedExtensions.has(extension)
-      ) {
-        throw invalidProtocolShape(command, 'invalid or ambiguous languageKernel extension');
+    const extensions = normalizeLanguageExtensions(command, adapter.extensions, `${field}.extensions`);
+    for (const extension of extensions) {
+      if (ownedExtensions.has(extension)) {
+        throw invalidProtocolShape(command, 'ambiguous languageKernel extension');
       }
       ownedExtensions.add(extension);
-      return extension;
-    });
+    }
 
     if (!Array.isArray(adapter.capabilities) || adapter.capabilities.length > MAX_LANGUAGE_CAPABILITIES) {
       throw invalidProtocolShape(command, 'invalid languageKernel capabilities');
