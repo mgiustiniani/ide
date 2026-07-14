@@ -456,7 +456,7 @@ export function useRefactorKitSymbolNavigationController(
     [replaceConfiguration],
   );
 
-  const isCurrent = useCallback(
+  const isRequestCurrent = useCallback(
     (
       requestId: number,
       workspaceId: string,
@@ -464,13 +464,9 @@ export function useRefactorKitSymbolNavigationController(
       session?: Readonly<SavedSnapshotSemanticSessionStartResult>,
       snapshotIdentity?: string,
     ): boolean => {
-      const currentDependencies = dependenciesRef.current;
-      const current = currentDependencies.getWorkspaceContext();
-      const buffersRemainSaved =
-        snapshotStateOf(safeBuffers(currentDependencies.getRelevantBuffers)) === "saved";
+      const current = dependenciesRef.current.getWorkspaceContext();
       return (
         mountedRef.current &&
-        buffersRemainSaved &&
         requestRef.current === requestId &&
         !current.isSwitching &&
         !current.isMetadataLoading &&
@@ -482,6 +478,19 @@ export function useRefactorKitSymbolNavigationController(
       );
     },
     [],
+  );
+
+  const isCleanRequestCurrent = useCallback(
+    (
+      requestId: number,
+      workspaceId: string,
+      workspaceGeneration: number,
+      session?: Readonly<SavedSnapshotSemanticSessionStartResult>,
+      snapshotIdentity?: string,
+    ): boolean =>
+      isRequestCurrent(requestId, workspaceId, workspaceGeneration, session, snapshotIdentity) &&
+      snapshotStateOf(safeBuffers(dependenciesRef.current.getRelevantBuffers)) === "saved",
+    [isRequestCurrent],
   );
 
   const buildSearchAuthorization = useCallback(
@@ -583,7 +592,7 @@ export function useRefactorKitSymbolNavigationController(
         },
       });
       if (startDecision.kind !== "ready") {
-        if (isCurrent(requestId, workspace.id, context.generation)) {
+        if (isRequestCurrent(requestId, workspace.id, context.generation)) {
           setRefusal(boundedMessage(refusalMessage(startDecision.reason)));
           setIsBusy(false);
         }
@@ -600,7 +609,7 @@ export function useRefactorKitSymbolNavigationController(
           candidate: cloneStartCandidate(candidate),
         });
         if (normalized.kind !== "ready") {
-          if (isCurrent(requestId, workspace.id, context.generation)) {
+          if (isCleanRequestCurrent(requestId, workspace.id, context.generation)) {
             setRefusal(boundedMessage(refusalMessage(normalized.reason)));
             setIsBusy(false);
           }
@@ -608,14 +617,14 @@ export function useRefactorKitSymbolNavigationController(
         }
         started = normalized.result;
       } catch {
-        if (isCurrent(requestId, workspace.id, context.generation)) {
+        if (isCleanRequestCurrent(requestId, workspace.id, context.generation)) {
           setError(SEARCH_ERROR);
           setIsBusy(false);
         }
         return;
       }
 
-      if (!isCurrent(requestId, workspace.id, context.generation)) {
+      if (!isCleanRequestCurrent(requestId, workspace.id, context.generation)) {
         await stopExactSession(started);
         return;
       }
@@ -650,7 +659,7 @@ export function useRefactorKitSymbolNavigationController(
         });
         if (normalized.kind !== "ready") {
           if (
-            isCurrent(
+            isCleanRequestCurrent(
               requestId,
               workspace.id,
               context.generation,
@@ -664,7 +673,7 @@ export function useRefactorKitSymbolNavigationController(
           return;
         }
         if (
-          !isCurrent(
+          !isCleanRequestCurrent(
             requestId,
             workspace.id,
             context.generation,
@@ -685,7 +694,7 @@ export function useRefactorKitSymbolNavigationController(
         setIsBusy(false);
       } catch {
         if (
-          isCurrent(
+          isCleanRequestCurrent(
             requestId,
             workspace.id,
             context.generation,
@@ -704,7 +713,8 @@ export function useRefactorKitSymbolNavigationController(
     clearSearch,
     detachActiveSession,
     enqueue,
-    isCurrent,
+    isCleanRequestCurrent,
+    isRequestCurrent,
     language,
     query,
     stopExactSession,
@@ -765,7 +775,7 @@ export function useRefactorKitSymbolNavigationController(
           selectedSymbolId: selected.opaqueSymbolId,
         });
         if (definitionDecision.kind !== "ready") {
-          if (isCurrent(requestId, workspace.id, context.generation, session)) {
+          if (isRequestCurrent(requestId, workspace.id, context.generation, session)) {
             setRefusal(boundedMessage(refusalMessage(definitionDecision.reason)));
             setIsBusy(false);
           }
@@ -792,14 +802,14 @@ export function useRefactorKitSymbolNavigationController(
             candidate: cloneDefinitionCandidate(candidate),
           });
           if (normalized.kind !== "ready") {
-            if (isCurrent(requestId, workspace.id, context.generation, session)) {
+            if (isCleanRequestCurrent(requestId, workspace.id, context.generation, session)) {
               setRefusal(boundedMessage(refusalMessage(normalized.reason)));
               setIsBusy(false);
             }
             return;
           }
           if (
-            !isCurrent(
+            !isCleanRequestCurrent(
               requestId,
               workspace.id,
               context.generation,
@@ -817,9 +827,11 @@ export function useRefactorKitSymbolNavigationController(
             return;
           }
           await currentDependencies.navigateToPoint(normalized.result.file, point.point);
-          if (isCurrent(requestId, workspace.id, context.generation, session)) setIsBusy(false);
+          if (isCleanRequestCurrent(requestId, workspace.id, context.generation, session)) {
+            setIsBusy(false);
+          }
         } catch {
-          if (isCurrent(requestId, workspace.id, context.generation, session)) {
+          if (isCleanRequestCurrent(requestId, workspace.id, context.generation, session)) {
             setError(DEFINITION_ERROR);
             setIsBusy(false);
           }
@@ -830,7 +842,8 @@ export function useRefactorKitSymbolNavigationController(
       approvedForSession,
       buildSearchAuthorization,
       enqueue,
-      isCurrent,
+      isCleanRequestCurrent,
+      isRequestCurrent,
       language,
       query,
       toolchainPaths,
