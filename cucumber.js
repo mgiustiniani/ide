@@ -5,33 +5,53 @@ const common = {
   strict: true,
 };
 
-const defaultProfile = {
-  ...common,
-  worldParameters: {
-    target: { name: "unselected", driver: "unselected" },
-  },
+const targets = {
+  unselected: { target: { name: "unselected", driver: "unselected" } },
+  web: { target: { name: "web", driver: "playwright" } },
+  desktop: { target: { name: "desktop", driver: "tauri" } },
 };
 
-const implemented = {
+const defaultProfile = {
   ...common,
+  worldParameters: targets.unselected,
+};
+
+const implementedDiscovery = {
+  ...common,
+  dryRun: true,
   tags: "@implemented-and-validated",
-  worldParameters: {
-    target: { name: "unselected", driver: "unselected" },
-  },
+  worldParameters: targets.unselected,
+};
+
+const implementedWeb = {
+  ...common,
+  tags: "@implemented-and-validated and @web and not @desktop",
+  worldParameters: targets.web,
+};
+
+const implementedDesktop = {
+  ...common,
+  tags: "@implemented-and-validated and @desktop and not @web",
+  worldParameters: targets.desktop,
 };
 
 const web = {
   ...common,
-  worldParameters: {
-    target: { name: "web", driver: "playwright" },
-  },
+  tags: "@web and not @desktop",
+  worldParameters: targets.web,
 };
 
 const desktop = {
   ...common,
-  worldParameters: {
-    target: { name: "desktop", driver: "tauri" },
-  },
+  tags: "@desktop and not @web",
+  worldParameters: targets.desktop,
 };
 
-export { defaultProfile as default, implemented, web, desktop };
+export {
+  defaultProfile as default,
+  implementedDiscovery,
+  implementedWeb,
+  implementedDesktop,
+  web,
+  desktop,
+};
