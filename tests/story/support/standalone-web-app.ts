@@ -26,7 +26,7 @@ const SYSTEM_CHROMIUM_CANDIDATES = [
   "/usr/bin/google-chrome",
 ] as const;
 
-type BrowserSource = "playwright-cache" | "system-chromium";
+export type BrowserSource = "playwright-cache" | "system-chromium";
 
 export interface WebStoryEvidence {
   readonly target: "web/playwright";
@@ -139,6 +139,10 @@ export class StandaloneWebApp {
       throw new Error("Web Story evidence is unavailable before browser navigation");
     }
     return this.#evidence;
+  }
+
+  page(): Page {
+    return this.#requirePage();
   }
 
   async dispose(): Promise<void> {
@@ -282,7 +286,7 @@ async function findAvailableLoopbackPort(): Promise<number> {
   return address.port;
 }
 
-async function launchAvailableChromium(): Promise<{
+export async function launchAvailableChromium(): Promise<{
   readonly browser: Browser;
   readonly source: BrowserSource;
 }> {
