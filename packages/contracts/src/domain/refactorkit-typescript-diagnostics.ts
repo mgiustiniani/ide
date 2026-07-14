@@ -199,11 +199,21 @@ function refused(reason: TypeScriptDiagnosticsRefusalReason): TypeScriptDiagnost
 }
 
 function validIdentity(value: string): boolean {
-  return value.length > 0 && value.length <= 512 && value.trim() === value && !CONTROL_CHARACTERS.test(value);
+  return (
+    value.length > 0 &&
+    value.length <= 512 &&
+    value.trim() === value &&
+    !CONTROL_CHARACTERS.test(value)
+  );
 }
 
 function validMetadata(value: string): boolean {
-  return value.length > 0 && value.length <= 256 && value.trim() === value && !CONTROL_CHARACTERS.test(value);
+  return (
+    value.length > 0 &&
+    value.length <= 256 &&
+    value.trim() === value &&
+    !CONTROL_CHARACTERS.test(value)
+  );
 }
 
 function positiveGeneration(value: number): boolean {
