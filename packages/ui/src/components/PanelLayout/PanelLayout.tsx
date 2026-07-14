@@ -229,75 +229,82 @@ export function PanelLayout({
           />
         )}
 
-        {/* Main editor area */}
-        <main
-          className="ide-main-editor-pane flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-[var(--surface-editor)] panel-shadow"
-          aria-label="Editor area"
-        >
-          {mainContent}
-        </main>
+        {/* Editor-side column: editor row above bottom tool windows. */}
+        <div className="ide-content-column flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="ide-editor-row flex flex-1 min-h-0 min-w-0 overflow-hidden">
+            {/* Main editor area */}
+            <main
+              className="ide-main-editor-pane flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-[var(--surface-editor)] panel-shadow"
+              aria-label="Editor area"
+            >
+              {mainContent}
+            </main>
 
-        {rightSidebarVisible && (
-          <aside
-            className="ide-right-sidebar-pane min-h-0 min-w-0 max-w-full overflow-hidden bg-[var(--surface-sidebar)] panel-shadow"
-            aria-label={rightSidebarAriaLabel}
+            {rightSidebarVisible && (
+              <aside
+                className="ide-right-sidebar-pane min-h-0 min-w-0 max-w-full overflow-hidden bg-[var(--surface-sidebar)] panel-shadow"
+                aria-label={rightSidebarAriaLabel}
+                style={{
+                  width: rightSidebarWidth,
+                  minWidth: rightSidebarMinWidth,
+                  maxWidth: "100%",
+                  flexShrink: 1,
+                }}
+              >
+                {rightSidebarContent}
+              </aside>
+            )}
+          </div>
+
+          {/* Horizontal resize handle (visible only when bottom panel is expanded) */}
+          {bottomExpanded && (
+            <div
+              className="resize-handle resize-handle--horizontal cursor-row-resize gradient-accent"
+              role="separator"
+              tabIndex={0}
+              aria-label="Resize bottom panel"
+              aria-orientation="horizontal"
+              aria-valuemin={minSizes.bottomPanelHeight}
+              aria-valuenow={sizes.bottomPanelHeight}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const delta = e.key === "ArrowUp" ? 10 : -10;
+                  onResizeBottom(
+                    Math.max(minSizes.bottomPanelHeight, sizes.bottomPanelHeight + delta),
+                  );
+                }
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                startResize(
+                  "vertical",
+                  e.clientY,
+                  sizes.bottomPanelHeight,
+                  minSizes.bottomPanelHeight,
+                  onResizeBottom,
+                );
+              }}
+            />
+          )}
+
+          {/* Bottom panel with smooth height transition */}
+          <div
+            className="ide-bottom-panel min-w-0 overflow-hidden bg-[var(--surface-panel)] panel-transition-height glass-panel panel-shadow"
+            hidden={!bottomExpanded}
+            aria-hidden={!bottomExpanded}
             style={{
-              width: rightSidebarWidth,
-              minWidth: rightSidebarMinWidth,
-              maxWidth: "100%",
-              flexShrink: 1,
+              height: bottomHeight,
+              minHeight: bottomHeight > 0 ? minSizes.bottomPanelHeight : 0,
+              flexShrink: 0,
+              boxSizing: "border-box",
+              borderWidth: bottomExpanded ? undefined : 0,
             }}
           >
-            {rightSidebarContent}
-          </aside>
-        )}
-      </div>
-
-      {/* Horizontal resize handle (visible only when bottom panel is expanded) */}
-      {bottomExpanded && (
-        <div
-          className="resize-handle resize-handle--horizontal cursor-row-resize gradient-accent"
-          role="separator"
-          tabIndex={0}
-          aria-label="Resize bottom panel"
-          aria-orientation="horizontal"
-          aria-valuemin={minSizes.bottomPanelHeight}
-          aria-valuenow={sizes.bottomPanelHeight}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-              e.preventDefault();
-              const delta = e.key === "ArrowUp" ? 10 : -10;
-              onResizeBottom(Math.max(minSizes.bottomPanelHeight, sizes.bottomPanelHeight + delta));
-            }
-          }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            startResize(
-              "vertical",
-              e.clientY,
-              sizes.bottomPanelHeight,
-              minSizes.bottomPanelHeight,
-              onResizeBottom,
-            );
-          }}
-        />
-      )}
-
-      {/* Bottom panel with smooth height transition */}
-      <div
-        className="ide-bottom-panel min-w-0 overflow-hidden bg-[var(--surface-panel)] panel-transition-height glass-panel panel-shadow"
-        hidden={!bottomExpanded}
-        aria-hidden={!bottomExpanded}
-        style={{
-          height: bottomHeight,
-          minHeight: bottomHeight > 0 ? minSizes.bottomPanelHeight : 0,
-          flexShrink: 0,
-          boxSizing: "border-box",
-          borderWidth: bottomExpanded ? undefined : 0,
-        }}
-      >
-        <div className="h-full min-h-0 w-full min-w-0 panel-transition-opacity">
-          {bottomExpanded ? bottomContent : null}
+            <div className="h-full min-h-0 w-full min-w-0 panel-transition-opacity">
+              {bottomExpanded ? bottomContent : null}
+            </div>
+          </div>
         </div>
       </div>
 
