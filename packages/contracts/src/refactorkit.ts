@@ -80,11 +80,19 @@ export interface RefactorKitLanguageAdapterRuntime {
   limits: RefactorKitLanguageAdapterResourceLimits;
 }
 
+/**
+ * Exact RefactorKit schema-v1 wire entry from v0.6.2 commit
+ * 110b60537009781b44db9b840cf057d5b7f51067; operation metadata is always materialized.
+ */
 export interface RefactorKitLanguageCapability {
   operation: string;
   stability: RefactorKitLanguageCapabilityStability;
   evidence: RefactorKitLanguageCapabilityEvidence;
   mutationAuthority: RefactorKitLanguageMutationAuthority;
+  backend: string;
+  runtime: RefactorKitLanguageAdapterRuntime;
+  /** Lowercase operation-owned extensions without a leading dot. */
+  extensions: string[];
 }
 
 export interface RefactorKitLanguageAdapter {
