@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  normalizeSavedSnapshotDefinitionResult,
+  normalizeSavedSnapshotSymbolSearchResult,
+} from "@ide/contracts";
 import type {
   ApplyRefactorKitPlanRequest,
   ApplyRefactorKitPlanResult,
@@ -20,6 +24,14 @@ import type {
   RefactorKitStatus,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
+  SavedSnapshotDefinitionRequest,
+  SavedSnapshotDefinitionResult,
+  SavedSnapshotDefinitionResultCandidate,
+  SavedSnapshotSymbolSearchRequest,
+  SavedSnapshotSymbolSearchResult,
+  SavedSnapshotSymbolSearchResultCandidate,
+  SavedSnapshotWorkspaceSymbol,
+  TypeScriptJavaScriptLanguageId,
 } from "@ide/contracts";
 import type { RefactorKitPort } from "@ide/web-core/ports";
 import { TauriAdapterError, invokeTauri } from "./errors";
@@ -37,6 +49,12 @@ const MAX_LANGUAGE_STRING_BYTES = 256;
 const MAX_RUNTIME_TIMEOUT_MILLIS = 300_000;
 const MAX_RUNTIME_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_RUNTIME_PROCESSES = 64;
+const MAX_SAVED_SNAPSHOT_SYMBOLS = 200;
+const MAX_SAVED_SNAPSHOT_QUERY = 1_024;
+const MAX_SAVED_SNAPSHOT_IDENTITY = 512;
+const MAX_SAVED_SNAPSHOT_METADATA = 256;
+const OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID = /^lsp-symbol-v1:[a-f0-9]{64}$/u;
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const LANGUAGE_STABILITY = [
   "stable",
   "experimental",
@@ -86,6 +104,24 @@ export class TauriRefactorKitUpdateRequiredError extends TauriRefactorKitManaged
   constructor(command: string) {
     super(command, "REFACTORKIT_UPDATE_REQUIRED", UPDATE_REQUIRED);
     this.name = "TauriRefactorKitUpdateRequiredError";
+  }
+}
+
+export type TauriRefactorKitSymbolNavigationErrorCode =
+  | "REFACTORKIT_SYMBOL_SEARCH_FAILED"
+  | "REFACTORKIT_DEFINITION_FAILED"
+  | "REFACTORKIT_SYMBOL_SEARCH_RESPONSE_REJECTED"
+  | "REFACTORKIT_DEFINITION_RESPONSE_REJECTED";
+
+/** Source-safe failure for the experimental saved-snapshot native protocol. */
+export class TauriRefactorKitSymbolNavigationError extends TauriAdapterError {
+  constructor(
+    command: string,
+    public readonly code: TauriRefactorKitSymbolNavigationErrorCode,
+    message: string,
+  ) {
+    super(command, message);
+    this.name = "TauriRefactorKitSymbolNavigationError";
   }
 }
 
@@ -291,6 +327,437 @@ function validateRollbackRequest(
   requestId(request.workspaceId, command, "workspaceId");
   requestId(request.requestId, command, "requestId");
   requestGeneration(request.workspaceGeneration, command, "workspaceGeneration");
+}
+
+function invalidSymbolNavigationRequest(command: string): TauriAdapterError {
+  return new TauriAdapterError(command, "Invalid saved-snapshot symbol navigation request");
+}
+
+function symbolNavigationError(
+  command: string,
+  code: TauriRefactorKitSymbolNavigationErrorCode,
+): TauriRefactorKitSymbolNavigationError {
+  const messages: Record<TauriRefactorKitSymbolNavigationErrorCode, string> = {
+    REFACTORKIT_SYMBOL_SEARCH_FAILED: "RefactorKit could not search the authorized saved snapshot.",
+    REFACTORKIT_DEFINITION_FAILED:
+      "RefactorKit could not resolve the selected saved-snapshot definition.",
+    REFACTORKIT_SYMBOL_SEARCH_RESPONSE_REJECTED:
+      "The RefactorKit saved-snapshot symbol search response was rejected.",
+    REFACTORKIT_DEFINITION_RESPONSE_REJECTED:
+      "The RefactorKit saved-snapshot definition response was rejected.",
+  };
+  return new TauriRefactorKitSymbolNavigationError(command, code, messages[code]);
+}
+
+function symbolNavigationRequestRecord(command: string, value: unknown): RecordValue {
+  if (!isRecord(value) || !plainRecord(value)) throw invalidSymbolNavigationRequest(command);
+  return value;
+}
+
+function plainRecord(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function exactNavigationFields(
+  command: string,
+  record: RecordValue,
+  expected: readonly string[],
+  responseCode?: TauriRefactorKitSymbolNavigationErrorCode,
+): void {
+  const actual = Reflect.ownKeys(record);
+  if (
+    actual.length !== expected.length ||
+    actual.some((key) => typeof key !== "string") ||
+    expected.some((key) => !Object.prototype.hasOwnProperty.call(record, key))
+  ) {
+    if (responseCode) throw symbolNavigationError(command, responseCode);
+    throw invalidSymbolNavigationRequest(command);
+  }
+}
+
+function validNavigationString(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximum &&
+    value.trim() === value &&
+    !CONTROL_CHARACTERS.test(value)
+  );
+}
+
+function validSavedSnapshotQuery(value: unknown): value is string {
+  return validNavigationString(value, MAX_SAVED_SNAPSHOT_QUERY);
+}
+
+function validSavedSnapshotIdentity(value: unknown): value is string {
+  return validNavigationString(value, MAX_SAVED_SNAPSHOT_IDENTITY);
+}
+
+function validSavedSnapshotMetadata(value: unknown): value is string {
+  return validNavigationString(value, MAX_SAVED_SNAPSHOT_METADATA);
+}
+
+function validExternalToolchainPath(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_PATH ||
+    value.trim() !== value ||
+    CONTROL_CHARACTERS.test(value)
+  ) {
+    return false;
+  }
+  const normalized = value.replaceAll("\\", "/");
+  if (
+    !normalized.startsWith("/") &&
+    !/^[A-Za-z]:\//u.test(normalized) &&
+    !/^\/\/[^/]+\/[^/]+/u.test(normalized)
+  ) {
+    return false;
+  }
+  const pathWithoutRoot = normalized.replace(/^(?:[A-Za-z]:)?\/+/, "");
+  return pathWithoutRoot
+    .split("/")
+    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function validOpaqueSymbolId(value: unknown): value is string {
+  return typeof value === "string" && OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID.test(value);
+}
+
+function validSavedSnapshotLanguage(value: unknown): value is TypeScriptJavaScriptLanguageId {
+  return value === "typescript" || value === "javascript";
+}
+
+function validateSearchRequest(
+  request: SavedSnapshotSymbolSearchRequest,
+  command: string,
+): SavedSnapshotSymbolSearchRequest {
+  const record = symbolNavigationRequestRecord(command, request);
+  exactNavigationFields(command, record, [
+    "languageId",
+    "query",
+    "workspaceId",
+    "workspaceGeneration",
+    "sessionId",
+    "snapshotIdentity",
+    "providerVersion",
+    "backend",
+    "toolchain",
+  ]);
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validSavedSnapshotQuery(record.query) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !validSavedSnapshotIdentity(record.sessionId) ||
+    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend) ||
+    typeof record.workspaceGeneration !== "number" ||
+    !Number.isSafeInteger(record.workspaceGeneration) ||
+    record.workspaceGeneration <= 0
+  ) {
+    throw invalidSymbolNavigationRequest(command);
+  }
+  const toolchain = symbolNavigationRequestRecord(command, record.toolchain);
+  exactNavigationFields(command, toolchain, [
+    "nodeExecutable",
+    "languageServerPackageRoot",
+    "typeScriptPackageRoot",
+    "allowPathNodeDiscovery",
+    "allowWorkspaceLocalToolchain",
+  ]);
+  if (
+    !validExternalToolchainPath(toolchain.nodeExecutable) ||
+    !validExternalToolchainPath(toolchain.languageServerPackageRoot) ||
+    !validExternalToolchainPath(toolchain.typeScriptPackageRoot) ||
+    toolchain.allowPathNodeDiscovery !== false ||
+    toolchain.allowWorkspaceLocalToolchain !== false
+  ) {
+    throw invalidSymbolNavigationRequest(command);
+  }
+  return Object.freeze({
+    languageId: record.languageId,
+    query: record.query,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    snapshotIdentity: record.snapshotIdentity,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+    toolchain: Object.freeze({
+      nodeExecutable: toolchain.nodeExecutable,
+      languageServerPackageRoot: toolchain.languageServerPackageRoot,
+      typeScriptPackageRoot: toolchain.typeScriptPackageRoot,
+      allowPathNodeDiscovery: false,
+      allowWorkspaceLocalToolchain: false,
+    }),
+  });
+}
+
+function validateDefinitionRequest(
+  request: SavedSnapshotDefinitionRequest,
+  command: string,
+): SavedSnapshotDefinitionRequest {
+  const record = symbolNavigationRequestRecord(command, request);
+  exactNavigationFields(command, record, [
+    "languageId",
+    "symbolId",
+    "workspaceId",
+    "workspaceGeneration",
+    "sessionId",
+    "snapshotIdentity",
+    "providerVersion",
+    "backend",
+  ]);
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validOpaqueSymbolId(record.symbolId) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !validSavedSnapshotIdentity(record.sessionId) ||
+    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend) ||
+    typeof record.workspaceGeneration !== "number" ||
+    !Number.isSafeInteger(record.workspaceGeneration) ||
+    record.workspaceGeneration <= 0
+  ) {
+    throw invalidSymbolNavigationRequest(command);
+  }
+  return Object.freeze({
+    languageId: record.languageId,
+    symbolId: record.symbolId,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    snapshotIdentity: record.snapshotIdentity,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+  });
+}
+
+function navigationResponseRecord(
+  command: string,
+  value: unknown,
+  code: TauriRefactorKitSymbolNavigationErrorCode,
+): RecordValue {
+  if (!isRecord(value) || !plainRecord(value)) throw symbolNavigationError(command, code);
+  return value;
+}
+
+function parseNavigationSymbol(
+  command: string,
+  value: unknown,
+  code: TauriRefactorKitSymbolNavigationErrorCode,
+): SavedSnapshotWorkspaceSymbol {
+  const record = navigationResponseRecord(command, value, code);
+  exactNavigationFields(command, record, ["id", "name", "kind"], code);
+  if (
+    !validOpaqueSymbolId(record.id) ||
+    !validSavedSnapshotMetadata(record.name) ||
+    !validSavedSnapshotMetadata(record.kind)
+  ) {
+    throw symbolNavigationError(command, code);
+  }
+  return { id: record.id, name: record.name, kind: record.kind };
+}
+
+function parseSearchCandidate(
+  command: string,
+  response: unknown,
+): SavedSnapshotSymbolSearchResultCandidate {
+  const code = "REFACTORKIT_SYMBOL_SEARCH_RESPONSE_REJECTED" as const;
+  const record = navigationResponseRecord(command, response, code);
+  exactNavigationFields(
+    command,
+    record,
+    [
+      "languageId",
+      "query",
+      "workspaceId",
+      "workspaceGeneration",
+      "sessionId",
+      "snapshotIdentity",
+      "providerVersion",
+      "backend",
+      "completeness",
+      "symbols",
+    ],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validSavedSnapshotQuery(record.query) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !validSavedSnapshotIdentity(record.sessionId) ||
+    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend) ||
+    typeof record.workspaceGeneration !== "number" ||
+    !Number.isSafeInteger(record.workspaceGeneration) ||
+    record.workspaceGeneration <= 0
+  ) {
+    throw symbolNavigationError(command, code);
+  }
+  const completeness = navigationResponseRecord(command, record.completeness, code);
+  exactNavigationFields(
+    command,
+    completeness,
+    ["resultCompleteness", "truncation", "semanticCompleteness", "experimentalDisclosure"],
+    code,
+  );
+  if (
+    completeness.resultCompleteness !== "unknown" ||
+    completeness.truncation !== "unknown" ||
+    !["full-typescript", "checked-javascript", "dynamic-javascript", "mixed-javascript"].includes(
+      completeness.semanticCompleteness as string,
+    ) ||
+    (completeness.experimentalDisclosure !== "shown" &&
+      completeness.experimentalDisclosure !== "not-shown") ||
+    !Array.isArray(record.symbols) ||
+    record.symbols.length > MAX_SAVED_SNAPSHOT_SYMBOLS ||
+    !Array.from({ length: record.symbols.length }, (_, index) => index).every((index) =>
+      Object.prototype.hasOwnProperty.call(record.symbols, index),
+    )
+  ) {
+    throw symbolNavigationError(command, code);
+  }
+  const symbolIds = new Set<string>();
+  const symbols = record.symbols.map((value) => {
+    const symbol = parseNavigationSymbol(command, value, code);
+    if (symbolIds.has(symbol.id)) throw symbolNavigationError(command, code);
+    symbolIds.add(symbol.id);
+    return symbol;
+  });
+  return {
+    languageId: record.languageId,
+    query: record.query,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    snapshotIdentity: record.snapshotIdentity,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+    completeness: {
+      resultCompleteness: "unknown",
+      truncation: "unknown",
+      semanticCompleteness: completeness.semanticCompleteness as
+        "full-typescript" | "checked-javascript" | "dynamic-javascript" | "mixed-javascript",
+      experimentalDisclosure: completeness.experimentalDisclosure,
+    },
+    symbols,
+  };
+}
+
+function validDefinitionFile(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_PATH ||
+    value.trim() !== value ||
+    CONTROL_CHARACTERS.test(value) ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:/u.test(value)
+  ) {
+    return false;
+  }
+  return value
+    .split("/")
+    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function parseDefinitionCandidate(
+  command: string,
+  response: unknown,
+): SavedSnapshotDefinitionResultCandidate {
+  const code = "REFACTORKIT_DEFINITION_RESPONSE_REJECTED" as const;
+  const record = navigationResponseRecord(command, response, code);
+  exactNavigationFields(
+    command,
+    record,
+    [
+      "languageId",
+      "workspaceId",
+      "workspaceGeneration",
+      "sessionId",
+      "snapshotIdentity",
+      "providerVersion",
+      "backend",
+      "selectedSymbol",
+      "file",
+      "point",
+    ],
+    code,
+  );
+  if (
+    !validSavedSnapshotLanguage(record.languageId) ||
+    !validSavedSnapshotIdentity(record.workspaceId) ||
+    !validSavedSnapshotIdentity(record.sessionId) ||
+    !validSavedSnapshotIdentity(record.snapshotIdentity) ||
+    !validSavedSnapshotMetadata(record.providerVersion) ||
+    !validSavedSnapshotMetadata(record.backend) ||
+    typeof record.workspaceGeneration !== "number" ||
+    !Number.isSafeInteger(record.workspaceGeneration) ||
+    record.workspaceGeneration <= 0 ||
+    !validDefinitionFile(record.file)
+  ) {
+    throw symbolNavigationError(command, code);
+  }
+  const point = navigationResponseRecord(command, record.point, code);
+  exactNavigationFields(command, point, ["line", "character"], code);
+  if (
+    typeof point.line !== "number" ||
+    !Number.isSafeInteger(point.line) ||
+    point.line < 0 ||
+    !Number.isSafeInteger(point.line + 1) ||
+    typeof point.character !== "number" ||
+    !Number.isSafeInteger(point.character) ||
+    point.character < 0 ||
+    !Number.isSafeInteger(point.character + 1)
+  ) {
+    throw symbolNavigationError(command, code);
+  }
+  return {
+    languageId: record.languageId,
+    workspaceId: record.workspaceId,
+    workspaceGeneration: record.workspaceGeneration,
+    sessionId: record.sessionId,
+    snapshotIdentity: record.snapshotIdentity,
+    providerVersion: record.providerVersion,
+    backend: record.backend,
+    selectedSymbol: parseNavigationSymbol(command, record.selectedSymbol, code),
+    file: record.file,
+    point: { line: point.line, character: point.character },
+  };
+}
+
+function definitionAuthorityMatches(
+  request: SavedSnapshotDefinitionRequest,
+  result: Readonly<SavedSnapshotSymbolSearchResult>,
+): boolean {
+  return (
+    request.languageId === result.languageId &&
+    request.workspaceId === result.workspaceId &&
+    request.workspaceGeneration === result.workspaceGeneration &&
+    request.sessionId === result.sessionId &&
+    request.snapshotIdentity === result.snapshotIdentity &&
+    request.providerVersion === result.providerVersion &&
+    request.backend === result.backend
+  );
+}
+
+async function invokeSymbolNavigation(
+  command: string,
+  request: object,
+  failureCode: "REFACTORKIT_SYMBOL_SEARCH_FAILED" | "REFACTORKIT_DEFINITION_FAILED",
+): Promise<unknown> {
+  try {
+    return await invoke<unknown>(command, { request });
+  } catch {
+    throw symbolNavigationError(command, failureCode);
+  }
 }
 
 function nativeErrorText(error: unknown): string {
@@ -1045,6 +1512,10 @@ function normalizeCommandResult(command: string, response: unknown): RefactorKit
 }
 
 export class TauriRefactorKitAdapter implements RefactorKitPort {
+  private currentSavedSnapshotSymbolSearchResult:
+    Readonly<SavedSnapshotSymbolSearchResult> | undefined;
+  private savedSnapshotSearchSequence = 0;
+
   async getStatus(): Promise<RefactorKitStatus> {
     const command = "get_refactorkit_status";
     return normalizeStatus(command, await invokeTauri<unknown>(command));
@@ -1073,6 +1544,60 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   async references(symbol: string): Promise<RefactorKitCommandResult> {
     const command = "run_refactorkit_references";
     return normalizeCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
+  }
+
+  async searchSavedSnapshotSymbols(
+    request: SavedSnapshotSymbolSearchRequest,
+  ): Promise<SavedSnapshotSymbolSearchResult> {
+    const command = "search_refactorkit_saved_snapshot_symbols";
+    const exactRequest = validateSearchRequest(request, command);
+    const sequence = ++this.savedSnapshotSearchSequence;
+    this.currentSavedSnapshotSymbolSearchResult = undefined;
+    const candidate = parseSearchCandidate(
+      command,
+      await invokeSymbolNavigation(command, exactRequest, "REFACTORKIT_SYMBOL_SEARCH_FAILED"),
+    );
+    const decision = normalizeSavedSnapshotSymbolSearchResult({
+      request: exactRequest,
+      candidate,
+    });
+    if (decision.kind === "refused") {
+      throw symbolNavigationError(command, "REFACTORKIT_SYMBOL_SEARCH_RESPONSE_REJECTED");
+    }
+    if (sequence === this.savedSnapshotSearchSequence) {
+      this.currentSavedSnapshotSymbolSearchResult = decision.result;
+    }
+    return decision.result;
+  }
+
+  async resolveSavedSnapshotDefinition(
+    request: SavedSnapshotDefinitionRequest,
+  ): Promise<SavedSnapshotDefinitionResult> {
+    const command = "resolve_refactorkit_saved_snapshot_definition";
+    const exactRequest = validateDefinitionRequest(request, command);
+    const currentSearchResult = this.currentSavedSnapshotSymbolSearchResult;
+    if (!currentSearchResult || !definitionAuthorityMatches(exactRequest, currentSearchResult)) {
+      throw invalidSymbolNavigationRequest(command);
+    }
+    const selectedSymbol = currentSearchResult.symbols.find(
+      ({ id }) => id === exactRequest.symbolId,
+    );
+    if (!selectedSymbol) throw invalidSymbolNavigationRequest(command);
+
+    const candidate = parseDefinitionCandidate(
+      command,
+      await invokeSymbolNavigation(command, exactRequest, "REFACTORKIT_DEFINITION_FAILED"),
+    );
+    const decision = normalizeSavedSnapshotDefinitionResult({
+      request: exactRequest,
+      currentSearchResult,
+      selectedSymbol,
+      candidate,
+    });
+    if (decision.kind === "refused") {
+      throw symbolNavigationError(command, "REFACTORKIT_DEFINITION_RESPONSE_REJECTED");
+    }
+    return decision.result;
   }
 
   async previewExternalJavaImport(
