@@ -18,6 +18,18 @@ function exactField(container: HTMLElement, label: string): string | null | unde
   return within(container).getByText(`${label}:`).parentElement?.textContent;
 }
 
+function fieldRow(container: HTMLElement, label: string): HTMLElement {
+  return within(container).getByText(`${label}:`).parentElement as HTMLElement;
+}
+
+function expectRenderedOrder(elements: HTMLElement[]): void {
+  elements.slice(1).forEach((element, index) => {
+    expect(
+      elements[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+}
+
 function advertisedAdapterArticles(): HTMLElement[] {
   const list = screen.getByRole("list", {
     name: "Daemon-advertised language adapters in canonical order",
@@ -64,6 +76,28 @@ describe("RefactorKitLanguageLab", () => {
       "Exact validated daemon metadata in deterministic canonical order.",
     );
     expect(packaged.textContent).not.toMatch(/supplied order|provider order|original order/iu);
+  });
+
+  it("renders each operation's seven fields in canonical accessible order", () => {
+    render(<RefactorKitLanguageLab capabilities={PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES} />);
+
+    const [java] = advertisedAdapterArticles();
+    const operation = within(java).getByRole("article", {
+      name: "Operation 1: renameClass",
+    });
+    const runtime = within(operation).getByRole("region", {
+      name: "renameClass operation runtime metadata",
+    });
+
+    expectRenderedOrder([
+      fieldRow(operation, "operation"),
+      fieldRow(operation, "stability"),
+      fieldRow(operation, "evidence"),
+      fieldRow(operation, "mutationAuthority"),
+      fieldRow(operation, "backend"),
+      runtime,
+      fieldRow(operation, "extensions"),
+    ]);
   });
 
   it("renders each operation's exact backend, runtime, and extensions accessibly", () => {

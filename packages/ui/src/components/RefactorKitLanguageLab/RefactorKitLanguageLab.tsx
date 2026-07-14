@@ -164,6 +164,13 @@ function AdapterOperations({ adapter }: { adapter: RefactorKitLanguageAdapter })
                       <code className="text-[var(--text-primary)]">{capability.backend}</code>
                     </dd>
                   </div>
+                </dl>
+                <RuntimeMetadata
+                  runtime={capability.runtime}
+                  ownerLabel={`${capability.operation} operation`}
+                  heading="Operation runtime metadata"
+                />
+                <dl className="mt-2 grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
                   <div className="flex min-w-0 gap-1">
                     <dt>extensions:</dt>
                     <dd className="min-w-0 break-all">
@@ -173,11 +180,6 @@ function AdapterOperations({ adapter }: { adapter: RefactorKitLanguageAdapter })
                     </dd>
                   </div>
                 </dl>
-                <RuntimeMetadata
-                  runtime={capability.runtime}
-                  ownerLabel={`${capability.operation} operation`}
-                  heading="Operation runtime metadata"
-                />
               </article>
             </li>
           ))}
