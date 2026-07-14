@@ -115,6 +115,36 @@ describe("useDocumentNavigationController", () => {
     });
   });
 
+  it("preserves an already normalized semantic point without a second coordinate conversion", async () => {
+    const openFileProgrammatically = vi.fn(async () => true);
+    const { result } = renderHook(() =>
+      useDocumentNavigationController({ displayedFilePath: null, openFileProgrammatically }),
+    );
+
+    await act(() =>
+      result.current.navigateToLocation("src/SemanticTarget.ts", {
+        kind: "point",
+        point: { lineNumber: 13, column: 8 },
+      }),
+    );
+
+    expect(openFileProgrammatically).toHaveBeenCalledWith(
+      {
+        id: "src/SemanticTarget.ts",
+        name: "SemanticTarget.ts",
+        path: "src/SemanticTarget.ts",
+        type: "file",
+      },
+      true,
+    );
+    expect(result.current.editorRevealRequest).toEqual({
+      filePath: "src/SemanticTarget.ts",
+      line: 13,
+      column: 8,
+      requestId: 1,
+    });
+  });
+
   it("keeps the previous reveal on failure and logs no path or provider detail", async () => {
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const openFileProgrammatically = vi

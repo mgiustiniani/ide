@@ -296,6 +296,8 @@ const testHarness = vi.hoisted(() => {
     };
     harness.externalJavaPlan = null;
     harness.externalJavaApplyResult = null;
+    harness.latestPanelLayoutProps = null;
+    harness.latestSemanticSymbolSearchProps = null;
     harness.refactorKitResult = {
       stdout: "RefactorKit scan complete",
       stderr: "",
@@ -560,6 +562,10 @@ vi.mock("@ide/tauri-adapters", () => {
     symbols: vi.fn(() => Promise.resolve(testHarness.refactorKitResult)),
     definition: vi.fn(() => Promise.resolve(testHarness.refactorKitResult)),
     references: vi.fn(() => Promise.resolve(testHarness.refactorKitResult)),
+    startSavedSnapshotSemanticSession: vi.fn(),
+    stopSavedSnapshotSemanticSession: vi.fn(),
+    searchSavedSnapshotSymbols: vi.fn(),
+    resolveSavedSnapshotDefinition: vi.fn(),
   };
   testHarness.refactorKitAdapter = refactorKitAdapter;
 
@@ -682,14 +688,64 @@ vi.mock("@ide/tauri-adapters", () => {
 // ---------------------------------------------------------------------------
 vi.mock("@ide/ui", () => ({
   Icon: ({ type }: any) => <span data-testid={`icon-${type}`} />,
-  PanelLayout: ({ leftSidebar, mainContent, rightSidebarContent, bottomContent }: any) => (
-    <div data-testid="PanelLayout">
-      {leftSidebar}
-      {mainContent}
-      {rightSidebarContent ? <div data-testid="RightSidebar">{rightSidebarContent}</div> : null}
-      {bottomContent}
-    </div>
-  ),
+  PanelLayout: ({
+    leftSidebar,
+    searchActivityContent,
+    activeActivity = "explorer",
+    onActivityChange,
+    mainContent,
+    rightSidebarContent,
+    bottomContent,
+  }: any) => {
+    testHarness.latestPanelLayoutProps = {
+      activeActivity,
+      hasSearchActivityContent: searchActivityContent !== undefined,
+      onActivityChange,
+    };
+    return (
+      <div data-testid="PanelLayout" data-active-activity={activeActivity}>
+        <div role="tablist" aria-label="Primary activity">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeActivity === "explorer"}
+            onClick={() => onActivityChange?.("explorer")}
+          >
+            Explorer
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeActivity === "search"}
+            disabled={searchActivityContent === undefined || !onActivityChange}
+            onClick={() => onActivityChange?.("search")}
+          >
+            Search
+          </button>
+        </div>
+        {activeActivity === "search" ? searchActivityContent : leftSidebar}
+        {mainContent}
+        {rightSidebarContent ? <div data-testid="RightSidebar">{rightSidebarContent}</div> : null}
+        {bottomContent}
+      </div>
+    );
+  },
+  SemanticSymbolSearchPanel: (props: any) => {
+    testHarness.latestSemanticSymbolSearchProps = props;
+    return (
+      <div
+        data-testid="SemanticSymbolSearchPanel"
+        data-language={props.language}
+        data-query={props.query}
+        data-snapshot-state={props.snapshotState}
+        data-evidence-state={props.evidenceState}
+        data-availability={props.availability}
+        data-result-limit={String(props.resultLimit)}
+      >
+        Semantic symbol search
+      </div>
+    );
+  },
   LeftSidebar: ({ children, workspaceContent, isVisible, onToggle }: any) => {
     const [filesExpanded, setFilesExpanded] = useState(true);
     const [workspacesExpanded, setWorkspacesExpanded] = useState(true);
@@ -1664,6 +1720,53 @@ describe("App", () => {
     expect(screen.getByTestId("Editor").dataset.hasTabClose).toBe("true");
     expect(screen.getByTestId("Terminal").dataset.hasClear).toBe("true");
     expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  });
+
+  it("keeps Search host-controlled and composes the semantic panel through PanelLayout", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    expect(testHarness.latestPanelLayoutProps).toMatchObject({
+      activeActivity: "explorer",
+      hasSearchActivityContent: true,
+      onActivityChange: expect.any(Function),
+    });
+    expect(screen.queryByTestId("SemanticSymbolSearchPanel")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Search" }));
+
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("search");
+    expect(screen.getByTestId("SemanticSymbolSearchPanel").dataset).toMatchObject({
+      language: "typescript",
+      query: "",
+      snapshotState: "saved",
+      resultLimit: "100",
+    });
+    expect(testHarness.latestSemanticSymbolSearchProps).toMatchObject({
+      toolchainPaths: {
+        nodeExecutable: "",
+        languageServerPackageRoot: "",
+        typeScriptPackageRoot: "",
+      },
+      approvedForSession: false,
+      results: [],
+      isBusy: false,
+      canSubmit: false,
+      onLanguageChange: expect.any(Function),
+      onQueryChange: expect.any(Function),
+      onToolchainPathChange: expect.any(Function),
+      onApprovalChange: expect.any(Function),
+      onSubmit: expect.any(Function),
+      onCancel: expect.any(Function),
+      onStop: expect.any(Function),
+      onResultSelect: expect.any(Function),
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Explorer" }));
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    expect(screen.getByTestId("LeftSidebar")).toBeDefined();
+    expect(screen.queryByTestId("SemanticSymbolSearchPanel")).toBeNull();
   });
 
   it("cold-mounts a persisted workspace only after authorization and promotes stale registry data", async () => {
