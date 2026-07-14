@@ -1,12 +1,28 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 
+import { act, renderHook } from "@testing-library/react";
+
+import { createTauriAdapters } from "../../../apps/desktop/src/adapters/index.js";
+import {
+  useRefactorKitStatusController,
+  type RefactorKitStatusController,
+} from "../../../apps/desktop/src/features/refactorkit-status/useRefactorKitStatusController.js";
 import type {
   RefactorKitCapabilities,
   RefactorKitCommandResult,
   RefactorKitLanguageAdapter,
   RefactorKitLanguageCapability,
 } from "../../../packages/contracts/src/refactorkit.js";
-import { TauriRefactorKitAdapter } from "../../../packages/tauri-adapters/src/refactorkit-tauri.js";
+import type { RefactorKitPort } from "../../../packages/web-core/src/ports/refactorkit-port.js";
+
+interface StoryDom {
+  readonly window: Window & typeof globalThis;
+}
+
+const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
+  readonly JSDOM: new (html: string, options: { url: string }) => StoryDom;
+};
 
 const QUALIFIED_RUNTIME = {
   executionMode: "external-process",
@@ -78,25 +94,12 @@ const REFACTORKIT_062_ADVERTISEMENT = {
   },
 } as const;
 
-/** Current Rust normalization drops operation-level backend, runtime, and extension metadata. */
-const CURRENT_IDE_CAPABILITIES = {
-  ...REFACTORKIT_062_ADVERTISEMENT,
-  languageKernel: {
-    available: true,
-    schema: {
-      ...REFACTORKIT_062_ADVERTISEMENT.languageKernel.schema,
-      adapters: REFACTORKIT_062_ADVERTISEMENT.languageKernel.schema.adapters.map((adapter) => ({
-        ...adapter,
-        capabilities: adapter.capabilities.map((capability) => ({
-          operation: capability.operation,
-          stability: capability.stability,
-          evidence: capability.evidence,
-          mutationAuthority: capability.mutationAuthority,
-        })),
-      })),
-    },
-  },
-};
+const READY_REFACTORKIT_STATUS = {
+  available: true,
+  path: "/opt/refactorkit/refactorkit",
+  version: "0.6.2",
+  checkedAt: "2026-07-14T00:00:00.000Z",
+} as const;
 
 const LEGACY_DIAGNOSTICS_RESULT = {
   stdout:
@@ -122,6 +125,11 @@ interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
+interface RefactorKitStatusControllerHarness {
+  readonly result: { readonly current: RefactorKitStatusController };
+  unmount(): void;
+}
+
 interface FixtureInvocation {
   readonly command: string;
   readonly args?: Record<string, unknown>;
@@ -139,44 +147,70 @@ interface StructuredDiagnosticsResult {
 }
 
 /**
- * Deterministic Tauri IPC harness for the published RefactorKit 0.6.2 protocol slice.
- * It drives the real TypeScript Tauri adapter while retaining the authoritative
- * per-operation advertisement so metadata loss is observable across the boundary.
+ * Deterministic desktop harness for the published RefactorKit 0.6.2 protocol slice.
+ * It enters through the desktop adapter composition and the application-owned status
+ * controller, while the Tauri seam retains the authoritative backend advertisement.
  */
 export class RefactorKit062ProtocolFixture {
-  readonly #adapter = new TauriRefactorKitAdapter();
+  readonly #adapter: RefactorKitPort;
   readonly #invocations: FixtureInvocation[] = [];
-  readonly #windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
-  readonly #internalsDescriptor = Object.getOwnPropertyDescriptor(globalThis, "__TAURI_INTERNALS__");
+  readonly #globalDescriptors = new Map<string, PropertyDescriptor | undefined>();
+  readonly #dom: StoryDom;
+  readonly #statusController: RefactorKitStatusControllerHarness;
   #capabilities?: RefactorKitCapabilities;
   #diagnostics?: RefactorKitCommandResult;
   #disposed = false;
 
   constructor() {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: globalThis,
+    this.#dom = new JSDOM("<!doctype html><html><body></body></html>", {
+      url: "http://desktop.story.invalid",
     });
+    for (const [name, value] of [
+      ["window", this.#dom.window],
+      ["document", this.#dom.window.document],
+      ["navigator", this.#dom.window.navigator],
+    ] as const) {
+      this.#globalDescriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+      Object.defineProperty(globalThis, name, { configurable: true, value });
+    }
+
     const internals: TauriInternals = {
       invoke: async (command, args) => {
         this.#invocations.push(args === undefined ? { command } : { command, args });
+        if (command === "get_refactorkit_status") {
+          return structuredClone(READY_REFACTORKIT_STATUS);
+        }
         if (command === "get_refactorkit_capabilities") {
-          return structuredClone(CURRENT_IDE_CAPABILITIES);
+          return structuredClone(REFACTORKIT_062_ADVERTISEMENT);
         }
         if (command === "run_refactorkit_diagnostics") {
           return structuredClone(LEGACY_DIAGNOSTICS_RESULT);
         }
-        throw new Error(`The RefactorKit 0.6.2 fixture does not implement Tauri command ${command}`);
+        throw new Error(
+          `The RefactorKit 0.6.2 fixture does not implement Tauri command ${command}`,
+        );
       },
     };
-    Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
+    Object.defineProperty(this.#dom.window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: internals,
     });
+
+    this.#adapter = createTauriAdapters().refactorKitAdapter;
+    this.#statusController = renderHook(() =>
+      useRefactorKitStatusController({
+        refactorKit: this.#adapter,
+        deferWorkspaceActivation: true,
+      }),
+    );
   }
 
   async discoverCapabilities(): Promise<void> {
-    this.#capabilities = await this.#adapter.getCapabilities();
+    await act(async () => {
+      await this.#statusController.result.current.workspaceCollaborator.load(1);
+    });
+    assert.equal(this.#statusController.result.current.isChecking, false);
+    this.#capabilities = this.#statusController.result.current.capabilities ?? undefined;
   }
 
   async requestCurrentSnapshotDiagnostics(): Promise<void> {
@@ -192,9 +226,13 @@ export class RefactorKit062ProtocolFixture {
     for (const advertisedAdapter of REFACTORKIT_062_ADVERTISEMENT.languageKernel.schema.adapters) {
       const observedAdapter: RefactorKitLanguageAdapter | undefined =
         capabilities.languageKernel.schema.adapters.find(
-          (adapter: RefactorKitLanguageAdapter) => adapter.languageId === advertisedAdapter.languageId,
+          (adapter: RefactorKitLanguageAdapter) =>
+            adapter.languageId === advertisedAdapter.languageId,
         );
-      assert.ok(observedAdapter, `The IDE omitted the advertised ${advertisedAdapter.languageId} adapter`);
+      assert.ok(
+        observedAdapter,
+        `The IDE omitted the advertised ${advertisedAdapter.languageId} adapter`,
+      );
       const observedDiagnostics: RefactorKitLanguageCapability | undefined =
         observedAdapter.capabilities.find(
           (capability: RefactorKitLanguageCapability) => capability.operation === "diagnostics",
@@ -229,7 +267,10 @@ export class RefactorKit062ProtocolFixture {
   assertStructuredDiagnosticsAvailableForExistingSurfaces(): void {
     const result = this.#diagnostics as StructuredDiagnosticsResult | undefined;
     assert.ok(result, "No RefactorKit diagnostics result was returned");
-    assert.ok(Array.isArray(result.diagnostics), "The RefactorKit result has no structured diagnostics for Problems and Monaco");
+    assert.ok(
+      Array.isArray(result.diagnostics),
+      "The RefactorKit result has no structured diagnostics for Problems and Monaco",
+    );
   }
 
   assertStaleAuthorityRejected(): void {
@@ -242,32 +283,47 @@ export class RefactorKit062ProtocolFixture {
 
   assertReadinessIsRepresentable(): void {
     const result = this.#diagnostics as StructuredDiagnosticsResult | undefined;
-    assert.ok(result?.toolchain, "The diagnostics contract does not expose qualified toolchain readiness or refusal evidence");
+    assert.ok(
+      result?.toolchain,
+      "The diagnostics contract does not expose qualified toolchain readiness or refusal evidence",
+    );
   }
 
   assertReadOnlyExecution(): void {
     const invocation = this.#diagnosticsInvocation();
     assert.equal(invocation.command, "run_refactorkit_diagnostics");
     const commandArguments: readonly string[] = LEGACY_DIAGNOSTICS_RESULT.command.args;
-    assert.equal(commandArguments.some((argument) => argument === "npm" || argument === "pnpm"), false);
+    assert.equal(
+      commandArguments.some((argument) => argument === "npm" || argument === "pnpm"),
+      false,
+    );
   }
 
   assertNoFallbackOutput(): void {
     const result = this.#diagnostics as StructuredDiagnosticsResult | undefined;
     assert.equal(result?.fallback, undefined);
-    assert.equal(this.#diagnostics?.stdout, "", "Unstructured fallback diagnostics must not cross the IDE contract");
+    assert.equal(
+      this.#diagnostics?.stdout,
+      "",
+      "Unstructured fallback diagnostics must not cross the IDE contract",
+    );
   }
 
   assertNoTypeScriptSpecificPanel(): void {
-    const panelCommands = this.#invocations.filter(({ command }) => /typescript.*panel|panel.*typescript/i.test(command));
+    const panelCommands = this.#invocations.filter(({ command }) =>
+      /typescript.*panel|panel.*typescript/i.test(command),
+    );
     assert.deepEqual(panelCommands, []);
   }
 
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.#restoreProperty("__TAURI_INTERNALS__", this.#internalsDescriptor);
-    this.#restoreProperty("window", this.#windowDescriptor);
+    this.#statusController.unmount();
+    this.#dom.window.close();
+    for (const [name, descriptor] of [...this.#globalDescriptors].reverse()) {
+      this.#restoreProperty(name, descriptor);
+    }
   }
 
   #requireCapabilities() {
@@ -276,7 +332,9 @@ export class RefactorKit062ProtocolFixture {
   }
 
   #diagnosticsInvocation(): FixtureInvocation {
-    const invocation = this.#invocations.find(({ command }) => command === "run_refactorkit_diagnostics");
+    const invocation = this.#invocations.find(
+      ({ command }) => command === "run_refactorkit_diagnostics",
+    );
     assert.ok(invocation, "The IDE did not invoke its RefactorKit diagnostics boundary");
     return invocation;
   }
