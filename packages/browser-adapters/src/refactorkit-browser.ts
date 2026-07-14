@@ -12,6 +12,10 @@ import type {
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
   SavedSnapshotDefinitionResult,
+  SavedSnapshotSemanticSessionStartRequest,
+  SavedSnapshotSemanticSessionStartResult,
+  SavedSnapshotSemanticSessionStopRequest,
+  SavedSnapshotSemanticSessionStopResult,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
 } from "@ide/contracts";
@@ -86,6 +90,18 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
   }
 
   references(_symbol: string): Promise<RefactorKitCommandResult> {
+    return unavailable();
+  }
+
+  startSavedSnapshotSemanticSession(
+    _request: SavedSnapshotSemanticSessionStartRequest,
+  ): Promise<SavedSnapshotSemanticSessionStartResult> {
+    return unavailable();
+  }
+
+  stopSavedSnapshotSemanticSession(
+    _request: SavedSnapshotSemanticSessionStopRequest,
+  ): Promise<SavedSnapshotSemanticSessionStopResult> {
     return unavailable();
   }
 
