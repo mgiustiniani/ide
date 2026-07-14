@@ -5,14 +5,14 @@
 // and hides panels based on visibility.
 // ---------------------------------------------------------------------------
 
-import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { AiAgentResponsePanel } from '../AiAgentResponsePanel/AiAgentResponsePanel';
-import { PanelLayout } from '../PanelLayout/PanelLayout';
-import type { AiAgentActivityEvent } from '../AiAgentResponsePanel/AiAgentResponsePanel';
-import type { PanelLayout as PanelLayoutType } from '@ide/contracts';
-import { DEFAULT_PANEL_LAYOUT } from '@ide/contracts';
+import React from "react";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { AiAgentResponsePanel } from "../AiAgentResponsePanel/AiAgentResponsePanel";
+import { PanelLayout } from "../PanelLayout/PanelLayout";
+import type { AiAgentActivityEvent } from "../AiAgentResponsePanel/AiAgentResponsePanel";
+import type { PanelLayout as PanelLayoutType } from "@ide/contracts";
+import { DEFAULT_PANEL_LAYOUT } from "@ide/contracts";
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -35,35 +35,35 @@ const defaultLayout: PanelLayoutType = {
 
 const responseActivities: AiAgentActivityEvent[] = [
   {
-    id: 'read-started',
-    type: 'tool_execution_start',
-    title: 'Read source file',
-    pluginName: 'filesystem',
-    detail: 'Opening the response panel component.',
-    timestamp: '10:02',
-    status: 'running',
-    agentId: 'frontend-agent',
-    runId: 'run-123',
+    id: "read-started",
+    type: "tool_execution_start",
+    title: "Read source file",
+    pluginName: "filesystem",
+    detail: "Opening the response panel component.",
+    timestamp: "10:02",
+    status: "running",
+    agentId: "frontend-agent",
+    runId: "run-123",
     changedFiles: [
       {
-        path: 'packages/ui/src/components/AiAgentResponsePanel/AiAgentResponsePanel.tsx',
-        status: 'modified',
+        path: "packages/ui/src/components/AiAgentResponsePanel/AiAgentResponsePanel.tsx",
+        status: "modified",
       },
     ],
   },
   {
-    id: 'tests-finished',
-    type: 'test_complete',
-    title: 'Focused UI tests passed',
-    detail: 'Response panel tab coverage completed.',
-    timestamp: '10:05',
-    status: 'success',
-    agentId: 'frontend-agent',
-    runId: 'run-123',
+    id: "tests-finished",
+    type: "test_complete",
+    title: "Focused UI tests passed",
+    detail: "Response panel tab coverage completed.",
+    timestamp: "10:05",
+    status: "success",
+    agentId: "frontend-agent",
+    runId: "run-123",
     changedFiles: [
       {
-        path: 'packages/ui/src/components/__tests__/PanelLayout.test.ts',
-        status: 'added',
+        path: "packages/ui/src/components/__tests__/PanelLayout.test.ts",
+        status: "added",
       },
     ],
   },
@@ -72,134 +72,140 @@ const responseActivities: AiAgentActivityEvent[] = [
 function renderAiAgentResponsePanel(): void {
   render(
     React.createElement(AiAgentResponsePanel, {
-      latestResponse: 'The latest agent response is ready for review.',
+      latestResponse: "The latest agent response is ready for review.",
       activities: responseActivities,
       isSending: false,
       onClose: vi.fn(),
-    })
+    }),
   );
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
-describe('PanelLayout', () => {
-  it('should render left sidebar content', () => {
+describe("PanelLayout", () => {
+  it("should render left sidebar content", () => {
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar Content'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Content'),
-        bottomContent: React.createElement('div', { 'data-testid': 'bottom' }, 'Bottom Content'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar Content"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Content"),
+        bottomContent: React.createElement("div", { "data-testid": "bottom" }, "Bottom Content"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.getByTestId('sidebar')).toBeDefined();
+    expect(screen.getByTestId("sidebar")).toBeDefined();
   });
 
-  it('should render main content', () => {
+  it("should render main content", () => {
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Content'),
-        bottomContent: React.createElement('div', { 'data-testid': 'bottom' }, 'Bottom'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Content"),
+        bottomContent: React.createElement("div", { "data-testid": "bottom" }, "Bottom"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.getByTestId('main')).toBeDefined();
+    expect(screen.getByTestId("main")).toBeDefined();
   });
 
-  it('should render bottom panel content', () => {
+  it("should render bottom panel content", () => {
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main'),
-        bottomContent: React.createElement('div', { 'data-testid': 'bottom' }, 'Bottom Content'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main"),
+        bottomContent: React.createElement("div", { "data-testid": "bottom" }, "Bottom Content"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.getByTestId('bottom')).toBeDefined();
+    expect(screen.getByTestId("bottom")).toBeDefined();
   });
 
-  it('should show the bottom terminal panel by default without overlaying the editor', () => {
+  it("should show the bottom terminal panel by default without overlaying the editor", () => {
     const { container } = render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Editor'),
-        bottomContent: React.createElement('div', { 'data-testid': 'terminal' }, 'Terminal'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
+        bottomContent: React.createElement("div", { "data-testid": "terminal" }, "Terminal"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    const workspace = container.querySelector('.ide-workspace') as HTMLDivElement;
-    const mainEditorPane = container.querySelector('.ide-main-editor-pane') as HTMLElement;
-    const bottomPanel = container.querySelector('.ide-bottom-panel') as HTMLDivElement;
-    const horizontalResizeHandle = screen.getByRole('separator', { name: 'Resize bottom panel' });
+    const workspace = container.querySelector(".ide-workspace") as HTMLDivElement;
+    const mainEditorPane = container.querySelector(".ide-main-editor-pane") as HTMLElement;
+    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+    const horizontalResizeHandle = screen.getByRole("separator", { name: "Resize bottom panel" });
 
-    expect(screen.getByTestId('main')).toBeDefined();
-    expect(screen.getByTestId('terminal')).toBeDefined();
+    expect(screen.getByTestId("main")).toBeDefined();
+    expect(screen.getByTestId("terminal")).toBeDefined();
     expect(bottomPanel.hidden).toBe(false);
-    expect(bottomPanel.getAttribute('aria-hidden')).toBe('false');
-    expect(bottomPanel.style.height).toBe('250px');
-    expect(bottomPanel.style.minHeight).toBe('80px');
-    expect(bottomPanel.classList.contains('ide-bottom-panel')).toBe(true);
-    expect(bottomPanel.classList.contains('absolute')).toBe(false);
-    expect(bottomPanel.classList.contains('fixed')).toBe(false);
-    expect(mainEditorPane.classList.contains('flex-1')).toBe(true);
-    expect(mainEditorPane.classList.contains('min-h-0')).toBe(true);
-    expect(mainEditorPane.classList.contains('overflow-hidden')).toBe(true);
+    expect(bottomPanel.getAttribute("aria-hidden")).toBe("false");
+    expect(bottomPanel.style.height).toBe("250px");
+    expect(bottomPanel.style.minHeight).toBe("80px");
+    expect(bottomPanel.classList.contains("ide-bottom-panel")).toBe(true);
+    expect(bottomPanel.classList.contains("absolute")).toBe(false);
+    expect(bottomPanel.classList.contains("fixed")).toBe(false);
+    expect(mainEditorPane.classList.contains("flex-1")).toBe(true);
+    expect(mainEditorPane.classList.contains("min-h-0")).toBe(true);
+    expect(mainEditorPane.classList.contains("overflow-hidden")).toBe(true);
     expect(workspace.nextElementSibling).toBe(horizontalResizeHandle);
     expect(horizontalResizeHandle.nextElementSibling).toBe(bottomPanel);
   });
 
-  it('should render the optional right sidebar with fullscreen-friendly default sizing', () => {
+  it("should render the optional right sidebar with fullscreen-friendly default sizing", () => {
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Editor'),
-        bottomContent: React.createElement('div', { 'data-testid': 'terminal' }, 'Terminal'),
-        rightSidebarContent: React.createElement('div', { 'data-testid': 'right-sidebar-content' }, 'AI Agent'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
+        bottomContent: React.createElement("div", { "data-testid": "terminal" }, "Terminal"),
+        rightSidebarContent: React.createElement(
+          "div",
+          { "data-testid": "right-sidebar-content" },
+          "AI Agent",
+        ),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    const rightSidebar = screen.getByRole('complementary', { name: 'Secondary side panel' }) as HTMLElement;
+    const rightSidebar = screen.getByRole("complementary", {
+      name: "Secondary side panel",
+    }) as HTMLElement;
 
-    expect(screen.getByTestId('right-sidebar-content')).toBeDefined();
-    expect(rightSidebar.style.width).toBe('420px');
-    expect(rightSidebar.style.minWidth).toBe('320px');
-    expect(rightSidebar.style.maxWidth).toBe('100%');
-    expect(rightSidebar.style.flexShrink).toBe('1');
-    expect(rightSidebar.classList.contains('min-w-0')).toBe(true);
-    expect(rightSidebar.classList.contains('max-w-full')).toBe(true);
+    expect(screen.getByTestId("right-sidebar-content")).toBeDefined();
+    expect(rightSidebar.style.width).toBe("420px");
+    expect(rightSidebar.style.minWidth).toBe("320px");
+    expect(rightSidebar.style.maxWidth).toBe("100%");
+    expect(rightSidebar.style.flexShrink).toBe("1");
+    expect(rightSidebar.classList.contains("min-w-0")).toBe(true);
+    expect(rightSidebar.classList.contains("max-w-full")).toBe(true);
   });
 
-  it('should resize the bottom panel taller when dragged upward and shorter when dragged downward', () => {
+  it("should resize the bottom panel taller when dragged upward and shorter when dragged downward", () => {
     const onResizeBottom = vi.fn();
 
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Editor'),
-        bottomContent: React.createElement('div', { 'data-testid': 'terminal' }, 'Terminal'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
+        bottomContent: React.createElement("div", { "data-testid": "terminal" }, "Terminal"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom,
-      })
+      }),
     );
 
-    const horizontalResizeHandle = screen.getByRole('separator', { name: 'Resize bottom panel' });
+    const horizontalResizeHandle = screen.getByRole("separator", { name: "Resize bottom panel" });
 
     fireEvent.mouseDown(horizontalResizeHandle, { clientY: 400 });
     fireEvent.mouseMove(document, { clientY: 350 });
@@ -212,7 +218,7 @@ describe('PanelLayout', () => {
     fireEvent.mouseUp(document);
   });
 
-  it('should hide left sidebar when not visible', () => {
+  it("should hide left sidebar when not visible", () => {
     const hiddenLayout = {
       ...defaultLayout,
       visibility: {
@@ -223,19 +229,19 @@ describe('PanelLayout', () => {
 
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar Content'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main'),
-        bottomContent: React.createElement('div', { 'data-testid': 'bottom' }, 'Bottom'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar Content"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main"),
+        bottomContent: React.createElement("div", { "data-testid": "bottom" }, "Bottom"),
         layout: hiddenLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.queryByText('Sidebar Content')).toBeNull();
+    expect(screen.queryByText("Sidebar Content")).toBeNull();
   });
 
-  it('should hide bottom panel when not visible', () => {
+  it("should hide bottom panel when not visible", () => {
     const hiddenLayout = {
       ...defaultLayout,
       visibility: {
@@ -246,19 +252,19 @@ describe('PanelLayout', () => {
 
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', { 'data-testid': 'sidebar' }, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main'),
-        bottomContent: React.createElement('div', { 'data-testid': 'bottom' }, 'Bottom Content'),
+        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main"),
+        bottomContent: React.createElement("div", { "data-testid": "bottom" }, "Bottom Content"),
         layout: hiddenLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.queryByText('Bottom Content')).toBeNull();
+    expect(screen.queryByText("Bottom Content")).toBeNull();
   });
 
-  it('should always render main content regardless of visibility', () => {
+  it("should always render main content regardless of visibility", () => {
     const layout = {
       ...defaultLayout,
       visibility: {
@@ -270,69 +276,185 @@ describe('PanelLayout', () => {
 
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement('div', null, 'Sidebar'),
-        mainContent: React.createElement('div', { 'data-testid': 'main' }, 'Main Content'),
-        bottomContent: React.createElement('div', null, 'Bottom'),
+        leftSidebar: React.createElement("div", null, "Sidebar"),
+        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Content"),
+        bottomContent: React.createElement("div", null, "Bottom"),
         layout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
-      })
+      }),
     );
 
-    expect(screen.getByTestId('main')).toBeDefined();
+    expect(screen.getByTestId("main")).toBeDefined();
+  });
+
+  it("exposes the host-selected Search tab and labelled activity panel without taking ownership", () => {
+    const onActivityChange = vi.fn();
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        searchActivityContent: React.createElement("div", null, "Host semantic search"),
+        activeActivity: "search",
+        onActivityChange,
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const activityNavigation = screen.getByRole("navigation", { name: "Primary activity" });
+    const tabList = within(activityNavigation).getByRole("tablist");
+    const explorerTab = within(tabList).getByRole("tab", { name: "Explorer" });
+    const searchTab = within(tabList).getByRole("tab", { name: "Search" });
+    const docsTab = within(tabList).getByRole("tab", { name: "Docs" });
+    const settingsTab = within(tabList).getByRole("tab", { name: "Settings" });
+    const activityPanel = screen.getByRole("tabpanel", { name: "Search" });
+
+    expect(tabList.getAttribute("aria-orientation")).toBe("vertical");
+    expect(searchTab.getAttribute("aria-selected")).toBe("true");
+    expect(searchTab.tabIndex).toBe(0);
+    expect(explorerTab.getAttribute("aria-selected")).toBe("false");
+    expect(explorerTab.tabIndex).toBe(-1);
+    expect(searchTab.getAttribute("aria-controls")).toBe(activityPanel.id);
+    expect(explorerTab.getAttribute("aria-controls")).toBe(activityPanel.id);
+    expect(activityPanel.getAttribute("aria-labelledby")).toBe(searchTab.id);
+    expect(within(activityPanel).getByText("Host semantic search")).toBeDefined();
+    expect(docsTab.getAttribute("aria-disabled")).toBe("true");
+    expect(settingsTab.getAttribute("aria-disabled")).toBe("true");
+    expect(docsTab.getAttribute("aria-controls")).toBeNull();
+    expect(settingsTab.getAttribute("aria-controls")).toBeNull();
+
+    fireEvent.click(explorerTab);
+
+    expect(onActivityChange).toHaveBeenCalledWith("explorer");
+    expect(searchTab.getAttribute("aria-selected")).toBe("true");
+    expect(within(activityPanel).getByText("Host semantic search")).toBeDefined();
+  });
+
+  it("requests keyboard activity changes and moves focus while leaving selection host-controlled", () => {
+    const onActivityChange = vi.fn();
+    const createLayout = (activeActivity: "explorer" | "search") =>
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        searchActivityContent: React.createElement("div", null, "Host semantic search"),
+        activeActivity,
+        onActivityChange,
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      });
+    const { rerender } = render(createLayout("search"));
+    const searchTab = screen.getByRole("tab", { name: "Search" });
+    const explorerTab = screen.getByRole("tab", { name: "Explorer" });
+
+    searchTab.focus();
+    fireEvent.keyDown(searchTab, { key: "ArrowLeft" });
+
+    expect(onActivityChange).toHaveBeenLastCalledWith("explorer");
+    expect(document.activeElement).toBe(explorerTab);
+    expect(searchTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "Search" })).toBeDefined();
+
+    rerender(createLayout("explorer"));
+
+    expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeDefined();
+    fireEvent.keyDown(explorerTab, { key: "ArrowRight" });
+    expect(onActivityChange).toHaveBeenLastCalledWith("search");
+    expect(document.activeElement).toBe(searchTab);
+    expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps Search unavailable when the host does not provide activity control", () => {
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        searchActivityContent: React.createElement("div", null, "Host semantic search"),
+        activeActivity: "search",
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const searchTab = screen.getByRole("tab", { name: "Search" });
+    const explorerTab = screen.getByRole("tab", { name: "Explorer" });
+
+    expect(searchTab.getAttribute("aria-disabled")).toBe("true");
+    expect((searchTab as HTMLButtonElement).disabled).toBe(true);
+    expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+    expect(
+      within(screen.getByRole("tabpanel", { name: "Explorer" })).getByText("Explorer files"),
+    ).toBeDefined();
   });
 });
 
-describe('AiAgentResponsePanel tabs', () => {
-  it('shows the latest response on the Response tab by default', () => {
+describe("AiAgentResponsePanel tabs", () => {
+  it("shows the latest response on the Response tab by default", () => {
     renderAiAgentResponsePanel();
 
-    const responseTab = screen.getByRole('tab', { name: 'Response' });
-    const responsePanel = screen.getByRole('tabpanel', { name: 'Response' });
+    const responseTab = screen.getByRole("tab", { name: "Response" });
+    const responsePanel = screen.getByRole("tabpanel", { name: "Response" });
 
-    expect(responseTab.getAttribute('aria-selected')).toBe('true');
-    expect(within(responsePanel).getByText('Latest response')).toBeDefined();
-    expect(within(responsePanel).getByText('The latest agent response is ready for review.')).toBeDefined();
+    expect(responseTab.getAttribute("aria-selected")).toBe("true");
+    expect(within(responsePanel).getByText("Latest response")).toBeDefined();
+    expect(
+      within(responsePanel).getByText("The latest agent response is ready for review."),
+    ).toBeDefined();
   });
 
-  it('selects the Activity tab and shows activity items', () => {
+  it("selects the Activity tab and shows activity items", () => {
     renderAiAgentResponsePanel();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
 
-    const activityTab = screen.getByRole('tab', { name: 'Activity' });
-    const activityPanel = screen.getByRole('tabpanel', { name: 'Activity' });
+    const activityTab = screen.getByRole("tab", { name: "Activity" });
+    const activityPanel = screen.getByRole("tabpanel", { name: "Activity" });
 
-    expect(activityTab.getAttribute('aria-selected')).toBe('true');
-    expect(within(activityPanel).getByRole('list', { name: 'AI Agent activity' })).toBeDefined();
-    expect(within(activityPanel).getByText('Read source file')).toBeDefined();
-    expect(within(activityPanel).getByText('Opening the response panel component.')).toBeDefined();
+    expect(activityTab.getAttribute("aria-selected")).toBe("true");
+    expect(within(activityPanel).getByRole("list", { name: "AI Agent activity" })).toBeDefined();
+    expect(within(activityPanel).getByText("Read source file")).toBeDefined();
+    expect(within(activityPanel).getByText("Opening the response panel component.")).toBeDefined();
   });
 
-  it('selects the Agents tab and summarizes the provided agent', () => {
+  it("selects the Agents tab and summarizes the provided agent", () => {
     renderAiAgentResponsePanel();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Agents' }));
+    fireEvent.click(screen.getByRole("tab", { name: "Agents" }));
 
-    const agentsPanel = screen.getByRole('tabpanel', { name: 'Agents' });
-    const agentsList = within(agentsPanel).getByRole('list', { name: 'AI Agent activity by agent' });
+    const agentsPanel = screen.getByRole("tabpanel", { name: "Agents" });
+    const agentsList = within(agentsPanel).getByRole("list", {
+      name: "AI Agent activity by agent",
+    });
 
-    expect(within(agentsList).getByText('frontend-agent')).toBeDefined();
-    expect(within(agentsList).getByText('2 events')).toBeDefined();
-    expect(within(agentsList).getByText('run-123')).toBeDefined();
+    expect(within(agentsList).getByText("frontend-agent")).toBeDefined();
+    expect(within(agentsList).getByText("2 events")).toBeDefined();
+    expect(within(agentsList).getByText("run-123")).toBeDefined();
   });
 
-  it('selects the Changes tab and summarizes changed files', () => {
+  it("selects the Changes tab and summarizes changed files", () => {
     renderAiAgentResponsePanel();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Changes' }));
+    fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
 
-    const changesPanel = screen.getByRole('tabpanel', { name: 'Changes' });
-    const changesList = within(changesPanel).getByRole('list', { name: 'AI Agent changed files' });
+    const changesPanel = screen.getByRole("tabpanel", { name: "Changes" });
+    const changesList = within(changesPanel).getByRole("list", { name: "AI Agent changed files" });
 
-    expect(within(changesList).getByText('packages/ui/src/components/AiAgentResponsePanel/AiAgentResponsePanel.tsx')).toBeDefined();
-    expect(within(changesList).getByText('modified')).toBeDefined();
-    expect(within(changesList).getByText('packages/ui/src/components/__tests__/PanelLayout.test.ts')).toBeDefined();
-    expect(within(changesList).getByText('added')).toBeDefined();
+    expect(
+      within(changesList).getByText(
+        "packages/ui/src/components/AiAgentResponsePanel/AiAgentResponsePanel.tsx",
+      ),
+    ).toBeDefined();
+    expect(within(changesList).getByText("modified")).toBeDefined();
+    expect(
+      within(changesList).getByText("packages/ui/src/components/__tests__/PanelLayout.test.ts"),
+    ).toBeDefined();
+    expect(within(changesList).getByText("added")).toBeDefined();
   });
 });
