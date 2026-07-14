@@ -13,13 +13,19 @@ Given<StoryWorld>(
   },
 );
 
-When<StoryWorld>("compiler diagnostics are requested for the current source snapshot", async function () {
-  await this.refactorKit062ProtocolFixture().requestCurrentSnapshotDiagnostics();
-});
+When<StoryWorld>(
+  "compiler diagnostics are requested for the current source snapshot",
+  async function () {
+    await this.refactorKit062ProtocolFixture().requestCurrentSnapshotDiagnostics();
+  },
+);
 
-Then<StoryWorld>("the IDE respects all capability metadata advertised for that operation", function () {
-  this.refactorKit062ProtocolFixture().assertOperationMetadataPreserved();
-});
+Then<StoryWorld>(
+  "the IDE respects all capability metadata advertised for that operation",
+  function () {
+    this.refactorKit062ProtocolFixture().assertOperationMetadataPreserved();
+  },
+);
 
 Then<StoryWorld>(
   "diagnostics run only through a ready, qualified, and hash-bound RefactorKit 0.6.2 semantic toolchain",
@@ -35,9 +41,12 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>("results from a stale workspace, session, or source snapshot are rejected", function () {
-  this.refactorKit062ProtocolFixture().assertStaleAuthorityRejected();
-});
+Then<StoryWorld>(
+  "results from a stale workspace, session, or source snapshot are rejected",
+  function () {
+    this.refactorKit062ProtocolFixture().assertStaleAuthorityRejected();
+  },
+);
 
 Then<StoryWorld>(
   "unavailable or refused readiness is presented honestly in the existing Language Tooling UI",
@@ -46,9 +55,12 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>("the diagnostic operation does not write to the workspace or execute project scripts", function () {
-  this.refactorKit062ProtocolFixture().assertReadOnlyExecution();
-});
+Then<StoryWorld>(
+  "the diagnostic operation does not write to the workspace or execute project scripts",
+  function () {
+    this.refactorKit062ProtocolFixture().assertReadOnlyExecution();
+  },
+);
 
 Then<StoryWorld>("no fallback diagnostic output is shown", function () {
   this.refactorKit062ProtocolFixture().assertNoFallbackOutput();
