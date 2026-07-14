@@ -1,4 +1,4 @@
-workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java semantics and diagnostics, conditional desktop Problems contribution, desktop workspace navigation, repeatable WOTC SDK setup, and target evidence-activated project tooling" {
+workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java semantics and diagnostics, conditional desktop Problems contribution, desktop workspace navigation, repeatable WOTC SDK setup, target XCOM tooling, and a frozen unscheduled Java design inventory" {
     model {
         developer = person "Developer" "Browses, edits, and analyzes source code."
 
@@ -23,12 +23,12 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 refactorKitStatusController = component "RefactorKit Status Controller" "CURRENT/AS-BUILT: provider-neutral, diagnostic-only status and capability discovery. It coordinates independent normalized outcomes and rejects stale workspace/request generations; it grants no mutation authority and is activated only after workspace authorization in desktop composition." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Directory-tree Java Clipboard Paste Surface" "CURRENT/AS-BUILT: operational directory-only Paste Java Class context action and tree-scoped Ctrl/Cmd+V. It does not intercept editor paste, copy raw Java, install a global listener, or read the clipboard itself." "React" "Current"
                 refactorKitImportController = component "RefactorKit Import Controller" "CURRENT/AS-BUILT: separate capability-gated transaction flow. It validates directory and workspace/selection generation before one explicit clipboard read, presents normalized preview, applies only the exact displayed planId, discards invalidated work, and refreshes/opens only backend-reported paths; it has no direct-write or force path." "TypeScript, React" "Current"
-                tauriRefactorKitAdapter = component "RefactorKit and Clipboard Tauri Adapters" "CURRENT: typed status/capability discovery, full-capability import preview, exact-planId apply, discard, rollback, and explicit clipboard-read ports. Clipboard source is forwarded only to the RefactorKit preview boundary and is not retained, logged, or sent to Pi." "TypeScript, Tauri API" "Current"
+                tauriRefactorKitAdapter = component "RefactorKit and Clipboard Tauri Adapters" "CURRENT: typed status/capability discovery, required-method Java-import preview, exact-planId apply, discard, rollback, and explicit clipboard-read ports. Clipboard source is forwarded only to the RefactorKit preview boundary and is not retained, logged, or sent to Pi." "TypeScript, Tauri API" "Current"
                 desktopSidebar = component "Desktop Left Sidebar Accordion" "CURRENT/AS-BUILT: File Explorer appears above Workspace Explorer as independently collapsible sections. Workspace Explorer lists registered workspaces and exposes switching, refresh, loading, and error states; the duplicate header workspace select is removed." "React" "Current"
                 desktopBottomPanel = component "Desktop Bottom Tool-window Host" "CURRENT/AS-BUILT: dynamic accessible contribution host for core Terminal and AI Agent plus the conditional project-scoped Problems contribution supplied by desktop composition. Problems remains present while there is a ready Java context or projected problem items; tab metadata supports icon, title, scope, badge, disabled state, and keyboard operation." "React" "Current"
-                languageContracts = component "Provider-neutral Language Contracts" "CURRENT/AS-BUILT: normalized lifecycle, versioned document sync, completion, hover, signature-help, cancellation, capability, result, and event contracts. Provider-specific JDT LS, LSP, and Monaco wire types stay behind adapters." "TypeScript" "Current"
-                languageLifecyclePanel = component "Global Java Tooling Settings" "CURRENT/AS-BUILT: Settings owns global JDK/JDT LS lifecycle and status plus RefactorKit availability, version, and path. It exposes no project scan, query, result, or navigation actions; reported server capabilities do not imply project activation or editor integration." "React" "Current"
-                tauriAdapters = component "Tauri Adapters" "CURRENT: typed desktop adapters for workspace, editor, terminal, AI Agent, RefactorKit, Java lifecycle/document sync/semantic requests, and XCOM monitor/transaction native boundaries." "TypeScript, Tauri API" "Current"
+                languageContracts = component "Provider-neutral Language Contracts" "CURRENT/AS-BUILT: normalized lifecycle, versioned document sync, diagnostic events, completion, hover, signature-help, cancellation, capability, result, and event contracts. Provider-specific JDT LS, LSP, and Monaco wire types stay behind adapters." "TypeScript" "Current"
+                languageLifecyclePanel = component "Global Java Tooling Settings" "CURRENT/AS-BUILT: Settings owns global JDK/JDT LS lifecycle and status plus RefactorKit availability, version, path, and capability discovery. It exposes no project scan, query, result, navigation, or refactoring actions; reported capabilities do not imply project activation or editor integration." "React" "Current"
+                tauriAdapters = component "Tauri Adapters" "CURRENT: typed desktop adapters for workspace, editor, terminal, AI Agent, RefactorKit status/capability discovery and validated Java import, Java lifecycle/document sync/diagnostic/semantic requests, and XCOM monitor/transaction native boundaries." "TypeScript, Tauri API" "Current"
                 tauriLanguageAdapter = component "Tauri Language Session and Document Adapter" "CURRENT/AS-BUILT: implements LanguageSessionPort and DocumentSyncPort; validates workspace/session/path/URI/version identity, normalizes lifecycle data, polls bounded generation-tagged events, and sends versioned didOpen/didChange/didSave/didClose notifications." "TypeScript, Tauri API" "Current"
                 tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "CURRENT/AS-BUILT: implements provider-neutral completion, hover, signature-help, and cancellation calls; validates request/result identity and suppresses malformed or stale native payloads." "TypeScript, Tauri API" "Current"
                 javaLanguageController = component "Java Language Controller" "CURRENT/AS-BUILT: owns workspace-scoped language session lifecycle, versioned Java document synchronization, provider-neutral diagnostic events, active-editor diagnostics, ProblemItem projection, and provider-neutral completion, hover, signature-help, and cancellation. It binds only an editor-ready Java document, serializes optimistic didChange flushes before semantics, and rejects stale workspace, generation, session, path, URI, version, request, or cancellation identity." "TypeScript, React" "Current"
@@ -46,20 +46,20 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 xcomOptionalProvisioning = component "Optional Steam and Prefix Provisioning — FUTURE/TARGET" "TARGET/NON-EXECUTABLE: possible Protontricks, Steam shortcut, compatibility prefix, package-manager, and interactive setup work. None participates in current Prepare or Apply." "TypeScript" "Target"
                 xcomLanguageBuildAdapters = component "XCOM 2 Language and Build Adapters — FUTURE/TARGET" "TARGET: contextual adapters available only to activated modules, with bounded approved tool interactions and no arbitrary execution." "TypeScript" "Target"
 
-                javaActivationEvaluator = component "Java Module Activation Evaluator — FUTURE/TARGET" "TARGET: bounded evidence-based or explicit Java module detection that returns module roots, activation state, confidence, and reasons. No such detection or activation exists current." "TypeScript" "Target"
-                javaContributionCoordinator = component "Contextual Java Contribution Coordinator — FUTURE/TARGET" "TARGET: evidence- or explicitly activated Java modules receive the full activation-scoped Problems, Build, Tests, Logs, and Java tool suite with module lifetime management. This extends rather than reclassifies the current guarded diagnostic projection and conditional Problems tab; global Settings remains tooling lifecycle/status only." "TypeScript, React" "Target"
-                javaAdvancedPresentation = component "Advanced Java Monaco Workflows — FUTURE/TARGET" "TARGET: definition/references and their Monaco gestures, code actions, formatting, rename, hierarchy, and later contextual project contributions. These capabilities are not delivered by current completion, hover, and signature help." "React, Monaco" "Target"
-                javaAdvancedCoordinator = component "Advanced Java Intelligence Coordinator — FUTURE/TARGET" "TARGET: adds navigation, controlled workspace mutations, formatting, rename previews, hierarchy, and contribution lifetime while preserving current identity, synchronization, cancellation, and stale-result policy." "TypeScript" "Target"
-                refactoringPort = component "Java Refactoring Port — FUTURE/TARGET" "TARGET: discover, preview, validate, apply, and cancel controlled refactorings." "TypeScript" "Target"
-                externalProviderAdapters = component "External Provider Adapters — FUTURE/TARGET" "TARGET: optional approved build-tool, framework, or remote-provider adapters; none is delivered." "TypeScript" "Target"
+                javaActivationEvaluator = component "Java Module Activation Evaluator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: a bounded evidence-based or explicit Java module decision could return roots, state, confidence, and reasons. No evaluator, activation, or schedule exists." "TypeScript" "Frozen"
+                javaContributionCoordinator = component "Contextual Java Contribution Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: contextual Problems lifecycle, Build, Tests, Logs, and Java tools were once considered for activated modules. The current guarded diagnostic projection and conditional Problems tab remain independent; no coordinator or schedule exists." "TypeScript, React" "Frozen"
+                javaAdvancedPresentation = component "Broader Java Monaco Workflows — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: definition/references, symbols/hierarchy, code actions, formatting, rename, and broader IntelliSense expansion are not current and have no active milestone." "React, Monaco" "Frozen"
+                javaAdvancedCoordinator = component "Broader Java Intelligence Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: navigation, controlled workspace mutation, formatting, rename previews, hierarchy, and contribution lifetime remain unimplemented and unscheduled. Any reconsideration must preserve current synchronization, cancellation, and stale guards." "TypeScript" "Frozen"
+                refactoringPort = component "General Java Refactoring Port — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: general Java refactoring discovery, preview, validation, apply, and cancellation are not current. The validated Java import transaction is separate." "TypeScript" "Frozen"
+                externalProviderAdapters = component "Additional Provider Adapters — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: additional build-tool, framework, remote-provider, RefactorKit search, or semantic adapters are not current. Any search integration requires released strict typed bounded versioned machine-readable JSON or an equivalent daemon DTO with structured errors, truncation, authorized locations, request/result correlation, and real acceptance evidence; human stdout is never an IDE protocol." "TypeScript" "Frozen"
             }
 
             rustBackend = container "Rust Backend" "Native workspace authorization, managed language services, fixed RefactorKit commands, bounded XCOM monitoring, and the durable repeatable WOTC SDK transaction engine packaged with the desktop app." "Rust, Tauri" {
                 workspaceCommands = component "Workspace and Command Handlers" "CURRENT: authorized file operations and bounded one-shot command execution." "Rust" "Current"
-                refactorKitHandlers = component "RefactorKit Status and One-shot Handlers" "CURRENT: bounded diagnostic status and legacy scan/query command execution. Managed daemon capabilities and transactions enter through the separate thin RefactorKit Daemon Tauri Facade." "Rust" "Current"
-                refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "CURRENT/AS-BUILT: thin inbound Tauri command surface that re-exports bounded DTOs and delegates capability discovery, preview, exact-plan apply, discard, rollback, and shutdown to the application module." "Rust, Tauri" "Current"
-                refactorKitCapabilityPolicy = component "RefactorKit Capability and Safety Policy" "CURRENT/AS-BUILT: normalizes the advertised API, method features, provider-neutral language-kernel schema, runtime limits, and exact safety metadata. Provider version is diagnostic only and cannot authorize an incomplete or unsafe contract." "Rust" "Current"
-                refactorKitBoundaryPolicy = component "RefactorKit Contract and Path Policy" "CURRENT/AS-BUILT: defines bounded request/approval DTOs, response normalization, identity guards, canonical-workspace checks, and authorized result paths." "Rust" "Current"
+                refactorKitHandlers = component "RefactorKit Status Handlers" "CURRENT/AS-BUILT: bounded diagnostic status only. Legacy or support scan/query/navigation handlers and provider foundations are not current IDE capabilities. Managed capability discovery and the validated Java import transaction enter through the separate thin RefactorKit Daemon Tauri Facade." "Rust" "Current"
+                refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "CURRENT/AS-BUILT: thin inbound Tauri command surface that re-exports bounded status/capability and Java-import DTOs, then delegates capability discovery, import preview, exact-plan apply, discard, rollback, and shutdown to the application module." "Rust, Tauri" "Current"
+                refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "CURRENT/AS-BUILT: normalizes the advertised API and exact required Java-import method features, plus optional language-kernel, runtime-limit, and safety metadata as retained evidence. Provider version and top-level safety booleans are diagnostic evidence, not blanket authorization; missing or incomplete required import methods fail closed." "Rust" "Current"
+                refactorKitBoundaryPolicy = component "RefactorKit Contract and Path Policy" "CURRENT/AS-BUILT: defines bounded status/capability and Java-import request/approval DTOs, response normalization, identity guards, canonical-workspace checks, and authorized import result paths. It does not make general search, navigation, diagnostics, or refactoring an IDE capability." "Rust" "Current"
                 refactorKitTransport = component "RefactorKit NDJSON Transport" "CURRENT/AS-BUILT: owns the fixed-argv daemon process, capped NDJSON request/response transport, timeouts, and fail-closed process termination." "Rust, NDJSON" "Current"
                 clipboardHandler = component "Explicit Clipboard Read Handler" "CURRENT: reads clipboard text only after the IDE coordinator has received a supported RefactorKit capability result. It has no background, editor-paste, raw-copy, or Pi path." "Rust" "Current"
                 javaLanguageFacade = component "Java Language Tauri Facade" "CURRENT/AS-BUILT: thin inbound Tauri command surface that re-exports bounded contract types and delegates lifecycle, event polling, document synchronization, semantics, and cancellation to the application module." "Rust, Tauri" "Current"
@@ -69,25 +69,25 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 xcomSetupWorkflow = component "Rollbackable XCOM Setup Transaction Engine" "CURRENT/AS-BUILT: one durable transaction journals Steam build, manifest, and root fingerprint plus original bytes, hashes, modes, directory inventory, and symlink absence in content-addressed backups. Exact-digest external approval gates Apply. Restore Vanilla SDK reverses to the exact baseline, conflicts never overwrite, rollback precedes Prepare Again, and exports omit paths/content." "Rust" "Current"
                 xcomProductionOperations = component "Concrete WOTC SDK Operations" "CURRENT/AS-BUILT: builds exactly 15 allowlisted reversible operations for vanilla AppID 602410: two INI removals, one bounded INI patch, eleven exact quarantines, and one game-target symlink." "Rust" "Current"
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge — FUTURE/TARGET" "TARGET: authorized, bounded, cancellable integration with separately approved tools." "Rust" "Target"
-                javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "CURRENT/AS-BUILT: protocol and semantic modules encode bounded LSP sync/completion/hover/signature/cancel traffic and normalize responses; toolchain and support modules discover fixed-argv JDK/JDT LS installations and provide shared fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
-                javaAdvancedBridge = component "Advanced Java Semantic Bridge — FUTURE/TARGET" "TARGET: definition/references, code actions, formatting, rename, and hierarchy transport with explicit mutation and preview policy." "Rust, JSON-RPC/LSP" "Target"
-                refactorPreviewEngine = component "RefactorKit Daemon Application Service" "CURRENT/AS-BUILT: application module owns one canonical-workspace/generation-scoped daemon session and guarded plans/transactions. It delegates contract/path validation, provider-version-neutral API/capability/safety policy, and NDJSON transport; only exact approved plans apply, and indeterminate state fails closed. RefactorKit alone writes; source is never logged." "Rust" "Current"
-                externalRuntimeAdapters = component "External Runtime Adapters — FUTURE/TARGET" "TARGET: approved provider-specific integration behind workspace and resource policy." "Rust" "Target"
+                javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "CURRENT/AS-BUILT: protocol and semantic modules encode bounded LSP sync/diagnostic/completion/hover/signature/cancel traffic and normalize events and responses; toolchain and support modules discover fixed-argv JDK/JDT LS installations and provide shared fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
+                javaAdvancedBridge = component "Broader Java Semantic Bridge — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: definition/references, symbols/hierarchy, code actions, formatting, and rename transport are unimplemented and unscheduled." "Rust, JSON-RPC/LSP" "Frozen"
+                refactorPreviewEngine = component "RefactorKit Daemon Application Service" "CURRENT/AS-BUILT: application module owns one canonical-workspace/generation-scoped daemon session for capability discovery and guarded Java-import plans/transactions. It delegates contract/path validation, required-method and metadata policy, and NDJSON transport; only exact approved import plans apply, and indeterminate state fails closed. RefactorKit alone writes; source is never logged." "Rust" "Current"
+                externalRuntimeAdapters = component "Additional Runtime Adapters — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: additional provider-specific integrations are not current and have no active milestone." "Rust" "Frozen"
             }
         }
 
         browser = softwareSystem "Web Browser" "Runs the web SPA and provides localStorage." "External"
         filesystem = softwareSystem "OS File System" "Stores authorized desktop workspaces, service data, and IDE-owned local XCOM transaction journals/content-addressed backups. Export payloads omit paths and content." "External"
-        osClipboard = softwareSystem "OS Clipboard" "Provides text only for an explicit directory-tree Paste Java Class request after the complete RefactorKit API/capability/safety compatibility gate succeeds; incompatible providers remain unavailable before it is read." "External"
+        osClipboard = softwareSystem "OS Clipboard" "Provides text only for an explicit directory-tree Paste Java Class request after the advertised API and exact required import/apply/discard/rollback method features pass. Provider metadata is retained evidence rather than blanket authorization; incomplete providers remain unavailable before clipboard read." "External"
         osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands." "External"
         jdk = softwareSystem "Full Java JDK" "CURRENT external, non-bundled JDK installation capability-probed through java and javac; licensing is determined by the user's chosen distribution." "External"
         jdtLs = softwareSystem "Eclipse JDT LS" "CURRENT external, non-bundled EPL-2.0 language server. A pinned snapshot can be installed on demand only after checksum verification." "External"
-        refactorKit = softwareSystem "RefactorKit Engine" "CURRENT external managed bin/refactorkit-daemon. Compatibility is provider-version-neutral: the IDE authorizes behavior from the advertised API, required method capabilities, normalized language-kernel metadata, and safety contract; providerVersion is diagnostic only. RefactorKit is the sole Java-import writer, and incompatible providers remain unavailable before clipboard read." "External"
+        refactorKit = softwareSystem "RefactorKit Engine" "CURRENT only for provider status/capability discovery and the validated managed Java-import transaction. Import authorization is provider-version-neutral and requires the advertised API plus exact import/apply/discard/rollback method features; normalized language-kernel and safety metadata are retained evidence, not blanket authorization. RefactorKit is the sole Java-import writer, and incomplete providers remain unavailable before clipboard read." "External"
         steamMetadata = softwareSystem "Local Steam Installation Metadata" "CURRENT external desktop-only Steam library and appmanifest evidence. Access is bounded, read-only, allowlisted by AppID, and exported with redacted provenance." "External"
         xcomToolchain = softwareSystem "Installed WOTC Game and Vanilla SDK" "CURRENT external installation identified through allowlisted Steam AppID 602410 metadata. Setup records fingerprints without exposing proprietary paths/content and may create only the allowlisted game-target symlink after exact external approval." "External"
         xcomApproval = softwareSystem "External SDK Write Approval" "CURRENT external least-privilege authority granting one transaction only when the reviewed 64-character digest matches exactly." "External"
         xcomFutureProvisioning = softwareSystem "Optional Steam and Prefix Provisioning — FUTURE/TARGET" "TARGET/NON-EXECUTABLE: Protontricks, Steam shortcuts, compatibility prefixes, package-manager actions, and interactive setup; excluded from current Prepare and Apply." "External,Target"
-        externalProviders = softwareSystem "External Provider Runtimes — FUTURE/TARGET" "TARGET: separately approved build-tool, framework, or remote-provider systems." "External,Target"
+        externalProviders = softwareSystem "Additional Provider Runtimes — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: separately approved build-tool, framework, remote-provider, or announced RefactorKit search runtimes are not current and have no schedule." "External,Frozen"
 
         developer -> webUi "Uses the browser IDE"
         developer -> desktopUi "Uses the desktop IDE"
@@ -138,14 +138,14 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         workspaceCommands -> osPrograms "Starts bounded one-shot commands" "Direct argv"
         languageLifecyclePanel -> refactorKitStatusController "Renders provider-neutral diagnostic status and capability discovery only"
         refactorKitStatusController -> tauriRefactorKitAdapter "Requests normalized status and capabilities without preview, apply, discard, rollback, or write authority"
-        tauriAdapters -> refactorKitHandlers "Invokes bounded status and native handlers" "Tauri invoke"
-        refactorKitDaemonFacade -> refactorPreviewEngine "Delegates all managed daemon use cases to the application module"
-        refactorKitDaemonFacade -> refactorKitBoundaryPolicy "Re-exports and accepts bounded request/approval contracts"
-        refactorPreviewEngine -> refactorKitCapabilityPolicy "Authorizes API, method capabilities, language metadata, and safety without provider-version checks"
+        tauriAdapters -> refactorKitHandlers "Invokes bounded RefactorKit status handlers" "Tauri invoke"
+        refactorKitDaemonFacade -> refactorPreviewEngine "Delegates capability discovery and validated Java-import use cases to the application module"
+        refactorKitDaemonFacade -> refactorKitBoundaryPolicy "Re-exports bounded status/capability and Java-import request/approval contracts"
+        refactorPreviewEngine -> refactorKitCapabilityPolicy "Requires the advertised API and exact Java-import method features; retains language-kernel and safety metadata as evidence without treating version or top-level safety booleans as blanket authorization"
         refactorPreviewEngine -> refactorKitBoundaryPolicy "Validates workspace, identity, plans, transactions, and result paths"
         refactorPreviewEngine -> refactorKitTransport "Uses the managed daemon session and fail-closed NDJSON transport"
         tauriRefactorKitAdapter -> clipboardHandler "Invokes explicit clipboard read" "Tauri invoke"
-        clipboardHandler -> osClipboard "Reads text once for an authorized paste request after the full-capability gate"
+        clipboardHandler -> osClipboard "Reads text once after the advertised API and exact required Java-import method features pass"
         languageLifecyclePanel -> javaLanguageController "Starts, stops, restarts, refreshes, and renders workspace-scoped language status"
         javaLanguageController -> languageContracts "Uses provider-neutral lifecycle, sync, diagnostics, semantics, capability, and cancellation contracts"
         javaLanguageController -> tauriLanguageAdapter "Coordinates lifecycle, subscriptions, and serialized versioned document synchronization" "Tauri adapter"
@@ -192,22 +192,22 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         tauriJavaIntelligenceAdapter -> javaLanguageFacade "Invokes correlated semantic and cancellation commands" "Tauri invoke"
         javaSemanticBridge -> jdtLs "Synchronizes documents and requests completion, hover, signature help, or cancellation" "LSP over stdio"
 
-        developer -> javaContributionCoordinator "Uses contextual Problems, Build, Tests, Logs, and Java tools only for an activated module"
-        javaActivationEvaluator -> filesystem "Reads bounded Java module evidence and explicit configuration"
-        javaContributionCoordinator -> javaActivationEvaluator "Uses activation state, confidence, reasons, and module roots"
-        javaContributionCoordinator -> javaAdvancedPresentation "Materializes future activated-module Java contributions"
-        developer -> javaAdvancedPresentation "Uses future navigation, editing, formatting, rename, and hierarchy workflows"
-        javaAdvancedPresentation -> javaAdvancedCoordinator "Supplies future gestures and renders provider-labeled results"
-        javaAdvancedCoordinator -> javaLanguageController "Reuses current synchronization, cancellation, and stale-result policy"
-        javaAdvancedCoordinator -> refactoringPort "Requests deterministic previews and controlled apply"
-        javaAdvancedCoordinator -> externalProviderAdapters "Requests optional approved capabilities"
-        javaAdvancedCoordinator -> javaAdvancedBridge "Uses future native semantic and mutation transport"
-        javaAdvancedBridge -> jdtLs "Adds definition/references, code actions, formatting, rename, and hierarchy" "LSP over stdio"
-        refactoringPort -> refactorPreviewEngine "Requests targetDirectory preview, exact-plan apply, transaction rollback, and backend result paths" "Tauri invoke"
-        refactorKitTransport -> refactorKit "Manages one workspace/generation-scoped NDJSON daemon for preview/exact-planId apply/discard/rollback; RefactorKit alone writes" "Fixed bin/refactorkit-daemon NDJSON"
+        developer -> javaContributionCoordinator "Reviews a frozen historical concept for contextual Java tools; no current interaction or commitment"
+        javaActivationEvaluator -> filesystem "Historical concept only: bounded module evidence was considered; no active reader exists"
+        javaContributionCoordinator -> javaActivationEvaluator "Historical concept only: no activation decision or coordinator exists"
+        javaContributionCoordinator -> javaAdvancedPresentation "Historical concept only: no contextual Java contribution is scheduled"
+        developer -> javaAdvancedPresentation "Reviews frozen unscheduled inventory; no broader Java workflow is current"
+        javaAdvancedPresentation -> javaAdvancedCoordinator "Historical concept only: no gesture or result flow exists"
+        javaAdvancedCoordinator -> javaLanguageController "Any reconsideration would preserve current synchronization, cancellation, and stale guards; no integration exists"
+        javaAdvancedCoordinator -> refactoringPort "Historical concept only: no general Java refactoring integration exists"
+        javaAdvancedCoordinator -> externalProviderAdapters "Historical concept only: no additional provider integration exists"
+        javaAdvancedCoordinator -> javaAdvancedBridge "Historical concept only: no broader native semantic or mutation transport exists"
+        javaAdvancedBridge -> jdtLs "Historical concept only: definition/references, symbols/hierarchy, code actions, formatting, and rename are unscheduled" "No active protocol"
+        refactoringPort -> refactorPreviewEngine "Historical concept only: the general port is not integrated; current Java import uses its separate validated transaction flow" "No active invocation"
+        refactorKitTransport -> refactorKit "Manages one workspace/generation-scoped NDJSON daemon for capability discovery and Java-import preview/exact-planId apply/discard/rollback; RefactorKit alone writes" "Fixed bin/refactorkit-daemon NDJSON"
         refactorKit -> filesystem "Applies only the exact approved import plan and transaction rollback inside the canonical authorized workspace" "Transactional filesystem operations"
-        externalProviderAdapters -> externalRuntimeAdapters "Uses the authorized native boundary"
-        externalRuntimeAdapters -> externalProviders "Uses separately approved provider protocols"
+        externalProviderAdapters -> externalRuntimeAdapters "Historical concept only: no additional adapter boundary is active"
+        externalRuntimeAdapters -> externalProviders "Historical concept only: no additional provider protocol is active"
     }
 
     views {
@@ -234,14 +234,14 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
 
         component desktopApp "CurrentDesktopComponents" {
             title "CURRENT / AS-BUILT — Desktop Components"
-            description "App is a composition-only root wiring seven application controllers and six extracted settings, terminal, file-explorer, document-navigation, editor-command, and shell controllers. WorkspaceGeneration and editor readiness remain the shared stale-work and Java synchronization boundaries; RefactorKit import remains separately capability-gated."
+            description "App is a composition-only root wiring seven current capability controllers and six extracted settings, terminal, file-explorer, document-navigation, editor-command, and shell controllers. Parked provider-support code is excluded from current C4 capability. WorkspaceGeneration and editor readiness remain the shared stale-work and Java synchronization boundaries; RefactorKit import remains separately capability-gated."
             include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup rustBackend
             autoLayout lr
         }
 
         component rustBackend "CurrentRustComponents" {
             title "CURRENT / AS-BUILT — Rust Backend Components"
-            description "Thin Tauri facades delegate to modular Java Language and RefactorKit application services. Contracts and path policy are separated from Java protocol/semantic/toolchain/support and from RefactorKit capability/safety policy and NDJSON transport; RefactorKit provider version remains diagnostic only."
+            description "Thin Tauri facades delegate to modular Java Language and RefactorKit application services. Current RefactorKit scope is status/capability discovery plus the validated Java import transaction. Required import methods gate that transaction; provider version and normalized safety metadata remain diagnostic evidence rather than blanket authorization."
             include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
@@ -274,30 +274,30 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
             autoLayout lr
         }
 
-        systemContext ide "TargetJavaProviderContext" {
-            title "FUTURE/TARGET — Remaining Java Intelligence Context"
-            description "Guarded diagnostics with a conditional project-scoped Problems tab, completion, hover, signature help, sync, and cancellation are current without module activation. Target work is evidence-based activation plus definition/references and Monaco gestures, code actions, formatting, rename, hierarchy, and the full activation-scoped project tool suite."
+        systemContext ide "FrozenJavaProviderInventory" {
+            title "UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Java Provider Context"
+            description "Not target architecture or an implied commitment. The 2026-07-14 freeze preserves current diagnostics/Problems, completion, hover, signature help, sync, cancellation, and stale guards while parking activation, definition/references, symbols/hierarchy, code actions, formatting, rename, contextual tooling, and broader JDT LS expansion."
             include developer ide filesystem jdtLs refactorKit externalProviders
             autoLayout lr
         }
 
-        container ide "TargetJavaContainers" {
-            title "FUTURE/TARGET — Remaining Desktop Java Runtime"
-            description "Target runtime adds evidence-based activation, navigation, controlled edits, formatting, rename, hierarchy, and the full contextual project tool suite while reusing current guarded JDT semantics, diagnostic Problems projection, and RefactorKit transactions."
+        container ide "FrozenJavaContainerInventory" {
+            title "UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Desktop Java Runtime Ideas"
+            description "Not target architecture or an implied commitment. Current guarded JDT LS behavior and the separate validated RefactorKit import transaction remain as-built; all additional Java runtime integrations shown here are unscheduled inventory."
             include developer desktopApp rustBackend osClipboard jdtLs refactorKit externalProviders
             autoLayout lr
         }
 
-        component desktopApp "TargetJavaDesktopComponents" {
-            title "FUTURE/TARGET — Remaining Java Activation and Monaco Workflows"
-            description "Current guarded diagnostics, conditional project-scoped Problems, completion, hover, signature help, and cancellation are shown as foundations. Target slices are evidence-based activation, definition/references and Monaco gestures, code actions, formatting, rename, hierarchy, and the full activation-scoped contribution suite."
+        component desktopApp "FrozenJavaDesktopInventory" {
+            title "UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Java Activation and Monaco Ideas"
+            description "Not target architecture or an implied commitment. Current guarded diagnostics/Problems, completion, hover, signature help, synchronization, cancellation, and stale guards are foundations only. Activation, definition/references, symbols/hierarchy, code actions, formatting, rename, contextual tooling, and general refactoring remain unscheduled TODOs."
             include developer javaMonacoSemantics javaLanguageController javaActivationEvaluator javaContributionCoordinator languageContracts javaAdvancedPresentation javaAdvancedCoordinator refactoringPort externalProviderAdapters filesystem rustBackend
             autoLayout lr
         }
 
-        component rustBackend "TargetJavaRustComponents" {
-            title "FUTURE/TARGET — Remaining Native Java Semantics"
-            description "Current native sync, completion, hover, signature help, and cancellation remain the foundation. Target transport adds definition/references, code actions, formatting, rename, and hierarchy without weakening current guards."
+        component rustBackend "FrozenJavaRustInventory" {
+            title "UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Additional Native Java Ideas"
+            description "Not target architecture or an implied commitment. Current native sync, diagnostics, completion, hover, signature help, cancellation, status/capability discovery, and validated Java import remain as-built. Additional navigation, search, action, formatting, rename, hierarchy, and provider adapters are unscheduled; human stdout is never an IDE protocol."
             include desktopApp refactorKitHandlers refactorKitDaemonFacade refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge javaAdvancedBridge refactorPreviewEngine externalRuntimeAdapters jdtLs refactorKit externalProviders
             autoLayout lr
         }
@@ -328,6 +328,12 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 background #fff2cc
                 color #7f6000
                 stroke #bf9000
+                border dashed
+            }
+            element "Frozen" {
+                background #eeeeee
+                color #555555
+                stroke #777777
                 border dashed
             }
         }

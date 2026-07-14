@@ -4,7 +4,7 @@
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is now a composition-only root. It creates stores, view models, and typed adapters; wires seven application controllers and six extracted shell/document/editor controllers; derives presentation props; and renders the shell. Feature orchestration remains inside the controllers below rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires seven current capability controllers and six extracted shell/document/editor controllers; derives presentation props; and renders the shell. Parked provider-support code is excluded from current C4 capability. Feature orchestration remains inside the controllers below rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities.
 
@@ -72,9 +72,9 @@ Developer
           ▼
 RefactorKit Import Controller
   1. validate selected workspace-relative directory
-  2. require the complete RefactorKit java.importExternalClass
-     targetDirectory preview/apply/discard/rollback capability set
-     └─ incompatible provider contract → unavailable before clipboard read; no force
+  2. require the advertised API and exact RefactorKit java.importExternalClass
+     targetDirectory preview/apply/discard/rollback method features
+     └─ missing or incomplete required methods → unavailable before clipboard read; no force
   3. explicitly read clipboard once
   4. request rich targetDirectory preview and display normalized plan evidence
   5. guard workspace + selection generation and exact approved planId
@@ -86,7 +86,7 @@ RefactorKit Import Controller
 
 The UI does not copy raw Java, infer a target package, construct a patch, or write files. Clipboard source is transient, routed only to RefactorKit preview, never logged, and has no Pi/AI Agent relationship.
 
-The Rust bridge launches one `bin/refactorkit-daemon` NDJSON process for the canonical workspace and current workspace generation. Its thin Tauri facade delegates to separate application, capability-policy, contract, path-policy, and transport modules. Compatibility is provider-version-neutral: the provider version is diagnostic metadata, while the advertised API, required method capabilities, normalized language-kernel schema, and safety metadata govern compatibility. Malformed output, timeout, workspace switch, or app exit kills the process.
+The Rust bridge launches one `bin/refactorkit-daemon` NDJSON process for the canonical workspace and current workspace generation. Its thin Tauri facade delegates to separate application, capability-policy, contract, path-policy, and transport modules. Compatibility is provider-version-neutral: provider version is diagnostic metadata, while the advertised API and exact required import method features gate the transaction. Normalized language-kernel, runtime-limit, and safety metadata are retained evidence rather than blanket authorization. Malformed output, timeout, workspace switch, or app exit kills the process.
 
 ## Rust Facade and Module Boundaries
 
@@ -103,7 +103,7 @@ Tauri RefactorKit commands ──> thin RefactorKit Daemon facade
                                       └─ managed NDJSON transport
 ```
 
-The facades only expose inbound commands and re-export bounded types. Process ownership, use-case orchestration, policy, normalization, path authorization, and transport stay in the modules behind them. These are CURRENT/AS-BUILT boundaries; they do not promote any remaining Java navigation, mutation, hierarchy, or module-activation work from FUTURE/TARGET.
+The facades only expose inbound commands and re-export bounded types. Process ownership, use-case orchestration, policy, normalization, path authorization, and transport stay in the modules behind them. Current RefactorKit IDE scope is status/capability discovery plus the validated Java import transaction. These CURRENT/AS-BUILT boundaries do not promote parked support code, provider foundations, or frozen Java navigation, mutation, hierarchy, and activation ideas into IDE capabilities.
 
 ## Dynamic Bottom Tool-window Host
 
@@ -173,7 +173,7 @@ Desktop Settings / Java
 (no scan, definition/references results, or navigation in Settings mode)
 ```
 
-Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellation contracts; the Tauri adapters; guarded Monaco providers; the current conditional Problems projection; and the managed Rust JDT LS bridge are current. Fixed RefactorKit handlers remain separate. There is no Java project/module evidence evaluator, activation state, or full activation-scoped Java tooling suite.
+Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellation contracts; the Tauri adapters; guarded Monaco providers; the current conditional Problems projection; and the managed Rust JDT LS bridge are current. RefactorKit is current only for status/capability discovery and the separate validated Java import transaction. Legacy/support handlers and provider foundations are not current IDE capabilities. There is no Java project/module evidence evaluator, activation state, or full activation-scoped Java tooling suite.
 
 ## Global XCOM Machine Settings
 
@@ -207,9 +207,9 @@ Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interac
 
 The browser setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal web composition starts no hidden monitor or transaction activity. The fixed contracts are not a plugin runtime and grant no arbitrary execution.
 
-## FUTURE/TARGET Remaining Java Intelligence and Contributions
+## UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Java
 
-Current guarded diagnostic projection and conditional Problems visibility, completion, hover, signature help, sync, and cancellation are the foundation. The next slices are definition/references and Monaco gestures, followed by code actions, formatting, rename, and hierarchy. They must preserve the existing exact-model guard, serialized synchronization, cancellation, stale-result, safe-edit, and untrusted-Markdown policies.
+Current guarded diagnostics and conditional Problems visibility, completion, hover, signature help, synchronization, cancellation, and stale guards remain maintained as-built. As of 2026-07-14, there is no active Java target or milestone beyond that boundary.
 
 ```text
 CURRENT (no module activation)
@@ -217,21 +217,20 @@ provider-neutral Java diagnostics
   └─ ready Java context OR retained ProblemItems
        └─ conditional project-scoped Problems tab
 
-FUTURE/TARGET
-Explicit Java configuration ─┐
-Credible Java module evidence ├─> Java Module Activation Evaluator
-                             │      └─ state + confidence + reasons + module roots
-                             │
-activated module only ───────┴─> Contextual Java Contribution Coordinator
-                                    ├─ activation-scoped Problems lifecycle
-                                    ├─ Build / Tests / Logs
-                                    └─ Java tools
-                                         ├─ definition/references + Monaco gestures
-                                         ├─ code actions + formatting + rename
-                                         └─ hierarchy and later contextual workflows
+UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY
+  ├─ definition / references and Monaco gestures
+  ├─ document/workspace symbols and type/call hierarchy
+  ├─ code actions, imports, formatting, and rename
+  ├─ general Java refactoring
+  ├─ bounded module detection / activation
+  └─ contextual Problems lifecycle / Build / Tests / Logs / Java tools
 ```
 
-Detection must be bounded and evidence based (for example, credible source roots and reviewed Maven/Gradle/module descriptors), reject false positives, and remove contributions on deactivation. This architecture is future only. Global Java Settings remains lifecycle/status/availability and must not become the project-action surface.
+This inventory is not target architecture, an ordered delivery plan, or an implied commitment. Its retained safety constraints require any explicitly reconsidered capability to preserve exact-model identity, serialized synchronization, cancellation, stale-result rejection, authorized paths, bounded results, safe edit previews, and untrusted-Markdown handling.
+
+Parked TypeScript diagnostics and semantic navigation requirements are not active: diagnostics lose required range, authority, snapshot, attestation, and structured outcome semantics; real navigation validation observed an unauthorized `.refactorkit/workspace.lock` write. Structural outline and identifier search remain provider foundations, while TypeScript references and rename remain experimental provider operations. None is a current IDE capability, and general Java refactoring beyond validated import remains TODO.
+
+Any reconsidered search integration requires a released strict typed bounded versioned machine-readable JSON contract, or equivalent daemon DTO, with structured errors, truncation, authorized locations, request/result correlation, and immutable real acceptance evidence. Human stdout is never parsed as an IDE protocol.
 
 ## FUTURE/TARGET XCOM Activation and Contributions
 
@@ -249,4 +248,6 @@ Candidate evidence may include `*.x2proj`, `*.XComMod`, `.scripts/build.ps1` wit
 
 Concrete WOTC SDK setup is CURRENT/AS-BUILT with a fixed 15-operation plan, exact external approval, durable baseline capture, and conflict-safe restore. Optional Steam/prefix/package/interactive provisioning remains FUTURE/TARGET and must not enter current Prepare or Apply without a separate design and authorization.
 
-Project activation and the full activation-scoped tooling suite remain FUTURE/TARGET. Their architecture requires bounded evidence-based detection, activation/deactivation, module-scoped contribution lifetime, generic-workspace behavior, and honest web degradation. The current guarded Java Problems tab is not such activation. Definition/references and Monaco gestures, code actions, formatting, rename, and hierarchy also remain FUTURE/TARGET. No current plugin runtime, Java/XCOM project detection, or project activation is claimed.
+XCOM project activation and its activation-scoped tooling suite remain FUTURE/TARGET under the separate XCOM boundary. No current plugin runtime, XCOM project detection, or XCOM project activation is claimed.
+
+Java activation, contextual tooling, definition/references, symbols/hierarchy, code actions, formatting, rename, general refactoring, and broader JDT LS expansion are instead frozen unscheduled inventory. The current guarded Java Problems tab is not activation, and no Java project detection or activation is claimed.

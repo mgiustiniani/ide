@@ -2,7 +2,7 @@
 
 > **MIXED CURRENT/TARGET BOUNDARY.** Repeatable concrete WOTC SDK native setup is **CURRENT/AS-BUILT**. XCOM project activation, language/build contributions, Protontricks, Steam shortcut and compatibility-prefix work, package-manager actions, and interactive provisioning remain **FUTURE/TARGET** and non-executable. See [System Context](system-context.md), [Containers](containers.md), and [Components](components.md).
 
-This roadmap is independent of the [Java/JDT LS/RefactorKit roadmap](target-java-intelligence.md) and makes no IntelliJ-parity claim.
+This roadmap is independent of the [current Java boundary and frozen unscheduled inventory](target-java-intelligence.md) and makes no IntelliJ-parity claim.
 
 ## Architectural Separation
 
