@@ -124,58 +124,139 @@ pub(super) fn spawn_session(
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SessionCallErrorKind {
+    Session,
+    Protocol,
+    RequestTooLarge,
+    Rejected,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SessionCallError {
+    pub(super) kind: SessionCallErrorKind,
+    pub(super) rpc_code: Option<i64>,
+}
+
+impl SessionCallError {
+    fn message(self) -> &'static str {
+        match self.kind {
+            SessionCallErrorKind::Session => SESSION_FAILED,
+            SessionCallErrorKind::Protocol => PROTOCOL_FAILED,
+            SessionCallErrorKind::RequestTooLarge => {
+                "RefactorKit daemon request exceeds the allowed size."
+            }
+            SessionCallErrorKind::Rejected => REQUEST_REJECTED,
+        }
+    }
+}
+
 pub(super) fn session_call(
     session: &mut Session,
     method: &str,
     params: Value,
     timeout: Duration,
 ) -> Result<Value, String> {
-    session.next_id = session
-        .next_id
-        .checked_add(1)
-        .ok_or_else(|| SESSION_FAILED.to_string())?;
+    session_call_detailed(session, method, params, timeout)
+        .map_err(|error| error.message().to_string())
+}
+
+pub(super) fn session_call_detailed(
+    session: &mut Session,
+    method: &str,
+    params: Value,
+    timeout: Duration,
+) -> Result<Value, SessionCallError> {
+    session.next_id = session.next_id.checked_add(1).ok_or(SessionCallError {
+        kind: SessionCallErrorKind::Session,
+        rpc_code: None,
+    })?;
     let id = session.next_id;
     let mut frame = serde_json::to_vec(&json!({
         "jsonrpc": "2.0", "id": id, "method": method, "params": params
     }))
-    .map_err(|_| SESSION_FAILED.to_string())?;
+    .map_err(|_| SessionCallError {
+        kind: SessionCallErrorKind::Session,
+        rpc_code: None,
+    })?;
     if frame.len() > MAX_REQUEST_BYTES {
         terminate(&mut session.child);
-        return Err("RefactorKit daemon request exceeds the allowed size.".to_string());
+        return Err(SessionCallError {
+            kind: SessionCallErrorKind::RequestTooLarge,
+            rpc_code: None,
+        });
     }
     frame.push(b'\n');
     if session.stdin.write_all(&frame).is_err() || session.stdin.flush().is_err() {
         terminate(&mut session.child);
-        return Err(SESSION_FAILED.to_string());
+        return Err(SessionCallError {
+            kind: SessionCallErrorKind::Session,
+            rpc_code: None,
+        });
     }
     let bytes = match session.responses.recv_timeout(timeout) {
         Ok(Ok(bytes)) => bytes,
         _ => {
             terminate(&mut session.child);
-            return Err(SESSION_FAILED.to_string());
+            return Err(SessionCallError {
+                kind: SessionCallErrorKind::Session,
+                rpc_code: None,
+            });
         }
     };
     let response: Value = serde_json::from_slice(&bytes).map_err(|_| {
         terminate(&mut session.child);
-        PROTOCOL_FAILED.to_string()
+        SessionCallError {
+            kind: SessionCallErrorKind::Protocol,
+            rpc_code: None,
+        }
     })?;
-    let object = response
-        .as_object()
-        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    let Some(object) = response.as_object() else {
+        terminate(&mut session.child);
+        return Err(SessionCallError {
+            kind: SessionCallErrorKind::Protocol,
+            rpc_code: None,
+        });
+    };
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
         || object.get("id").and_then(Value::as_u64) != Some(id)
     {
         terminate(&mut session.child);
-        return Err(PROTOCOL_FAILED.to_string());
+        return Err(SessionCallError {
+            kind: SessionCallErrorKind::Protocol,
+            rpc_code: None,
+        });
     }
-    if !object.get("error").is_none_or(Value::is_null) {
-        return Err(REQUEST_REJECTED.to_string());
+    if let Some(error) = object.get("error").filter(|value| !value.is_null()) {
+        let Some(error) = error.as_object() else {
+            terminate(&mut session.child);
+            return Err(SessionCallError {
+                kind: SessionCallErrorKind::Protocol,
+                rpc_code: None,
+            });
+        };
+        let Some(rpc_code) = error.get("code").and_then(Value::as_i64) else {
+            terminate(&mut session.child);
+            return Err(SessionCallError {
+                kind: SessionCallErrorKind::Protocol,
+                rpc_code: None,
+            });
+        };
+        return Err(SessionCallError {
+            kind: SessionCallErrorKind::Rejected,
+            rpc_code: Some(rpc_code),
+        });
     }
-    object
-        .get("result")
-        .filter(|value| !value.is_null())
-        .cloned()
-        .ok_or_else(|| PROTOCOL_FAILED.to_string())
+    match object.get("result").filter(|value| !value.is_null()) {
+        Some(result) => Ok(result.clone()),
+        None => {
+            terminate(&mut session.child);
+            Err(SessionCallError {
+                kind: SessionCallErrorKind::Protocol,
+                rpc_code: None,
+            })
+        }
+    }
 }
 
 pub(super) fn discover_daemon() -> Option<PathBuf> {

@@ -1502,6 +1502,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "arc-swap",
+ "getrandom 0.3.4",
  "libc",
  "serde",
  "serde_json",

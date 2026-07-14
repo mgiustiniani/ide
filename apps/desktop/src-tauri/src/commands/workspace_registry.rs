@@ -89,12 +89,17 @@ pub fn list_workspaces() -> Result<WorkspaceRegistry, String> {
 pub fn switch_workspace(
     workspace_id: String,
     refactorkit: State<'_, crate::commands::refactorkit_daemon::RefactorKitDaemonState>,
+    refactorkit_semantic: State<
+        '_,
+        crate::commands::refactorkit_daemon::SavedSnapshotSemanticState,
+    >,
 ) -> Result<WorkspaceInfo, String> {
     let registry_path = workspace_registry_path()?;
     // Serialize with any in-flight managed RefactorKit request before changing the global
     // workspace root. Otherwise an apply could still target the previous root after the UI has
     // observed the new selection. Killing an idle session when validation later fails is safe.
     refactorkit.shutdown_all();
+    refactorkit_semantic.shutdown_all();
     switch_workspace_at(&workspace_id, &registry_path)
 }
 

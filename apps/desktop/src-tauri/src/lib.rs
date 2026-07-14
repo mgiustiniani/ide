@@ -10,6 +10,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(commands::java_language::JavaLanguageServiceState::default())
         .manage(commands::refactorkit_daemon::RefactorKitDaemonState::default())
+        .manage(commands::refactorkit_daemon::SavedSnapshotSemanticState::default())
         .manage(commands::xcom2_setup_monitor::Xcom2SetupMonitorState::default())
         .manage(commands::xcom2_setup_transaction::Xcom2SetupTransactionState::default())
         .invoke_handler(tauri::generate_handler![
@@ -30,6 +31,10 @@ pub fn run() {
             commands::refactorkit_daemon::discard_refactorkit_plan,
             commands::refactorkit_daemon::rollback_refactorkit_transaction,
             commands::refactorkit_daemon::shutdown_refactorkit_daemon,
+            commands::refactorkit_daemon::start_refactorkit_saved_snapshot_semantic_session,
+            commands::refactorkit_daemon::stop_refactorkit_saved_snapshot_semantic_session,
+            commands::refactorkit_daemon::search_refactorkit_saved_snapshot_symbols,
+            commands::refactorkit_daemon::resolve_refactorkit_saved_snapshot_definition,
             commands::refactorkit::run_refactorkit_scan,
             commands::refactorkit::run_refactorkit_diagnostics,
             commands::refactorkit::run_refactorkit_symbols,
@@ -82,6 +87,9 @@ pub fn run() {
                 .shutdown_all();
             app_handle
                 .state::<commands::refactorkit_daemon::RefactorKitDaemonState>()
+                .shutdown_all();
+            app_handle
+                .state::<commands::refactorkit_daemon::SavedSnapshotSemanticState>()
                 .shutdown_all();
             commands::xcom2_setup_transaction::flush_xcom2_setup_transactions(
                 &app_handle

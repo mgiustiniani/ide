@@ -14,6 +14,7 @@ use super::application::*;
 use super::capability_policy::*;
 use super::contract::*;
 use super::path_policy::*;
+use super::saved_snapshot_semantic::*;
 use super::transport::*;
 
 use std::fs;
@@ -1033,6 +1034,35 @@ fn emitted_json_rpc_frame_has_only_the_exact_protocol_fields() {
 
 #[test]
 #[cfg(unix)]
+fn detailed_transport_retains_only_safe_json_rpc_error_code() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("structured-error");
+    let (mut session, script) = fake_session(
+        &root,
+        "read line; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"/private/toolchain secret-source\",\"data\":{\"payload\":\"secret\"}}}\\n'",
+    );
+
+    let error = session_call_detailed(
+        &mut session,
+        "symbol.search",
+        json!({"languageId": "typescript", "query": "Service"}),
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.kind, SessionCallErrorKind::Rejected);
+    assert_eq!(error.rpc_code, Some(-32602));
+    let debug = format!("{error:?}");
+    for forbidden in ["private", "toolchain", "secret", "payload"] {
+        assert!(!debug.contains(forbidden));
+    }
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
 fn malformed_oversized_wrong_id_timeout_and_process_death_kill_sessions() {
     let _lock = daemon_env_lock();
     let scenarios = [
@@ -1227,8 +1257,30 @@ fn command_signatures_remain_stable() {
         super::discard_refactorkit_plan;
     let _: for<'a> fn(RollbackRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
         super::rollback_refactorkit_transaction;
-    let _: for<'a> fn(State<'a, RefactorKitDaemonState>) -> Result<(), String> =
-        super::shutdown_refactorkit_daemon;
+    let _: for<'a> fn(
+        State<'a, RefactorKitDaemonState>,
+        State<'a, SavedSnapshotSemanticState>,
+    ) -> Result<(), String> = super::shutdown_refactorkit_daemon;
+    let _: for<'a> fn(
+        StartSavedSnapshotSemanticSessionRequest,
+        State<'a, SavedSnapshotSemanticState>,
+    ) -> Result<Value, SavedSnapshotSemanticError> =
+        super::start_refactorkit_saved_snapshot_semantic_session;
+    let _: for<'a> fn(
+        StopSavedSnapshotSemanticSessionRequest,
+        State<'a, SavedSnapshotSemanticState>,
+    ) -> Result<Value, SavedSnapshotSemanticError> =
+        super::stop_refactorkit_saved_snapshot_semantic_session;
+    let _: for<'a> fn(
+        SearchSavedSnapshotSymbolsRequest,
+        State<'a, SavedSnapshotSemanticState>,
+    ) -> Result<Value, SavedSnapshotSemanticError> =
+        super::search_refactorkit_saved_snapshot_symbols;
+    let _: for<'a> fn(
+        ResolveSavedSnapshotDefinitionRequest,
+        State<'a, SavedSnapshotSemanticState>,
+    ) -> Result<Value, SavedSnapshotSemanticError> =
+        super::resolve_refactorkit_saved_snapshot_definition;
 }
 
 #[test]
@@ -1239,9 +1291,9 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
             .lines()
             .filter(|line| line.trim() == "#[tauri::command]")
             .count(),
-        6
+        10
     );
-    assert!(facade.lines().count() < 100);
+    assert!(facade.lines().count() < 120);
     for forbidden in [
         concat!("std::process::", "Command"),
         concat!("Child", "Stdin"),
@@ -1258,6 +1310,10 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
         ("capability_policy", include_str!("capability_policy.rs")),
         ("contract", include_str!("contract.rs")),
         ("path_policy", include_str!("path_policy.rs")),
+        (
+            "saved_snapshot_semantic",
+            include_str!("saved_snapshot_semantic.rs"),
+        ),
         ("transport", include_str!("transport.rs")),
     ] {
         assert!(!module.contains("tauri::"), "{name} depends on Tauri");
