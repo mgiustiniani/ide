@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
-import { act, renderHook } from "@testing-library/react";
-
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  waitFor,
+  type RenderResult,
+} from "@testing-library/react";
 import { createTauriAdapters } from "../../../apps/desktop/src/adapters/index.js";
 import {
   useRefactorKitStatusController,
@@ -11,6 +17,8 @@ import {
 import { BrowserRefactorKitAdapter } from "../../../packages/browser-adapters/src/refactorkit-browser.js";
 import {
   normalizeProviderPoint,
+  type EditorPoint,
+  type RefactorKitStatus,
   type SavedSnapshotDefinitionRequest,
   type SavedSnapshotDefinitionResult,
   type SavedSnapshotSemanticSessionStartRequest,
@@ -20,6 +28,8 @@ import {
   type SavedSnapshotSymbolSearchRequest,
   type SavedSnapshotSymbolSearchResult,
   type SavedSnapshotWorkspaceSymbol,
+  type TypeScriptJavaScriptLanguageId,
+  type WorkspaceInfo,
 } from "../../../packages/contracts/src/index.js";
 import type {
   RefactorKitCapabilities,
@@ -289,6 +299,92 @@ interface RefactorKitStatusControllerHarness {
   unmount(): void;
 }
 
+interface SemanticNavigationEditorBuffer {
+  readonly path: string;
+  readonly languageId?: TypeScriptJavaScriptLanguageId;
+  readonly savedState: "saved" | "never-saved";
+  readonly dirty: boolean;
+}
+
+interface SemanticNavigationWorkspaceContext {
+  generation: number;
+  workspaceId: string | null;
+  isSwitching: boolean;
+  isMetadataLoading: boolean;
+}
+
+interface StorySemanticSymbolResult {
+  readonly opaqueSymbolId: string;
+  readonly name: string;
+  readonly kind: string;
+}
+
+interface RefactorKitSymbolNavigationController {
+  readonly language: TypeScriptJavaScriptLanguageId;
+  readonly query: string;
+  readonly toolchainPaths: {
+    readonly nodeExecutable: string;
+    readonly languageServerPackageRoot: string;
+    readonly typeScriptPackageRoot: string;
+  };
+  readonly approvedForSession: boolean;
+  readonly snapshotState: "saved" | "dirty" | "never-saved";
+  readonly evidenceState: "accepted" | "checking" | "unavailable";
+  readonly availability: "available" | "unavailable" | "browser-unavailable";
+  readonly availabilityReason: string | null;
+  readonly results: readonly StorySemanticSymbolResult[];
+  readonly resultLimit: number;
+  readonly isBusy: boolean;
+  readonly canSubmit: boolean;
+  readonly error: string | null;
+  readonly refusal: string | null;
+  readonly hasActiveSession: boolean;
+  setLanguage(language: TypeScriptJavaScriptLanguageId): void;
+  setQuery(query: string): void;
+  setToolchainPath(
+    field: "nodeExecutable" | "languageServerPackageRoot" | "typeScriptPackageRoot",
+    value: string,
+  ): void;
+  setApprovedForSession(approved: boolean): void;
+  submit(): Promise<void>;
+  selectResult(result: StorySemanticSymbolResult): Promise<void>;
+  cancel(): void;
+  stop(): Promise<void>;
+}
+
+interface UseRefactorKitSymbolNavigationControllerDependencies {
+  readonly refactorKit: RefactorKitPort;
+  readonly status: RefactorKitStatus | null;
+  readonly capabilities: RefactorKitCapabilities | null;
+  readonly isCheckingCapabilities: boolean;
+  readonly workspaceInfo: WorkspaceInfo | null;
+  readonly workspaceGeneration: number;
+  getWorkspaceContext(): SemanticNavigationWorkspaceContext;
+  getRelevantBuffers(): readonly SemanticNavigationEditorBuffer[];
+  navigateToPoint(filePath: string, point: EditorPoint): Promise<void>;
+}
+
+type UseRefactorKitSymbolNavigationController = (
+  dependencies: UseRefactorKitSymbolNavigationControllerDependencies,
+) => RefactorKitSymbolNavigationController;
+
+type StoryComponent = unknown;
+type StoryReactNode = Parameters<typeof render>[0];
+
+const storyReact = createRequire(import.meta.url)("react") as {
+  createElement(
+    type: StoryComponent,
+    props: Record<string, unknown> | null,
+    ...children: StoryReactNode[]
+  ): StoryReactNode;
+};
+const { createElement } = storyReact;
+
+interface RefactorKitSymbolNavigationControllerHarness {
+  readonly result: { readonly current: RefactorKitSymbolNavigationController };
+  unmount(): void;
+}
+
 interface FixtureInvocation {
   readonly command: string;
   readonly args?: Record<string, unknown>;
@@ -316,6 +412,23 @@ export class RefactorKit062ProtocolFixture {
   readonly #globalDescriptors = new Map<string, PropertyDescriptor | undefined>();
   readonly #dom: StoryDom;
   readonly #statusController: RefactorKitStatusControllerHarness;
+  readonly #workspaceContext: SemanticNavigationWorkspaceContext = {
+    generation: AUTHORITY.workspaceGeneration,
+    workspaceId: AUTHORITY.workspaceId,
+    isSwitching: false,
+    isMetadataLoading: false,
+  };
+  readonly #navigations: Array<{
+    readonly filePath: string;
+    readonly point: { readonly lineNumber: number; readonly column: number };
+  }> = [];
+  #participatingBuffers: SemanticNavigationEditorBuffer[] = PARTICIPATING_BUFFERS.map(
+    ({ path, languageId }) => ({ path, languageId, savedState: "saved", dirty: false }),
+  );
+  #useSymbolNavigationController?: UseRefactorKitSymbolNavigationController;
+  #semanticSymbolSearchPanel?: StoryComponent;
+  #symbolNavigationHarness?: RefactorKitSymbolNavigationControllerHarness;
+  #symbolNavigationSurface?: RenderResult;
   #capabilities?: RefactorKitCapabilities;
   #diagnostics?: RefactorKitCommandResult;
   #semanticSession?: SavedSnapshotSemanticSessionStartResult;
@@ -323,6 +436,7 @@ export class RefactorKit062ProtocolFixture {
   #selectedSymbol?: Readonly<SavedSnapshotWorkspaceSymbol>;
   #definition?: SavedSnapshotDefinitionResult;
   #semanticStop?: SavedSnapshotSemanticSessionStopResult;
+  #searchSurfaceTextBeforeSelection = "";
   #nativeSemanticSessionActive = false;
   #nativeSearchAvailable = false;
   #buffersMatchSavedFiles = false;
@@ -339,6 +453,7 @@ export class RefactorKit062ProtocolFixture {
       ["window", this.#dom.window],
       ["document", this.#dom.window.document],
       ["navigator", this.#dom.window.navigator],
+      ["React", storyReact],
     ] as const) {
       this.#globalDescriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
       Object.defineProperty(globalThis, name, { configurable: true, value });
@@ -365,6 +480,7 @@ export class RefactorKit062ProtocolFixture {
           assert.deepEqual(args, { request: SEMANTIC_SESSION_START_REQUEST });
           this.#nativeSemanticSessionActive = true;
           this.#nativeSearchAvailable = false;
+          this.#semanticSession = structuredClone(SEMANTIC_SESSION_START_RESULT);
           return structuredClone(SEMANTIC_SESSION_START_RESULT);
         }
         if (command === "search_refactorkit_saved_snapshot_symbols") {
@@ -375,6 +491,7 @@ export class RefactorKit062ProtocolFixture {
           );
           assert.deepEqual(args, { request: SYMBOL_SEARCH_REQUEST });
           this.#nativeSearchAvailable = true;
+          this.#symbolSearch = structuredClone(SYMBOL_SEARCH_RESULT);
           return structuredClone(SYMBOL_SEARCH_RESULT);
         }
         if (command === "resolve_refactorkit_saved_snapshot_definition") {
@@ -384,6 +501,7 @@ export class RefactorKit062ProtocolFixture {
             "The fixture received definition lookup without the current saved-snapshot search",
           );
           assert.deepEqual(args, { request: DEFINITION_REQUEST });
+          this.#definition = structuredClone(DEFINITION_RESULT);
           return structuredClone(DEFINITION_RESULT);
         }
         if (command === "stop_refactorkit_saved_snapshot_semantic_session") {
@@ -395,6 +513,7 @@ export class RefactorKit062ProtocolFixture {
           assert.deepEqual(args, { request: SEMANTIC_SESSION_STOP_REQUEST });
           this.#nativeSemanticSessionActive = false;
           this.#nativeSearchAvailable = false;
+          this.#semanticStop = structuredClone(SEMANTIC_SESSION_STOP_RESULT);
           return structuredClone(SEMANTIC_SESSION_STOP_RESULT);
         }
         throw new Error(
@@ -460,6 +579,33 @@ export class RefactorKit062ProtocolFixture {
         );
       }
     }
+
+    const controllerModulePath =
+      "../../../apps/desktop/src/features/refactorkit-symbol-navigation/useRefactorKitSymbolNavigationController.js";
+    const panelModulePath =
+      "../../../packages/ui/src/components/SemanticSymbolSearchPanel/SemanticSymbolSearchPanel.js";
+    const controllerModule = (await import(controllerModulePath)) as {
+      useRefactorKitSymbolNavigationController: UseRefactorKitSymbolNavigationController;
+    };
+    const panelModule = (await import(panelModulePath)) as {
+      SemanticSymbolSearchPanel: StoryComponent;
+    };
+    this.#useSymbolNavigationController = controllerModule.useRefactorKitSymbolNavigationController;
+    this.#semanticSymbolSearchPanel = panelModule.SemanticSymbolSearchPanel;
+
+    const dependencies = this.#symbolNavigationDependencies(
+      () => this.#participatingBuffers,
+      async (filePath, point) => {
+        this.#navigations.push({ filePath, point: { ...point } });
+      },
+    );
+    this.#symbolNavigationHarness = renderHook(() =>
+      this.#useSymbolNavigationController!(dependencies),
+    );
+    this.#symbolNavigationSurface = render(this.#symbolSurfaceElement());
+    assert.equal(this.#symbolNavigation().availability, "available");
+    assert.equal(this.#symbolNavigation().evidenceState, "accepted");
+    assert.equal(this.#symbolNavigation().snapshotState, "saved");
   }
 
   approveExplicitExternalToolchain(): void {
@@ -471,6 +617,46 @@ export class RefactorKit062ProtocolFixture {
       assert.ok(path.startsWith("/opt/refactorkit-toolchains/"));
       assert.equal(path.startsWith("/workspace/authorized/"), false);
     }
+
+    const surface = this.#symbolSurface();
+    for (const label of [
+      "External Node executable path",
+      "External typescript-language-server package path",
+      "External TypeScript package path",
+    ]) {
+      assert.ok(surface.getByLabelText(label));
+    }
+    assert.ok(
+      surface.getByRole("checkbox", {
+        name: "Approve these external toolchain paths for this session",
+      }),
+    );
+    act(() => {
+      const controller = this.#symbolNavigation();
+      controller.setToolchainPath("nodeExecutable", APPROVED_TOOLCHAIN.nodeExecutable);
+      controller.setToolchainPath(
+        "languageServerPackageRoot",
+        APPROVED_TOOLCHAIN.languageServerPackageRoot,
+      );
+      controller.setToolchainPath(
+        "typeScriptPackageRoot",
+        APPROVED_TOOLCHAIN.typeScriptPackageRoot,
+      );
+      controller.setApprovedForSession(true);
+    });
+    this.#rerenderSymbolSurface();
+
+    assert.deepEqual(this.#symbolNavigation().toolchainPaths, {
+      nodeExecutable: APPROVED_TOOLCHAIN.nodeExecutable,
+      languageServerPackageRoot: APPROVED_TOOLCHAIN.languageServerPackageRoot,
+      typeScriptPackageRoot: APPROVED_TOOLCHAIN.typeScriptPackageRoot,
+    });
+    assert.equal(this.#symbolNavigation().approvedForSession, true);
+    assert.match(
+      surface.getByText(/PATH discovery and workspace-local toolchain discovery are disabled/u)
+        .textContent ?? "",
+      /does not persist paths/u,
+    );
     this.#toolchainApproved = true;
   }
 
@@ -480,52 +666,65 @@ export class RefactorKit062ProtocolFixture {
     this.#requireSemanticCapability("workspaceSymbols");
     this.#requireSemanticCapability("definition");
 
-    this.#semanticSession = await this.#adapter.startSavedSnapshotSemanticSession(
-      SEMANTIC_SESSION_START_REQUEST,
+    const surface = this.#symbolSurface();
+    assert.ok(surface.getByRole("textbox", { name: "Symbol query" }));
+    act(() => this.#symbolNavigation().setQuery(SYMBOL_SEARCH_REQUEST.query));
+    await waitFor(() => assert.equal(this.#symbolNavigation().canSubmit, true));
+    this.#rerenderSymbolSurface();
+    fireEvent.submit(surface.getByRole("form", { name: "Workspace symbol search" }));
+    await waitFor(() =>
+      assert.deepEqual(this.#symbolNavigation().results, [
+        { opaqueSymbolId: OPAQUE_SYMBOL_ID, name: "Service", kind: "CLASS" },
+      ]),
     );
+    this.#rerenderSymbolSurface();
+
     assert.deepEqual(this.#semanticSession, SEMANTIC_SESSION_START_RESULT);
     assert.deepEqual(this.#semanticSessionStartInvocation().args, {
       request: SEMANTIC_SESSION_START_REQUEST,
     });
-
-    this.#searchRequested = true;
-    this.#symbolSearch = await this.#adapter.searchSavedSnapshotSymbols(SYMBOL_SEARCH_REQUEST);
     assert.deepEqual(this.#symbolSearch, SYMBOL_SEARCH_RESULT);
     assert.deepEqual(this.#symbolSearchInvocation().args, { request: SYMBOL_SEARCH_REQUEST });
+    this.#searchRequested = true;
   }
 
-  selectSemanticSearchResult(): void {
+  async selectSemanticSearchResult(): Promise<void> {
     assert.equal(this.#searchRequested, true);
     const selectedSymbol = this.#symbolSearch?.symbols[0];
     assert.ok(selectedSymbol, "The workspace-symbol request returned no semantic result");
     this.#selectedSymbol = selectedSymbol;
+    this.#searchSurfaceTextBeforeSelection = this.#symbolSurface().container.textContent ?? "";
+
+    fireEvent.click(
+      this.#symbolSurface().getByRole("button", {
+        name: "Resolve definition for Service, CLASS",
+      }),
+    );
+    await waitFor(() => assert.equal(this.#navigations.length, 1));
     this.#selectionRequested = true;
   }
 
   async assertSemanticDefinitionOpenedAtProviderPoint(): Promise<void> {
     assert.equal(this.#selectionRequested, true);
     assert.deepEqual(this.#selectedSymbol, SYMBOL_SEARCH_RESULT.symbols[0]);
-
-    this.#definition = await this.#adapter.resolveSavedSnapshotDefinition(DEFINITION_REQUEST);
     assert.deepEqual(this.#definition, DEFINITION_RESULT);
     assert.deepEqual(this.#semanticDefinitionInvocation().args, { request: DEFINITION_REQUEST });
 
-    this.#semanticStop = await this.#adapter.stopSavedSnapshotSemanticSession(
-      SEMANTIC_SESSION_STOP_REQUEST,
-    );
-    assert.deepEqual(this.#semanticStop, SEMANTIC_SESSION_STOP_RESULT);
-    assert.deepEqual(this.#semanticSessionStopInvocation().args, {
-      request: SEMANTIC_SESSION_STOP_REQUEST,
-    });
-
-    const editorPoint = normalizeProviderPoint(this.#definition.point);
+    const editorPoint = normalizeProviderPoint(DEFINITION_RESULT.point);
     assert.deepEqual(editorPoint, {
       kind: "ready",
       point: { lineNumber: 3, column: 14 },
     });
-    assert.fail(
-      "MISSING_UI_CAPABILITY: The desktop application has no controller/composition that submits saved-snapshot symbol navigation from the existing generic Search surface and maps the selected provider point to the existing document-navigation/editor-reveal seam.",
-    );
+    assert.deepEqual(this.#navigations, [
+      { filePath: DEFINITION_RESULT.file, point: { lineNumber: 3, column: 14 } },
+    ]);
+
+    await act(() => this.#symbolNavigation().stop());
+    assert.deepEqual(this.#semanticStop, SEMANTIC_SESSION_STOP_RESULT);
+    assert.deepEqual(this.#semanticSessionStopInvocation().args, {
+      request: SEMANTIC_SESSION_STOP_REQUEST,
+    });
+    assert.equal(this.#symbolNavigation().hasActiveSession, false);
   }
 
   assertSymbolNavigationAuthorityCorrelated(): void {
@@ -554,19 +753,110 @@ export class RefactorKit062ProtocolFixture {
       request: { ...DEFINITION_REQUEST, symbolId: symbol.id },
     });
     assert.equal(this.#dom.window.localStorage.length, 0);
+    assert.equal(this.#searchSurfaceTextBeforeSelection.includes(symbol.id), false);
     assert.equal(this.#dom.window.document.body.textContent?.includes(symbol.id), false);
+    assert.equal(
+      this.#symbolSurface().queryByLabelText(/opaque|symbol id/iu),
+      null,
+      "The Search surface exposed an input for a provider-owned opaque symbol identity",
+    );
   }
 
-  assertUnsafeBuffersRefused(): void {
-    assert.fail(
-      "MISSING_UI_CAPABILITY: The desktop symbol-navigation controller must refuse dirty and never-saved participating buffers before starting a semantic session.",
+  async assertUnsafeBuffersRefused(): Promise<void> {
+    const invocationsBeforeRefusals = this.#invocations.length;
+    for (const probe of [
+      {
+        buffer: {
+          path: "src/dirty.ts",
+          languageId: "typescript",
+          savedState: "saved",
+          dirty: true,
+        } as const,
+        state: "dirty" as const,
+        refusal: "Semantic search is refused while a participating buffer is dirty.",
+      },
+      {
+        buffer: {
+          path: "src/new.ts",
+          languageId: "typescript",
+          savedState: "never-saved",
+          dirty: false,
+        } as const,
+        state: "never-saved" as const,
+        refusal: "Semantic search is refused while a participating buffer has never been saved.",
+      },
+    ]) {
+      const harness = renderHook(() =>
+        this.#useSymbolNavigationController!(
+          this.#symbolNavigationDependencies(
+            () => [probe.buffer],
+            async () => undefined,
+          ),
+        ),
+      );
+      await this.#configureApprovedController(harness);
+      assert.equal(harness.result.current.snapshotState, probe.state);
+      assert.equal(harness.result.current.canSubmit, false);
+      await act(() => harness.result.current.submit());
+      assert.equal(harness.result.current.refusal, probe.refusal);
+      assert.equal(harness.result.current.results.length, 0);
+      harness.unmount();
+    }
+    assert.equal(
+      this.#invocations.length,
+      invocationsBeforeRefusals,
+      "Unsafe buffers reached the native semantic-session boundary",
     );
+
+    const staleContext = { ...this.#workspaceContext };
+    const staleHarness = renderHook(() =>
+      this.#useSymbolNavigationController!({
+        ...this.#symbolNavigationDependencies(
+          () => [
+            {
+              path: "src/service.ts",
+              languageId: "typescript",
+              savedState: "saved",
+              dirty: false,
+            },
+          ],
+          async () => assert.fail("A stale selection reached document navigation"),
+        ),
+        getWorkspaceContext: () => ({ ...staleContext }),
+      }),
+    );
+    await this.#configureApprovedController(staleHarness);
+    await act(() => staleHarness.result.current.submit());
+    assert.equal(staleHarness.result.current.results.length, 1);
+    const definitionsBeforeStaleSelection = this.#invocations.filter(
+      ({ command }) => command === "resolve_refactorkit_saved_snapshot_definition",
+    ).length;
+    staleContext.generation += 1;
+    await act(() =>
+      staleHarness.result.current.selectResult(staleHarness.result.current.results[0]!),
+    );
+    assert.equal(
+      staleHarness.result.current.refusal,
+      "The selected result is stale. Run the search again.",
+    );
+    assert.equal(
+      this.#invocations.filter(
+        ({ command }) => command === "resolve_refactorkit_saved_snapshot_definition",
+      ).length,
+      definitionsBeforeStaleSelection,
+    );
+    staleContext.generation = AUTHORITY.workspaceGeneration;
+    await act(() => staleHarness.result.current.stop());
+    assert.equal(staleHarness.result.current.hasActiveSession, false);
+    staleHarness.unmount();
   }
 
   assertSearchCompatibilityDisclosure(): void {
     assert.deepEqual(this.#symbolSearch?.completeness, SYMBOL_SEARCH_RESULT.completeness);
-    assert.fail(
-      "MISSING_UI_CAPABILITY: The existing generic Search surface must render the dynamic-or-mixed JavaScript incompleteness disclosure.",
+    assert.ok(
+      this.#symbolSurface().getByText(
+        /JavaScript results may be incomplete for dynamic or mixed JavaScript/u,
+      ),
     );
   }
 
@@ -577,6 +867,14 @@ export class RefactorKit062ProtocolFixture {
       { readonly toolchain?: unknown } | undefined;
     assert.deepEqual(startRequest?.toolchain, APPROVED_TOOLCHAIN);
     assert.deepEqual(searchRequest?.toolchain, APPROVED_TOOLCHAIN);
+    assert.equal(APPROVED_TOOLCHAIN.allowPathNodeDiscovery, false);
+    assert.equal(APPROVED_TOOLCHAIN.allowWorkspaceLocalToolchain, false);
+    assert.equal(
+      this.#invocations.some(({ command }) =>
+        /discover|resolve.*toolchain|search.*path/iu.test(command),
+      ),
+      false,
+    );
   }
 
   assertNoStructuralIdentifierFallback(): void {
@@ -600,6 +898,9 @@ export class RefactorKit062ProtocolFixture {
       "search_refactorkit_saved_snapshot_symbols",
       "resolve_refactorkit_saved_snapshot_definition",
       "stop_refactorkit_saved_snapshot_semantic_session",
+      "start_refactorkit_saved_snapshot_semantic_session",
+      "search_refactorkit_saved_snapshot_symbols",
+      "stop_refactorkit_saved_snapshot_semantic_session",
     ]);
     assert.equal(
       this.#invocations.some(({ command }) => /(?:apply|write|script|terminal)/i.test(command)),
@@ -608,6 +909,18 @@ export class RefactorKit062ProtocolFixture {
   }
 
   assertNoScriptSpecificPanel(): void {
+    const searchActivity = this.#symbolSurface().getByRole("region", { name: "Search activity" });
+    assert.ok(searchActivity);
+    assert.equal(
+      this.#symbolSurface().getByRole("heading", { name: "Workspace Symbols" }).textContent,
+      "Workspace Symbols",
+    );
+    assert.equal(
+      this.#symbolSurface().queryByRole("region", {
+        name: /TypeScript|JavaScript/iu,
+      }),
+      null,
+    );
     const panelCommands = this.#invocations.filter(({ command }) =>
       /(typescript|javascript).*(panel|surface)|(panel|surface).*(typescript|javascript)/i.test(
         command,
@@ -617,6 +930,8 @@ export class RefactorKit062ProtocolFixture {
   }
 
   assertNoProjectActionInGlobalSettings(): void {
+    assert.equal(this.#symbolSurface().queryByRole("button", { name: /Settings/iu }), null);
+    assert.equal(this.#symbolSurface().queryByRole("link", { name: /Settings/iu }), null);
     const settingsCommands = this.#invocations.filter(({ command }) =>
       /settings.*(typescript|javascript|refactorkit)/i.test(command),
     );
@@ -631,12 +946,14 @@ export class RefactorKit062ProtocolFixture {
       schema: null,
       reason: "Local RefactorKit daemon access is desktop-only and unavailable in browser clients.",
     });
-    await assert.rejects(
-      browser.startSavedSnapshotSemanticSession(SEMANTIC_SESSION_START_REQUEST),
-      {
-        code: "BROWSER_REFACTORKIT_UNAVAILABLE",
-      },
-    );
+    for (const operation of [
+      () => browser.startSavedSnapshotSemanticSession(SEMANTIC_SESSION_START_REQUEST),
+      () => browser.searchSavedSnapshotSymbols(SYMBOL_SEARCH_REQUEST),
+      () => browser.resolveSavedSnapshotDefinition(DEFINITION_REQUEST),
+      () => browser.stopSavedSnapshotSemanticSession(SEMANTIC_SESSION_STOP_REQUEST),
+    ]) {
+      await assert.rejects(operation(), { code: "BROWSER_REFACTORKIT_UNAVAILABLE" });
+    }
   }
 
   assertOperationMetadataPreserved(): void {
@@ -741,11 +1058,117 @@ export class RefactorKit062ProtocolFixture {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    if (this.#symbolNavigationHarness) {
+      await act(() => this.#symbolNavigationHarness!.result.current.stop());
+    }
+    this.#symbolNavigationSurface?.unmount();
+    this.#symbolNavigationHarness?.unmount();
+    this.#symbolNavigationSurface = undefined;
+    this.#symbolNavigationHarness = undefined;
+    this.#useSymbolNavigationController = undefined;
+    this.#semanticSymbolSearchPanel = undefined;
+    assert.equal(this.#nativeSemanticSessionActive, false);
     this.#statusController.unmount();
     this.#dom.window.close();
     for (const [name, descriptor] of [...this.#globalDescriptors].reverse()) {
       this.#restoreProperty(name, descriptor);
     }
+  }
+
+  #symbolNavigationDependencies(
+    getRelevantBuffers: () => readonly SemanticNavigationEditorBuffer[],
+    navigateToPoint: UseRefactorKitSymbolNavigationControllerDependencies["navigateToPoint"],
+  ): UseRefactorKitSymbolNavigationControllerDependencies {
+    return {
+      refactorKit: this.#adapter,
+      status: this.#statusController.result.current.status,
+      capabilities: this.#requireCapabilities(),
+      isCheckingCapabilities: false,
+      workspaceInfo: {
+        id: AUTHORITY.workspaceId,
+        name: "Authorized Story Workspace",
+        rootPath: SEMANTIC_SESSION_START_REQUEST.workspaceRoot,
+      },
+      workspaceGeneration: AUTHORITY.workspaceGeneration,
+      getWorkspaceContext: () => ({ ...this.#workspaceContext }),
+      getRelevantBuffers: () => getRelevantBuffers().map((buffer) => ({ ...buffer })),
+      navigateToPoint,
+    };
+  }
+
+  async #configureApprovedController(
+    harness: RefactorKitSymbolNavigationControllerHarness,
+  ): Promise<void> {
+    act(() => {
+      harness.result.current.setToolchainPath("nodeExecutable", APPROVED_TOOLCHAIN.nodeExecutable);
+      harness.result.current.setToolchainPath(
+        "languageServerPackageRoot",
+        APPROVED_TOOLCHAIN.languageServerPackageRoot,
+      );
+      harness.result.current.setToolchainPath(
+        "typeScriptPackageRoot",
+        APPROVED_TOOLCHAIN.typeScriptPackageRoot,
+      );
+      harness.result.current.setQuery(SYMBOL_SEARCH_REQUEST.query);
+      harness.result.current.setApprovedForSession(true);
+    });
+    await act(async () => Promise.resolve());
+  }
+
+  #symbolNavigation(): RefactorKitSymbolNavigationController {
+    assert.ok(
+      this.#symbolNavigationHarness,
+      "The desktop semantic symbol-navigation controller has not been composed",
+    );
+    return this.#symbolNavigationHarness.result.current;
+  }
+
+  #symbolSurfaceElement(): StoryReactNode {
+    assert.ok(
+      this.#semanticSymbolSearchPanel,
+      "The generic semantic symbol Search panel has not been loaded",
+    );
+    const controller = this.#symbolNavigation();
+    return createElement(
+      "section",
+      { "aria-label": "Search activity" },
+      createElement(this.#semanticSymbolSearchPanel, {
+        language: controller.language,
+        query: controller.query,
+        toolchainPaths: controller.toolchainPaths,
+        approvedForSession: controller.approvedForSession,
+        snapshotState: controller.snapshotState,
+        evidenceState: controller.evidenceState,
+        availability: controller.availability,
+        availabilityReason: controller.availabilityReason,
+        results: controller.results,
+        resultLimit: controller.resultLimit,
+        isBusy: controller.isBusy,
+        canSubmit: controller.canSubmit,
+        error: controller.error,
+        refusal: controller.refusal,
+        onLanguageChange: controller.setLanguage,
+        onQueryChange: controller.setQuery,
+        onToolchainPathChange: controller.setToolchainPath,
+        onApprovalChange: controller.setApprovedForSession,
+        onSubmit: controller.submit,
+        onCancel: controller.cancel,
+        onStop: controller.stop,
+        onResultSelect: controller.selectResult,
+      }),
+    );
+  }
+
+  #rerenderSymbolSurface(): void {
+    this.#symbolSurface().rerender(this.#symbolSurfaceElement());
+  }
+
+  #symbolSurface(): RenderResult {
+    assert.ok(
+      this.#symbolNavigationSurface,
+      "The generic Search surface has not been composed for semantic symbol navigation",
+    );
+    return this.#symbolNavigationSurface;
   }
 
   #requireCapabilities() {

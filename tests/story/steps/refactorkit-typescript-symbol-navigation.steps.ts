@@ -37,8 +37,8 @@ When<StoryWorld>(
   },
 );
 
-When<StoryWorld>("selects a semantic search result", function () {
-  this.refactorKit062ProtocolFixture().selectSemanticSearchResult();
+When<StoryWorld>("selects a semantic search result", async function () {
+  await this.refactorKit062ProtocolFixture().selectSemanticSearchResult();
 });
 
 Then<StoryWorld>(
@@ -64,8 +64,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "semantic search and navigation are refused while a participating TypeScript or JavaScript editor buffer is dirty or has never been saved",
-  function () {
-    this.refactorKit062ProtocolFixture().assertUnsafeBuffersRefused();
+  async function () {
+    await this.refactorKit062ProtocolFixture().assertUnsafeBuffersRefused();
   },
 );
 
