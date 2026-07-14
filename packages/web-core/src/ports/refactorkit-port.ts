@@ -12,6 +12,10 @@ import type {
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
   SavedSnapshotDefinitionResult,
+  SavedSnapshotSemanticSessionStartRequest,
+  SavedSnapshotSemanticSessionStartResult,
+  SavedSnapshotSemanticSessionStopRequest,
+  SavedSnapshotSemanticSessionStopResult,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
 } from "@ide/contracts";
@@ -25,6 +29,12 @@ export interface RefactorKitPort {
   symbols(): Promise<RefactorKitCommandResult>;
   definition(symbol: string): Promise<RefactorKitCommandResult>;
   references(symbol: string): Promise<RefactorKitCommandResult>;
+  startSavedSnapshotSemanticSession(
+    request: SavedSnapshotSemanticSessionStartRequest,
+  ): Promise<SavedSnapshotSemanticSessionStartResult>;
+  stopSavedSnapshotSemanticSession(
+    request: SavedSnapshotSemanticSessionStopRequest,
+  ): Promise<SavedSnapshotSemanticSessionStopResult>;
   searchSavedSnapshotSymbols(
     request: SavedSnapshotSymbolSearchRequest,
   ): Promise<SavedSnapshotSymbolSearchResult>;
