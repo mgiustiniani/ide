@@ -128,41 +128,81 @@ describe("PanelLayout", () => {
     expect(screen.getByTestId("bottom")).toBeDefined();
   });
 
-  it("should show the bottom terminal panel by default without overlaying the editor", () => {
+  it("keeps full-height navigation beside the exact editor-side bottom host topology", () => {
     const { container } = render(
       React.createElement(PanelLayout, {
         leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
+        searchActivityContent: React.createElement(
+          "div",
+          { "data-testid": "search-sidebar" },
+          "Search results",
+        ),
+        activeActivity: "search",
+        onActivityChange: vi.fn(),
         mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
         bottomContent: React.createElement("div", { "data-testid": "terminal" }, "Terminal"),
+        rightSidebarContent: React.createElement(
+          "div",
+          { "data-testid": "right-sidebar-content" },
+          "AI Agent",
+        ),
+        statusBarLeft: React.createElement("span", { "data-testid": "status" }, "Ready"),
         layout: defaultLayout,
         onResizeLeft: vi.fn(),
         onResizeBottom: vi.fn(),
       }),
     );
 
-    const workspace = container.querySelector(".ide-workspace") as HTMLDivElement;
-    const mainEditorPane = container.querySelector(".ide-main-editor-pane") as HTMLElement;
-    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+    const shell = container.querySelector(".ide-shell") as HTMLElement;
+    const workspace = container.querySelector(".ide-workspace") as HTMLElement;
+    const activityRail = screen.getByRole("navigation", { name: "Primary activity" });
+    const searchSidebar = screen.getByRole("tabpanel", { name: "Search" });
+    const verticalResizeHandle = screen.getByRole("separator", { name: "Resize file explorer" });
+    const contentColumn = container.querySelector(".ide-content-column") as HTMLElement;
+    const editorRow = container.querySelector(".ide-editor-row") as HTMLElement;
+    const mainEditorPane = screen.getByRole("main", { name: "Editor area" });
+    const rightSidebar = screen.getByRole("complementary", { name: "Secondary side panel" });
     const horizontalResizeHandle = screen.getByRole("separator", { name: "Resize bottom panel" });
+    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+    const statusBar = screen.getByTestId("status").closest(".statusbar") as HTMLElement;
 
-    expect(screen.getByTestId("main")).toBeDefined();
+    expect(Array.from(shell.children)).toEqual([workspace, statusBar]);
+    expect(Array.from(workspace.children)).toEqual([
+      activityRail,
+      searchSidebar,
+      verticalResizeHandle,
+      contentColumn,
+    ]);
+    expect(searchSidebar.classList.contains("ide-sidebar")).toBe(true);
+    expect(within(searchSidebar).getByTestId("search-sidebar")).toBeDefined();
+    expect(Array.from(contentColumn.children)).toEqual([
+      editorRow,
+      horizontalResizeHandle,
+      bottomPanel,
+    ]);
+    expect(Array.from(editorRow.children)).toEqual([mainEditorPane, rightSidebar]);
+    expect(bottomPanel.parentElement).toBe(contentColumn);
+    expect(bottomPanel.parentElement).not.toBe(workspace);
+    expect(activityRail.contains(bottomPanel)).toBe(false);
+    expect(searchSidebar.contains(bottomPanel)).toBe(false);
+    expect(workspace.nextElementSibling).toBe(statusBar);
+
     expect(screen.getByTestId("terminal")).toBeDefined();
     expect(bottomPanel.hidden).toBe(false);
     expect(bottomPanel.getAttribute("aria-hidden")).toBe("false");
     expect(bottomPanel.style.height).toBe("250px");
     expect(bottomPanel.style.minHeight).toBe("80px");
-    expect(bottomPanel.classList.contains("ide-bottom-panel")).toBe(true);
     expect(bottomPanel.classList.contains("absolute")).toBe(false);
     expect(bottomPanel.classList.contains("fixed")).toBe(false);
+    expect(contentColumn.classList.contains("flex-col")).toBe(true);
+    expect(editorRow.classList.contains("flex-1")).toBe(true);
     expect(mainEditorPane.classList.contains("flex-1")).toBe(true);
     expect(mainEditorPane.classList.contains("min-h-0")).toBe(true);
     expect(mainEditorPane.classList.contains("overflow-hidden")).toBe(true);
-    expect(workspace.nextElementSibling).toBe(horizontalResizeHandle);
-    expect(horizontalResizeHandle.nextElementSibling).toBe(bottomPanel);
   });
 
-  it("should render the optional right sidebar with fullscreen-friendly default sizing", () => {
-    render(
+  it("should keep the optional right sidebar inside the editor row", () => {
+    const { container } = render(
       React.createElement(PanelLayout, {
         leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
         mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
@@ -178,11 +218,15 @@ describe("PanelLayout", () => {
       }),
     );
 
+    const editorRow = container.querySelector(".ide-editor-row") as HTMLElement;
+    const mainEditorPane = screen.getByRole("main", { name: "Editor area" });
     const rightSidebar = screen.getByRole("complementary", {
       name: "Secondary side panel",
     }) as HTMLElement;
 
     expect(screen.getByTestId("right-sidebar-content")).toBeDefined();
+    expect(Array.from(editorRow.children)).toEqual([mainEditorPane, rightSidebar]);
+    expect(rightSidebar.parentElement).toBe(editorRow);
     expect(rightSidebar.style.width).toBe("420px");
     expect(rightSidebar.style.minWidth).toBe("320px");
     expect(rightSidebar.style.maxWidth).toBe("100%");
@@ -191,21 +235,69 @@ describe("PanelLayout", () => {
     expect(rightSidebar.classList.contains("max-w-full")).toBe(true);
   });
 
-  it("should resize the bottom panel taller when dragged upward and shorter when dragged downward", () => {
+  it("preserves separator ARIA values and keyboard resize behavior", () => {
+    const onResizeLeft = vi.fn();
     const onResizeBottom = vi.fn();
 
     render(
       React.createElement(PanelLayout, {
-        leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
-        mainContent: React.createElement("div", { "data-testid": "main" }, "Main Editor"),
-        bottomContent: React.createElement("div", { "data-testid": "terminal" }, "Terminal"),
+        leftSidebar: React.createElement("div", null, "Sidebar"),
+        mainContent: React.createElement("div", null, "Main Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
         layout: defaultLayout,
-        onResizeLeft: vi.fn(),
+        onResizeLeft,
         onResizeBottom,
       }),
     );
 
+    const verticalResizeHandle = screen.getByRole("separator", { name: "Resize file explorer" });
     const horizontalResizeHandle = screen.getByRole("separator", { name: "Resize bottom panel" });
+
+    expect(verticalResizeHandle.getAttribute("aria-orientation")).toBe("vertical");
+    expect(verticalResizeHandle.getAttribute("aria-valuemin")).toBe("160");
+    expect(verticalResizeHandle.getAttribute("aria-valuenow")).toBe("280");
+    expect(verticalResizeHandle.tabIndex).toBe(0);
+    expect(horizontalResizeHandle.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(horizontalResizeHandle.getAttribute("aria-valuemin")).toBe("80");
+    expect(horizontalResizeHandle.getAttribute("aria-valuenow")).toBe("250");
+    expect(horizontalResizeHandle.tabIndex).toBe(0);
+
+    fireEvent.keyDown(verticalResizeHandle, { key: "ArrowLeft" });
+    fireEvent.keyDown(verticalResizeHandle, { key: "ArrowRight" });
+    fireEvent.keyDown(horizontalResizeHandle, { key: "ArrowUp" });
+    fireEvent.keyDown(horizontalResizeHandle, { key: "ArrowDown" });
+
+    expect(onResizeLeft.mock.calls).toEqual([[270], [290]]);
+    expect(onResizeBottom.mock.calls).toEqual([[260], [240]]);
+  });
+
+  it("preserves drag resize behavior for both panel boundaries", () => {
+    const onResizeLeft = vi.fn();
+    const onResizeBottom = vi.fn();
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Sidebar"),
+        mainContent: React.createElement("div", null, "Main Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft,
+        onResizeBottom,
+      }),
+    );
+
+    const verticalResizeHandle = screen.getByRole("separator", { name: "Resize file explorer" });
+    const horizontalResizeHandle = screen.getByRole("separator", { name: "Resize bottom panel" });
+
+    fireEvent.mouseDown(verticalResizeHandle, { clientX: 400 });
+    fireEvent.mouseMove(document, { clientX: 450 });
+    expect(onResizeLeft).toHaveBeenLastCalledWith(330);
+    fireEvent.mouseUp(document);
+
+    fireEvent.mouseDown(verticalResizeHandle, { clientX: 400 });
+    fireEvent.mouseMove(document, { clientX: 0 });
+    expect(onResizeLeft).toHaveBeenLastCalledWith(160);
+    fireEvent.mouseUp(document);
 
     fireEvent.mouseDown(horizontalResizeHandle, { clientY: 400 });
     fireEvent.mouseMove(document, { clientY: 350 });
@@ -218,7 +310,7 @@ describe("PanelLayout", () => {
     fireEvent.mouseUp(document);
   });
 
-  it("should hide left sidebar when not visible", () => {
+  it("should collapse the left sidebar without changing workspace sibling topology", () => {
     const hiddenLayout = {
       ...defaultLayout,
       visibility: {
@@ -227,7 +319,7 @@ describe("PanelLayout", () => {
       },
     };
 
-    render(
+    const { container } = render(
       React.createElement(PanelLayout, {
         leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar Content"),
         mainContent: React.createElement("div", { "data-testid": "main" }, "Main"),
@@ -238,10 +330,19 @@ describe("PanelLayout", () => {
       }),
     );
 
+    const workspace = container.querySelector(".ide-workspace") as HTMLElement;
+    const activityRail = screen.getByRole("navigation", { name: "Primary activity" });
+    const sidebar = screen.getByRole("tabpanel", { name: "Explorer" });
+    const contentColumn = container.querySelector(".ide-content-column") as HTMLElement;
+
     expect(screen.queryByText("Sidebar Content")).toBeNull();
+    expect(sidebar.style.width).toBe("0px");
+    expect(sidebar.style.minWidth).toBe("0px");
+    expect(screen.queryByRole("separator", { name: "Resize file explorer" })).toBeNull();
+    expect(Array.from(workspace.children)).toEqual([activityRail, sidebar, contentColumn]);
   });
 
-  it("should hide bottom panel when not visible", () => {
+  it("should hide a layout-hidden bottom panel inside the content column", () => {
     const hiddenLayout = {
       ...defaultLayout,
       visibility: {
@@ -250,7 +351,7 @@ describe("PanelLayout", () => {
       },
     };
 
-    render(
+    const { container } = render(
       React.createElement(PanelLayout, {
         leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
         mainContent: React.createElement("div", { "data-testid": "main" }, "Main"),
@@ -261,7 +362,43 @@ describe("PanelLayout", () => {
       }),
     );
 
+    const contentColumn = container.querySelector(".ide-content-column") as HTMLElement;
+    const editorRow = container.querySelector(".ide-editor-row") as HTMLElement;
+    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+
     expect(screen.queryByText("Bottom Content")).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize bottom panel" })).toBeNull();
+    expect(Array.from(contentColumn.children)).toEqual([editorRow, bottomPanel]);
+    expect(bottomPanel.hidden).toBe(true);
+    expect(bottomPanel.getAttribute("aria-hidden")).toBe("true");
+    expect(bottomPanel.style.height).toBe("0px");
+    expect(bottomPanel.style.minHeight).toBe("0px");
+    expect(bottomPanel.style.borderWidth).toBe("0px");
+  });
+
+  it("should keep a host-collapsed bottom panel hidden in the content column", () => {
+    const { container } = render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Sidebar"),
+        mainContent: React.createElement("div", null, "Main"),
+        bottomContent: React.createElement("div", null, "Bottom Content"),
+        showBottomPanel: false,
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const contentColumn = container.querySelector(".ide-content-column") as HTMLElement;
+    const editorRow = container.querySelector(".ide-editor-row") as HTMLElement;
+    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+
+    expect(screen.queryByText("Bottom Content")).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize bottom panel" })).toBeNull();
+    expect(Array.from(contentColumn.children)).toEqual([editorRow, bottomPanel]);
+    expect(bottomPanel.hidden).toBe(true);
+    expect(bottomPanel.getAttribute("aria-hidden")).toBe("true");
+    expect(bottomPanel.style.height).toBe("0px");
   });
 
   it("should always render main content regardless of visibility", () => {
