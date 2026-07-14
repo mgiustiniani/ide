@@ -282,8 +282,14 @@ Apply one scope rule consistently:
 - **Project contributions** require explicit configuration or bounded, evidence-based module activation. Only activated modules may contribute contextual Problems, Build, Tests, Logs, Java/XCOM tools, or semantic language workflows.
 - Generic desktop BottomPanel contributions are Terminal and AI Agent; generic web contributes Terminal only. No Java/XCOM global technology tabs or hidden Java/XCOM web polling are permitted.
 - The dynamic BottomPanel descriptor records icon/title, core/project scope, badge/count, disabled state, and keyboard/accessibility metadata.
-- Java and XCOM detection, activation/deactivation, confidence/reasons, and contextual contribution lifetime remain FUTURE/TARGET until implemented and fixture-tested. Backend capability and tool availability never count as activation evidence.
+- In this decision's original wording, Java and XCOM detection, activation/deactivation, confidence/reasons, and contextual contribution lifetime were recorded as FUTURE/TARGET until implemented and fixture-tested. Backend capability and tool availability never count as activation evidence.
 - Plugin-shaped metadata is composition data only; no generic plugin runtime is claimed.
+
+#### 2026-07-14 Java roadmap lifecycle amendment
+
+The preceding FUTURE/TARGET classification is retained as historical rationale for the common scoping rule. Under the [ADR 0005 roadmap lifecycle amendment](#adr-0005--hybrid-java-intelligence-with-jdt-ls-and-refactorkit), its Java activation and contextual-tooling portion is now **UNSCHEDULED TODO / frozen historical inventory**. It has no active milestone, ordering, target date, or implied commitment. Reconsideration remains subject to ADR 0005's requirement for released capability and immutable real acceptance evidence. This amendment does not change XCOM scheduling or the XCOM activation policy recorded here and in ADR 0007.
+
+Current provider-neutral Java diagnostics and `ProblemItem` projection remain maintained as-built. Active-editor diagnostics may make the project-scoped Problems contribution visible when a ready Java context or projected items exist. That conditional Problems presentation is not Java project/module detection or activation, and it does not establish or schedule the complete activation-scoped Problems, Build, Tests, Logs, Java-tools, or contribution-removal lifecycle.
 
 ### Consequences
 
