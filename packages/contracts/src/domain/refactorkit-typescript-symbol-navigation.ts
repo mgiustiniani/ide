@@ -51,6 +51,194 @@ export interface JavaScriptSymbolSearchCompatibility {
   incompletenessDisclosure: "not-shown" | "shown";
 }
 
+/** Authority and evidence required before starting one saved-snapshot semantic session. */
+export interface SavedSnapshotSemanticSessionStartPolicyInput {
+  languageId: string;
+  sourceExtension: string;
+  workspaceRoot: string;
+  workspaceId: string;
+  workspaceGeneration: number;
+  authorizedWorkspaceRoot: string;
+  authorizedWorkspaceId: string;
+  currentWorkspaceGeneration: number;
+  providerVersion: string;
+  backend: string;
+  capabilities: RefactorKitCapabilities;
+  approvedToolchain: SavedSnapshotExternalToolchainApproval;
+  relevantBuffers: RelevantTypeScriptJavaScriptBuffer[];
+  javascriptCompatibility: JavaScriptSymbolSearchCompatibility;
+}
+
+/** Invocation-ready start request. Session and snapshot identities are minted after invocation. */
+export interface SavedSnapshotSemanticSessionStartRequest {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly workspaceRoot: string;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly provider: string;
+  readonly providerVersion: string;
+  readonly backend: string;
+  readonly runtime: Readonly<RefactorKitLanguageAdapterRuntime>;
+  readonly extensions: readonly string[];
+  readonly toolchain: Readonly<SavedSnapshotExternalToolchain>;
+  readonly acceptedSemanticCompleteness: readonly SavedSnapshotSymbolSemanticCompleteness[];
+}
+
+export type SavedSnapshotSemanticSessionStartRefusalReason =
+  | "invalid-language-id"
+  | "invalid-source-extension"
+  | "workspace-root-invalid"
+  | "workspace-identity-invalid"
+  | "workspace-generation-nonpositive"
+  | "workspace-generation-stale"
+  | "workspace-unauthorized"
+  | "capability-absent"
+  | "capability-ambiguous"
+  | "capability-not-experimental"
+  | "capability-not-language-server"
+  | "capability-mutation-authority-inappropriate"
+  | "capability-backend-mismatch"
+  | "capability-runtime-unauthorized"
+  | "capability-runtime-mismatch"
+  | "capability-extensions-unauthorized"
+  | "provider-identity-invalid"
+  | "provider-version-unavailable"
+  | "provider-version-mismatch"
+  | "toolchain-unapproved"
+  | "toolchain-discovery-enabled"
+  | "toolchain-path-invalid"
+  | "toolchain-not-external"
+  | "relevant-buffer-path-invalid"
+  | "relevant-buffer-unsaved"
+  | "relevant-buffer-dirty"
+  | "javascript-incompleteness-disclosure-required";
+
+export type SavedSnapshotSemanticSessionStartDecision =
+  | { readonly kind: "ready"; readonly request: Readonly<SavedSnapshotSemanticSessionStartRequest> }
+  | { readonly kind: "refused"; readonly reason: SavedSnapshotSemanticSessionStartRefusalReason };
+
+/** Exact process fields exposed by the upstream semantic-start response, without raw arguments. */
+export interface SavedSnapshotSemanticSessionProcessProvenance {
+  readonly serverName: string | null;
+  readonly serverVersion: string | null;
+  readonly capabilitiesSha256: string;
+  readonly executableSha256: string;
+  readonly argumentsSha256: string;
+  readonly processId: number;
+}
+
+/** Untrusted native result enriched with the authority submitted at the invocation boundary. */
+export interface SavedSnapshotSemanticSessionStartResultCandidate {
+  languageId: TypeScriptJavaScriptLanguageId;
+  workspaceRoot: string;
+  workspaceId: string;
+  workspaceGeneration: number;
+  sessionId: string;
+  providerProjectSnapshotIdentity: string;
+  provider: string;
+  providerVersion: string;
+  backend: string;
+  toolchain: TypeScriptJavaScriptSemanticToolchain;
+  semanticCompleteness: SavedSnapshotSymbolSemanticCompleteness;
+  processProvenance: {
+    serverName: string | null;
+    serverVersion: string | null;
+    capabilitiesSha256: string;
+    executableSha256: string;
+    argumentsSha256: string;
+    processId: number;
+  };
+}
+
+/** Correlated active session. It claims language-server evidence, never compiler attestation. */
+export interface SavedSnapshotSemanticSessionStartResult {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly workspaceRoot: string;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly sessionId: string;
+  readonly providerProjectSnapshotIdentity: string;
+  readonly provider: string;
+  readonly providerVersion: string;
+  readonly backend: string;
+  readonly toolchain: Readonly<TypeScriptJavaScriptSemanticToolchain>;
+  readonly semanticCompleteness: SavedSnapshotSymbolSemanticCompleteness;
+  readonly processProvenance: Readonly<SavedSnapshotSemanticSessionProcessProvenance>;
+}
+
+export interface SavedSnapshotSemanticSessionStartResultNormalizationInput {
+  request: Readonly<SavedSnapshotSemanticSessionStartRequest>;
+  candidate: SavedSnapshotSemanticSessionStartResultCandidate;
+}
+
+export type SavedSnapshotSemanticSessionStartResultRefusalReason =
+  | "semantic-session-start-authority-mismatch"
+  | "semantic-session-start-provider-mismatch"
+  | "semantic-session-start-backend-mismatch"
+  | "semantic-session-start-toolchain-mismatch"
+  | "semantic-session-identity-invalid"
+  | "provider-project-snapshot-identity-invalid"
+  | "semantic-session-completeness-mismatch"
+  | "semantic-session-process-provenance-invalid"
+  | "compiler-attestation-unavailable";
+
+export type SavedSnapshotSemanticSessionStartResultNormalizationDecision =
+  | { readonly kind: "ready"; readonly result: Readonly<SavedSnapshotSemanticSessionStartResult> }
+  | {
+      readonly kind: "refused";
+      readonly reason: SavedSnapshotSemanticSessionStartResultRefusalReason;
+    };
+
+export interface SavedSnapshotSemanticSessionStopPolicyInput {
+  session: Readonly<SavedSnapshotSemanticSessionStartResult>;
+  currentWorkspaceId: string;
+  currentWorkspaceGeneration: number;
+}
+
+export interface SavedSnapshotSemanticSessionStopRequest {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly sessionId: string;
+}
+
+export type SavedSnapshotSemanticSessionStopDecision =
+  | { readonly kind: "ready"; readonly request: Readonly<SavedSnapshotSemanticSessionStopRequest> }
+  | {
+      readonly kind: "refused";
+      readonly reason:
+        "semantic-session-identity-invalid" | "semantic-session-stop-authority-mismatch";
+    };
+
+export interface SavedSnapshotSemanticSessionStopResultCandidate {
+  languageId: TypeScriptJavaScriptLanguageId;
+  workspaceId: string;
+  workspaceGeneration: number;
+  sessionId: string;
+  stopped: boolean;
+}
+
+export interface SavedSnapshotSemanticSessionStopResult {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly sessionId: string;
+  readonly stopped: boolean;
+}
+
+export interface SavedSnapshotSemanticSessionStopResultNormalizationInput {
+  request: Readonly<SavedSnapshotSemanticSessionStopRequest>;
+  candidate: SavedSnapshotSemanticSessionStopResultCandidate;
+}
+
+export type SavedSnapshotSemanticSessionStopResultNormalizationDecision =
+  | { readonly kind: "ready"; readonly result: Readonly<SavedSnapshotSemanticSessionStopResult> }
+  | {
+      readonly kind: "refused";
+      readonly reason:
+        "semantic-session-stop-result-mismatch" | "semantic-session-stop-result-invalid";
+    };
+
 /** Current authority and evidence required before a symbol-search invocation boundary. */
 export interface SavedSnapshotSymbolSearchPolicyInput {
   languageId: string;
@@ -296,6 +484,276 @@ interface OperationPair {
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const SOURCE_EXTENSION = /^[a-z0-9]+$/u;
 const OPAQUE_SYMBOL_ID = /^lsp-symbol-v1:[a-f0-9]{64}$/u;
+const OPAQUE_SEMANTIC_SESSION_ID = /^refactorkit-semantic-session-v1:[a-f0-9]{64}$/u;
+const SHA256_IDENTITY = /^sha256:[a-f0-9]{64}$/u;
+const SHA256_DIGEST = /^[a-f0-9]{64}$/u;
+
+/** Authorizes one explicit external semantic-session start without minting identities. */
+export function decideSavedSnapshotSemanticSessionStartRequest(
+  input: SavedSnapshotSemanticSessionStartPolicyInput,
+): SavedSnapshotSemanticSessionStartDecision {
+  if (input.languageId !== "typescript" && input.languageId !== "javascript") {
+    return startRefused("invalid-language-id");
+  }
+  if (!SOURCE_EXTENSION.test(input.sourceExtension)) {
+    return startRefused("invalid-source-extension");
+  }
+  if (
+    !validAbsolutePath(input.workspaceRoot) ||
+    !validAbsolutePath(input.authorizedWorkspaceRoot)
+  ) {
+    return startRefused("workspace-root-invalid");
+  }
+  if (!validIdentity(input.workspaceId) || !validIdentity(input.authorizedWorkspaceId)) {
+    return startRefused("workspace-identity-invalid");
+  }
+  if (!positiveInteger(input.workspaceGeneration)) {
+    return startRefused("workspace-generation-nonpositive");
+  }
+  if (
+    comparablePath(input.workspaceRoot) !== comparablePath(input.authorizedWorkspaceRoot) ||
+    input.workspaceId !== input.authorizedWorkspaceId
+  ) {
+    return startRefused("workspace-unauthorized");
+  }
+  if (
+    !positiveInteger(input.currentWorkspaceGeneration) ||
+    input.workspaceGeneration !== input.currentWorkspaceGeneration
+  ) {
+    return startRefused("workspace-generation-stale");
+  }
+
+  const pairDecision = selectOperationPair(input.capabilities, input.languageId);
+  if (pairDecision.kind === "refused") return startRefused(pairDecision.reason);
+  const pair = pairDecision.pair;
+  const operations = [pair.workspaceSymbols, pair.definition] as const;
+  if (operations.some(({ stability }) => stability !== "experimental")) {
+    return startRefused("capability-not-experimental");
+  }
+  if (operations.some(({ evidence }) => evidence !== "language-server")) {
+    return startRefused("capability-not-language-server");
+  }
+  if (operations.some(({ mutationAuthority }) => mutationAuthority !== "none")) {
+    return startRefused("capability-mutation-authority-inappropriate");
+  }
+  if (
+    !validMetadata(input.backend) ||
+    pair.workspaceSymbols.backend !== input.backend ||
+    pair.definition.backend !== input.backend
+  ) {
+    return startRefused("capability-backend-mismatch");
+  }
+  if (operations.some(({ runtime }) => !qualifiedRuntime(runtime))) {
+    return startRefused("capability-runtime-unauthorized");
+  }
+  if (!runtimeEquals(pair.workspaceSymbols.runtime, pair.definition.runtime)) {
+    return startRefused("capability-runtime-mismatch");
+  }
+  if (
+    !pair.adapterExtensions.includes(input.sourceExtension) ||
+    operations.some(({ extensions }) => !validExtensions(extensions)) ||
+    operations.some(({ extensions }) => !extensions.includes(input.sourceExtension)) ||
+    !stringSetEquals(pair.workspaceSymbols.extensions, pair.definition.extensions)
+  ) {
+    return startRefused("capability-extensions-unauthorized");
+  }
+
+  if (!validMetadata(input.capabilities.provider)) {
+    return startRefused("provider-identity-invalid");
+  }
+  if (!input.capabilities.providerVersion || !validMetadata(input.capabilities.providerVersion)) {
+    return startRefused("provider-version-unavailable");
+  }
+  if (
+    !validMetadata(input.providerVersion) ||
+    input.providerVersion !== input.capabilities.providerVersion
+  ) {
+    return startRefused("provider-version-mismatch");
+  }
+
+  const toolchainDecision = validateApprovedToolchain(input.approvedToolchain, input.workspaceRoot);
+  if (toolchainDecision) return startRefused(toolchainDecision);
+  for (const buffer of input.relevantBuffers) {
+    if (!validAbsolutePath(buffer.path) || !isWithin(buffer.path, input.workspaceRoot)) {
+      return startRefused("relevant-buffer-path-invalid");
+    }
+    if (buffer.savedState !== "saved") return startRefused("relevant-buffer-unsaved");
+    if (buffer.dirty) return startRefused("relevant-buffer-dirty");
+  }
+  if (
+    input.languageId === "javascript" &&
+    input.javascriptCompatibility.semantics === "dynamic-or-mixed" &&
+    input.javascriptCompatibility.incompletenessDisclosure !== "shown"
+  ) {
+    return startRefused("javascript-incompleteness-disclosure-required");
+  }
+
+  const runtime = freezeRuntime(pair.workspaceSymbols.runtime);
+  const extensions = Object.freeze([...pair.workspaceSymbols.extensions]);
+  const toolchain: Readonly<SavedSnapshotExternalToolchain> = Object.freeze({
+    nodeExecutable: input.approvedToolchain.nodeExecutable,
+    languageServerPackageRoot: input.approvedToolchain.languageServerPackageRoot,
+    typeScriptPackageRoot: input.approvedToolchain.typeScriptPackageRoot,
+    allowPathNodeDiscovery: false,
+    allowWorkspaceLocalToolchain: false,
+  });
+  const acceptedSemanticCompleteness = Object.freeze(
+    input.languageId === "typescript"
+      ? (["full-typescript"] as const)
+      : input.javascriptCompatibility.semantics === "not-dynamic-or-mixed"
+        ? (["checked-javascript"] as const)
+        : (["dynamic-javascript", "mixed-javascript"] as const),
+  );
+  const request: Readonly<SavedSnapshotSemanticSessionStartRequest> = Object.freeze({
+    languageId: input.languageId,
+    workspaceRoot: input.workspaceRoot,
+    workspaceId: input.workspaceId,
+    workspaceGeneration: input.workspaceGeneration,
+    provider: input.capabilities.provider,
+    providerVersion: input.providerVersion,
+    backend: input.backend,
+    runtime,
+    extensions,
+    toolchain,
+    acceptedSemanticCompleteness,
+  });
+  return Object.freeze({ kind: "ready", request });
+}
+
+/** Correlates only the upstream-exposed LSP/process evidence to the qualified start request. */
+export function normalizeSavedSnapshotSemanticSessionStartResult(
+  input: SavedSnapshotSemanticSessionStartResultNormalizationInput,
+): SavedSnapshotSemanticSessionStartResultNormalizationDecision {
+  const { request, candidate } = input;
+  if (
+    candidate.languageId !== request.languageId ||
+    comparablePath(candidate.workspaceRoot) !== comparablePath(request.workspaceRoot) ||
+    candidate.workspaceId !== request.workspaceId ||
+    candidate.workspaceGeneration !== request.workspaceGeneration
+  ) {
+    return startResultRefused("semantic-session-start-authority-mismatch");
+  }
+  if (
+    candidate.provider !== request.provider ||
+    candidate.providerVersion !== request.providerVersion
+  ) {
+    return startResultRefused("semantic-session-start-provider-mismatch");
+  }
+  if (candidate.backend !== request.backend || candidate.toolchain.backend !== request.backend) {
+    return startResultRefused("semantic-session-start-backend-mismatch");
+  }
+  if (
+    !runtimeEquals(candidate.toolchain.runtime, request.runtime) ||
+    !stringSetEquals(candidate.toolchain.extensions, request.extensions) ||
+    candidate.toolchain.nodeExecutable !== request.toolchain.nodeExecutable ||
+    candidate.toolchain.languageServerPackageRoot !== request.toolchain.languageServerPackageRoot ||
+    candidate.toolchain.typeScriptPackageRoot !== request.toolchain.typeScriptPackageRoot
+  ) {
+    return startResultRefused("semantic-session-start-toolchain-mismatch");
+  }
+  if (!OPAQUE_SEMANTIC_SESSION_ID.test(candidate.sessionId)) {
+    return startResultRefused("semantic-session-identity-invalid");
+  }
+  if (!SHA256_IDENTITY.test(candidate.providerProjectSnapshotIdentity)) {
+    return startResultRefused("provider-project-snapshot-identity-invalid");
+  }
+  if (!request.acceptedSemanticCompleteness.includes(candidate.semanticCompleteness)) {
+    return startResultRefused("semantic-session-completeness-mismatch");
+  }
+  if (!validStartProcessProvenance(candidate.processProvenance)) {
+    return startResultRefused("semantic-session-process-provenance-invalid");
+  }
+  if (hasOwn(candidate, "compilerAttestation") || hasOwn(candidate, "compilerSha256")) {
+    return startResultRefused("compiler-attestation-unavailable");
+  }
+
+  const toolchainExtensions: string[] = [...request.extensions];
+  Object.freeze(toolchainExtensions);
+  const toolchain: Readonly<TypeScriptJavaScriptSemanticToolchain> = Object.freeze({
+    backend: request.backend,
+    runtime: freezeRuntime(request.runtime),
+    extensions: toolchainExtensions,
+    nodeExecutable: request.toolchain.nodeExecutable,
+    languageServerPackageRoot: request.toolchain.languageServerPackageRoot,
+    typeScriptPackageRoot: request.toolchain.typeScriptPackageRoot,
+  });
+  const processProvenance: Readonly<SavedSnapshotSemanticSessionProcessProvenance> = Object.freeze({
+    serverName: candidate.processProvenance.serverName,
+    serverVersion: candidate.processProvenance.serverVersion,
+    capabilitiesSha256: candidate.processProvenance.capabilitiesSha256,
+    executableSha256: candidate.processProvenance.executableSha256,
+    argumentsSha256: candidate.processProvenance.argumentsSha256,
+    processId: candidate.processProvenance.processId,
+  });
+  const result: Readonly<SavedSnapshotSemanticSessionStartResult> = Object.freeze({
+    languageId: request.languageId,
+    workspaceRoot: request.workspaceRoot,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: candidate.sessionId,
+    providerProjectSnapshotIdentity: candidate.providerProjectSnapshotIdentity,
+    provider: request.provider,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    toolchain,
+    semanticCompleteness: candidate.semanticCompleteness,
+    processProvenance,
+  });
+  return Object.freeze({ kind: "ready", result });
+}
+
+/** Prevents stale callers from stopping a replacement session generation. */
+export function decideSavedSnapshotSemanticSessionStopRequest(
+  input: SavedSnapshotSemanticSessionStopPolicyInput,
+): SavedSnapshotSemanticSessionStopDecision {
+  const { session } = input;
+  if (!OPAQUE_SEMANTIC_SESSION_ID.test(session.sessionId)) {
+    return Object.freeze({ kind: "refused", reason: "semantic-session-identity-invalid" });
+  }
+  if (
+    !validIdentity(input.currentWorkspaceId) ||
+    !positiveInteger(input.currentWorkspaceGeneration) ||
+    session.workspaceId !== input.currentWorkspaceId ||
+    session.workspaceGeneration !== input.currentWorkspaceGeneration
+  ) {
+    return Object.freeze({ kind: "refused", reason: "semantic-session-stop-authority-mismatch" });
+  }
+  const request: Readonly<SavedSnapshotSemanticSessionStopRequest> = Object.freeze({
+    languageId: session.languageId,
+    workspaceId: session.workspaceId,
+    workspaceGeneration: session.workspaceGeneration,
+    sessionId: session.sessionId,
+  });
+  return Object.freeze({ kind: "ready", request });
+}
+
+export function normalizeSavedSnapshotSemanticSessionStopResult(
+  input: SavedSnapshotSemanticSessionStopResultNormalizationInput,
+): SavedSnapshotSemanticSessionStopResultNormalizationDecision {
+  const { request, candidate } = input;
+  if (
+    candidate.languageId !== request.languageId ||
+    candidate.workspaceId !== request.workspaceId ||
+    candidate.workspaceGeneration !== request.workspaceGeneration ||
+    candidate.sessionId !== request.sessionId
+  ) {
+    return Object.freeze({ kind: "refused", reason: "semantic-session-stop-result-mismatch" });
+  }
+  if (
+    typeof candidate.stopped !== "boolean" ||
+    !OPAQUE_SEMANTIC_SESSION_ID.test(candidate.sessionId)
+  ) {
+    return Object.freeze({ kind: "refused", reason: "semantic-session-stop-result-invalid" });
+  }
+  const result: Readonly<SavedSnapshotSemanticSessionStopResult> = Object.freeze({
+    languageId: request.languageId,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: request.sessionId,
+    stopped: candidate.stopped,
+  });
+  return Object.freeze({ kind: "ready", result });
+}
 
 /**
  * Authorizes exactly one matched workspaceSymbols/definition pair for the current saved provider
@@ -730,6 +1188,18 @@ function validateApprovedToolchain(
   return undefined;
 }
 
+function startRefused<T extends SavedSnapshotSemanticSessionStartRefusalReason>(
+  reason: T,
+): { readonly kind: "refused"; readonly reason: T } {
+  return Object.freeze({ kind: "refused", reason });
+}
+
+function startResultRefused(
+  reason: SavedSnapshotSemanticSessionStartResultRefusalReason,
+): SavedSnapshotSemanticSessionStartResultNormalizationDecision {
+  return Object.freeze({ kind: "refused", reason });
+}
+
 function searchRefused<T extends SavedSnapshotSymbolSearchRefusalReason>(
   reason: T,
 ): { readonly kind: "refused"; readonly reason: T } {
@@ -771,6 +1241,19 @@ function validProviderPoint(point: ProviderPoint): boolean {
     point.line >= 0 &&
     Number.isSafeInteger(point.character) &&
     point.character >= 0
+  );
+}
+
+function validStartProcessProvenance(
+  provenance: SavedSnapshotSemanticSessionStartResultCandidate["processProvenance"],
+): boolean {
+  return (
+    (provenance.serverName === null || validMetadata(provenance.serverName)) &&
+    (provenance.serverVersion === null || validMetadata(provenance.serverVersion)) &&
+    SHA256_DIGEST.test(provenance.capabilitiesSha256) &&
+    SHA256_DIGEST.test(provenance.executableSha256) &&
+    SHA256_DIGEST.test(provenance.argumentsSha256) &&
+    positiveInteger(provenance.processId)
   );
 }
 
@@ -864,6 +1347,24 @@ function qualifiedRuntime(runtime: RefactorKitLanguageAdapterRuntime): boolean {
     positiveInteger(runtime.limits.maxOutputBytes ?? 0) &&
     positiveInteger(runtime.limits.maxProcesses ?? 0)
   );
+}
+
+function freezeRuntime(
+  runtime: RefactorKitLanguageAdapterRuntime,
+): Readonly<RefactorKitLanguageAdapterRuntime> {
+  return Object.freeze({
+    executionMode: runtime.executionMode,
+    supportsTimeout: runtime.supportsTimeout,
+    supportsCancellation: runtime.supportsCancellation,
+    usesWorkspaceOverlay: runtime.usesWorkspaceOverlay,
+    recordsProcessProvenance: runtime.recordsProcessProvenance,
+    limits: Object.freeze({
+      requestTimeoutMillis: runtime.limits.requestTimeoutMillis,
+      maxInputBytes: runtime.limits.maxInputBytes,
+      maxOutputBytes: runtime.limits.maxOutputBytes,
+      maxProcesses: runtime.limits.maxProcesses,
+    }),
+  });
 }
 
 function runtimeEquals(

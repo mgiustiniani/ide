@@ -2,13 +2,23 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   decideSavedSnapshotDefinitionRequest,
+  decideSavedSnapshotSemanticSessionStartRequest,
+  decideSavedSnapshotSemanticSessionStopRequest,
   decideSavedSnapshotSymbolSearchRequest,
   normalizeProviderPoint,
   normalizeSavedSnapshotDefinitionResult,
+  normalizeSavedSnapshotSemanticSessionStartResult,
+  normalizeSavedSnapshotSemanticSessionStopResult,
   normalizeSavedSnapshotSymbolSearchResult,
   type SavedSnapshotDefinitionRequest,
   type SavedSnapshotDefinitionResult,
   type SavedSnapshotDefinitionResultCandidate,
+  type SavedSnapshotSemanticSessionStartPolicyInput,
+  type SavedSnapshotSemanticSessionStartRequest,
+  type SavedSnapshotSemanticSessionStartResult,
+  type SavedSnapshotSemanticSessionStartResultCandidate,
+  type SavedSnapshotSemanticSessionStopRequest,
+  type SavedSnapshotSemanticSessionStopResult,
   type SavedSnapshotSymbolSearchPolicyInput,
   type SavedSnapshotSymbolSearchRequest,
   type SavedSnapshotSymbolSearchResult,
@@ -185,6 +195,450 @@ function firstCapability(value: SavedSnapshotSymbolSearchPolicyInput, index = 0)
   if (!kernel?.available) throw new Error("Expected available test capability");
   return kernel.schema.adapters[0]!.capabilities[index]!;
 }
+
+function startInput(): SavedSnapshotSemanticSessionStartPolicyInput {
+  return {
+    languageId: "typescript",
+    sourceExtension: "ts",
+    workspaceRoot: "/workspace/authorized",
+    workspaceId: "workspace:authorized",
+    workspaceGeneration: 7,
+    authorizedWorkspaceRoot: "/workspace/authorized",
+    authorizedWorkspaceId: "workspace:authorized",
+    currentWorkspaceGeneration: 7,
+    providerVersion: "7.4.1",
+    backend: "typescript-lsp-explicit-v1",
+    capabilities: capabilities(),
+    approvedToolchain: structuredClone(approvedToolchain),
+    relevantBuffers: [
+      { path: "/workspace/authorized/src/service.ts", savedState: "saved", dirty: false },
+    ],
+    javascriptCompatibility: {
+      semantics: "not-dynamic-or-mixed",
+      incompletenessDisclosure: "not-shown",
+    },
+  };
+}
+
+function startCandidate(): SavedSnapshotSemanticSessionStartResultCandidate {
+  return {
+    languageId: "typescript",
+    workspaceRoot: "/workspace/authorized",
+    workspaceId: "workspace:authorized",
+    workspaceGeneration: 7,
+    sessionId: `refactorkit-semantic-session-v1:${"d".repeat(64)}`,
+    providerProjectSnapshotIdentity: `sha256:${"c".repeat(64)}`,
+    provider: "an-arbitrary-provider-name",
+    providerVersion: "7.4.1",
+    backend: "typescript-lsp-explicit-v1",
+    toolchain: {
+      backend: "typescript-lsp-explicit-v1",
+      runtime: structuredClone(runtime),
+      extensions: ["ts", "tsx"],
+      nodeExecutable: approvedToolchain.nodeExecutable,
+      languageServerPackageRoot: approvedToolchain.languageServerPackageRoot,
+      typeScriptPackageRoot: approvedToolchain.typeScriptPackageRoot,
+    },
+    semanticCompleteness: "full-typescript",
+    processProvenance: {
+      serverName: "typescript-language-server",
+      serverVersion: "4.3.4",
+      capabilitiesSha256: "1".repeat(64),
+      executableSha256: "2".repeat(64),
+      argumentsSha256: "3".repeat(64),
+      processId: 42,
+    },
+  };
+}
+
+function startSession(): SavedSnapshotSemanticSessionStartResult {
+  const start = decideSavedSnapshotSemanticSessionStartRequest(startInput());
+  if (start.kind !== "ready") throw new Error("Expected start authorization");
+  const normalized = normalizeSavedSnapshotSemanticSessionStartResult({
+    request: start.request,
+    candidate: startCandidate(),
+  });
+  if (normalized.kind !== "ready") throw new Error("Expected normalized start result");
+  return normalized.result;
+}
+
+describe("@REQ-REFACTORKIT-TS-002 saved-snapshot semantic-session lifecycle", () => {
+  it("creates an immutable qualified start request without a caller-invented session or snapshot identity", () => {
+    const decision = decideSavedSnapshotSemanticSessionStartRequest(startInput());
+
+    expect(decision).toEqual({
+      kind: "ready",
+      request: {
+        languageId: "typescript",
+        workspaceRoot: "/workspace/authorized",
+        workspaceId: "workspace:authorized",
+        workspaceGeneration: 7,
+        provider: "an-arbitrary-provider-name",
+        providerVersion: "7.4.1",
+        backend: "typescript-lsp-explicit-v1",
+        runtime,
+        extensions: ["ts", "tsx"],
+        toolchain: {
+          nodeExecutable: approvedToolchain.nodeExecutable,
+          languageServerPackageRoot: approvedToolchain.languageServerPackageRoot,
+          typeScriptPackageRoot: approvedToolchain.typeScriptPackageRoot,
+          allowPathNodeDiscovery: false,
+          allowWorkspaceLocalToolchain: false,
+        },
+        acceptedSemanticCompleteness: ["full-typescript"],
+      },
+    });
+    if (decision.kind !== "ready") throw new Error("Expected start authorization");
+    expect(Object.isFrozen(decision)).toBe(true);
+    expect(Object.isFrozen(decision.request)).toBe(true);
+    expect(Object.isFrozen(decision.request.runtime)).toBe(true);
+    expect(Object.isFrozen(decision.request.runtime.limits)).toBe(true);
+    expect(Object.isFrozen(decision.request.extensions)).toBe(true);
+    expect(Object.isFrozen(decision.request.toolchain)).toBe(true);
+    expectTypeOf(decision.request).toEqualTypeOf<
+      Readonly<SavedSnapshotSemanticSessionStartRequest>
+    >();
+    expectTypeOf(decision.request).not.toHaveProperty("sessionId");
+    expectTypeOf(decision.request).not.toHaveProperty("snapshotIdentity");
+    expect(decision.request).not.toHaveProperty("sessionId");
+    expect(decision.request).not.toHaveProperty("snapshotIdentity");
+  });
+
+  it("requires explicit disclosure before starting JavaScript that may be semantically incomplete", () => {
+    const value = startInput();
+    value.languageId = "javascript";
+    value.sourceExtension = "js";
+    value.javascriptCompatibility = {
+      semantics: "dynamic-or-mixed",
+      incompletenessDisclosure: "shown",
+    };
+    const kernel = value.capabilities.languageKernel;
+    if (!kernel?.available) throw new Error("Expected available test capability");
+    kernel.schema.adapters[0]!.languageId = "javascript";
+    kernel.schema.adapters[0]!.extensions = ["js", "jsx"];
+    for (const capability of kernel.schema.adapters[0]!.capabilities) {
+      capability.extensions = ["js", "jsx"];
+    }
+
+    const decision = decideSavedSnapshotSemanticSessionStartRequest(value);
+    expect(decision.kind).toBe("ready");
+    if (decision.kind !== "ready") throw new Error("Expected JavaScript start authorization");
+    expect(decision.request.acceptedSemanticCompleteness).toEqual([
+      "dynamic-javascript",
+      "mixed-javascript",
+    ]);
+
+    value.javascriptCompatibility.incompletenessDisclosure = "not-shown";
+    expect(decideSavedSnapshotSemanticSessionStartRequest(value)).toEqual({
+      kind: "refused",
+      reason: "javascript-incompleteness-disclosure-required",
+    });
+  });
+
+  it.each([
+    [
+      "unsupported language",
+      "invalid-language-id",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.languageId = "java";
+      },
+    ],
+    [
+      "unauthorized root",
+      "workspace-unauthorized",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.authorizedWorkspaceRoot = "/workspace/other";
+      },
+    ],
+    [
+      "unauthorized workspace identity",
+      "workspace-unauthorized",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.authorizedWorkspaceId = "workspace:other";
+      },
+    ],
+    [
+      "stale generation",
+      "workspace-generation-stale",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.currentWorkspaceGeneration = 8;
+      },
+    ],
+    [
+      "nonpositive generation",
+      "workspace-generation-nonpositive",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.workspaceGeneration = 0;
+      },
+    ],
+    [
+      "provider version mismatch",
+      "provider-version-mismatch",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.providerVersion = "7.4.0";
+      },
+    ],
+    [
+      "backend mismatch",
+      "capability-backend-mismatch",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.backend = "another-backend";
+      },
+    ],
+    [
+      "missing definition operation",
+      "capability-absent",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        const kernel = value.capabilities.languageKernel;
+        if (kernel?.available) kernel.schema.adapters[0]!.capabilities.pop();
+      },
+    ],
+    [
+      "non-experimental operation",
+      "capability-not-experimental",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        const kernel = value.capabilities.languageKernel;
+        if (kernel?.available) kernel.schema.adapters[0]!.capabilities[0]!.stability = "stable";
+      },
+    ],
+    [
+      "toolchain without approval",
+      "toolchain-unapproved",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.approvedToolchain.userApproved = false;
+      },
+    ],
+    [
+      "relative toolchain root",
+      "toolchain-path-invalid",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.approvedToolchain.languageServerPackageRoot = "tools/typescript-language-server";
+      },
+    ],
+    [
+      "workspace-local toolchain",
+      "toolchain-not-external",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.approvedToolchain.typeScriptPackageRoot =
+          "/workspace/authorized/node_modules/typescript";
+      },
+    ],
+    [
+      "PATH discovery",
+      "toolchain-discovery-enabled",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.approvedToolchain.allowPathNodeDiscovery = true;
+      },
+    ],
+    [
+      "workspace-local discovery",
+      "toolchain-discovery-enabled",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.approvedToolchain.allowWorkspaceLocalToolchain = true;
+      },
+    ],
+    [
+      "never-saved relevant buffer",
+      "relevant-buffer-unsaved",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.relevantBuffers[0]!.savedState = "never-saved";
+      },
+    ],
+    [
+      "dirty relevant buffer",
+      "relevant-buffer-dirty",
+      (value: SavedSnapshotSemanticSessionStartPolicyInput) => {
+        value.relevantBuffers[0]!.dirty = true;
+      },
+    ],
+  ] as const)("refuses semantic-session start for %s", (_case, reason, change) => {
+    const value = structuredClone(startInput());
+    change(value);
+    expect(decideSavedSnapshotSemanticSessionStartRequest(value)).toEqual({
+      kind: "refused",
+      reason,
+    });
+  });
+
+  it("normalizes the Rust-minted session, saved provider snapshot, semantic completeness, and exposed process provenance", () => {
+    const start = decideSavedSnapshotSemanticSessionStartRequest(startInput());
+    if (start.kind !== "ready") throw new Error("Expected start authorization");
+
+    const decision = normalizeSavedSnapshotSemanticSessionStartResult({
+      request: start.request,
+      candidate: startCandidate(),
+    });
+
+    expect(decision).toEqual({ kind: "ready", result: startCandidate() });
+    if (decision.kind !== "ready") throw new Error("Expected normalized start result");
+    expect(Object.isFrozen(decision)).toBe(true);
+    expect(Object.isFrozen(decision.result)).toBe(true);
+    expect(Object.isFrozen(decision.result.toolchain)).toBe(true);
+    expect(Object.isFrozen(decision.result.toolchain.runtime)).toBe(true);
+    expect(Object.isFrozen(decision.result.toolchain.runtime.limits)).toBe(true);
+    expect(Object.isFrozen(decision.result.toolchain.extensions)).toBe(true);
+    expect(Object.isFrozen(decision.result.processProvenance)).toBe(true);
+    expectTypeOf(decision.result).toEqualTypeOf<
+      Readonly<SavedSnapshotSemanticSessionStartResult>
+    >();
+    expectTypeOf(decision.result).not.toHaveProperty("compilerAttestation");
+    expect(decision.result).not.toHaveProperty("compilerAttestation");
+  });
+
+  it.each([
+    [
+      "authority mismatch",
+      "semantic-session-start-authority-mismatch",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.workspaceGeneration = 6;
+      },
+    ],
+    [
+      "provider mismatch",
+      "semantic-session-start-provider-mismatch",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.providerVersion = "7.4.0";
+      },
+    ],
+    [
+      "backend mismatch",
+      "semantic-session-start-backend-mismatch",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.backend = "another-backend";
+      },
+    ],
+    [
+      "toolchain mismatch",
+      "semantic-session-start-toolchain-mismatch",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.toolchain.nodeExecutable = "/opt/other/node";
+      },
+    ],
+    [
+      "unsafe session identity",
+      "semantic-session-identity-invalid",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.sessionId = "caller-session:7";
+      },
+    ],
+    [
+      "missing provider snapshot hash",
+      "provider-project-snapshot-identity-invalid",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.providerProjectSnapshotIdentity = "sha256:";
+      },
+    ],
+    [
+      "semantic completeness mismatch",
+      "semantic-session-completeness-mismatch",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.semanticCompleteness = "dynamic-javascript";
+      },
+    ],
+    [
+      "missing capability hash",
+      "semantic-session-process-provenance-invalid",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.processProvenance.capabilitiesSha256 = "";
+      },
+    ],
+    [
+      "missing executable hash",
+      "semantic-session-process-provenance-invalid",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.processProvenance.executableSha256 = "";
+      },
+    ],
+    [
+      "missing argument hash",
+      "semantic-session-process-provenance-invalid",
+      (candidate: SavedSnapshotSemanticSessionStartResultCandidate) => {
+        candidate.processProvenance.argumentsSha256 = "";
+      },
+    ],
+  ] as const)("refuses a start result with %s", (_case, reason, change) => {
+    const start = decideSavedSnapshotSemanticSessionStartRequest(startInput());
+    if (start.kind !== "ready") throw new Error("Expected start authorization");
+    const candidate = structuredClone(startCandidate());
+    change(candidate);
+    expect(
+      normalizeSavedSnapshotSemanticSessionStartResult({ request: start.request, candidate }),
+    ).toEqual({ kind: "refused", reason });
+  });
+
+  it("refuses a start result that fabricates compiler attestation", () => {
+    const start = decideSavedSnapshotSemanticSessionStartRequest(startInput());
+    if (start.kind !== "ready") throw new Error("Expected start authorization");
+    const candidate = startCandidate();
+    Object.assign(candidate, { compilerAttestation: { compilerSha256: "4".repeat(64) } });
+
+    expect(
+      normalizeSavedSnapshotSemanticSessionStartResult({ request: start.request, candidate }),
+    ).toEqual({ kind: "refused", reason: "compiler-attestation-unavailable" });
+  });
+
+  it("creates an immutable stop request bound to the minted session and current workspace generation", () => {
+    const decision = decideSavedSnapshotSemanticSessionStopRequest({
+      session: startSession(),
+      currentWorkspaceId: "workspace:authorized",
+      currentWorkspaceGeneration: 7,
+    });
+
+    expect(decision).toEqual({
+      kind: "ready",
+      request: {
+        languageId: "typescript",
+        workspaceId: "workspace:authorized",
+        workspaceGeneration: 7,
+        sessionId: `refactorkit-semantic-session-v1:${"d".repeat(64)}`,
+      },
+    });
+    if (decision.kind !== "ready") throw new Error("Expected stop authorization");
+    expect(Object.isFrozen(decision)).toBe(true);
+    expect(Object.isFrozen(decision.request)).toBe(true);
+    expectTypeOf(decision.request).toEqualTypeOf<
+      Readonly<SavedSnapshotSemanticSessionStopRequest>
+    >();
+  });
+
+  it("refuses a stale caller from stopping a replacement workspace generation", () => {
+    expect(
+      decideSavedSnapshotSemanticSessionStopRequest({
+        session: startSession(),
+        currentWorkspaceId: "workspace:authorized",
+        currentWorkspaceGeneration: 8,
+      }),
+    ).toEqual({ kind: "refused", reason: "semantic-session-stop-authority-mismatch" });
+  });
+
+  it("normalizes an immutable idempotent stop result only for the requested minted session", () => {
+    const stop = decideSavedSnapshotSemanticSessionStopRequest({
+      session: startSession(),
+      currentWorkspaceId: "workspace:authorized",
+      currentWorkspaceGeneration: 7,
+    });
+    if (stop.kind !== "ready") throw new Error("Expected stop authorization");
+    const candidate = { ...stop.request, stopped: true };
+
+    const decision = normalizeSavedSnapshotSemanticSessionStopResult({
+      request: stop.request,
+      candidate,
+    });
+
+    expect(decision).toEqual({ kind: "ready", result: candidate });
+    if (decision.kind !== "ready") throw new Error("Expected normalized stop result");
+    expect(Object.isFrozen(decision)).toBe(true);
+    expect(Object.isFrozen(decision.result)).toBe(true);
+    expectTypeOf(decision.result).toEqualTypeOf<Readonly<SavedSnapshotSemanticSessionStopResult>>();
+
+    expect(
+      normalizeSavedSnapshotSemanticSessionStopResult({
+        request: stop.request,
+        candidate: { ...candidate, sessionId: `refactorkit-semantic-session-v1:${"e".repeat(64)}` },
+      }),
+    ).toEqual({ kind: "refused", reason: "semantic-session-stop-result-mismatch" });
+  });
+});
 
 describe("@REQ-REFACTORKIT-TS-002 saved-snapshot symbol navigation policy", () => {
   it("authorizes the paired experimental semantic operations and creates an immutable provider-neutral search request", () => {
