@@ -101,6 +101,20 @@ fn complete_capabilities() -> Value {
     })
 }
 
+fn materialize_operation_defaults(mut schema: Value) -> Value {
+    for adapter in schema["adapters"].as_array_mut().unwrap() {
+        let backend = adapter["backend"].clone();
+        let runtime = adapter["runtime"].clone();
+        let extensions = adapter["extensions"].clone();
+        for capability in adapter["capabilities"].as_array_mut().unwrap() {
+            capability["backend"] = backend.clone();
+            capability["runtime"] = runtime.clone();
+            capability["extensions"] = extensions.clone();
+        }
+    }
+    schema
+}
+
 fn actual_language_kernel() -> Value {
     let in_process = |supports_timeout: bool, request_timeout: Value, max_input: Value| {
         json!({
@@ -130,7 +144,7 @@ fn actual_language_kernel() -> Value {
             ]
         })
     };
-    json!({
+    materialize_operation_defaults(json!({
         "schemaVersion": 1,
         "adapters": [
             {
@@ -162,7 +176,7 @@ fn actual_language_kernel() -> Value {
             "mutationAuthority": ["managed-stable", "proposal-only", "none"],
             "executionMode": ["in-process", "external-process"]
         }
-    })
+    }))
 }
 
 fn actual_capabilities() -> Value {
@@ -299,11 +313,11 @@ fn actual_schema_v1_language_metadata_and_exact_safety_flags_are_normalized() {
 #[test]
 fn provider_neutral_schema_is_the_only_adapter_source_and_retains_advertised_false_safety() {
     let mut capabilities = complete_capabilities();
-    capabilities["languageKernel"] = json!({
+    capabilities["languageKernel"] = materialize_operation_defaults(json!({
         "schemaVersion": 1,
         "adapters": [{
             "languageId": "kotlin",
-            "extensions": ["kt", "kts"],
+            "extensions": ["kts", "kt"],
             "backend": "custom-language-kernel-v7",
             "runtime": {
                 "executionMode": "external-process",
@@ -319,8 +333,8 @@ fn provider_neutral_schema_is_the_only_adapter_source_and_retains_advertised_fal
                 }
             },
             "capabilities": [
-                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none"},
-                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only"}
+                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only"},
+                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none"}
             ],
             "toolchainReadiness": "ready",
             "workspaceReadiness": "ready",
@@ -332,7 +346,17 @@ fn provider_neutral_schema_is_the_only_adapter_source_and_retains_advertised_fal
             "mutationAuthority": ["managed-stable", "proposal-only", "none"],
             "executionMode": ["in-process", "external-process"]
         }
+    }));
+    capabilities["languageKernel"]["adapters"][0]["capabilities"][0]["backend"] =
+        json!("kotlin-analysis-server-v2");
+    capabilities["languageKernel"]["adapters"][0]["capabilities"][0]["runtime"] = json!({
+        "executionMode": "in-process", "supportsTimeout": false,
+        "supportsCancellation": false, "usesWorkspaceOverlay": false,
+        "recordsProcessProvenance": false,
+        "limits": {"requestTimeoutMillis": null, "maxInputBytes": 2_048,
+            "maxOutputBytes": null, "maxProcesses": null}
     });
+    capabilities["languageKernel"]["adapters"][0]["capabilities"][0]["extensions"] = json!(["kt"]);
     capabilities["safety"] = json!({
         "previewBeforeApply": false,
         "snapshotValidation": true,
@@ -366,8 +390,26 @@ fn provider_neutral_schema_is_the_only_adapter_source_and_retains_advertised_fal
                 }
             },
             "capabilities": [
-                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none"},
-                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only"}
+                {"operation": "inspectModule", "stability": "refused", "evidence": "none", "mutationAuthority": "none",
+                    "backend": "custom-language-kernel-v7",
+                    "runtime": {
+                        "executionMode": "external-process", "supportsTimeout": true,
+                        "supportsCancellation": true, "usesWorkspaceOverlay": true,
+                        "recordsProcessProvenance": true,
+                        "limits": {"requestTimeoutMillis": 7_500, "maxInputBytes": 4_096,
+                            "maxOutputBytes": 8_192, "maxProcesses": 2}
+                    },
+                    "extensions": ["kt", "kts"]},
+                {"operation": "renameModule", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "proposal-only",
+                    "backend": "kotlin-analysis-server-v2",
+                    "runtime": {
+                        "executionMode": "in-process", "supportsTimeout": false,
+                        "supportsCancellation": false, "usesWorkspaceOverlay": false,
+                        "recordsProcessProvenance": false,
+                        "limits": {"requestTimeoutMillis": null, "maxInputBytes": 2_048,
+                            "maxOutputBytes": null, "maxProcesses": null}
+                    },
+                    "extensions": ["kt"]}
             ]
         }]))
     );
@@ -561,7 +603,10 @@ fn malformed_language_metadata_fails_closed_for_bounds_identity_vocabulary_and_s
             .map(|index| {
                 json!({
                     "operation": format!("operation-{index}"),
-                    "stability": "stable", "evidence": "compiler", "mutationAuthority": "none"
+                    "stability": "stable", "evidence": "compiler", "mutationAuthority": "none",
+                    "backend": "eclipse-jdt-3.44",
+                    "runtime": actual_language_kernel()["adapters"][0]["runtime"].clone(),
+                    "extensions": ["java"]
                 })
             })
             .collect(),
@@ -571,6 +616,67 @@ fn malformed_language_metadata_fails_closed_for_bounds_identity_vocabulary_and_s
     let mut value = actual_capabilities();
     value["languageKernel"]["adapters"][0]["backend"] = json!("é".repeat(129));
     cases.push(("UTF-8 string bound", value));
+
+    for field in ["backend", "runtime", "extensions"] {
+        let mut value = actual_capabilities();
+        value["languageKernel"]["adapters"][0]["capabilities"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        cases.push((
+            match field {
+                "backend" => "missing operation backend",
+                "runtime" => "missing operation runtime",
+                _ => "missing operation extensions",
+            },
+            value,
+        ));
+    }
+
+    for (name, field, replacement) in [
+        ("wrong operation backend type", "backend", json!(7)),
+        (
+            "wrong operation runtime type",
+            "runtime",
+            json!("in-process"),
+        ),
+        (
+            "wrong operation extensions type",
+            "extensions",
+            json!("java"),
+        ),
+    ] {
+        let mut value = actual_capabilities();
+        value["languageKernel"]["adapters"][0]["capabilities"][0][field] = replacement;
+        cases.push((name, value));
+    }
+
+    for (name, extensions) in [
+        ("empty operation extensions", json!([])),
+        ("duplicate operation extensions", json!(["java", "java"])),
+        ("non-canonical operation extension", json!([".java"])),
+    ] {
+        let mut value = actual_capabilities();
+        value["languageKernel"]["adapters"][0]["capabilities"][0]["extensions"] = extensions;
+        cases.push((name, value));
+    }
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"][0]["extensions"] = Value::Array(
+        (0..=MAX_LANGUAGE_EXTENSIONS)
+            .map(|index| json!(format!("x{index}")))
+            .collect(),
+    );
+    cases.push(("operation extension bound", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"][0]["backend"] = json!("é".repeat(129));
+    cases.push(("operation backend UTF-8 bound", value));
+
+    let mut value = actual_capabilities();
+    value["languageKernel"]["adapters"][0]["capabilities"][0]["runtime"]
+        ["recordsProcessProvenance"] = json!(true);
+    cases.push(("operation runtime coherence", value));
 
     let mut value = actual_capabilities();
     value["safety"]["snapshotValidation"] = json!("yes");

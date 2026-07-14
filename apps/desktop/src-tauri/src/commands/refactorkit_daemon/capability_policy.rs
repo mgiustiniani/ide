@@ -130,6 +130,9 @@ pub(super) struct LanguageOperationCapability {
     pub(super) stability: &'static str,
     pub(super) evidence: &'static str,
     pub(super) mutation_authority: &'static str,
+    pub(super) backend: String,
+    pub(super) runtime: LanguageAdapterRuntime,
+    pub(super) extensions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -270,29 +273,12 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
             return Err(PROTOCOL_FAILED.to_string());
         }
 
-        let raw_extensions = adapter
-            .get("extensions")
-            .and_then(Value::as_array)
-            .filter(|extensions| {
-                !extensions.is_empty() && extensions.len() <= MAX_LANGUAGE_EXTENSIONS
-            })
-            .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
-        let mut adapter_extensions = HashSet::with_capacity(raw_extensions.len());
-        let mut extensions = Vec::with_capacity(raw_extensions.len());
-        for raw_extension in raw_extensions {
-            let extension = raw_extension
-                .as_str()
-                .filter(|value| canonical_extension(value))
-                .ok_or_else(|| PROTOCOL_FAILED.to_string())?
-                .to_string();
-            if !adapter_extensions.insert(extension.clone())
-                || !owned_extensions.insert(extension.clone())
-            {
+        let extensions = normalize_language_extensions(adapter.get("extensions"))?;
+        for extension in &extensions {
+            if !owned_extensions.insert(extension.clone()) {
                 return Err(PROTOCOL_FAILED.to_string());
             }
-            extensions.push(extension);
         }
-        extensions.sort_unstable();
 
         let backend = bounded_language_string(adapter.get("backend"))?;
         let raw_capabilities = adapter
@@ -332,6 +318,9 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
                 stability,
                 evidence,
                 mutation_authority,
+                backend: bounded_language_string(capability.get("backend"))?,
+                runtime: normalize_language_runtime(capability.get("runtime"))?,
+                extensions: normalize_language_extensions(capability.get("extensions"))?,
             });
         }
         capabilities.sort_unstable_by(|left, right| left.operation.cmp(&right.operation));
@@ -356,6 +345,28 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
             execution_mode: EXECUTION_VOCABULARY,
         },
     })
+}
+
+pub(super) fn normalize_language_extensions(value: Option<&Value>) -> Result<Vec<String>, String> {
+    let raw_extensions = value
+        .and_then(Value::as_array)
+        .filter(|extensions| !extensions.is_empty() && extensions.len() <= MAX_LANGUAGE_EXTENSIONS)
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    let mut unique_extensions = HashSet::with_capacity(raw_extensions.len());
+    let mut extensions = Vec::with_capacity(raw_extensions.len());
+    for raw_extension in raw_extensions {
+        let extension = raw_extension
+            .as_str()
+            .filter(|value| canonical_extension(value))
+            .ok_or_else(|| PROTOCOL_FAILED.to_string())?
+            .to_string();
+        if !unique_extensions.insert(extension.clone()) {
+            return Err(PROTOCOL_FAILED.to_string());
+        }
+        extensions.push(extension);
+    }
+    extensions.sort_unstable();
+    Ok(extensions)
 }
 
 pub(super) fn normalize_language_runtime(
