@@ -91,10 +91,13 @@ NOTE: The configured inventory contains two feature files, two scenarios, and tw
 |RefactorKit `v0.6.2` TypeScript/JavaScript operations are not universally stable. Structural outline and identifier search are stable; semantic definition, references, workspace symbols, and diagnostics are experimental; semantic rename is experimental proposal-only. Format, move, organize imports, change signature, extract, and inline remain unsupported for TypeScript/JavaScript.
 
 |Open upstream compatibility blockers
-|The daemon diagnostics response drops start character and end range; lacks workspace/generation/session/snapshot correlation and exact compiler attestation; cannot receive the unsaved editor snapshot; advertises the TypeScript LSP backend/runtime rather than the separate exact compiler-diagnostics backend; advertises 10-second/64 MiB LSP limits while the compiler bridge uses 30 seconds/8 MiB; and can encode tool failure as ordinary diagnostics. These prevent exact current-buffer marker authorization.
+|The daemon diagnostics response drops start character and end range; lacks request/result workspace, generation, session, and snapshot authority correlation plus exact compiler attestation; does not define saved/unsaved snapshot semantics; advertises the TypeScript LSP backend/runtime rather than the separate exact compiler-diagnostics backend; advertises 10-second/64 MiB LSP limits while the compiler bridge uses 30 seconds/8 MiB; and can encode readiness or tool failure as ordinary diagnostics. These prevent trustworthy existing-surface projection.
 
 |Decision status
-|`HUMAN_DECISION_REQUIRED`: waiting for an upstream RefactorKit fix is recommended. A narrowed Problems-only fallback for explicitly saved disk snapshots is possible only by explicit product/architecture decision with visible scope and typed failure handling. Exact Monaco markers are not authorized.
+|`WAIT_FOR_UPSTREAM_PROTOCOL_FIX` — option A is selected until further notice. This is a reversible temporary product decision, not a permanent ADR. The IDE will not implement a Problems-only saved-disk fallback and will not fabricate approximate Monaco line markers. The user may explicitly revise the decision.
+
+|Upstream conditions before resumption
+|Upstream must provide (1) exact bounded UTF-16 ranges or explicit enforceable precision, (2) request/result authority correlation, (3) exact compiler attestation, (4) explicit saved/unsaved snapshot semantics, (5) structured readiness/refusal/failure outcomes, and (6) compatible advertised/observed runtime and response bounds.
 |===
 
 === REQ-WEB-001
