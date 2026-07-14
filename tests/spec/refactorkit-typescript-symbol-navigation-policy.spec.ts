@@ -4,10 +4,15 @@ import {
   decideSavedSnapshotDefinitionRequest,
   decideSavedSnapshotSymbolSearchRequest,
   normalizeProviderPoint,
+  normalizeSavedSnapshotDefinitionResult,
+  normalizeSavedSnapshotSymbolSearchResult,
   type SavedSnapshotDefinitionRequest,
+  type SavedSnapshotDefinitionResult,
+  type SavedSnapshotDefinitionResultCandidate,
   type SavedSnapshotSymbolSearchPolicyInput,
   type SavedSnapshotSymbolSearchRequest,
   type SavedSnapshotSymbolSearchResult,
+  type SavedSnapshotSymbolSearchResultCandidate,
   type TypeScriptJavaScriptSemanticSession,
 } from "../../packages/contracts/src/domain/refactorkit-typescript-symbol-navigation";
 import type {
@@ -149,7 +154,7 @@ function mutate(
   return value;
 }
 
-function currentResult(): SavedSnapshotSymbolSearchResult {
+function currentResult(): SavedSnapshotSymbolSearchResultCandidate {
   return {
     languageId: "typescript",
     query: "Service",
@@ -159,6 +164,12 @@ function currentResult(): SavedSnapshotSymbolSearchResult {
     snapshotIdentity: "snapshot:provider-current",
     providerVersion: "7.4.1",
     backend: "typescript-lsp-explicit-v1",
+    completeness: {
+      resultCompleteness: "unknown",
+      truncation: "unknown",
+      semanticCompleteness: "full-typescript",
+      experimentalDisclosure: "shown",
+    },
     symbols: [
       {
         id: `lsp-symbol-v1:${"a".repeat(64)}`,
@@ -556,35 +567,35 @@ describe("@REQ-REFACTORKIT-TS-002 saved-snapshot symbol navigation policy", () =
     [
       "a stale result generation",
       "search-result-authority-mismatch",
-      (result: SavedSnapshotSymbolSearchResult) => {
+      (result: SavedSnapshotSymbolSearchResultCandidate) => {
         result.workspaceGeneration = 6;
       },
     ],
     [
       "a stale result session",
       "search-result-session-mismatch",
-      (result: SavedSnapshotSymbolSearchResult) => {
+      (result: SavedSnapshotSymbolSearchResultCandidate) => {
         result.sessionId = "typescript-session:old";
       },
     ],
     [
       "a stale result snapshot",
       "search-result-snapshot-mismatch",
-      (result: SavedSnapshotSymbolSearchResult) => {
+      (result: SavedSnapshotSymbolSearchResultCandidate) => {
         result.snapshotIdentity = "snapshot:old";
       },
     ],
     [
       "another provider snapshot backend",
       "search-result-provider-mismatch",
-      (result: SavedSnapshotSymbolSearchResult) => {
+      (result: SavedSnapshotSymbolSearchResultCandidate) => {
         result.backend = "another-backend";
       },
     ],
     [
       "an invalid opaque identity",
       "symbol-identity-invalid",
-      (result: SavedSnapshotSymbolSearchResult) => {
+      (result: SavedSnapshotSymbolSearchResultCandidate) => {
         result.symbols[0]!.id = "src/service.ts#Service";
       },
     ],
@@ -608,6 +619,237 @@ describe("@REQ-REFACTORKIT-TS-002 saved-snapshot symbol navigation policy", () =
         selectedSymbolId: `lsp-symbol-v1:${"b".repeat(64)}`,
       }),
     ).toEqual({ kind: "refused", reason: "symbol-not-in-current-result" });
+  });
+
+  it("normalizes correlated provider search results with explicit unknown and semantic completeness", () => {
+    const authorization = decideSavedSnapshotSymbolSearchRequest(input());
+    if (authorization.kind !== "ready") throw new Error("Expected search authorization");
+
+    const decision = normalizeSavedSnapshotSymbolSearchResult({
+      request: authorization.request,
+      candidate: currentResult(),
+    });
+
+    expect(decision).toEqual({ kind: "ready", result: currentResult() });
+    if (decision.kind !== "ready") throw new Error("Expected a normalized search result");
+    expect(Object.isFrozen(decision)).toBe(true);
+    expect(Object.isFrozen(decision.result)).toBe(true);
+    expect(Object.isFrozen(decision.result.completeness)).toBe(true);
+    expect(Object.isFrozen(decision.result.symbols)).toBe(true);
+    expect(Object.isFrozen(decision.result.symbols[0])).toBe(true);
+    expectTypeOf(decision.result).toEqualTypeOf<Readonly<SavedSnapshotSymbolSearchResult>>();
+  });
+
+  it.each([
+    [
+      "mismatched authority",
+      "search-result-authority-mismatch",
+      (candidate: SavedSnapshotSymbolSearchResultCandidate) => {
+        candidate.workspaceGeneration = 6;
+      },
+    ],
+    [
+      "missing experimental disclosure",
+      "experimental-disclosure-required",
+      (candidate: SavedSnapshotSymbolSearchResultCandidate) => {
+        candidate.completeness.experimentalDisclosure = "not-shown";
+      },
+    ],
+    [
+      "JavaScript semantics presented for TypeScript",
+      "semantic-completeness-mismatch",
+      (candidate: SavedSnapshotSymbolSearchResultCandidate) => {
+        candidate.completeness.semanticCompleteness = "checked-javascript";
+      },
+    ],
+  ] as const)("refuses provider search results with %s", (_case, reason, change) => {
+    const authorization = decideSavedSnapshotSymbolSearchRequest(input());
+    if (authorization.kind !== "ready") throw new Error("Expected search authorization");
+    const candidate = structuredClone(currentResult());
+    change(candidate);
+
+    expect(
+      normalizeSavedSnapshotSymbolSearchResult({ request: authorization.request, candidate }),
+    ).toEqual({ kind: "refused", reason });
+  });
+
+  it("normalizes one correlated saved-snapshot definition point without inventing a range or attestation", () => {
+    const searchAuthorization = decideSavedSnapshotSymbolSearchRequest(input());
+    if (searchAuthorization.kind !== "ready") throw new Error("Expected search authorization");
+    const searchDecision = normalizeSavedSnapshotSymbolSearchResult({
+      request: searchAuthorization.request,
+      candidate: currentResult(),
+    });
+    if (searchDecision.kind !== "ready") throw new Error("Expected a normalized search result");
+    const selectedSymbol = searchDecision.result.symbols[0]!;
+    const definitionAuthorization = decideSavedSnapshotDefinitionRequest({
+      authorization: input(),
+      currentSearchResult: searchDecision.result,
+      selectedSymbolId: selectedSymbol.id,
+    });
+    if (definitionAuthorization.kind !== "ready") {
+      throw new Error("Expected definition authorization");
+    }
+    const candidate: SavedSnapshotDefinitionResultCandidate = {
+      languageId: "typescript",
+      workspaceId: "workspace:authorized",
+      workspaceGeneration: 7,
+      sessionId: "typescript-session:7",
+      snapshotIdentity: "snapshot:provider-current",
+      providerVersion: "7.4.1",
+      backend: "typescript-lsp-explicit-v1",
+      selectedSymbol: { ...selectedSymbol },
+      file: "src/service.ts",
+      point: { line: 2, character: 13 },
+    };
+
+    const decision = normalizeSavedSnapshotDefinitionResult({
+      request: definitionAuthorization.request,
+      currentSearchResult: searchDecision.result,
+      selectedSymbol,
+      candidate,
+    });
+
+    expect(decision).toEqual({ kind: "ready", result: candidate });
+    if (decision.kind !== "ready") throw new Error("Expected a normalized definition result");
+    expect(Object.isFrozen(decision.result)).toBe(true);
+    expect(Object.isFrozen(decision.result.selectedSymbol)).toBe(true);
+    expect(Object.isFrozen(decision.result.point)).toBe(true);
+    expectTypeOf(decision.result).toEqualTypeOf<Readonly<SavedSnapshotDefinitionResult>>();
+    expectTypeOf(decision.result).not.toHaveProperty("end");
+    expectTypeOf(decision.result).not.toHaveProperty("attestation");
+  });
+
+  it.each([
+    [
+      "provider authority mismatch",
+      "definition-result-authority-mismatch",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        candidate.backend = "another-backend";
+      },
+    ],
+    [
+      "opaque symbol ID mismatch",
+      "opaque-symbol-id-mismatch",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        candidate.selectedSymbol.id = `lsp-symbol-v1:${"b".repeat(64)}`;
+      },
+    ],
+    [
+      "an absolute file",
+      "definition-file-invalid",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        candidate.file = "/workspace/authorized/src/service.ts";
+      },
+    ],
+    [
+      "an escaping file",
+      "definition-file-invalid",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        candidate.file = "src/../../outside.ts";
+      },
+    ],
+    [
+      "an invalid provider point",
+      "invalid-provider-point",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        candidate.point.character = -1;
+      },
+    ],
+    [
+      "a fabricated end range",
+      "fabricated-definition-range",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        Object.assign(candidate, { end: { line: 2, character: 20 } });
+      },
+    ],
+    [
+      "fabricated attestation",
+      "fabricated-definition-attestation",
+      (candidate: SavedSnapshotDefinitionResultCandidate) => {
+        Object.assign(candidate, { attestation: "exact-provider-definition" });
+      },
+    ],
+  ] as const)("refuses a correlated definition result with %s", (_case, reason, change) => {
+    const searchAuthorization = decideSavedSnapshotSymbolSearchRequest(input());
+    if (searchAuthorization.kind !== "ready") throw new Error("Expected search authorization");
+    const searchDecision = normalizeSavedSnapshotSymbolSearchResult({
+      request: searchAuthorization.request,
+      candidate: currentResult(),
+    });
+    if (searchDecision.kind !== "ready") throw new Error("Expected a normalized search result");
+    const selectedSymbol = searchDecision.result.symbols[0]!;
+    const definitionAuthorization = decideSavedSnapshotDefinitionRequest({
+      authorization: input(),
+      currentSearchResult: searchDecision.result,
+      selectedSymbolId: selectedSymbol.id,
+    });
+    if (definitionAuthorization.kind !== "ready") {
+      throw new Error("Expected definition authorization");
+    }
+    const candidate: SavedSnapshotDefinitionResultCandidate = {
+      languageId: "typescript",
+      workspaceId: "workspace:authorized",
+      workspaceGeneration: 7,
+      sessionId: "typescript-session:7",
+      snapshotIdentity: "snapshot:provider-current",
+      providerVersion: "7.4.1",
+      backend: "typescript-lsp-explicit-v1",
+      selectedSymbol: { ...selectedSymbol },
+      file: "src/service.ts",
+      point: { line: 2, character: 13 },
+    };
+    change(candidate);
+
+    expect(
+      normalizeSavedSnapshotDefinitionResult({
+        request: definitionAuthorization.request,
+        currentSearchResult: searchDecision.result,
+        selectedSymbol,
+        candidate,
+      }),
+    ).toEqual({ kind: "refused", reason });
+  });
+
+  it("refuses a stale selection no longer present in the current search result", () => {
+    const searchAuthorization = decideSavedSnapshotSymbolSearchRequest(input());
+    if (searchAuthorization.kind !== "ready") throw new Error("Expected search authorization");
+    const current = currentResult();
+    const selectedSymbol = { ...current.symbols[0]! };
+    current.symbols = [];
+    const searchDecision = normalizeSavedSnapshotSymbolSearchResult({
+      request: searchAuthorization.request,
+      candidate: current,
+    });
+    if (searchDecision.kind !== "ready") throw new Error("Expected a normalized search result");
+    const definitionAuthorization = decideSavedSnapshotDefinitionRequest({
+      authorization: input(),
+      currentSearchResult: currentResult(),
+      selectedSymbolId: selectedSymbol.id,
+    });
+    if (definitionAuthorization.kind !== "ready") {
+      throw new Error("Expected definition authorization");
+    }
+
+    expect(
+      normalizeSavedSnapshotDefinitionResult({
+        request: definitionAuthorization.request,
+        currentSearchResult: searchDecision.result,
+        selectedSymbol,
+        candidate: {
+          languageId: "typescript",
+          workspaceId: "workspace:authorized",
+          workspaceGeneration: 7,
+          sessionId: "typescript-session:7",
+          snapshotIdentity: "snapshot:provider-current",
+          providerVersion: "7.4.1",
+          backend: "typescript-lsp-explicit-v1",
+          selectedSymbol,
+          file: "src/service.ts",
+          point: { line: 2, character: 13 },
+        },
+      }),
+    ).toEqual({ kind: "refused", reason: "stale-search-selection" });
   });
 
   it("normalizes a provider's zero-based UTF-16 point to a frozen one-based editor point", () => {

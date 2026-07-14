@@ -132,8 +132,19 @@ export interface SavedSnapshotWorkspaceSymbol {
   kind: string;
 }
 
-/** Untrusted provider result metadata retained only while its search result is current. */
-export interface SavedSnapshotSymbolSearchResult {
+export type SavedSnapshotSymbolSemanticCompleteness =
+  "full-typescript" | "checked-javascript" | "dynamic-javascript" | "mixed-javascript";
+
+/** Provider result bounds are unknown independently of the language's semantic completeness. */
+export interface SavedSnapshotSymbolSearchCompleteness {
+  resultCompleteness: "unknown";
+  truncation: "unknown";
+  semanticCompleteness: SavedSnapshotSymbolSemanticCompleteness;
+  experimentalDisclosure: "shown" | "not-shown";
+}
+
+/** Untrusted provider result accepted only as input to the pure normalization decision. */
+export interface SavedSnapshotSymbolSearchResultCandidate {
   languageId: TypeScriptJavaScriptLanguageId;
   query: string;
   workspaceId: string;
@@ -142,8 +153,43 @@ export interface SavedSnapshotSymbolSearchResult {
   snapshotIdentity: string;
   providerVersion: string;
   backend: string;
+  completeness: SavedSnapshotSymbolSearchCompleteness;
   symbols: SavedSnapshotWorkspaceSymbol[];
 }
+
+/** Immutable provider result correlated to the exact authorized saved-snapshot search. */
+export interface SavedSnapshotSymbolSearchResult {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly query: string;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly sessionId: string;
+  readonly snapshotIdentity: string;
+  readonly providerVersion: string;
+  readonly backend: string;
+  readonly completeness: Readonly<SavedSnapshotSymbolSearchCompleteness>;
+  readonly symbols: readonly Readonly<SavedSnapshotWorkspaceSymbol>[];
+}
+
+export interface SavedSnapshotSymbolSearchResultNormalizationInput {
+  request: Readonly<SavedSnapshotSymbolSearchRequest>;
+  candidate: SavedSnapshotSymbolSearchResultCandidate;
+}
+
+export type SavedSnapshotSymbolSearchResultRefusalReason =
+  | "search-result-authority-mismatch"
+  | "search-result-session-mismatch"
+  | "search-result-snapshot-mismatch"
+  | "search-result-provider-mismatch"
+  | "search-result-completeness-invalid"
+  | "semantic-completeness-mismatch"
+  | "experimental-disclosure-required"
+  | "symbol-identity-invalid"
+  | "symbol-metadata-invalid";
+
+export type SavedSnapshotSymbolSearchResultNormalizationDecision =
+  | { readonly kind: "ready"; readonly result: Readonly<SavedSnapshotSymbolSearchResult> }
+  | { readonly kind: "refused"; readonly reason: SavedSnapshotSymbolSearchResultRefusalReason };
 
 export interface SavedSnapshotDefinitionPolicyInput {
   authorization: SavedSnapshotSymbolSearchPolicyInput;
@@ -181,6 +227,55 @@ export interface ProviderPoint {
   line: number;
   character: number;
 }
+
+/** Untrusted point-only provider output; range and attestation claims are explicitly rejected. */
+export interface SavedSnapshotDefinitionResultCandidate {
+  languageId: TypeScriptJavaScriptLanguageId;
+  workspaceId: string;
+  workspaceGeneration: number;
+  sessionId: string;
+  snapshotIdentity: string;
+  providerVersion: string;
+  backend: string;
+  selectedSymbol: SavedSnapshotWorkspaceSymbol;
+  file: string;
+  point: ProviderPoint;
+}
+
+/** Immutable provider definition correlated to the selected current search result. */
+export interface SavedSnapshotDefinitionResult {
+  readonly languageId: TypeScriptJavaScriptLanguageId;
+  readonly workspaceId: string;
+  readonly workspaceGeneration: number;
+  readonly sessionId: string;
+  readonly snapshotIdentity: string;
+  readonly providerVersion: string;
+  readonly backend: string;
+  readonly selectedSymbol: Readonly<SavedSnapshotWorkspaceSymbol>;
+  readonly file: string;
+  readonly point: Readonly<ProviderPoint>;
+}
+
+export interface SavedSnapshotDefinitionResultNormalizationInput {
+  request: Readonly<SavedSnapshotDefinitionRequest>;
+  currentSearchResult: Readonly<SavedSnapshotSymbolSearchResult>;
+  selectedSymbol: Readonly<SavedSnapshotWorkspaceSymbol>;
+  candidate: SavedSnapshotDefinitionResultCandidate;
+}
+
+export type SavedSnapshotDefinitionResultRefusalReason =
+  | "definition-result-authority-mismatch"
+  | "stale-search-selection"
+  | "opaque-symbol-id-mismatch"
+  | "selected-symbol-metadata-mismatch"
+  | "definition-file-invalid"
+  | "invalid-provider-point"
+  | "fabricated-definition-range"
+  | "fabricated-definition-attestation";
+
+export type SavedSnapshotDefinitionResultNormalizationDecision =
+  | { readonly kind: "ready"; readonly result: Readonly<SavedSnapshotDefinitionResult> }
+  | { readonly kind: "refused"; readonly reason: SavedSnapshotDefinitionResultRefusalReason };
 
 /** Existing editor coordinates are one-based; no text or offset interpretation occurs here. */
 export interface EditorPoint {
@@ -401,14 +496,166 @@ export function decideSavedSnapshotDefinitionRequest(
   return Object.freeze({ kind: "ready", request: definitionRequest });
 }
 
+export function normalizeSavedSnapshotSymbolSearchResult(
+  input: SavedSnapshotSymbolSearchResultNormalizationInput,
+): SavedSnapshotSymbolSearchResultNormalizationDecision {
+  const { request, candidate } = input;
+  if (
+    candidate.languageId !== request.languageId ||
+    candidate.query !== request.query ||
+    candidate.workspaceId !== request.workspaceId ||
+    candidate.workspaceGeneration !== request.workspaceGeneration
+  ) {
+    return searchResultRefused("search-result-authority-mismatch");
+  }
+  if (candidate.sessionId !== request.sessionId) {
+    return searchResultRefused("search-result-session-mismatch");
+  }
+  if (candidate.snapshotIdentity !== request.snapshotIdentity) {
+    return searchResultRefused("search-result-snapshot-mismatch");
+  }
+  if (
+    candidate.providerVersion !== request.providerVersion ||
+    candidate.backend !== request.backend
+  ) {
+    return searchResultRefused("search-result-provider-mismatch");
+  }
+  if (
+    candidate.completeness.resultCompleteness !== "unknown" ||
+    candidate.completeness.truncation !== "unknown"
+  ) {
+    return searchResultRefused("search-result-completeness-invalid");
+  }
+  if (!semanticCompletenessMatches(candidate.languageId, candidate.completeness)) {
+    return searchResultRefused("semantic-completeness-mismatch");
+  }
+  if (candidate.completeness.experimentalDisclosure !== "shown") {
+    return searchResultRefused("experimental-disclosure-required");
+  }
+  if (candidate.symbols.some(({ id }) => !OPAQUE_SYMBOL_ID.test(id))) {
+    return searchResultRefused("symbol-identity-invalid");
+  }
+  if (candidate.symbols.some(({ name, kind }) => !validMetadata(name) || !validMetadata(kind))) {
+    return searchResultRefused("symbol-metadata-invalid");
+  }
+
+  const completeness: Readonly<SavedSnapshotSymbolSearchCompleteness> = Object.freeze({
+    resultCompleteness: "unknown",
+    truncation: "unknown",
+    semanticCompleteness: candidate.completeness.semanticCompleteness,
+    experimentalDisclosure: "shown",
+  });
+  const symbols = Object.freeze(
+    candidate.symbols.map((symbol) =>
+      Object.freeze({ id: symbol.id, name: symbol.name, kind: symbol.kind }),
+    ),
+  );
+  const result: Readonly<SavedSnapshotSymbolSearchResult> = Object.freeze({
+    languageId: request.languageId,
+    query: request.query,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: request.sessionId,
+    snapshotIdentity: request.snapshotIdentity,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    completeness,
+    symbols,
+  });
+  return Object.freeze({ kind: "ready", result });
+}
+
+export function normalizeSavedSnapshotDefinitionResult(
+  input: SavedSnapshotDefinitionResultNormalizationInput,
+): SavedSnapshotDefinitionResultNormalizationDecision {
+  const { request, currentSearchResult, selectedSymbol, candidate } = input;
+  if (
+    candidate.languageId !== request.languageId ||
+    candidate.workspaceId !== request.workspaceId ||
+    candidate.workspaceGeneration !== request.workspaceGeneration ||
+    candidate.sessionId !== request.sessionId ||
+    candidate.snapshotIdentity !== request.snapshotIdentity ||
+    candidate.providerVersion !== request.providerVersion ||
+    candidate.backend !== request.backend
+  ) {
+    return definitionResultRefused("definition-result-authority-mismatch");
+  }
+  if (
+    currentSearchResult.languageId !== request.languageId ||
+    currentSearchResult.workspaceId !== request.workspaceId ||
+    currentSearchResult.workspaceGeneration !== request.workspaceGeneration ||
+    currentSearchResult.sessionId !== request.sessionId ||
+    currentSearchResult.snapshotIdentity !== request.snapshotIdentity ||
+    currentSearchResult.providerVersion !== request.providerVersion ||
+    currentSearchResult.backend !== request.backend ||
+    !currentSearchResult.symbols.some(
+      (symbol) =>
+        symbol.id === selectedSymbol.id &&
+        symbol.name === selectedSymbol.name &&
+        symbol.kind === selectedSymbol.kind,
+    )
+  ) {
+    return definitionResultRefused("stale-search-selection");
+  }
+  if (
+    !OPAQUE_SYMBOL_ID.test(selectedSymbol.id) ||
+    request.symbolId !== selectedSymbol.id ||
+    candidate.selectedSymbol.id !== selectedSymbol.id
+  ) {
+    return definitionResultRefused("opaque-symbol-id-mismatch");
+  }
+  if (
+    candidate.selectedSymbol.name !== selectedSymbol.name ||
+    candidate.selectedSymbol.kind !== selectedSymbol.kind
+  ) {
+    return definitionResultRefused("selected-symbol-metadata-mismatch");
+  }
+  if (!validWorkspaceRelativePath(candidate.file)) {
+    return definitionResultRefused("definition-file-invalid");
+  }
+  if (
+    !validProviderPoint(candidate.point) ||
+    !Number.isSafeInteger(candidate.point.line + 1) ||
+    !Number.isSafeInteger(candidate.point.character + 1)
+  ) {
+    return definitionResultRefused("invalid-provider-point");
+  }
+  if (hasOwn(candidate, "end") || hasOwn(candidate, "range")) {
+    return definitionResultRefused("fabricated-definition-range");
+  }
+  if (hasOwn(candidate, "attestation")) {
+    return definitionResultRefused("fabricated-definition-attestation");
+  }
+
+  const normalizedSymbol: Readonly<SavedSnapshotWorkspaceSymbol> = Object.freeze({
+    id: selectedSymbol.id,
+    name: selectedSymbol.name,
+    kind: selectedSymbol.kind,
+  });
+  const point: Readonly<ProviderPoint> = Object.freeze({
+    line: candidate.point.line,
+    character: candidate.point.character,
+  });
+  const result: Readonly<SavedSnapshotDefinitionResult> = Object.freeze({
+    languageId: request.languageId,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    sessionId: request.sessionId,
+    snapshotIdentity: request.snapshotIdentity,
+    providerVersion: request.providerVersion,
+    backend: request.backend,
+    selectedSymbol: normalizedSymbol,
+    file: candidate.file,
+    point,
+  });
+  return Object.freeze({ kind: "ready", result });
+}
+
 export function normalizeProviderPoint(
   providerPoint: ProviderPoint,
 ): ProviderPointNormalizationDecision {
   if (
-    !Number.isSafeInteger(providerPoint.line) ||
-    providerPoint.line < 0 ||
-    !Number.isSafeInteger(providerPoint.character) ||
-    providerPoint.character < 0 ||
+    !validProviderPoint(providerPoint) ||
     !Number.isSafeInteger(providerPoint.line + 1) ||
     !Number.isSafeInteger(providerPoint.character + 1)
   ) {
@@ -493,6 +740,59 @@ function definitionRefused(
   reason: SavedSnapshotDefinitionRefusalReason,
 ): SavedSnapshotDefinitionDecision {
   return Object.freeze({ kind: "refused", reason });
+}
+
+function searchResultRefused(
+  reason: SavedSnapshotSymbolSearchResultRefusalReason,
+): SavedSnapshotSymbolSearchResultNormalizationDecision {
+  return Object.freeze({ kind: "refused", reason });
+}
+
+function definitionResultRefused(
+  reason: SavedSnapshotDefinitionResultRefusalReason,
+): SavedSnapshotDefinitionResultNormalizationDecision {
+  return Object.freeze({ kind: "refused", reason });
+}
+
+function semanticCompletenessMatches(
+  languageId: TypeScriptJavaScriptLanguageId,
+  completeness: SavedSnapshotSymbolSearchCompleteness,
+): boolean {
+  return languageId === "typescript"
+    ? completeness.semanticCompleteness === "full-typescript"
+    : completeness.semanticCompleteness === "checked-javascript" ||
+        completeness.semanticCompleteness === "dynamic-javascript" ||
+        completeness.semanticCompleteness === "mixed-javascript";
+}
+
+function validProviderPoint(point: ProviderPoint): boolean {
+  return (
+    Number.isSafeInteger(point.line) &&
+    point.line >= 0 &&
+    Number.isSafeInteger(point.character) &&
+    point.character >= 0
+  );
+}
+
+function validWorkspaceRelativePath(value: string): boolean {
+  if (
+    value.length === 0 ||
+    value.length > 4096 ||
+    value.trim() !== value ||
+    CONTROL_CHARACTERS.test(value) ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:/u.test(value)
+  ) {
+    return false;
+  }
+  return value
+    .split("/")
+    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function hasOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function validIdentity(value: string): boolean {
