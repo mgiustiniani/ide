@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate bdd-ts Gherkin status, PLAN migration, ARC42 traceability, and C4 stability."""
+"""Validate bdd-ts Gherkin status, legacy PLAN.md absence, ARC42 traceability, and C4 stability."""
 from __future__ import annotations
 
 import argparse
@@ -134,20 +134,14 @@ def mutable_c4_reason(description: str) -> str | None:
 def validate(
     root: Path,
     *,
-    allow_legacy_plan: bool = False,
     feature_roots: list[Path] | None = None,
     appendix: Path | None = None,
-) -> tuple[list[str], list[str]]:
+) -> list[str]:
     failures: list[str] = []
-    warnings: list[str] = []
 
     plan = root / "PLAN.md"
     if plan.exists():
-        message = "legacy PLAN.md remains; classify its content and remove it before bdd-ts admission"
-        if allow_legacy_plan:
-            warnings.append(message)
-        else:
-            failures.append(message)
+        failures.append("legacy PLAN.md remains; classify its content and remove it before bdd-ts admission")
 
     feature_paths = discover_features(root, feature_roots)
     scenarios: list[Scenario] = []
@@ -205,27 +199,22 @@ def validate(
             if reason:
                 failures.append(f"docs/c4/workspace.dsl:{line_number}: mutable {reason} in description: {description!r}")
 
-    return failures, warnings
+    return failures
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--allow-legacy-plan", action="store_true",
-                        help="migration-only warning instead of failure when PLAN.md exists")
     parser.add_argument("--feature-root", type=Path, action="append", default=[])
     parser.add_argument("--appendix", type=Path)
     args = parser.parse_args()
 
     root = args.root.resolve()
-    failures, warnings = validate(
+    failures = validate(
         root,
-        allow_legacy_plan=args.allow_legacy_plan,
         feature_roots=args.feature_root or None,
         appendix=args.appendix,
     )
-    for warning in warnings:
-        print(f"WARNING: {warning}")
     if failures:
         print("validate-bdd-documentation: FAIL")
         for failure in failures:
