@@ -1,5 +1,6 @@
 import { After, setWorldConstructor, World, type IWorldOptions } from "@cucumber/cucumber";
 
+import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
 import {
   createTargetProfileSeam,
@@ -12,6 +13,7 @@ import {
 export class StoryWorld extends World<StoryWorldParameters> {
   readonly targetProfile: TargetProfile;
   readonly targetProfileSeam: TargetProfileSeam;
+  #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #standaloneWebApp?: StandaloneWebApp;
 
   constructor(options: IWorldOptions<StoryWorldParameters>) {
@@ -43,11 +45,33 @@ export class StoryWorld extends World<StoryWorldParameters> {
     return this.#standaloneWebApp;
   }
 
+  startRefactorKit062ProtocolFixture(): void {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The RefactorKit desktop Story requires the explicit desktop/tauri target, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (this.#refactorKit062ProtocolFixture) {
+      throw new Error("The RefactorKit 0.6.2 Story fixture has already been created");
+    }
+    this.#refactorKit062ProtocolFixture = new RefactorKit062ProtocolFixture();
+  }
+
+  refactorKit062ProtocolFixture(): RefactorKit062ProtocolFixture {
+    if (!this.#refactorKit062ProtocolFixture) {
+      throw new Error("The RefactorKit 0.6.2 Story fixture has not been created");
+    }
+    return this.#refactorKit062ProtocolFixture;
+  }
+
   async dispose(): Promise<void> {
     const app = this.#standaloneWebApp;
+    const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     this.#standaloneWebApp = undefined;
+    this.#refactorKit062ProtocolFixture = undefined;
     try {
       await app?.dispose();
+      await refactorKitFixture?.dispose();
     } finally {
       await this.targetProfileSeam.dispose();
     }
