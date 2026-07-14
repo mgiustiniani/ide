@@ -35,13 +35,19 @@ function ReadinessValue(): JSX.Element {
   return <dd className="font-medium text-amber-100">Unknown / not reported</dd>;
 }
 
-function RuntimeMetadata({ adapter }: { adapter: RefactorKitLanguageAdapter }): JSX.Element {
-  const { runtime } = adapter;
-
+function RuntimeMetadata({
+  runtime,
+  ownerLabel,
+  heading = "Runtime metadata",
+}: {
+  runtime: RefactorKitLanguageAdapter["runtime"];
+  ownerLabel: string;
+  heading?: string;
+}): JSX.Element {
   return (
-    <section className="mt-2" aria-label={`${adapter.languageId} adapter runtime metadata`}>
+    <section className="mt-2" aria-label={`${ownerLabel} runtime metadata`}>
       <h6 className="text-[0.68rem] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-        Runtime metadata
+        {heading}
       </h6>
       <dl className="mt-1 grid gap-x-4 gap-y-1 text-[0.68rem] text-[var(--text-secondary)] sm:grid-cols-2">
         <div className="flex min-w-0 gap-1">
@@ -109,56 +115,75 @@ function RuntimeMetadata({ adapter }: { adapter: RefactorKitLanguageAdapter }): 
   );
 }
 
-function AdapterCapabilities({ adapter }: { adapter: RefactorKitLanguageAdapter }): JSX.Element {
+function AdapterOperations({ adapter }: { adapter: RefactorKitLanguageAdapter }): JSX.Element {
   return (
-    <section className="mt-2" aria-label={`${adapter.languageId} advertised capabilities`}>
+    <section className="mt-2" aria-label={`${adapter.languageId} advertised operations`}>
       <h6 className="text-[0.68rem] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-        Advertised capabilities · {adapter.capabilities.length}
+        Advertised operations · {adapter.capabilities.length}
       </h6>
       {adapter.capabilities.length > 0 ? (
         <ol className="mt-1 grid gap-1">
           {adapter.capabilities.map((capability, capabilityIndex) => (
-            <li
-              key={`${capability.operation}:${capabilityIndex}`}
-              className="rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-[0.68rem] text-slate-200"
-            >
-              <dl className="grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
-                <div className="flex min-w-0 gap-1">
-                  <dt>operation:</dt>
-                  <dd className="min-w-0 break-all">
-                    <code className="font-semibold text-[var(--text-primary)]">
-                      {capability.operation}
-                    </code>
-                  </dd>
-                </div>
-                <div className="flex min-w-0 gap-1">
-                  <dt>stability:</dt>
-                  <dd>
-                    <code className="text-[var(--text-primary)]">{capability.stability}</code>
-                  </dd>
-                </div>
-                <div className="flex min-w-0 gap-1">
-                  <dt>evidence:</dt>
-                  <dd>
-                    <code className="text-[var(--text-primary)]">{capability.evidence}</code>
-                  </dd>
-                </div>
-                <div className="flex min-w-0 gap-1">
-                  <dt>mutationAuthority:</dt>
-                  <dd>
-                    <code className="text-[var(--text-primary)]">
-                      {capability.mutationAuthority}
-                    </code>
-                  </dd>
-                </div>
-              </dl>
+            <li key={`${capability.operation}:${capabilityIndex}`}>
+              <article
+                className="rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-[0.68rem] text-slate-200"
+                aria-label={`Operation ${capabilityIndex + 1}: ${capability.operation}`}
+              >
+                <dl className="grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                  <div className="flex min-w-0 gap-1">
+                    <dt>operation:</dt>
+                    <dd className="min-w-0 break-all">
+                      <code className="font-semibold text-[var(--text-primary)]">
+                        {capability.operation}
+                      </code>
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 gap-1">
+                    <dt>stability:</dt>
+                    <dd>
+                      <code className="text-[var(--text-primary)]">{capability.stability}</code>
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 gap-1">
+                    <dt>evidence:</dt>
+                    <dd>
+                      <code className="text-[var(--text-primary)]">{capability.evidence}</code>
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 gap-1">
+                    <dt>mutationAuthority:</dt>
+                    <dd>
+                      <code className="text-[var(--text-primary)]">
+                        {capability.mutationAuthority}
+                      </code>
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 gap-1">
+                    <dt>backend:</dt>
+                    <dd className="min-w-0 break-all">
+                      <code className="text-[var(--text-primary)]">{capability.backend}</code>
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 gap-1">
+                    <dt>extensions:</dt>
+                    <dd className="min-w-0 break-all">
+                      <code className="text-[var(--text-primary)]">
+                        [{capability.extensions.join(", ")}]
+                      </code>
+                    </dd>
+                  </div>
+                </dl>
+                <RuntimeMetadata
+                  runtime={capability.runtime}
+                  ownerLabel={`${capability.operation} operation`}
+                  heading="Operation runtime metadata"
+                />
+              </article>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="mt-1 text-[0.68rem] font-medium text-amber-100">
-          No capabilities advertised.
-        </p>
+        <p className="mt-1 text-[0.68rem] font-medium text-amber-100">No operations advertised.</p>
       )}
     </section>
   );
@@ -180,7 +205,7 @@ function AdapterCard({
           </h6>
           <span className="text-[0.68rem] text-[var(--text-secondary)]">
             {adapter.capabilities.length}{" "}
-            {adapter.capabilities.length === 1 ? "capability" : "capabilities"}
+            {adapter.capabilities.length === 1 ? "operation" : "operations"}
           </span>
         </div>
         <dl className="mt-1 grid gap-x-4 gap-y-1 text-[0.68rem] text-[var(--text-secondary)] sm:grid-cols-2">
@@ -199,8 +224,8 @@ function AdapterCard({
             </dd>
           </div>
         </dl>
-        <RuntimeMetadata adapter={adapter} />
-        <AdapterCapabilities adapter={adapter} />
+        <RuntimeMetadata runtime={adapter.runtime} ownerLabel={`${adapter.languageId} adapter`} />
+        <AdapterOperations adapter={adapter} />
       </article>
     </li>
   );
@@ -270,8 +295,8 @@ export function RefactorKitLanguageLab({
           Packaged / discovered capability
         </h5>
         <p className="mt-1 text-[0.68rem] leading-4 text-[var(--text-secondary)]">
-          Exact daemon-advertised metadata in supplied order. It describes packaged or discovered
-          capability, not readiness in the current workspace.
+          Exact validated daemon metadata in deterministic canonical order. It describes packaged or
+          discovered capability, not readiness in the current workspace.
         </p>
 
         {capabilities ? (
@@ -318,8 +343,8 @@ export function RefactorKitLanguageLab({
                 {schema.adapters.length} adapter{schema.adapters.length === 1 ? "" : "s"}
               </span>
               <span className="rounded border border-slate-500/40 px-1.5 py-0.5 text-[0.68rem] text-slate-200">
-                {advertisedCapabilities.length} capabilit
-                {advertisedCapabilities.length === 1 ? "y" : "ies"}
+                {advertisedCapabilities.length} operation
+                {advertisedCapabilities.length === 1 ? "" : "s"}
               </span>
               <span className="rounded border border-slate-500/40 px-1.5 py-0.5 text-[0.68rem] text-slate-200">
                 {refusedCapabilities.length} refused
@@ -336,7 +361,7 @@ export function RefactorKitLanguageLab({
             {schema.adapters.length > 0 ? (
               <ol
                 className="mt-2 grid gap-2 lg:grid-cols-2"
-                aria-label="Daemon-advertised language adapters in advertised order"
+                aria-label="Daemon-advertised language adapters in canonical order"
               >
                 {schema.adapters.map((adapter, adapterIndex) => (
                   <AdapterCard
@@ -438,8 +463,9 @@ export function RefactorKitLanguageLab({
           Current workspace / toolchain / session readiness
         </h5>
         <p className="mt-1 text-[0.68rem] leading-4 text-[var(--text-secondary)]">
-          Schema v1 does not report per-adapter toolchain, workspace, or session readiness. Backend
-          names, extensions, versions, and successful discovery are not readiness signals.
+          Schema v1 does not report per-adapter toolchain, workspace, or session readiness.
+          Operation backend, runtime configuration, extensions, versions, and successful discovery
+          are metadata, not readiness signals.
         </p>
         <dl className="mt-2 grid gap-x-4 gap-y-1 text-[0.68rem] text-[var(--text-secondary)] sm:grid-cols-2">
           <div className="flex gap-1">

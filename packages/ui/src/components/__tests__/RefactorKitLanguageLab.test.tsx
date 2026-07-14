@@ -20,13 +20,17 @@ function exactField(container: HTMLElement, label: string): string | null | unde
 
 function advertisedAdapterArticles(): HTMLElement[] {
   const list = screen.getByRole("list", {
-    name: "Daemon-advertised language adapters in advertised order",
+    name: "Daemon-advertised language adapters in canonical order",
   });
-  return Array.from(list.children).map((item) => within(item as HTMLElement).getByRole("article"));
+  return Array.from(list.children).map((item) =>
+    within(item as HTMLElement).getByRole("article", {
+      name: /Advertised language adapter/u,
+    }),
+  );
 }
 
 describe("RefactorKitLanguageLab", () => {
-  it("is publicly exported and renders arbitrary adapters in their advertised order", () => {
+  it("is publicly exported and renders arbitrary adapters in transport-canonical order", () => {
     expect(PublicRefactorKitLanguageLab).toBe(RefactorKitLanguageLab);
 
     render(
@@ -42,50 +46,96 @@ describe("RefactorKitLanguageLab", () => {
     expect(adapters).toHaveLength(3);
     expect(adapters.map((adapter) => adapter.getAttribute("aria-label"))).toEqual([
       "Advertised language adapter 1: java",
-      "Advertised language adapter 2: typescript",
-      "Advertised language adapter 3: lua-embedded",
+      "Advertised language adapter 2: lua-embedded",
+      "Advertised language adapter 3: typescript",
     ]);
     expect(adapters.map((adapter) => adapter.textContent)).toEqual([
       expect.stringContaining("1. java"),
-      expect.stringContaining("2. typescript"),
-      expect.stringContaining("3. lua-embedded"),
+      expect.stringContaining("2. lua-embedded"),
+      expect.stringContaining("3. typescript"),
     ]);
-    expect(adapters[2].textContent).toContain("extensions:[]");
-    expect(adapters[2].textContent).toContain("No capabilities advertised.");
+    expect(adapters[1].textContent).toContain("extensions:[]");
+    expect(adapters[1].textContent).toContain("No operations advertised.");
+
+    const packaged = screen.getByRole("heading", {
+      name: "Packaged / discovered capability",
+    }).parentElement as HTMLElement;
+    expect(packaged.textContent).toContain(
+      "Exact validated daemon metadata in deterministic canonical order.",
+    );
+    expect(packaged.textContent).not.toMatch(/supplied order|provider order|original order/iu);
   });
 
-  it("renders every exact capability tuple, including an explicit refusal", () => {
+  it("renders each operation's exact backend, runtime, and extensions accessibly", () => {
     render(<RefactorKitLanguageLab capabilities={PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES} />);
 
-    const [java, typescript] = advertisedAdapterArticles();
-    const javaCapabilities = within(java).getByRole("region", {
-      name: "java advertised capabilities",
+    const [java, , typescript] = advertisedAdapterArticles();
+    const javaOperations = within(java).getByRole("region", {
+      name: "java advertised operations",
     });
-    const javaItems = within(javaCapabilities).getAllByRole("listitem");
-    expect(javaItems).toHaveLength(2);
-    expect(exactField(javaItems[0], "operation")).toBe("operation:renameClass");
-    expect(exactField(javaItems[0], "stability")).toBe("stability:stable");
-    expect(exactField(javaItems[0], "evidence")).toBe("evidence:compiler");
-    expect(exactField(javaItems[0], "mutationAuthority")).toBe("mutationAuthority:managed-stable");
-    expect(exactField(javaItems[1], "operation")).toBe("operation:unsafeInline");
-    expect(exactField(javaItems[1], "stability")).toBe("stability:refused");
-    expect(exactField(javaItems[1], "evidence")).toBe("evidence:none");
-    expect(exactField(javaItems[1], "mutationAuthority")).toBe("mutationAuthority:none");
+    const rename = within(javaOperations).getByRole("article", {
+      name: "Operation 1: renameClass",
+    });
+    const refusal = within(javaOperations).getByRole("article", {
+      name: "Operation 2: unsafeInline",
+    });
+    expect(exactField(rename, "operation")).toBe("operation:renameClass");
+    expect(exactField(rename, "stability")).toBe("stability:stable");
+    expect(exactField(rename, "evidence")).toBe("evidence:compiler");
+    expect(exactField(rename, "mutationAuthority")).toBe("mutationAuthority:managed-stable");
+    expect(exactField(rename, "backend")).toBe("backend:semantic-java-rename-v2");
+    expect(exactField(rename, "extensions")).toBe("extensions:[java]");
 
-    const typeScriptCapabilities = within(typescript).getByRole("region", {
-      name: "typescript advertised capabilities",
+    const renameRuntime = within(rename).getByRole("region", {
+      name: "renameClass operation runtime metadata",
     });
-    const proposal = within(typeScriptCapabilities).getByRole("listitem");
+    expect(exactField(renameRuntime, "executionMode")).toBe("executionMode:external-process");
+    expect(exactField(renameRuntime, "supportsTimeout")).toBe("supportsTimeout:true");
+    expect(exactField(renameRuntime, "supportsCancellation")).toBe("supportsCancellation:true");
+    expect(exactField(renameRuntime, "usesWorkspaceOverlay")).toBe("usesWorkspaceOverlay:true");
+    expect(exactField(renameRuntime, "recordsProcessProvenance")).toBe(
+      "recordsProcessProvenance:true",
+    );
+    expect(exactField(renameRuntime, "requestTimeoutMillis")).toBe("requestTimeoutMillis:10000");
+    expect(exactField(renameRuntime, "maxInputBytes")).toBe("maxInputBytes:2097152");
+    expect(exactField(renameRuntime, "maxOutputBytes")).toBe("maxOutputBytes:4194304");
+    expect(exactField(renameRuntime, "maxProcesses")).toBe("maxProcesses:1");
+
+    expect(exactField(refusal, "operation")).toBe("operation:unsafeInline");
+    expect(exactField(refusal, "stability")).toBe("stability:refused");
+    expect(exactField(refusal, "evidence")).toBe("evidence:none");
+    expect(exactField(refusal, "mutationAuthority")).toBe("mutationAuthority:none");
+    expect(exactField(refusal, "backend")).toBe("backend:policy-refusal-v1");
+    expect(exactField(refusal, "extensions")).toBe("extensions:[java]");
+    const refusalRuntime = within(refusal).getByRole("region", {
+      name: "unsafeInline operation runtime metadata",
+    });
+    expect(exactField(refusalRuntime, "executionMode")).toBe("executionMode:in-process");
+    expect(exactField(refusalRuntime, "requestTimeoutMillis")).toBe("requestTimeoutMillis:null");
+
+    const typeScriptOperations = within(typescript).getByRole("region", {
+      name: "typescript advertised operations",
+    });
+    const proposal = within(typeScriptOperations).getByRole("article", {
+      name: "Operation 1: localRename",
+    });
     expect(exactField(proposal, "operation")).toBe("operation:localRename");
     expect(exactField(proposal, "stability")).toBe("stability:structural");
     expect(exactField(proposal, "evidence")).toBe("evidence:lexical");
     expect(exactField(proposal, "mutationAuthority")).toBe("mutationAuthority:proposal-only");
+    expect(exactField(proposal, "backend")).toBe("backend:syntax-local-rename-v3");
+    expect(exactField(proposal, "extensions")).toBe("extensions:[ts, tsx]");
+    const proposalRuntime = within(proposal).getByRole("region", {
+      name: "localRename operation runtime metadata",
+    });
+    expect(exactField(proposalRuntime, "executionMode")).toBe("executionMode:in-process");
+    expect(exactField(proposalRuntime, "requestTimeoutMillis")).toBe("requestTimeoutMillis:1200");
   });
 
   it("renders every runtime field, nullable limit, and supplied daemon safety flag exactly", () => {
     render(<RefactorKitLanguageLab capabilities={PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES} />);
 
-    const [java, typescript, empty] = advertisedAdapterArticles();
+    const [java, empty, typescript] = advertisedAdapterArticles();
     const javaRuntime = within(java).getByRole("region", {
       name: "java adapter runtime metadata",
     });
@@ -176,12 +226,15 @@ describe("RefactorKitLanguageLab", () => {
     expect(packaged.textContent).toContain("not readiness in the current workspace");
     expect(readiness.textContent).toContain("Local daemon availability:Available");
     expect(readiness.textContent).toContain("Capability discovery:Successful");
+    expect(readiness.textContent).toContain(
+      "Operation backend, runtime configuration, extensions, versions, and successful discovery are metadata, not readiness signals.",
+    );
 
     const readinessItems = Array.from(
       screen.getByRole("list", { name: "Per-adapter readiness reported by schema v1" }).children,
     ) as HTMLElement[];
     expect(readinessItems).toHaveLength(3);
-    for (const [index, languageId] of ["java", "typescript", "lua-embedded"].entries()) {
+    for (const [index, languageId] of ["java", "lua-embedded", "typescript"].entries()) {
       expect(readinessItems[index].textContent).toContain(`${index + 1}. ${languageId}`);
       expect(readinessItems[index].textContent?.match(/Unknown \/ not reported/gu)).toHaveLength(3);
       expect(readinessItems[index].textContent).not.toContain("Available");
@@ -206,7 +259,7 @@ describe("RefactorKitLanguageLab", () => {
     );
     expect(
       screen.queryByRole("list", {
-        name: "Daemon-advertised language adapters in advertised order",
+        name: "Daemon-advertised language adapters in canonical order",
       }),
     ).toBeNull();
     const readiness = screen.getByRole("heading", {

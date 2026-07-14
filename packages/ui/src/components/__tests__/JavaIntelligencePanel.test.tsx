@@ -90,7 +90,7 @@ describe("JavaIntelligencePanel", () => {
     ).toBe("Schema v1");
     expect(
       screen.getByRole("list", {
-        name: "Daemon-advertised language adapters in advertised order",
+        name: "Daemon-advertised language adapters in canonical order",
       }).children,
     ).toHaveLength(3);
     for (const operation of ["renameClass", "unsafeInline", "localRename"]) {
@@ -120,7 +120,7 @@ describe("JavaIntelligencePanel", () => {
     );
     expect(
       screen.queryByRole("list", {
-        name: "Daemon-advertised language adapters in advertised order",
+        name: "Daemon-advertised language adapters in canonical order",
       }),
     ).toBeNull();
   });

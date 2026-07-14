@@ -15,9 +15,11 @@ const runtime = {
 } as const;
 
 function treeSitterAdapter(languageId: "javascript" | "typescript"): RefactorKitLanguageAdapter {
+  const extensions = [languageId === "javascript" ? "js" : "ts"];
+
   return {
     languageId,
-    extensions: [languageId === "javascript" ? "js" : "ts"],
+    extensions,
     backend: "tree-sitter-jni-0.25.3",
     runtime,
     capabilities: [
@@ -26,18 +28,27 @@ function treeSitterAdapter(languageId: "javascript" | "typescript"): RefactorKit
         stability: "stable",
         evidence: "native-ast",
         mutationAuthority: "none",
+        backend: "tree-sitter-jni-0.25.3",
+        runtime,
+        extensions: [...extensions],
       },
       {
         operation: "localRename",
         stability: "structural",
         evidence: "lexical",
         mutationAuthority: "proposal-only",
+        backend: "tree-sitter-jni-0.25.3",
+        runtime,
+        extensions: [...extensions],
       },
       {
         operation: "outline",
         stability: "stable",
         evidence: "native-ast",
         mutationAuthority: "none",
+        backend: "tree-sitter-jni-0.25.3",
+        runtime,
+        extensions: [...extensions],
       },
     ],
   };
@@ -66,12 +77,42 @@ const javaAdapter: RefactorKitLanguageAdapter = {
       stability: "stable",
       evidence: "compiler",
       mutationAuthority: "managed-stable",
+      backend: "semantic-java-rename-v2",
+      runtime: {
+        executionMode: "external-process",
+        supportsTimeout: true,
+        supportsCancellation: true,
+        usesWorkspaceOverlay: true,
+        recordsProcessProvenance: true,
+        limits: {
+          requestTimeoutMillis: 10_000,
+          maxInputBytes: 2_097_152,
+          maxOutputBytes: 4_194_304,
+          maxProcesses: 1,
+        },
+      },
+      extensions: ["java"],
     },
     {
       operation: "unsafeInline",
       stability: "refused",
       evidence: "none",
       mutationAuthority: "none",
+      backend: "policy-refusal-v1",
+      runtime: {
+        executionMode: "in-process",
+        supportsTimeout: false,
+        supportsCancellation: false,
+        usesWorkspaceOverlay: false,
+        recordsProcessProvenance: false,
+        limits: {
+          requestTimeoutMillis: null,
+          maxInputBytes: null,
+          maxOutputBytes: null,
+          maxProcesses: null,
+        },
+      },
+      extensions: ["java"],
     },
   ],
 };
@@ -99,6 +140,21 @@ const typeScriptAdapter: RefactorKitLanguageAdapter = {
       stability: "structural",
       evidence: "lexical",
       mutationAuthority: "proposal-only",
+      backend: "syntax-local-rename-v3",
+      runtime: {
+        executionMode: "in-process",
+        supportsTimeout: true,
+        supportsCancellation: true,
+        usesWorkspaceOverlay: false,
+        recordsProcessProvenance: false,
+        limits: {
+          requestTimeoutMillis: 1_200,
+          maxInputBytes: 1_048_576,
+          maxOutputBytes: 2_097_152,
+          maxProcesses: null,
+        },
+      },
+      extensions: ["ts", "tsx"],
     },
   ],
 };
@@ -123,7 +179,7 @@ const emptyLuaAdapter: RefactorKitLanguageAdapter = {
   capabilities: [],
 };
 
-/** Deliberately mixed provider-neutral schema fixture in advertised order. */
+/** Deliberately mixed provider-neutral schema fixture in transport-canonical order. */
 export const PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES: RefactorKitCapabilities = {
   api: "refactorkit-language-kernel",
   apiVersion: "1.0-test",
@@ -141,7 +197,7 @@ export const PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES: RefactorKitCapabilit
     available: true,
     schema: {
       schemaVersion: 1,
-      adapters: [javaAdapter, typeScriptAdapter, emptyLuaAdapter],
+      adapters: [javaAdapter, emptyLuaAdapter, typeScriptAdapter],
       vocabulary: {
         stability: ["stable", "experimental", "structural", "refused", "not-applicable"],
         evidence: [
@@ -183,7 +239,7 @@ export const TREE_SITTER_LANGUAGE_KERNEL_CAPABILITIES: RefactorKitCapabilities =
   api: "refactorkit",
   apiVersion: "0.2",
   provider: "refactorkit",
-  providerVersion: "0.6.0-SNAPSHOT",
+  providerVersion: "0.6.2",
   javaImportExternalClass: {
     supported: true,
     targetDirectory: true,

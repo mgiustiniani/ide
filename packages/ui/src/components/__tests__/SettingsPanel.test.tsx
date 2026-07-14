@@ -225,7 +225,7 @@ describe("SettingsPanel", () => {
     ).toBe("Schema v1");
     expect(
       screen.getByRole("list", {
-        name: "Daemon-advertised language adapters in advertised order",
+        name: "Daemon-advertised language adapters in canonical order",
       }).children,
     ).toHaveLength(3);
 
@@ -275,7 +275,7 @@ describe("SettingsPanel", () => {
     );
     expect(
       screen.queryByRole("list", {
-        name: "Daemon-advertised language adapters in advertised order",
+        name: "Daemon-advertised language adapters in canonical order",
       }),
     ).toBeNull();
   });
