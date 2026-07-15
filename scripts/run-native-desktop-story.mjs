@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { createHash } from "node:crypto";
+import { constants as fsConstants, createReadStream } from "node:fs";
 import { access, chmod, mkdir, mkdtemp, open, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ const defaultApplicationPath = path.join(
   "apps/desktop/src-tauri/target/release/ide-desktop",
 );
 const defaultArtifactRoot = path.join(repositoryRoot, "test-results/native-desktop-story");
+export const NATIVE_DESKTOP_BUILD_TIMEOUT_MS = 600_000;
 export const NATIVE_DESKTOP_OUTER_TIMEOUT_MS = 90_000;
 const PROCESS_STOP_TIMEOUT_MS = 2_000;
 
@@ -137,7 +139,10 @@ async function resolveExecutable(prerequisite, environment) {
   );
 }
 
-export async function resolveNativeDesktopPrerequisites(environment = process.env) {
+export async function resolveNativeDesktopPrerequisites(
+  environment = process.env,
+  { applicationPath = defaultApplicationPath } = {},
+) {
   if (process.platform !== "linux") {
     throw new NativeDesktopStoryPrerequisiteError(
       `desktop/tauri-webdriver scaffolding requires Linux X11, received ${process.platform}`,
@@ -149,14 +154,14 @@ export async function resolveNativeDesktopPrerequisites(environment = process.en
     resolved[prerequisite.exposedAs] = await resolveExecutable(prerequisite, environment);
   }
 
+  const application = path.normalize(applicationPath);
   const configuredApplication = environment.IDE_DESKTOP_APPLICATION_PATH;
-  if (configuredApplication && !path.isAbsolute(configuredApplication)) {
+  if (configuredApplication && path.normalize(configuredApplication) !== application) {
     throw new NativeDesktopStoryPrerequisiteError(
-      `IDE_DESKTOP_APPLICATION_PATH must be absolute, received ${configuredApplication}`,
+      `IDE_DESKTOP_APPLICATION_PATH cannot override the freshly built application at ${application}`,
     );
   }
-  const application = path.normalize(configuredApplication ?? defaultApplicationPath);
-  await assertExecutable(application, "release/no-bundle Tauri application");
+  await assertExecutable(application, "fresh release/no-bundle Tauri application");
   resolved.IDE_STORY_NATIVE_GUI_APPLICATION_PATH = application;
 
   return Object.freeze(resolved);
@@ -317,6 +322,48 @@ export async function runOwnedProcess(
   }
 }
 
+export function nativeDesktopBuildCommand() {
+  return {
+    command: "pnpm",
+    arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+  };
+}
+
+async function sha256File(filePath) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+export async function buildNativeDesktopApplication({
+  signal,
+  environment = process.env,
+  applicationPath = defaultApplicationPath,
+  timeoutMs = NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+  run = runOwnedProcess,
+  buildCommand = nativeDesktopBuildCommand(),
+} = {}) {
+  await run(buildCommand.command, buildCommand.arguments, {
+    cwd: repositoryRoot,
+    signal,
+    environment,
+    timeoutMs,
+    stdio: "inherit",
+  });
+
+  const absoluteApplicationPath = path.normalize(applicationPath);
+  await assertExecutable(absoluteApplicationPath, "fresh release/no-bundle Tauri application");
+  return Object.freeze({
+    path: absoluteApplicationPath,
+    sha256: await sha256File(absoluteApplicationPath),
+    command: Object.freeze({
+      executable: buildCommand.command,
+      arguments: Object.freeze([...buildCommand.arguments]),
+    }),
+    timeoutMs,
+  });
+}
+
 export function profileSelectsScenarios(profile) {
   if (!supportedProfiles.has(profile)) {
     throw new NativeDesktopStoryExecutionError(
@@ -379,16 +426,37 @@ export function nativeDesktopLaunchCommand(prerequisites, profile) {
   };
 }
 
-export async function runNativeDesktopStory(profile, { signal, environment = process.env } = {}) {
-  if (!profileSelectsScenarios(profile)) {
+export async function runNativeDesktopStory(
+  profile,
+  {
+    signal,
+    environment = process.env,
+    selectsScenarios = profileSelectsScenarios,
+    buildApplication = buildNativeDesktopApplication,
+    resolvePrerequisites = resolveNativeDesktopPrerequisites,
+    createSandbox = createNativeDesktopSandbox,
+    run = runOwnedProcess,
+    applicationPath = defaultApplicationPath,
+    buildTimeoutMs = NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+  } = {},
+) {
+  if (!selectsScenarios(profile)) {
     console.log(
       `Native desktop Story profile ${profile}: SKIP (no runnable scenarios; parked statuses are excluded).`,
     );
     return { skipped: true };
   }
 
-  const prerequisites = await resolveNativeDesktopPrerequisites(environment);
-  const sandbox = await createNativeDesktopSandbox({ environment });
+  const application = await buildApplication({
+    signal,
+    environment,
+    applicationPath,
+    timeoutMs: buildTimeoutMs,
+  });
+  const prerequisites = await resolvePrerequisites(environment, {
+    applicationPath: application.path,
+  });
+  const sandbox = await createSandbox({ environment });
   const runtimeEnvironment = { ...sandbox.environment, ...prerequisites, NO_COLOR: "1" };
   runtimeEnvironment.PATH = [
     path.dirname(prerequisites.IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH),
@@ -403,6 +471,11 @@ export async function runNativeDesktopStory(profile, { signal, environment = pro
       e2e: true,
       packagedApplication: false,
       artifactKind: "release-no-bundle",
+      applicationSha256: application.sha256,
+    },
+    build: {
+      command: application.command,
+      timeoutMs: application.timeoutMs,
     },
     sandbox: sandbox.paths,
     executables: prerequisites,
@@ -420,7 +493,7 @@ export async function runNativeDesktopStory(profile, { signal, environment = pro
   console.log(`Native desktop Story sandbox: ${sandbox.root}`);
   console.log(`Native desktop Story diagnostics: ${sandbox.paths.artifacts}`);
   try {
-    await runOwnedProcess(launch.command, launch.arguments, {
+    await run(launch.command, launch.arguments, {
       signal,
       environment: runtimeEnvironment,
       timeoutMs: NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
@@ -429,7 +502,7 @@ export async function runNativeDesktopStory(profile, { signal, environment = pro
   } finally {
     await Promise.all([stdout.close(), stderr.close()]);
   }
-  return { skipped: false, sandbox };
+  return { skipped: false, sandbox, application };
 }
 
 function selectedProfile(arguments_) {

@@ -1,18 +1,24 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
   NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
   NativeDesktopStoryAbortedError,
+  NativeDesktopStoryExecutionError,
   NativeDesktopStoryPrerequisiteError,
   NativeDesktopStoryTimeoutError,
+  buildNativeDesktopApplication,
   createNativeDesktopSandbox,
+  nativeDesktopBuildCommand,
   nativeDesktopLaunchCommand,
   profileSelectsScenarios,
   resolveNativeDesktopPrerequisites,
+  runNativeDesktopStory,
   runOwnedProcess,
 } from "../../scripts/run-native-desktop-story.mjs";
 
@@ -81,7 +87,9 @@ test("preflight resolves every native executable and release/no-bundle binary to
       IDE_DESKTOP_APPLICATION_PATH: await executable(directory, "ide-desktop"),
     };
 
-    const resolved = await resolveNativeDesktopPrerequisites(environment);
+    const resolved = await resolveNativeDesktopPrerequisites(environment, {
+      applicationPath: environment.IDE_DESKTOP_APPLICATION_PATH,
+    });
     assert.deepEqual(resolved, {
       IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: environment.TAURI_DRIVER_PATH,
       IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: environment.WEBKIT_WEBDRIVER_PATH,
@@ -102,6 +110,7 @@ test("preflight resolves every native executable and release/no-bundle binary to
       process.execPath,
     ]);
     assert.deepEqual(launch.arguments.slice(-2), ["--profile", "desktopFileOpenNativeGui"]);
+    assert.equal(NATIVE_DESKTOP_BUILD_TIMEOUT_MS, 600_000);
     assert.equal(NATIVE_DESKTOP_OUTER_TIMEOUT_MS, 90_000);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -116,6 +125,170 @@ test("a missing native prerequisite fails with a typed error before execution", 
       error.code === "NATIVE_DESKTOP_STORY_PREREQUISITE" &&
       /TAURI_DRIVER_PATH/.test(error.message),
   );
+});
+
+test("native build command is direct, production release/no-bundle, and non-recursive", () => {
+  const build = nativeDesktopBuildCommand();
+  assert.deepEqual(build, {
+    command: "pnpm",
+    arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+  });
+  assert.equal(
+    build.arguments.some((argument) => argument.includes("run-native-desktop-story")),
+    false,
+  );
+  assert.equal(
+    build.arguments.some((argument) => argument.startsWith("test:story")),
+    false,
+  );
+});
+
+test("native build uses its own timeout and records the executable SHA-256", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "native-story-build-"));
+  const applicationPath = path.join(directory, "ide-desktop");
+  const applicationContent = "fresh release application\n";
+  const invocations = [];
+  try {
+    const result = await buildNativeDesktopApplication({
+      applicationPath,
+      run: async (command, arguments_, options) => {
+        invocations.push({ command, arguments_, options });
+        await writeFile(applicationPath, applicationContent, "utf8");
+        await chmod(applicationPath, 0o755);
+      },
+    });
+
+    assert.equal(invocations.length, 1);
+    assert.deepEqual(
+      { command: invocations[0].command, arguments: invocations[0].arguments_ },
+      nativeDesktopBuildCommand(),
+    );
+    assert.equal(invocations[0].options.timeoutMs, NATIVE_DESKTOP_BUILD_TIMEOUT_MS);
+    assert.equal(result.path, applicationPath);
+    assert.equal(result.sha256, createHash("sha256").update(applicationContent).digest("hex"));
+    assert.equal(result.timeoutMs, NATIVE_DESKTOP_BUILD_TIMEOUT_MS);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a successful build without the expected executable fails before native launch", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "native-story-missing-build-"));
+  try {
+    await assert.rejects(
+      buildNativeDesktopApplication({
+        applicationPath: path.join(directory, "missing-ide-desktop"),
+        run: async () => {},
+      }),
+      (error) =>
+        error instanceof NativeDesktopStoryPrerequisiteError &&
+        /fresh release\/no-bundle Tauri application/.test(error.message),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("selected native execution builds and records evidence before launching the isolated runner", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-order-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const applicationSha256 = "a".repeat(64);
+  const calls = [];
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: applicationSha256,
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+
+    const result = await runNativeDesktopStory("desktopFileOpenNativeGui", {
+      environment: { PATH: process.env.PATH },
+      selectsScenarios: () => {
+        calls.push("select");
+        return true;
+      },
+      buildApplication: async () => {
+        calls.push("build");
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("prerequisites");
+        assert.equal(options.applicationPath, applicationPath);
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("sandbox");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async () => {
+        calls.push("run");
+      },
+    });
+
+    assert.deepEqual(calls, ["select", "build", "prerequisites", "sandbox", "run"]);
+    assert.equal(result.skipped, false);
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.equal(manifest.evidence.packagedApplication, false);
+    assert.equal(manifest.evidence.artifactKind, "release-no-bundle");
+    assert.equal(manifest.evidence.applicationSha256, applicationSha256);
+    assert.deepEqual(manifest.build, {
+      command: application.command,
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    });
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
+test("parked zero-selection native profile skips without build or launch", async () => {
+  const calls = [];
+  const result = await runNativeDesktopStory("desktopFileOpenNativeGui", {
+    selectsScenarios: () => false,
+    buildApplication: async () => calls.push("build"),
+    resolvePrerequisites: async () => calls.push("prerequisites"),
+    createSandbox: async () => calls.push("sandbox"),
+    run: async () => calls.push("run"),
+  });
+
+  assert.deepEqual(result, { skipped: true });
+  assert.deepEqual(calls, []);
+});
+
+test("selected native profile propagates build failure and build timeout without launch", async () => {
+  const failures = [
+    new NativeDesktopStoryExecutionError("fake build failure"),
+    new NativeDesktopStoryTimeoutError("fake build timeout"),
+  ];
+
+  for (const failure of failures) {
+    let launched = false;
+    await assert.rejects(
+      runNativeDesktopStory("desktopFileOpenNativeGui", {
+        selectsScenarios: () => true,
+        buildApplication: async () => {
+          throw failure;
+        },
+        run: async () => {
+          launched = true;
+        },
+      }),
+      (error) => error === failure,
+    );
+    assert.equal(launched, false);
+  }
 });
 
 test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", async () => {
@@ -157,6 +330,49 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
 test("the focused native file-open profile excludes its parked scenario", () => {
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), false);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), false);
+});
+
+test("abort signal cleans up the fake build process group before binary verification", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "native-story-build-signal-"));
+  const controller = new AbortController();
+  const parentPidPath = path.join(directory, "build-parent.pid");
+  const descendantPidPath = path.join(directory, "build-descendant.pid");
+  const script = `
+    import { spawn } from "node:child_process";
+    import { writeFileSync } from "node:fs";
+    writeFileSync(${JSON.stringify(parentPidPath)}, String(process.pid));
+    const descendant = spawn(process.execPath, ["--input-type=module", "--eval", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    writeFileSync(${JSON.stringify(descendantPidPath)}, String(descendant.pid));
+    process.on("SIGTERM", () => {});
+    setInterval(() => {}, 1000);
+  `;
+
+  try {
+    const running = buildNativeDesktopApplication({
+      signal: controller.signal,
+      applicationPath: path.join(directory, "never-built"),
+      buildCommand: {
+        command: process.execPath,
+        arguments: ["--input-type=module", "--eval", script],
+      },
+      run: (command, arguments_, options) =>
+        runOwnedProcess(command, arguments_, { ...options, stopTimeoutMs: 25 }),
+    });
+    const parentPid = Number(await waitForFile(parentPidPath));
+    const descendantPid = Number(await waitForFile(descendantPidPath));
+
+    controller.abort();
+    await assert.rejects(
+      running,
+      (error) =>
+        error instanceof NativeDesktopStoryAbortedError &&
+        error.code === "NATIVE_DESKTOP_STORY_ABORTED",
+    );
+    await assertProcessGone(parentPid);
+    await assertProcessGone(descendantPid);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("outer timeout terminates the owned process group", async () => {
