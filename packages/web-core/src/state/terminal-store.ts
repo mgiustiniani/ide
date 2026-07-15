@@ -5,7 +5,7 @@
 // metadata, current input line.
 
 import { create } from 'zustand';
-import type { TerminalOutput, TerminalState } from '@ide/contracts';
+import type { TerminalOutput } from '@ide/contracts';
 
 /** Slice of the store exposed to consumers. */
 export interface TerminalStoreSlice {
