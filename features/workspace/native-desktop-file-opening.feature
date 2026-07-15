@@ -5,7 +5,7 @@ Business Need: Trustworthy native desktop opening of an existing workspace file
   This requirement covers only opening one existing deterministic file at the authorized workspace root.
   Saving, editing, nested navigation, workspace switching, optional tooling, installer or package behavior, and performance benchmarking are outside its scope.
 
-  @REQ-DESKTOP-FILE-OPEN-001 @desktop @native-gui @functional-requirement @non-functional-requirement @resilience @accessibility @not-implemented
+  @REQ-DESKTOP-FILE-OPEN-001 @desktop @native-gui @functional-requirement @non-functional-requirement @resilience @accessibility @implemented-and-validated
   Scenario: Open a deterministic root file through the real native desktop interface
     Given an isolated temporary sandbox contains the authorized workspace and all desktop user state
     And the workspace root contains a deterministic file named "native-open-proof.ts"
