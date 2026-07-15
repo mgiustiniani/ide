@@ -4,11 +4,11 @@
 // Wraps the file‑tree store and the FileTreePort to provide a clean,
 // framework‑agnostic view‑model for UI components.
 
-import type { FileTreeStoreSlice } from '../state/file-tree-store';
-import type { StoreAccessor } from '../state/store-accessor';
-import { toGetState } from '../state/store-accessor';
-import type { FileTreePort } from '../ports/file-tree-port';
-import type { FileNode } from '@ide/contracts';
+import type { FileTreeStoreSlice } from "../state/file-tree-store";
+import type { StoreAccessor } from "../state/store-accessor";
+import { toGetState } from "../state/store-accessor";
+import type { FileTreePort } from "../ports/file-tree-port";
+import type { FileNode } from "@ide/contracts";
 
 export class FileTreeViewModel {
   private readonly getState: () => FileTreeStoreSlice;
@@ -140,7 +140,7 @@ export class FileTreeViewModel {
   }
 
   private parentPath(path: string): string {
-    const index = path.lastIndexOf('/');
-    return index === -1 ? '' : path.slice(0, index);
+    const index = path.lastIndexOf("/");
+    return index === -1 ? "" : path.slice(0, index);
   }
 }

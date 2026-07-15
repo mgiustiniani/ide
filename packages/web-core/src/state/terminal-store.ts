@@ -4,8 +4,8 @@
 // Manages the terminal UI state: output history, command history, session
 // metadata, current input line.
 
-import { create } from 'zustand';
-import type { TerminalOutput } from '@ide/contracts';
+import { create } from "zustand";
+import type { TerminalOutput } from "@ide/contracts";
 
 /** Slice of the store exposed to consumers. */
 export interface TerminalStoreSlice {
@@ -48,7 +48,7 @@ export interface TerminalStoreSlice {
 
 export type TerminalStore = TerminalStoreSlice;
 
-export type { TerminalOutput } from '@ide/contracts';
+export type { TerminalOutput } from "@ide/contracts";
 
 export function createTerminalStore() {
   return create<TerminalStoreSlice>((set, get) => ({
@@ -57,7 +57,7 @@ export function createTerminalStore() {
     isSessionActive: false,
     cols: 80,
     rows: 25,
-    currentInput: '',
+    currentInput: "",
     isLoading: true,
 
     pushOutput(output: TerminalOutput) {
@@ -89,14 +89,11 @@ export function createTerminalStore() {
       if (input.trim()) {
         set((state) => ({
           commandHistory: [...state.commandHistory, input],
-          currentInput: '',
-          output: [
-            ...state.output,
-            { text: input, type: 'input', timestamp: Date.now() },
-          ],
+          currentInput: "",
+          output: [...state.output, { text: input, type: "input", timestamp: Date.now() }],
         }));
       } else {
-        set({ currentInput: '' });
+        set({ currentInput: "" });
       }
       return input;
     },

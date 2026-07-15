@@ -1,23 +1,23 @@
-import type { StoreAccessor } from './state/store-accessor';
-import { toGetState } from './state/store-accessor';
+import type { StoreAccessor } from "./state/store-accessor";
+import { toGetState } from "./state/store-accessor";
 
 /** State exposed while coordinating one editor-open intent. */
 export type EditorOpenState =
-  | { status: 'idle' }
+  | { status: "idle" }
   | {
-      status: 'opening';
+      status: "opening";
       intentId: number;
       requestedPath: string;
       startedAt: number;
     }
   | {
-      status: 'ready';
+      status: "ready";
       intentId: number;
       requestedPath: string;
       activePath: string;
     }
   | {
-      status: 'error';
+      status: "error";
       intentId: number;
       requestedPath: string;
       safeMessage: string;
@@ -43,16 +43,16 @@ export interface EditorOpenCoordinatorOptions {
   now?: () => number;
 }
 
-export const EDITOR_OPEN_ERROR_MESSAGE = 'Unable to open this file.';
+export const EDITOR_OPEN_ERROR_MESSAGE = "Unable to open this file.";
 export const EDITOR_OPEN_INVALID_PATH_MESSAGE =
-  'The file path must be a normalized workspace-relative path.';
+  "The file path must be a normalized workspace-relative path.";
 
 /**
  * Provider-neutral owner of editor-open intent state and stale-result suppression.
  * File contents and adapter errors are deliberately never retained or published.
  */
 export class EditorOpenCoordinator {
-  private stateValue: EditorOpenState = { status: 'idle' };
+  private stateValue: EditorOpenState = { status: "idle" };
   private readonly listeners = new Set<EditorOpenListener>();
   private readonly getEditorState: () => EditorOpenStoreState;
   private readonly now: () => number;
@@ -84,7 +84,7 @@ export class EditorOpenCoordinator {
       // An invalid newer request still supersedes any pending valid request.
       this.editor.cancelPendingOpen();
       this.publish({
-        status: 'error',
+        status: "error",
         intentId,
         requestedPath,
         safeMessage: EDITOR_OPEN_INVALID_PATH_MESSAGE,
@@ -93,7 +93,7 @@ export class EditorOpenCoordinator {
     }
 
     this.publish({
-      status: 'opening',
+      status: "opening",
       intentId,
       requestedPath,
       startedAt: this.now(),
@@ -112,7 +112,7 @@ export class EditorOpenCoordinator {
   cancel(): void {
     this.activeIntentId = null;
     this.editor.cancelPendingOpen();
-    this.publish({ status: 'idle' });
+    this.publish({ status: "idle" });
   }
 
   /** Clear all coordinator state for a workspace switch. Intent IDs remain monotonic. */
@@ -141,17 +141,17 @@ export class EditorOpenCoordinator {
       const editorState = this.getEditorState();
       const activePath = editorState.activeFilePath;
       const hasContentBuffer =
-        typeof activePath === 'string' &&
+        typeof activePath === "string" &&
         activePath.length > 0 &&
         Object.prototype.hasOwnProperty.call(editorState.contents, activePath) &&
-        typeof editorState.contents[activePath] === 'string';
+        typeof editorState.contents[activePath] === "string";
 
       if (!hasContentBuffer) {
         this.publishError(intentId, requestedPath);
         return;
       }
 
-      this.publish({ status: 'ready', intentId, requestedPath, activePath });
+      this.publish({ status: "ready", intentId, requestedPath, activePath });
     } catch {
       if (this.isCurrent(intentId)) this.publishError(intentId, requestedPath);
     }
@@ -159,7 +159,7 @@ export class EditorOpenCoordinator {
 
   private publishError(intentId: number, requestedPath: string): void {
     this.publish({
-      status: 'error',
+      status: "error",
       intentId,
       requestedPath,
       safeMessage: EDITOR_OPEN_ERROR_MESSAGE,
@@ -185,9 +185,9 @@ export class EditorOpenCoordinator {
 /** Validate a portable, already-normalized workspace-relative path. */
 export function isNormalizedWorkspaceRelativePath(filePath: string): boolean {
   if (filePath.length === 0 || filePath.trim().length === 0) return false;
-  if (filePath.includes('\\') || filePath.includes('\0')) return false;
-  if (filePath.startsWith('/') || /^[A-Za-z]:\//u.test(filePath)) return false;
+  if (filePath.includes("\\") || filePath.includes("\0")) return false;
+  if (filePath.startsWith("/") || /^[A-Za-z]:\//u.test(filePath)) return false;
 
-  const segments = filePath.split('/');
-  return segments.every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+  const segments = filePath.split("/");
+  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }

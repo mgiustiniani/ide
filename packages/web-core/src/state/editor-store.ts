@@ -4,8 +4,8 @@
 // Manages the editor UI state: open files, active tab, content buffers,
 // cursor positions.
 
-import { create } from 'zustand';
-import type { OpenFile, EditorTab, CursorPosition } from '@ide/contracts';
+import { create } from "zustand";
+import type { OpenFile, EditorTab, CursorPosition } from "@ide/contracts";
 
 /** Slice of the store exposed to consumers. */
 export interface EditorStoreSlice {
@@ -44,7 +44,7 @@ export interface EditorStoreSlice {
 
 export type EditorStore = EditorStoreSlice;
 
-export type { OpenFile, EditorTab, CursorPosition } from '@ide/contracts';
+export type { OpenFile, EditorTab, CursorPosition } from "@ide/contracts";
 
 export function createEditorStore() {
   return create<EditorStoreSlice>((set) => ({
@@ -59,9 +59,7 @@ export function createEditorStore() {
     openFile(file: OpenFile) {
       set((state) => {
         // Don't re‑open an already open file – just activate it.
-        const alreadyOpen = state.openFiles.some(
-          (openFile) => openFile.filePath === file.filePath,
-        );
+        const alreadyOpen = state.openFiles.some((openFile) => openFile.filePath === file.filePath);
         if (alreadyOpen) {
           return {
             activeFilePath: file.filePath,
@@ -80,10 +78,7 @@ export function createEditorStore() {
 
         return {
           openFiles: [...state.openFiles, file],
-          tabs: [
-            ...state.tabs.map((tab) => ({ ...tab, isActive: false })),
-            newTab,
-          ],
+          tabs: [...state.tabs.map((tab) => ({ ...tab, isActive: false })), newTab],
           activeFilePath: file.filePath,
         };
       });
@@ -91,12 +86,8 @@ export function createEditorStore() {
 
     closeFile(filePath: string) {
       set((state) => {
-        const remainingFiles = state.openFiles.filter(
-          (file) => file.filePath !== filePath,
-        );
-        const remainingTabs = state.tabs.filter(
-          (tab) => tab.filePath !== filePath,
-        );
+        const remainingFiles = state.openFiles.filter((file) => file.filePath !== filePath);
+        const remainingTabs = state.tabs.filter((tab) => tab.filePath !== filePath);
 
         // If we closed the active file, activate the next tab or null.
         let newActive = state.activeFilePath;
@@ -162,11 +153,9 @@ export function createEditorStore() {
         const nextActive =
           requestedActive && filePaths.has(requestedActive)
             ? requestedActive
-            : files[0]?.filePath ?? null;
+            : (files[0]?.filePath ?? null);
 
-        const dirtyByPath = new Map(
-          state.tabs.map((tab) => [tab.filePath, tab.isDirty] as const),
-        );
+        const dirtyByPath = new Map(state.tabs.map((tab) => [tab.filePath, tab.isDirty] as const));
 
         return {
           openFiles: files,

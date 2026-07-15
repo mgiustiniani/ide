@@ -12,7 +12,7 @@ import type {
   RestartLanguageSessionRequest,
   StartLanguageSessionRequest,
   StopLanguageSessionRequest,
-} from '@ide/contracts';
+} from "@ide/contracts";
 
 export interface LanguageSessionPort {
   /** Return the latest status for an authorized workspace session. */
@@ -31,5 +31,8 @@ export interface LanguageSessionPort {
    * Subscribe to status, progress and diagnostics for one workspace.
    * The returned function must detach the listener and be safe to call more than once.
    */
-  subscribe(workspaceId: string, listener: LanguageServiceEventListener): LanguageServiceUnsubscribe;
+  subscribe(
+    workspaceId: string,
+    listener: LanguageServiceEventListener,
+  ): LanguageServiceUnsubscribe;
 }

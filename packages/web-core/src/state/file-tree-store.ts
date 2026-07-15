@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 // Manages the file tree UI state: root nodes, expanded folders, selection.
 
-import { create } from 'zustand';
-import type { FileNode } from '@ide/contracts';
+import { create } from "zustand";
+import type { FileNode } from "@ide/contracts";
 
 /** Slice of the store exposed to consumers. */
 export interface FileTreeStoreSlice {
@@ -37,14 +37,14 @@ export interface FileTreeStoreSlice {
 
 export type FileTreeStore = FileTreeStoreSlice;
 
-export type { FileNode } from '@ide/contracts';
+export type { FileNode } from "@ide/contracts";
 
 function collectOpenPaths(nodes: FileNode[]): Set<string> {
   const expanded = new Set<string>();
 
   const visit = (nodeList: FileNode[]) => {
     for (const node of nodeList) {
-      if (node.type === 'folder' && node.isOpen) {
+      if (node.type === "folder" && node.isOpen) {
         expanded.add(node.path);
       }
       if (node.children) {
@@ -57,18 +57,13 @@ function collectOpenPaths(nodes: FileNode[]): Set<string> {
   return expanded;
 }
 
-function applyExpandedState(
-  nodes: FileNode[],
-  expandedPaths: Set<string>,
-): FileNode[] {
+function applyExpandedState(nodes: FileNode[], expandedPaths: Set<string>): FileNode[] {
   return nodes.map((node) => {
-    if (node.type !== 'folder') return node;
+    if (node.type !== "folder") return node;
 
     const next: FileNode = {
       ...node,
-      ...(node.children
-        ? { children: applyExpandedState(node.children, expandedPaths) }
-        : {}),
+      ...(node.children ? { children: applyExpandedState(node.children, expandedPaths) } : {}),
     };
 
     if (expandedPaths.has(node.path) || node.isOpen !== undefined) {
@@ -98,10 +93,7 @@ export function createFileTreeStore() {
 
     setRootNodes(nodes: FileNode[]) {
       set((state) => {
-        const expandedPaths = new Set([
-          ...state.expandedPaths,
-          ...collectOpenPaths(nodes),
-        ]);
+        const expandedPaths = new Set([...state.expandedPaths, ...collectOpenPaths(nodes)]);
 
         return {
           expandedPaths,
@@ -112,16 +104,13 @@ export function createFileTreeStore() {
 
     setChildren(parentPath: string, children: FileNode[]) {
       set((state) => {
-        const expandedPaths = new Set([
-          ...state.expandedPaths,
-          ...collectOpenPaths(children),
-        ]);
+        const expandedPaths = new Set([...state.expandedPaths, ...collectOpenPaths(children)]);
         const nextChildren = applyExpandedState(children, expandedPaths);
 
         const updateNode = (nodes: FileNode[]): FileNode[] => {
           let changed = false;
           const updated = nodes.map((node) => {
-            if (node.type === 'folder' && node.path === parentPath) {
+            if (node.type === "folder" && node.path === parentPath) {
               changed = true;
               return {
                 ...node,
@@ -172,10 +161,7 @@ export function createFileTreeStore() {
 
     insertNode(parentPath: string, node: FileNode) {
       set((state) => {
-        const expandedPaths = new Set([
-          ...state.expandedPaths,
-          ...collectOpenPaths([node]),
-        ]);
+        const expandedPaths = new Set([...state.expandedPaths, ...collectOpenPaths([node])]);
         const nextNode = applyExpandedState([node], expandedPaths)[0];
 
         if (!parentPath) {
@@ -187,7 +173,7 @@ export function createFileTreeStore() {
 
         const insert = (nodes: FileNode[]): FileNode[] =>
           nodes.map((currentNode) => {
-            if (currentNode.type === 'folder' && currentNode.path === parentPath) {
+            if (currentNode.type === "folder" && currentNode.path === parentPath) {
               return {
                 ...currentNode,
                 isOpen: expandedPaths.has(currentNode.path),
@@ -211,9 +197,7 @@ export function createFileTreeStore() {
         const prune = (nodes: FileNode[]): FileNode[] =>
           nodes
             .filter((node) => node.path !== path)
-            .map((node) =>
-              node.children ? { ...node, children: prune(node.children) } : node,
-            );
+            .map((node) => (node.children ? { ...node, children: prune(node.children) } : node));
 
         return {
           expandedPaths,

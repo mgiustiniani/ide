@@ -4,7 +4,7 @@
 // Port interface for reading / writing file content and managing open files.
 // Concrete adapters implement this interface.
 
-import type { OpenFile, EditorContent } from '@ide/contracts';
+import type { OpenFile, EditorContent } from "@ide/contracts";
 
 export interface EditorPort {
   /** Load the content of the file at `filePath`. Returns content + detected language. */

@@ -14,7 +14,7 @@ import type {
   PiAgentSettings,
   PiAgentSettingsUpdate,
   PiAgentStatus,
-} from '@ide/contracts';
+} from "@ide/contracts";
 
 export interface AiAgentPort {
   /** Return current Pi agent availability/status from the adapter/backend. */

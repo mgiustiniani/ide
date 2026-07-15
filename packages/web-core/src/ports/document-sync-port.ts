@@ -8,7 +8,7 @@ import type {
   DidCloseLanguageDocumentRequest,
   DidOpenLanguageDocumentRequest,
   DidSaveLanguageDocumentRequest,
-} from '@ide/contracts';
+} from "@ide/contracts";
 
 export interface DocumentSyncPort {
   /** Open a document with versioned full text. */

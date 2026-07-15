@@ -12,7 +12,7 @@ import type {
   JavaSignatureHelpRequest,
   JavaSignatureHelpResponse,
   LanguageServiceCancellationId,
-} from '@ide/contracts';
+} from "@ide/contracts";
 
 export interface JavaIntelligencePort {
   /** Request a bounded completion list for a synchronized document version. */

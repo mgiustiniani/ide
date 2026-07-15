@@ -4,7 +4,7 @@
 // Port interface for interacting with a shell / terminal process.
 // Concrete adapters implement this interface.
 
-import type { TerminalOutput } from '@ide/contracts';
+import type { TerminalOutput } from "@ide/contracts";
 
 export interface TerminalPort {
   /** Execute a single command (non‑interactive or typed into the shell). */

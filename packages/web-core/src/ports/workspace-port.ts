@@ -4,7 +4,7 @@
 // Port interface for workspace metadata and user workspace registry access.
 // Concrete adapters implement this interface.
 
-import type { WorkspaceInfo, WorkspaceRegistry } from '@ide/contracts';
+import type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
 
 export interface WorkspacePort {
   /** Ensure the current workspace has a `.ide` marker and is registered for the user. */

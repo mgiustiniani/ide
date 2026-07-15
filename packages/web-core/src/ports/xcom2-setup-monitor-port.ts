@@ -8,7 +8,7 @@ import type {
   Xcom2SetupMonitorListener,
   Xcom2SetupMonitorSnapshot,
   Xcom2SetupMonitorUnsubscribe,
-} from '@ide/contracts';
+} from "@ide/contracts";
 
 export interface Xcom2SetupMonitorPort {
   /** Return the latest export-safe snapshot without requesting new I/O. */

@@ -4,7 +4,7 @@
 // Port interface for file‑system operations on the file tree.
 // Concrete adapters (e.g. Tauri, mock, web) implement this interface.
 
-import type { FileNode, FileSelectionEvent } from '@ide/contracts';
+import type { FileNode, FileSelectionEvent } from "@ide/contracts";
 
 export interface FileTreePort {
   /** Retrieve the root‑level nodes of the project. */

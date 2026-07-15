@@ -3,8 +3,8 @@ import type {
   DiscardRefactorKitPlanRequest,
   RefactorKitApprovalEvidence,
   RefactorKitPatchPlan,
-} from '@ide/contracts';
-import type { ClipboardPort, RefactorKitPort } from './ports';
+} from "@ide/contracts";
+import type { ClipboardPort, RefactorKitPort } from "./ports";
 
 export interface PasteExternalJavaClassSelection {
   targetDirectory: string;
@@ -23,31 +23,31 @@ export interface PasteExternalJavaClassApproval {
 }
 
 export type PasteExternalJavaClassRefusalKind =
-  | 'empty-clipboard'
-  | 'clipboard-too-large'
-  | 'invalid-target'
-  | 'plan-refused'
-  | 'plan-stale'
-  | 'plan-error'
-  | 'not-ready'
-  | 'approval-mismatch';
+  | "empty-clipboard"
+  | "clipboard-too-large"
+  | "invalid-target"
+  | "plan-refused"
+  | "plan-stale"
+  | "plan-error"
+  | "not-ready"
+  | "approval-mismatch";
 
 export type PasteExternalJavaClassState =
-  | { status: 'idle' }
-  | { status: 'reading-clipboard' }
-  | { status: 'checking-capability' }
-  | { status: 'previewing' }
-  | { status: 'applying'; planId: string }
-  | { status: 'unavailable'; message: string }
+  | { status: "idle" }
+  | { status: "reading-clipboard" }
+  | { status: "checking-capability" }
+  | { status: "previewing" }
+  | { status: "applying"; planId: string }
+  | { status: "unavailable"; message: string }
   | {
-      status: 'refused';
+      status: "refused";
       kind: PasteExternalJavaClassRefusalKind;
       reasons: string[];
       /** Complete backend evidence when RefactorKit returned a correlated non-ready plan. */
       plan?: RefactorKitPatchPlan;
     }
-  | { status: 'preview'; plan: RefactorKitPatchPlan }
-  | { status: 'applied'; result: ApplyRefactorKitPlanResult };
+  | { status: "preview"; plan: RefactorKitPatchPlan }
+  | { status: "applied"; result: ApplyRefactorKitPlanResult };
 
 export interface PasteExternalJavaClassOptions {
   /** Clipboard bound measured in JavaScript UTF-16 code units. */
@@ -56,14 +56,14 @@ export interface PasteExternalJavaClassOptions {
 
 const DEFAULT_MAX_CLIPBOARD_LENGTH = 1_048_576;
 const CAPABILITY_UNAVAILABLE_MESSAGE =
-  'Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview and apply support.';
+  "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview and apply support.";
 
 /**
  * Coordinates an explicit clipboard paste without inspecting Java source or writing files.
  * RefactorKit is the sole authority for Java placement and patch construction.
  */
 export class PasteExternalJavaClass {
-  private stateValue: PasteExternalJavaClassState = { status: 'idle' };
+  private stateValue: PasteExternalJavaClassState = { status: "idle" };
   private operationGeneration = 0;
   private readonly maxClipboardLength: number;
 
@@ -79,11 +79,9 @@ export class PasteExternalJavaClass {
     return this.stateValue;
   }
 
-  async preview(
-    selection: PasteExternalJavaClassSelection,
-  ): Promise<PasteExternalJavaClassState> {
+  async preview(selection: PasteExternalJavaClassSelection): Promise<PasteExternalJavaClassState> {
     const operation = ++this.operationGeneration;
-    let code = '';
+    let code = "";
 
     // Discard any older retained plan before replacing it, without blocking
     // privacy/state invalidation (fire-and-forget).
@@ -94,13 +92,13 @@ export class PasteExternalJavaClass {
 
     if (selection.targetDirectory.trim().length === 0) {
       return this.setIfCurrent(operation, {
-        status: 'refused',
-        kind: 'invalid-target',
-        reasons: ['A target directory must be selected.'],
+        status: "refused",
+        kind: "invalid-target",
+        reasons: ["A target directory must be selected."],
       });
     }
 
-    this.stateValue = { status: 'checking-capability' };
+    this.stateValue = { status: "checking-capability" };
     try {
       const capabilities = await this.refactorKit.getCapabilities();
       if (!this.isCurrent(operation)) return this.stateValue;
@@ -113,37 +111,37 @@ export class PasteExternalJavaClass {
         !capability.apply
       ) {
         return this.setIfCurrent(operation, {
-          status: 'unavailable',
+          status: "unavailable",
           message: CAPABILITY_UNAVAILABLE_MESSAGE,
         });
       }
 
-      this.stateValue = { status: 'reading-clipboard' };
+      this.stateValue = { status: "reading-clipboard" };
       code = await this.clipboard.readText();
       if (!this.isCurrent(operation)) return this.stateValue;
 
       if (code.trim().length === 0) {
         return this.setIfCurrent(operation, {
-          status: 'refused',
-          kind: 'empty-clipboard',
-          reasons: ['The clipboard does not contain text.'],
+          status: "refused",
+          kind: "empty-clipboard",
+          reasons: ["The clipboard does not contain text."],
         });
       }
       if (code.length > this.maxClipboardLength) {
         return this.setIfCurrent(operation, {
-          status: 'refused',
-          kind: 'clipboard-too-large',
+          status: "refused",
+          kind: "clipboard-too-large",
           reasons: [`Clipboard text exceeds the ${this.maxClipboardLength} character limit.`],
         });
       }
 
-      this.stateValue = { status: 'previewing' };
+      this.stateValue = { status: "previewing" };
       const plan = await this.refactorKit.previewExternalJavaImport({
         code,
         targetDirectory: selection.targetDirectory,
-        sourceKind: 'clipboard',
+        sourceKind: "clipboard",
         sourceUrl: null,
-        licensePolicy: 'warn',
+        licensePolicy: "warn",
         workspaceId: selection.workspaceId,
         workspaceGeneration: selection.workspaceGeneration,
         selectionGeneration: selection.selectionGeneration,
@@ -164,21 +162,21 @@ export class PasteExternalJavaClass {
         plan.requestId !== selection.requestId
       ) {
         return this.setIfCurrent(operation, {
-          status: 'refused',
-          kind: 'plan-stale',
-          reasons: ['RefactorKit returned a plan for a stale workspace selection.'],
+          status: "refused",
+          kind: "plan-stale",
+          reasons: ["RefactorKit returned a plan for a stale workspace selection."],
         });
       }
 
-      if (plan.status !== 'ready') {
+      if (plan.status !== "ready") {
         const kind =
-          plan.status === 'stale'
-            ? 'plan-stale'
-            : plan.status === 'error'
-              ? 'plan-error'
-              : 'plan-refused';
+          plan.status === "stale"
+            ? "plan-stale"
+            : plan.status === "error"
+              ? "plan-error"
+              : "plan-refused";
         return this.setIfCurrent(operation, {
-          status: 'refused',
+          status: "refused",
           kind,
           reasons:
             plan.refusalReasons.length > 0
@@ -188,25 +186,25 @@ export class PasteExternalJavaClass {
         });
       }
 
-      return this.setIfCurrent(operation, { status: 'preview', plan });
+      return this.setIfCurrent(operation, { status: "preview", plan });
     } catch {
       return this.setIfCurrent(operation, {
-        status: 'unavailable',
-        message: 'Paste Java Class is unavailable because the RefactorKit request failed.',
+        status: "unavailable",
+        message: "Paste Java Class is unavailable because the RefactorKit request failed.",
       });
     } finally {
       // Do not retain clipboard source in the use-case object after request completion.
-      code = '';
+      code = "";
     }
   }
 
   async apply(approval: PasteExternalJavaClassApproval): Promise<PasteExternalJavaClassState> {
     const current = this.stateValue;
-    if (current.status !== 'preview' || current.plan.status !== 'ready') {
+    if (current.status !== "preview" || current.plan.status !== "ready") {
       this.stateValue = {
-        status: 'refused',
-        kind: 'not-ready',
-        reasons: ['There is no current ready patch plan to apply.'],
+        status: "refused",
+        kind: "not-ready",
+        reasons: ["There is no current ready patch plan to apply."],
       };
       return this.stateValue;
     }
@@ -222,15 +220,15 @@ export class PasteExternalJavaClass {
 
     if (!matches) {
       this.stateValue = {
-        status: 'refused',
-        kind: 'approval-mismatch',
-        reasons: ['The plan or workspace selection changed after preview. Preview again.'],
+        status: "refused",
+        kind: "approval-mismatch",
+        reasons: ["The plan or workspace selection changed after preview. Preview again."],
       };
       return this.stateValue;
     }
 
     const operation = ++this.operationGeneration;
-    this.stateValue = { status: 'applying', planId: plan.planId };
+    this.stateValue = { status: "applying", planId: plan.planId };
     try {
       const result = await this.refactorKit.applyPlan({
         planId: plan.planId,
@@ -240,12 +238,12 @@ export class PasteExternalJavaClass {
         requestId: approval.requestId,
         approval: approval.approval,
       });
-      return this.setIfCurrent(operation, { status: 'applied', result });
+      return this.setIfCurrent(operation, { status: "applied", result });
     } catch {
       return this.setIfCurrent(operation, {
-        status: 'refused',
-        kind: 'plan-error',
-        reasons: ['RefactorKit could not apply the reviewed patch plan.'],
+        status: "refused",
+        kind: "plan-error",
+        reasons: ["RefactorKit could not apply the reviewed patch plan."],
       });
     }
   }
@@ -264,7 +262,7 @@ export class PasteExternalJavaClass {
     this.operationGeneration += 1;
 
     const plan = this.planFromState(this.stateValue);
-    this.stateValue = { status: 'idle' };
+    this.stateValue = { status: "idle" };
 
     if (plan !== undefined) {
       this.discardPlanIfNeeded(plan);
@@ -273,11 +271,9 @@ export class PasteExternalJavaClass {
 
   /** Extract a plan from state for discard purposes. Returns undefined when no
    *  discardable plan is retained (applied plans are excluded here as well). */
-  private planFromState(
-    state: PasteExternalJavaClassState,
-  ): RefactorKitPatchPlan | undefined {
-    if (state.status === 'preview') return state.plan;
-    if (state.status === 'refused' && 'plan' in state) return state.plan;
+  private planFromState(state: PasteExternalJavaClassState): RefactorKitPatchPlan | undefined {
+    if (state.status === "preview") return state.plan;
+    if (state.status === "refused" && "plan" in state) return state.plan;
     return undefined;
   }
 
@@ -297,7 +293,7 @@ export class PasteExternalJavaClass {
       // Runtime compatibility only: older structural test doubles may predate the
       // required port method. Production RefactorKitPort implementations must provide it.
       const discardPlan = this.refactorKit.discardPlan;
-      if (typeof discardPlan !== 'function') return;
+      if (typeof discardPlan !== "function") return;
 
       const pending = discardPlan.call(this.refactorKit, request);
       void Promise.resolve(pending).catch(() => {

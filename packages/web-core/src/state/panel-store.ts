@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 // Manages the three‑panel layout: visibility, sizes, active panel.
 
-import { create } from 'zustand';
-import type { PanelLayout, PanelId } from '@ide/contracts';
-import { DEFAULT_PANEL_LAYOUT } from '@ide/contracts';
+import { create } from "zustand";
+import type { PanelLayout, PanelId } from "@ide/contracts";
+import { DEFAULT_PANEL_LAYOUT } from "@ide/contracts";
 
 /** Slice of the store exposed to consumers. */
 export interface PanelStoreSlice {
@@ -30,7 +30,7 @@ export interface PanelStoreSlice {
 
 export type PanelStore = PanelStoreSlice;
 
-export type { PanelId } from '@ide/contracts';
+export type { PanelId } from "@ide/contracts";
 
 export function createPanelStore() {
   return create<PanelStoreSlice>((set) => ({
@@ -85,10 +85,7 @@ export function createPanelStore() {
           ...state.layout,
           sizes: {
             ...state.layout.sizes,
-            leftSidebarWidth: Math.max(
-              width,
-              state.layout.minSizes.leftSidebarWidth,
-            ),
+            leftSidebarWidth: Math.max(width, state.layout.minSizes.leftSidebarWidth),
           },
         },
       }));
@@ -100,10 +97,7 @@ export function createPanelStore() {
           ...state.layout,
           sizes: {
             ...state.layout.sizes,
-            bottomPanelHeight: Math.max(
-              height,
-              state.layout.minSizes.bottomPanelHeight,
-            ),
+            bottomPanelHeight: Math.max(height, state.layout.minSizes.bottomPanelHeight),
           },
         },
       }));

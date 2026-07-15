@@ -4,11 +4,11 @@
 // Wraps the terminal store and TerminalPort to provide a clean view‑model
 // for UI components.
 
-import type { TerminalStoreSlice } from '../state/terminal-store';
-import type { StoreAccessor } from '../state/store-accessor';
-import { toGetState } from '../state/store-accessor';
-import type { TerminalPort } from '../ports/terminal-port';
-import type { TerminalOutput } from '@ide/contracts';
+import type { TerminalStoreSlice } from "../state/terminal-store";
+import type { StoreAccessor } from "../state/store-accessor";
+import { toGetState } from "../state/store-accessor";
+import type { TerminalPort } from "../ports/terminal-port";
+import type { TerminalOutput } from "@ide/contracts";
 
 export class TerminalViewModel {
   private unsubscribeOutput: (() => void) | null = null;
@@ -64,7 +64,7 @@ export class TerminalViewModel {
       this.getState().setSessionActive(false);
       this.getState().pushOutput({
         text: `process exited with code ${code ?? -1}`,
-        type: 'system',
+        type: "system",
         timestamp: Date.now(),
       });
     });

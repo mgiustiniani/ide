@@ -1,7 +1,4 @@
-import type {
-  Xcom2SetupTransactionSummary,
-  Xcom2SetupWorkflowState,
-} from "@ide/contracts";
+import type { Xcom2SetupTransactionSummary, Xcom2SetupWorkflowState } from "@ide/contracts";
 
 /**
  * Provider-neutral lifecycle guard. Native code remains authoritative and may
@@ -38,9 +35,7 @@ const SHA256_DIGEST = /^[a-f0-9]{64}$/i;
  * This does not authorize a mutation; native code remains authoritative and
  * revalidates the exact digest, journal, and audited preconditions at apply time.
  */
-export function canApplyXcom2SetupTransaction(
-  transaction: Xcom2SetupTransactionSummary,
-): boolean {
+export function canApplyXcom2SetupTransaction(transaction: Xcom2SetupTransactionSummary): boolean {
   const digest = transaction.reviewedOperationDigest;
 
   return (
