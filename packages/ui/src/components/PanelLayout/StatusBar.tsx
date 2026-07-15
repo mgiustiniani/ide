@@ -4,7 +4,7 @@
 // encoding, line endings, and git branch info.
 // ---------------------------------------------------------------------------
 
-import { Icon } from '../ui/Icon';
+import { Icon } from "../ui/Icon";
 
 export interface StatusBarProps {
   /** Cursor line number (default "1"). */
@@ -16,7 +16,7 @@ export interface StatusBarProps {
   /** File encoding (default "UTF-8"). */
   encoding?: string;
   /** Line endings format (default "LF"). */
-  lineEndings?: 'LF' | 'CRLF';
+  lineEndings?: "LF" | "CRLF";
   /** Git branch name (default "main"). */
   branch?: string;
 }
@@ -24,10 +24,10 @@ export interface StatusBarProps {
 export function StatusBar({
   line = 1,
   column = 1,
-  language = 'TypeScript',
-  encoding = 'UTF-8',
-  lineEndings = 'LF',
-  branch = 'main',
+  language = "TypeScript",
+  encoding = "UTF-8",
+  lineEndings = "LF",
+  branch = "main",
 }: StatusBarProps): JSX.Element {
   return (
     <div className="statusbar statusbar-gradient">

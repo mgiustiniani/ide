@@ -4,9 +4,9 @@
 // active state highlight, indent guide lines (VS‑Code style).
 // ---------------------------------------------------------------------------
 
-import type { FileNode } from '@ide/contracts';
-import { Icon } from '../ui/Icon';
-import type { IconType } from '../ui/Icon';
+import type { FileNode } from "@ide/contracts";
+import { Icon } from "../ui/Icon";
+import type { IconType } from "../ui/Icon";
 
 export interface FileTreeItemProps {
   node: FileNode;
@@ -23,60 +23,55 @@ export interface FileTreeItemProps {
  * Falls back to a generic "file" icon.
  */
 export function iconForFile(name: string): { type: IconType; colorClass: string } {
-  if (name.toLowerCase() === 'pom.xml') {
-    return { type: 'maven', colorClass: 'text-[#f97316]' };
+  if (name.toLowerCase() === "pom.xml") {
+    return { type: "maven", colorClass: "text-[#f97316]" };
   }
 
-  const ext = (name.split('.').pop() ?? '').toLowerCase();
+  const ext = (name.split(".").pop() ?? "").toLowerCase();
   switch (ext) {
-    case 'tsx':
-      return { type: 'react', colorClass: 'text-[#149eca]' };
-    case 'ts':
-      return { type: 'typescript', colorClass: 'text-[#3178c6]' };
-    case 'js':
-    case 'jsx':
-      return { type: 'javascript', colorClass: 'text-[#f7df1e]' };
-    case 'json':
-      return { type: 'json', colorClass: 'text-[#8bc34a]' };
-    case 'css':
-    case 'scss':
-    case 'less':
-      return { type: 'css', colorClass: 'text-[#2965f1]' };
-    case 'html':
-    case 'htm':
-      return { type: 'html', colorClass: 'text-[#e44d26]' };
-    case 'md':
-    case 'mdx':
-      return { type: 'markdown', colorClass: 'text-[#6a6a6a]' };
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'svg':
-    case 'webp':
-    case 'ico':
-      return { type: 'image', colorClass: 'text-[#9b59b6]' };
+    case "tsx":
+      return { type: "react", colorClass: "text-[#149eca]" };
+    case "ts":
+      return { type: "typescript", colorClass: "text-[#3178c6]" };
+    case "js":
+    case "jsx":
+      return { type: "javascript", colorClass: "text-[#f7df1e]" };
+    case "json":
+      return { type: "json", colorClass: "text-[#8bc34a]" };
+    case "css":
+    case "scss":
+    case "less":
+      return { type: "css", colorClass: "text-[#2965f1]" };
+    case "html":
+    case "htm":
+      return { type: "html", colorClass: "text-[#e44d26]" };
+    case "md":
+    case "mdx":
+      return { type: "markdown", colorClass: "text-[#6a6a6a]" };
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "svg":
+    case "webp":
+    case "ico":
+      return { type: "image", colorClass: "text-[#9b59b6]" };
     default:
-      return { type: 'file', colorClass: 'text-[var(--text-muted)]' };
+      return { type: "file", colorClass: "text-[var(--text-muted)]" };
   }
 }
 
-export function FileTreeItem({
-  node,
-  depth,
-  isActive,
-  onSelect,
-}: FileTreeItemProps): JSX.Element {
+export function FileTreeItem({ node, depth, isActive, onSelect }: FileTreeItemProps): JSX.Element {
   const indentPadding = depth * 16;
   const { type: iconType, colorClass } = iconForFile(node.name);
 
   return (
     <div
-      className={`file-tree-row ${isActive ? 'file-tree-row--active' : ''} glass-hover slide-up`}
+      className={`file-tree-row ${isActive ? "file-tree-row--active" : ""} glass-hover slide-up`}
       style={{ paddingLeft: `${8 + indentPadding}px` }}
       onClick={() => onSelect(node)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect(node);
         }

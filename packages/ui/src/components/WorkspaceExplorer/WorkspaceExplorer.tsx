@@ -3,7 +3,7 @@
 // Presentation-only workspace switcher for use in compact IDE sidebars.
 // ---------------------------------------------------------------------------
 
-import type { WorkspaceInfo, WorkspaceRegistry } from '@ide/contracts';
+import type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
 
 export interface WorkspaceExplorerProps {
   /** Registered workspaces. `workspaceRegistry` is accepted as a descriptive alias. */
@@ -43,17 +43,21 @@ export function WorkspaceExplorer({
   isSwitching = false,
   switchingWorkspaceId = null,
   error = null,
-  ariaLabel = 'Registered workspaces',
+  ariaLabel = "Registered workspaces",
 }: WorkspaceExplorerProps): JSX.Element {
   const resolvedRegistry = registry ?? workspaceRegistry;
   const workspaces = resolvedRegistry?.workspaces ?? [];
-  const activeId = currentWorkspaceId ?? currentWorkspace?.id ?? resolvedRegistry?.currentWorkspaceId ?? null;
+  const activeId =
+    currentWorkspaceId ?? currentWorkspace?.id ?? resolvedRegistry?.currentWorkspaceId ?? null;
   const switchWorkspace = onSwitchWorkspace ?? onWorkspaceSwitch;
   const actionsDisabled = disabled || isLoading || isSwitching || switchingWorkspaceId !== null;
   const errorMessage = error instanceof Error ? error.message : error;
 
   return (
-    <div className="workspace-explorer" aria-busy={isLoading || isSwitching || switchingWorkspaceId !== null}>
+    <div
+      className="workspace-explorer"
+      aria-busy={isLoading || isSwitching || switchingWorkspaceId !== null}
+    >
       {onRefresh && (
         <div className="workspace-explorer-toolbar">
           <button
@@ -98,7 +102,7 @@ export function WorkspaceExplorer({
                 role="option"
                 aria-selected={isCurrent}
                 aria-disabled={rowDisabled}
-                className={`workspace-explorer-row ${isCurrent ? 'workspace-explorer-row--current' : ''}`}
+                className={`workspace-explorer-row ${isCurrent ? "workspace-explorer-row--current" : ""}`}
                 disabled={rowDisabled}
                 onClick={() => switchWorkspace?.(workspace.id)}
                 title={`${workspace.name}\n${workspace.rootPath}`}
@@ -106,7 +110,9 @@ export function WorkspaceExplorer({
                 <span className="workspace-explorer-row-main">
                   <span className="workspace-explorer-name">{workspace.name}</span>
                   {isCurrent && <span className="workspace-explorer-current">Current</span>}
-                  {isRowSwitching && <span className="workspace-explorer-switching">Switching…</span>}
+                  {isRowSwitching && (
+                    <span className="workspace-explorer-switching">Switching…</span>
+                  )}
                 </span>
                 <span className="workspace-explorer-path" title={workspace.rootPath}>
                   {compactWorkspacePath(workspace.rootPath)}
@@ -128,8 +134,8 @@ export function WorkspaceExplorer({
 
 /** Keep paths useful while avoiding a full home/machine path in the sidebar. */
 export function compactWorkspacePath(path: string): string {
-  const normalized = path.replace(/\\/g, '/').replace(/\/$/, '');
-  const segments = normalized.split('/').filter(Boolean);
+  const normalized = path.replace(/\\/g, "/").replace(/\/$/, "");
+  const segments = normalized.split("/").filter(Boolean);
   if (segments.length <= 2) return normalized || path;
-  return `…/${segments.slice(-2).join('/')}`;
+  return `…/${segments.slice(-2).join("/")}`;
 }

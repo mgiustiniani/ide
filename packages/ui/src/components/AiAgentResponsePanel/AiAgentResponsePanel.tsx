@@ -4,12 +4,12 @@
 // activity. Host apps own all Pi/adapter integrations and pass plain data in.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useState } from 'react';
-import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
+import { useMemo, useState } from "react";
+import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icon";
 
-export type AiAgentResponseMessageRole = 'user' | 'assistant' | 'system' | 'tool';
-export type AiAgentActivityStatus = 'pending' | 'running' | 'success' | 'error' | 'info';
+export type AiAgentResponseMessageRole = "user" | "assistant" | "system" | "tool";
+export type AiAgentActivityStatus = "pending" | "running" | "success" | "error" | "info";
 
 export interface AiAgentResponseMessage {
   /** Stable message identifier supplied by the host app when available. */
@@ -71,7 +71,7 @@ export interface AiAgentResponsePanelProps {
   subtitle?: string;
 }
 
-type AiAgentResponseTabId = 'response' | 'activity' | 'agents' | 'changes';
+type AiAgentResponseTabId = "response" | "activity" | "agents" | "changes";
 
 interface AgentSummary {
   agentId: string;
@@ -89,41 +89,41 @@ interface ChangedFileSummary {
 }
 
 const tabs: Array<{ id: AiAgentResponseTabId; label: string }> = [
-  { id: 'response', label: 'Response' },
-  { id: 'activity', label: 'Activity' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'changes', label: 'Changes' },
+  { id: "response", label: "Response" },
+  { id: "activity", label: "Activity" },
+  { id: "agents", label: "Agents" },
+  { id: "changes", label: "Changes" },
 ];
 
 const messageRoleLabels: Record<AiAgentResponseMessageRole, string> = {
-  user: 'User',
-  assistant: 'Assistant',
-  system: 'System',
-  tool: 'Tool',
+  user: "User",
+  assistant: "Assistant",
+  system: "System",
+  tool: "Tool",
 };
 
 const messageRoleStyles: Record<AiAgentResponseMessageRole, string> = {
-  user: 'border-blue-500/30 bg-blue-500/10 text-blue-100',
-  assistant: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
-  system: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
-  tool: 'border-purple-500/30 bg-purple-500/10 text-purple-100',
+  user: "border-blue-500/30 bg-blue-500/10 text-blue-100",
+  assistant: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
+  system: "border-amber-500/30 bg-amber-500/10 text-amber-100",
+  tool: "border-purple-500/30 bg-purple-500/10 text-purple-100",
 };
 
 const activityStatusStyles: Record<AiAgentActivityStatus, string> = {
-  pending: 'border-[var(--border-default)] bg-[var(--surface-panel)] text-[var(--text-secondary)]',
-  running: 'border-blue-500/30 bg-blue-500/10 text-blue-200',
-  success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
-  error: 'border-red-500/30 bg-red-500/10 text-red-200',
-  info: 'border-[var(--border-default)] bg-[var(--highlight-bg)] text-[var(--text-secondary)]',
+  pending: "border-[var(--border-default)] bg-[var(--surface-panel)] text-[var(--text-secondary)]",
+  running: "border-blue-500/30 bg-blue-500/10 text-blue-200",
+  success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  error: "border-red-500/30 bg-red-500/10 text-red-200",
+  info: "border-[var(--border-default)] bg-[var(--highlight-bg)] text-[var(--text-secondary)]",
 };
 
 function inferActivityStatus(type: string): AiAgentActivityStatus {
   const normalizedType = type.toLowerCase();
-  if (normalizedType.includes('error') || normalizedType.includes('failed')) return 'error';
-  if (normalizedType.endsWith('_start') || normalizedType.includes('running')) return 'running';
-  if (normalizedType.endsWith('_end') || normalizedType.includes('complete')) return 'success';
-  if (normalizedType.includes('update')) return 'info';
-  return 'pending';
+  if (normalizedType.includes("error") || normalizedType.includes("failed")) return "error";
+  if (normalizedType.endsWith("_start") || normalizedType.includes("running")) return "running";
+  if (normalizedType.endsWith("_end") || normalizedType.includes("complete")) return "success";
+  if (normalizedType.includes("update")) return "info";
+  return "pending";
 }
 
 function humanizeEventType(type: string): string {
@@ -131,7 +131,7 @@ function humanizeEventType(type: string): string {
     .split(/[_\s-]+/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .join(" ");
 }
 
 function getMessageKey(message: AiAgentResponseMessage, index: number): string {
@@ -139,7 +139,7 @@ function getMessageKey(message: AiAgentResponseMessage, index: number): string {
 }
 
 function getActivityKey(activity: AiAgentActivityEvent, index: number): string {
-  return activity.id ?? `${activity.type}-${index}-${activity.detail?.slice(0, 24) ?? ''}`;
+  return activity.id ?? `${activity.type}-${index}-${activity.detail?.slice(0, 24) ?? ""}`;
 }
 
 function getTabId(tabId: AiAgentResponseTabId): string {
@@ -151,7 +151,7 @@ function getTabPanelId(tabId: AiAgentResponseTabId): string {
 }
 
 function getCountLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
 function buildAgentSummaries(activities: AiAgentActivityEvent[]): AgentSummary[] {
@@ -219,11 +219,11 @@ function buildChangedFileSummaries(activities: AiAgentActivityEvent[]): ChangedF
 
 function renderStatusDot(status: AiAgentActivityStatus): JSX.Element {
   const dotStyles: Record<AiAgentActivityStatus, string> = {
-    pending: 'bg-current opacity-70',
-    running: 'bg-blue-300',
-    success: 'bg-emerald-300',
-    error: 'bg-red-300',
-    info: 'bg-current opacity-70',
+    pending: "bg-current opacity-70",
+    running: "bg-blue-300",
+    success: "bg-emerald-300",
+    error: "bg-red-300",
+    info: "bg-current opacity-70",
   };
 
   return <span className={`h-1.5 w-1.5 rounded-full ${dotStyles[status]}`} aria-hidden="true" />;
@@ -236,10 +236,10 @@ export function AiAgentResponsePanel({
   isSending = false,
   error,
   onClose,
-  title = 'AI Agent response',
-  subtitle = 'LLM output and activity',
+  title = "AI Agent response",
+  subtitle = "LLM output and activity",
 }: AiAgentResponsePanelProps): JSX.Element {
-  const [activeTab, setActiveTab] = useState<AiAgentResponseTabId>('response');
+  const [activeTab, setActiveTab] = useState<AiAgentResponseTabId>("response");
   const agentSummaries = useMemo(() => buildAgentSummaries(activities), [activities]);
   const changedFileSummaries = useMemo(() => buildChangedFileSummaries(activities), [activities]);
 
@@ -276,12 +276,16 @@ export function AiAgentResponsePanel({
         <span
           className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${
             isSending
-              ? 'border-blue-500/30 bg-blue-500/10 text-blue-200'
-              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+              ? "border-blue-500/30 bg-blue-500/10 text-blue-200"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
           }`}
         >
-          {isSending ? <Icon type="spinner" size={12} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />}
-          {isSending ? 'Sending…' : 'Ready'}
+          {isSending ? (
+            <Icon type="spinner" size={12} />
+          ) : (
+            <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+          )}
+          {isSending ? "Sending…" : "Ready"}
         </span>
         {error ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-200">
@@ -291,13 +295,20 @@ export function AiAgentResponsePanel({
       </div>
 
       {error ? (
-        <div role="alert" className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        <div
+          role="alert"
+          className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+        >
           {error}
         </div>
       ) : null}
 
       <div className="border-b border-[var(--border-default)] bg-[var(--surface-sidebar)] px-3 py-2">
-        <div className="grid grid-cols-4 gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-panel)] p-1" role="tablist" aria-label="AI Agent response sections">
+        <div
+          className="grid grid-cols-4 gap-1 rounded-md border border-[var(--border-default)] bg-[var(--surface-panel)] p-1"
+          role="tablist"
+          aria-label="AI Agent response sections"
+        >
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -312,8 +323,8 @@ export function AiAgentResponsePanel({
                 aria-controls={getTabPanelId(tab.id)}
                 className={`min-w-0 rounded px-1.5 py-1 ${
                   isActive
-                    ? 'border-[var(--border-default)] bg-[var(--highlight-bg)] text-[var(--text-primary)] shadow-sm'
-                    : 'text-[var(--text-secondary)]'
+                    ? "border-[var(--border-default)] bg-[var(--highlight-bg)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-secondary)]"
                 }`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -325,18 +336,28 @@ export function AiAgentResponsePanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {activeTab === 'response' ? (
-          <div id={getTabPanelId('response')} role="tabpanel" aria-labelledby={getTabId('response')} className="space-y-4">
+        {activeTab === "response" ? (
+          <div
+            id={getTabPanelId("response")}
+            role="tabpanel"
+            aria-labelledby={getTabId("response")}
+            className="space-y-4"
+          >
             <section aria-labelledby="ai-agent-latest-response-heading">
-              <h3 id="ai-agent-latest-response-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+              <h3
+                id="ai-agent-latest-response-heading"
+                className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+              >
                 Latest response
               </h3>
               <div className="rounded-md border border-[var(--border-default)] bg-[var(--surface-editor)] p-3 shadow-sm">
                 {hasLatestResponse ? (
-                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--text-primary)]">{latestResponse}</p>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[var(--text-primary)]">
+                    {latestResponse}
+                  </p>
                 ) : (
                   <p className="text-sm text-[var(--text-secondary)]">
-                    {isSending ? 'Waiting for the LLM response…' : 'No LLM response yet.'}
+                    {isSending ? "Waiting for the LLM response…" : "No LLM response yet."}
                   </p>
                 )}
               </div>
@@ -344,17 +365,29 @@ export function AiAgentResponsePanel({
 
             {hasMessages ? (
               <section aria-labelledby="ai-agent-history-heading">
-                <h3 id="ai-agent-history-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+                <h3
+                  id="ai-agent-history-heading"
+                  className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+                >
                   Message history
                 </h3>
                 <ol className="space-y-2" aria-label="AI Agent response message history">
                   {messages.map((message, index) => (
-                    <li key={getMessageKey(message, index)} className={`rounded-md border px-3 py-2 ${messageRoleStyles[message.role]}`}>
+                    <li
+                      key={getMessageKey(message, index)}
+                      className={`rounded-md border px-3 py-2 ${messageRoleStyles[message.role]}`}
+                    >
                       <div className="mb-1 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-wide">
                         <span>{messageRoleLabels[message.role]}</span>
-                        {message.createdAt ? <span className="font-normal normal-case opacity-70">{message.createdAt}</span> : null}
+                        {message.createdAt ? (
+                          <span className="font-normal normal-case opacity-70">
+                            {message.createdAt}
+                          </span>
+                        ) : null}
                       </div>
-                      <p className="whitespace-pre-wrap break-words text-sm leading-5">{message.content}</p>
+                      <p className="whitespace-pre-wrap break-words text-sm leading-5">
+                        {message.content}
+                      </p>
                     </li>
                   ))}
                 </ol>
@@ -363,9 +396,16 @@ export function AiAgentResponsePanel({
           </div>
         ) : null}
 
-        {activeTab === 'activity' ? (
-          <section id={getTabPanelId('activity')} role="tabpanel" aria-labelledby={getTabId('activity')}>
-            <h3 id="ai-agent-activity-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+        {activeTab === "activity" ? (
+          <section
+            id={getTabPanelId("activity")}
+            role="tabpanel"
+            aria-labelledby={getTabId("activity")}
+          >
+            <h3
+              id="ai-agent-activity-heading"
+              className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+            >
               Activity
             </h3>
             {hasActivities ? (
@@ -375,15 +415,23 @@ export function AiAgentResponsePanel({
                   const titleText = activity.title ?? humanizeEventType(activity.type);
 
                   return (
-                    <li key={getActivityKey(activity, index)} className={`rounded-md border px-3 py-2 ${activityStatusStyles[status]}`}>
+                    <li
+                      key={getActivityKey(activity, index)}
+                      className={`rounded-md border px-3 py-2 ${activityStatusStyles[status]}`}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{titleText}</p>
                           <p className="truncate text-xs opacity-75">
-                            {activity.pluginName ? `${activity.pluginName} · ` : ''}{activity.type}
+                            {activity.pluginName ? `${activity.pluginName} · ` : ""}
+                            {activity.type}
                           </p>
                         </div>
-                        {activity.timestamp ? <span className="shrink-0 text-[0.68rem] opacity-70">{activity.timestamp}</span> : null}
+                        {activity.timestamp ? (
+                          <span className="shrink-0 text-[0.68rem] opacity-70">
+                            {activity.timestamp}
+                          </span>
+                        ) : null}
                       </div>
                       {activity.agentId || activity.runId ? (
                         <div className="mt-1 flex flex-wrap gap-1 text-[0.68rem] opacity-75">
@@ -391,7 +439,11 @@ export function AiAgentResponsePanel({
                           {activity.runId ? <span>Run: {activity.runId}</span> : null}
                         </div>
                       ) : null}
-                      {activity.detail ? <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 opacity-90">{activity.detail}</p> : null}
+                      {activity.detail ? (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 opacity-90">
+                          {activity.detail}
+                        </p>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -404,19 +456,31 @@ export function AiAgentResponsePanel({
           </section>
         ) : null}
 
-        {activeTab === 'agents' ? (
-          <section id={getTabPanelId('agents')} role="tabpanel" aria-labelledby={getTabId('agents')}>
-            <h3 id="ai-agent-agents-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+        {activeTab === "agents" ? (
+          <section
+            id={getTabPanelId("agents")}
+            role="tabpanel"
+            aria-labelledby={getTabId("agents")}
+          >
+            <h3
+              id="ai-agent-agents-heading"
+              className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+            >
               Agents
             </h3>
             {hasAgents ? (
               <ol className="space-y-2" aria-label="AI Agent activity by agent">
                 {agentSummaries.map((agent) => (
-                  <li key={agent.agentId} className={`rounded-md border px-3 py-2 ${activityStatusStyles[agent.lastStatus]}`}>
+                  <li
+                    key={agent.agentId}
+                    className={`rounded-md border px-3 py-2 ${activityStatusStyles[agent.lastStatus]}`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{agent.agentId}</p>
-                        <p className="truncate text-xs opacity-75">{getCountLabel(agent.count, 'event')}</p>
+                        <p className="truncate text-xs opacity-75">
+                          {getCountLabel(agent.count, "event")}
+                        </p>
                       </div>
                       <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-current/20 px-2 py-0.5 text-[0.68rem] capitalize opacity-85">
                         {renderStatusDot(agent.lastStatus)}
@@ -437,7 +501,7 @@ export function AiAgentResponsePanel({
                       {agent.runIds.length > 0 ? (
                         <div className="flex min-w-0 justify-between gap-2">
                           <dt className="shrink-0 text-[var(--text-secondary)]">Runs</dt>
-                          <dd className="truncate">{agent.runIds.join(', ')}</dd>
+                          <dd className="truncate">{agent.runIds.join(", ")}</dd>
                         </div>
                       ) : null}
                     </dl>
@@ -452,23 +516,37 @@ export function AiAgentResponsePanel({
           </section>
         ) : null}
 
-        {activeTab === 'changes' ? (
-          <section id={getTabPanelId('changes')} role="tabpanel" aria-labelledby={getTabId('changes')}>
-            <h3 id="ai-agent-changes-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+        {activeTab === "changes" ? (
+          <section
+            id={getTabPanelId("changes")}
+            role="tabpanel"
+            aria-labelledby={getTabId("changes")}
+          >
+            <h3
+              id="ai-agent-changes-heading"
+              className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+            >
               Changes
             </h3>
             {hasChangedFiles ? (
               <ol className="space-y-2" aria-label="AI Agent changed files">
                 {changedFileSummaries.map((changedFile) => (
-                  <li key={changedFile.path} className="rounded-md border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2 text-[var(--text-primary)]">
+                  <li
+                    key={changedFile.path}
+                    className="rounded-md border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2 text-[var(--text-primary)]"
+                  >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 break-all font-mono text-xs leading-5">{changedFile.path}</p>
+                      <p className="min-w-0 break-all font-mono text-xs leading-5">
+                        {changedFile.path}
+                      </p>
                       <span className="shrink-0 rounded-full border border-[var(--border-default)] bg-[var(--surface-panel)] px-2 py-0.5 text-[0.68rem] uppercase tracking-wide text-[var(--text-secondary)]">
-                        {changedFile.status ?? 'changed'}
+                        {changedFile.status ?? "changed"}
                       </span>
                     </div>
                     {changedFile.count > 1 ? (
-                      <p className="mt-1 text-[0.68rem] text-[var(--text-secondary)]">Reported {getCountLabel(changedFile.count, 'time')}</p>
+                      <p className="mt-1 text-[0.68rem] text-[var(--text-secondary)]">
+                        Reported {getCountLabel(changedFile.count, "time")}
+                      </p>
                     ) : null}
                   </li>
                 ))}

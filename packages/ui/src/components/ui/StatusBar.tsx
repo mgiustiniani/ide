@@ -28,9 +28,7 @@ export function StatusBar({
       <div className="statusbar-left">
         {leftItems.map((item, i) => (
           <span key={i} className="statusbar-item">
-            {item.label && (
-              <span className="opacity-60 mr-0.5">{item.label}</span>
-            )}
+            {item.label && <span className="opacity-60 mr-0.5">{item.label}</span>}
             <span>{item.value}</span>
           </span>
         ))}
@@ -48,17 +46,27 @@ export function StatusBar({
             >
               <circle cx="4" cy="12" r="1.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
               <circle cx="12" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
-              <path d="M4 10.5V5a3 3 0 013 3v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-              <path d="M7 10h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+              <path
+                d="M4 10.5V5a3 3 0 013 3v2"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                fill="none"
+              />
+              <path
+                d="M7 10h3"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                fill="none"
+              />
             </svg>
             {branch}
           </span>
         )}
         {rightItems.map((item, i) => (
           <span key={i} className="statusbar-item">
-            {item.label && (
-              <span className="opacity-60 mr-0.5">{item.label}</span>
-            )}
+            {item.label && <span className="opacity-60 mr-0.5">{item.label}</span>}
             <span>{item.value}</span>
           </span>
         ))}

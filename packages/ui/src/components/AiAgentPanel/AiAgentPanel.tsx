@@ -4,13 +4,13 @@
 // provide availability, enablement, errors, and the send/settings callbacks.
 // ---------------------------------------------------------------------------
 
-import type { CSSProperties, FormEvent } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import type { AiAgentCommand } from '@ide/contracts';
-import { Button } from '../ui/Button';
+import type { CSSProperties, FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { AiAgentCommand } from "@ide/contracts";
+import { Button } from "../ui/Button";
 
-export type AiAgentMessageRole = 'user' | 'assistant' | 'system';
+export type AiAgentMessageRole = "user" | "assistant" | "system";
 
 export interface AiAgentMessage {
   /** Stable message identifier supplied by the host app when available. */
@@ -49,24 +49,24 @@ export interface AiAgentPanelProps {
 }
 
 const roleLabels: Record<AiAgentMessageRole, string> = {
-  user: 'User',
-  assistant: 'Assistant',
-  system: 'System',
+  user: "User",
+  assistant: "Assistant",
+  system: "System",
 };
 
 const roleStyles: Record<AiAgentMessageRole, string> = {
-  user: 'border-blue-500/30 bg-blue-500/10 text-blue-100',
-  assistant: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
-  system: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
+  user: "border-blue-500/30 bg-blue-500/10 text-blue-100",
+  assistant: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
+  system: "border-amber-500/30 bg-amber-500/10 text-amber-100",
 };
 
-const commandSourceLabels: Record<AiAgentCommand['source'], string> = {
-  skill: 'Skill',
-  prompt: 'Prompt',
-  extension: 'Extension',
+const commandSourceLabels: Record<AiAgentCommand["source"], string> = {
+  skill: "Skill",
+  prompt: "Prompt",
+  extension: "Extension",
 };
 
-const commandSourceOrder: AiAgentCommand['source'][] = ['skill', 'prompt', 'extension'];
+const commandSourceOrder: AiAgentCommand["source"][] = ["skill", "prompt", "extension"];
 const commandPopoverMargin = 12;
 const commandPopoverGap = 8;
 const commandPopoverMaxWidth = 448;
@@ -81,8 +81,8 @@ interface CommandPopoverPosition {
 }
 
 function getUnavailableMessage(isAvailable: boolean, isEnabled: boolean): string | null {
-  if (!isEnabled) return 'Pi Agent disabled';
-  if (!isAvailable) return 'Pi Agent not available';
+  if (!isEnabled) return "Pi Agent disabled";
+  if (!isAvailable) return "Pi Agent not available";
   return null;
 }
 
@@ -106,9 +106,16 @@ function getCommandPopoverPosition(
   const viewport = getViewportSize();
   const availableWidth = Math.max(0, viewport.width - commandPopoverMargin * 2);
   const width = Math.min(commandPopoverMaxWidth, availableWidth);
-  const left = clamp(triggerRect.right - width, commandPopoverMargin, viewport.width - commandPopoverMargin - width);
+  const left = clamp(
+    triggerRect.right - width,
+    commandPopoverMargin,
+    viewport.width - commandPopoverMargin - width,
+  );
   const availableAbove = Math.max(0, triggerRect.top - commandPopoverMargin - commandPopoverGap);
-  const availableBelow = Math.max(0, viewport.height - triggerRect.bottom - commandPopoverMargin - commandPopoverGap);
+  const availableBelow = Math.max(
+    0,
+    viewport.height - triggerRect.bottom - commandPopoverMargin - commandPopoverGap,
+  );
   const opensAbove = availableAbove >= availableBelow;
   const preferredAvailableHeight = opensAbove ? availableAbove : availableBelow;
   const viewportMaxHeight = Math.max(0, viewport.height - commandPopoverMargin * 2);
@@ -124,7 +131,11 @@ function getCommandPopoverPosition(
   const unclampedTop = opensAbove
     ? triggerRect.top - commandPopoverGap - measuredHeight
     : triggerRect.bottom + commandPopoverGap;
-  const top = clamp(unclampedTop, commandPopoverMargin, viewport.height - commandPopoverMargin - measuredHeight);
+  const top = clamp(
+    unclampedTop,
+    commandPopoverMargin,
+    viewport.height - commandPopoverMargin - measuredHeight,
+  );
 
   return { top, left, width, maxHeight };
 }
@@ -141,7 +152,9 @@ function getCommandInvocation(command: AiAgentCommand): string {
   return `/${command.name} `;
 }
 
-function getCommandGroups(commands: AiAgentCommand[]): { source: AiAgentCommand['source']; commands: AiAgentCommand[] }[] {
+function getCommandGroups(
+  commands: AiAgentCommand[],
+): { source: AiAgentCommand["source"]; commands: AiAgentCommand[] }[] {
   return commandSourceOrder
     .map((source) => ({
       source,
@@ -154,7 +167,13 @@ function commandMatchesQuery(command: AiAgentCommand, query: string): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return true;
 
-  return [command.name, command.description, command.source, commandSourceLabels[command.source], command.location]
+  return [
+    command.name,
+    command.description,
+    command.source,
+    commandSourceLabels[command.source],
+    command.location,
+  ]
     .filter(Boolean)
     .some((value) => value?.toLowerCase().includes(normalizedQuery));
 }
@@ -172,10 +191,11 @@ export function AiAgentPanel({
   onSendPrompt,
   onOpenSettings,
 }: AiAgentPanelProps): JSX.Element {
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState("");
   const [isCommandPickerOpen, setIsCommandPickerOpen] = useState(false);
-  const [commandSearch, setCommandSearch] = useState('');
-  const [commandPopoverPosition, setCommandPopoverPosition] = useState<CommandPopoverPosition | null>(null);
+  const [commandSearch, setCommandSearch] = useState("");
+  const [commandPopoverPosition, setCommandPopoverPosition] =
+    useState<CommandPopoverPosition | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const commandTriggerRef = useRef<HTMLSpanElement>(null);
   const commandPopoverRef = useRef<HTMLDivElement>(null);
@@ -187,7 +207,7 @@ export function AiAgentPanel({
     [commands, commandSearch],
   );
   const commandGroups = getCommandGroups(filteredCommands);
-  const commandCountLabel = `${commands.length} ${commands.length === 1 ? 'command' : 'commands'}`;
+  const commandCountLabel = `${commands.length} ${commands.length === 1 ? "command" : "commands"}`;
 
   useEffect(() => {
     if (!isCommandPickerOpen) {
@@ -197,19 +217,21 @@ export function AiAgentPanel({
 
     function updateCommandPopoverPosition(): void {
       if (!commandTriggerRef.current) return;
-      setCommandPopoverPosition(getCommandPopoverPosition(commandTriggerRef.current, commandPopoverRef.current));
+      setCommandPopoverPosition(
+        getCommandPopoverPosition(commandTriggerRef.current, commandPopoverRef.current),
+      );
     }
 
     updateCommandPopoverPosition();
     const animationFrame = window.requestAnimationFrame?.(updateCommandPopoverPosition);
 
-    window.addEventListener('resize', updateCommandPopoverPosition);
-    window.addEventListener('scroll', updateCommandPopoverPosition, true);
+    window.addEventListener("resize", updateCommandPopoverPosition);
+    window.addEventListener("scroll", updateCommandPopoverPosition, true);
 
     return () => {
       if (animationFrame !== undefined) window.cancelAnimationFrame?.(animationFrame);
-      window.removeEventListener('resize', updateCommandPopoverPosition);
-      window.removeEventListener('scroll', updateCommandPopoverPosition, true);
+      window.removeEventListener("resize", updateCommandPopoverPosition);
+      window.removeEventListener("scroll", updateCommandPopoverPosition, true);
     };
   }, [commandSearch, commands.length, commandsError, isCommandPickerOpen, isLoadingCommands]);
 
@@ -219,23 +241,27 @@ export function AiAgentPanel({
     function handleDocumentMouseDown(event: MouseEvent): void {
       const target = event.target;
       if (!(target instanceof Node)) return;
-      if (commandPopoverRef.current?.contains(target) || commandTriggerRef.current?.contains(target)) return;
+      if (
+        commandPopoverRef.current?.contains(target) ||
+        commandTriggerRef.current?.contains(target)
+      )
+        return;
 
       setIsCommandPickerOpen(false);
     }
 
     function handleDocumentKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         setIsCommandPickerOpen(false);
       }
     }
 
-    document.addEventListener('mousedown', handleDocumentMouseDown);
-    document.addEventListener('keydown', handleDocumentKeyDown);
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
 
     return () => {
-      document.removeEventListener('mousedown', handleDocumentMouseDown);
-      document.removeEventListener('keydown', handleDocumentKeyDown);
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [isCommandPickerOpen]);
 
@@ -245,27 +271,27 @@ export function AiAgentPanel({
 
     const promptToSend = trimmedPrompt;
     await onSendPrompt(promptToSend);
-    setPrompt('');
+    setPrompt("");
   }
 
   function handleUseCommand(command: AiAgentCommand): void {
     setPrompt(getCommandInvocation(command));
     setIsCommandPickerOpen(false);
-    setCommandSearch('');
+    setCommandSearch("");
     promptRef.current?.focus();
   }
 
   const commandPopoverStyle: CSSProperties = {
-    position: 'fixed',
+    position: "fixed",
     top: commandPopoverPosition?.top ?? commandPopoverMargin,
     left: commandPopoverPosition?.left ?? commandPopoverMargin,
     width: commandPopoverPosition?.width ?? commandPopoverMaxWidth,
     maxHeight: commandPopoverPosition?.maxHeight ?? commandPopoverMaxHeight,
-    visibility: commandPopoverPosition ? undefined : 'hidden',
+    visibility: commandPopoverPosition ? undefined : "hidden",
   };
 
   const commandPicker =
-    isCommandPickerOpen && typeof document !== 'undefined'
+    isCommandPickerOpen && typeof document !== "undefined"
       ? createPortal(
           <div
             ref={commandPopoverRef}
@@ -277,9 +303,15 @@ export function AiAgentPanel({
           >
             <div className="flex items-center justify-between gap-3 border-b border-[var(--border-default)] px-3 py-2">
               <div className="min-w-0">
-                <h3 className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]">Skills & commands</h3>
+                <h3 className="truncate text-xs font-semibold uppercase tracking-wide text-[var(--text-primary)]">
+                  Skills & commands
+                </h3>
                 <p className="truncate text-[11px] text-[var(--text-secondary)]" aria-live="polite">
-                  {commandsError ? 'Discovery error' : isLoadingCommands ? 'Loading Pi Agent commands…' : commandCountLabel}
+                  {commandsError
+                    ? "Discovery error"
+                    : isLoadingCommands
+                      ? "Loading Pi Agent commands…"
+                      : commandCountLabel}
                 </p>
               </div>
               {onRefreshCommands ? (
@@ -314,7 +346,10 @@ export function AiAgentPanel({
 
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
               {commandsError ? (
-                <div role="alert" className="rounded-sm border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-200">
+                <div
+                  role="alert"
+                  className="rounded-sm border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-200"
+                >
                   {commandsError}
                 </div>
               ) : null}
@@ -338,7 +373,10 @@ export function AiAgentPanel({
                       <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
                         {commandSourceLabels[group.source]}
                       </h4>
-                      <ul className="space-y-1" aria-label={`${commandSourceLabels[group.source]} commands`}>
+                      <ul
+                        className="space-y-1"
+                        aria-label={`${commandSourceLabels[group.source]} commands`}
+                      >
                         {group.commands.map((command, index) => (
                           <li
                             key={getCommandKey(command, index)}
@@ -346,18 +384,26 @@ export function AiAgentPanel({
                           >
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <span className="break-all font-mono text-xs font-semibold text-[var(--text-primary)]">/{command.name}</span>
+                                <span className="break-all font-mono text-xs font-semibold text-[var(--text-primary)]">
+                                  /{command.name}
+                                </span>
                                 <span className="rounded-full border border-[var(--border-default)] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--text-secondary)]">
                                   {command.source}
                                 </span>
                               </div>
                               {command.description ? (
-                                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[var(--text-secondary)]">{command.description}</p>
+                                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[var(--text-secondary)]">
+                                  {command.description}
+                                </p>
                               ) : (
-                                <p className="mt-0.5 text-xs italic text-[var(--text-secondary)]">No description provided.</p>
+                                <p className="mt-0.5 text-xs italic text-[var(--text-secondary)]">
+                                  No description provided.
+                                </p>
                               )}
                               {command.location ? (
-                                <p className="mt-0.5 truncate text-[10px] text-[var(--text-tertiary)]">Source: {command.location}</p>
+                                <p className="mt-0.5 truncate text-[10px] text-[var(--text-tertiary)]">
+                                  Source: {command.location}
+                                </p>
                               ) : null}
                             </div>
                             <Button
@@ -418,7 +464,10 @@ export function AiAgentPanel({
       ) : null}
 
       {error ? (
-        <div role="alert" className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        <div
+          role="alert"
+          className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+        >
           {error}
         </div>
       ) : null}
@@ -437,20 +486,30 @@ export function AiAgentPanel({
               >
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
                   <span>{roleLabels[message.role]}</span>
-                  {message.createdAt ? <span className="font-normal normal-case opacity-70">{message.createdAt}</span> : null}
+                  {message.createdAt ? (
+                    <span className="font-normal normal-case opacity-70">{message.createdAt}</span>
+                  ) : null}
                 </div>
-                <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
+                <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                  {message.content}
+                </p>
               </li>
             ))}
           </ol>
         )}
       </div>
 
-      <form onSubmit={(event) => void handleSubmit(event)} className="relative border-t border-[var(--border-default)] bg-[var(--surface-panel)] p-3">
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        className="relative border-t border-[var(--border-default)] bg-[var(--surface-panel)] p-3"
+      >
         {commandPicker}
 
         <div className="mb-1 flex items-center justify-between gap-2">
-          <label htmlFor="ai-agent-prompt" className="block text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="ai-agent-prompt"
+            className="block text-xs font-medium text-[var(--text-secondary)]"
+          >
             Prompt
           </label>
           <span ref={commandTriggerRef} className="shrink-0">

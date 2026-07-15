@@ -9,7 +9,7 @@ import type {
   JavaSignatureHelpResponse,
   Language,
   LanguageServiceCancellationId,
-} from '@ide/contracts';
+} from "@ide/contracts";
 import {
   Component,
   lazy,
@@ -22,11 +22,11 @@ import {
   useState,
   type ErrorInfo,
   type ReactNode,
-} from 'react';
-import type { LanguageDiagnostic, LanguageDocumentIdentity } from '../diagnostics';
-import { EditorTab } from './EditorTab';
-import { loadMonacoCodeEditor } from './lazyMonaco';
-import { WelcomePage } from './WelcomePage';
+} from "react";
+import type { LanguageDiagnostic, LanguageDocumentIdentity } from "../diagnostics";
+import { EditorTab } from "./EditorTab";
+import { loadMonacoCodeEditor } from "./lazyMonaco";
+import { WelcomePage } from "./WelcomePage";
 
 export interface EditorRevealRequest {
   /** File that should receive focus. Must match the active Editor filePath. */
@@ -96,7 +96,7 @@ class MonacoLazyBoundary extends Component<MonacoLazyBoundaryProps, MonacoLazyBo
 
   componentDidCatch(error: Error, _info: ErrorInfo): void {
     const detail = error.message.trim();
-    this.props.onFailure(detail ? `Monaco failed: ${detail}` : 'Monaco failed to start.');
+    this.props.onFailure(detail ? `Monaco failed: ${detail}` : "Monaco failed to start.");
   }
 
   componentDidUpdate(previousProps: MonacoLazyBoundaryProps): void {
@@ -133,18 +133,32 @@ function OpeningEditorPlaceholder({ filePath }: { filePath: string }): JSX.Eleme
       <strong>{activeFileName(filePath)}</strong>
       <span>Opening editor…</span>
       <div className="editor-opening-lines" aria-hidden="true">
-        <span /><span /><span />
+        <span />
+        <span />
+        <span />
       </div>
     </div>
   );
 }
 
-function MonacoFailurePlaceholder({ message, onRetry }: { message: string; onRetry: () => void }): JSX.Element {
+function MonacoFailurePlaceholder({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}): JSX.Element {
   return (
-    <div className="editor-failure-placeholder" data-testid="editor-failure-placeholder" role="alert">
+    <div
+      className="editor-failure-placeholder"
+      data-testid="editor-failure-placeholder"
+      role="alert"
+    >
       <strong>Editor could not be opened</strong>
       <span>{message}</span>
-      <button type="button" onClick={onRetry}>Retry Monaco</button>
+      <button type="button" onClick={onRetry}>
+        Retry Monaco
+      </button>
     </div>
   );
 }
@@ -165,14 +179,16 @@ export function Editor(props: EditorProps): JSX.Element {
   const rendererAvailable = hasActiveFile && !isLoading && !monacoFailure;
 
   const handleMonacoLayerMount = useCallback((element: HTMLDivElement | null) => {
-    setMonacoLayerElement((current) => current === element ? current : element);
+    setMonacoLayerElement((current) => (current === element ? current : element));
   }, []);
 
   useLayoutEffect(() => {
     if (!rendererAvailable || !monacoLayerElement) {
-      setMonacoHost((current) => current.width === 0 && current.height === 0 && !current.renderable
-        ? current
-        : { width: 0, height: 0, renderable: false });
+      setMonacoHost((current) =>
+        current.width === 0 && current.height === 0 && !current.renderable
+          ? current
+          : { width: 0, height: 0, renderable: false },
+      );
       setMonacoActivated(false);
       return;
     }
@@ -184,11 +200,11 @@ export function Editor(props: EditorProps): JSX.Element {
 
       let element: HTMLElement | null = host;
       while (element) {
-        const style = typeof getComputedStyle === 'function' ? getComputedStyle(element) : null;
-        if (style?.display === 'none') return false;
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
+        if (style?.display === "none") return false;
         // The host's own visibility is presentation state while Monaco is pending.
         // Ancestor visibility still means the editor area is intentionally hidden.
-        if (element !== host && style?.visibility === 'hidden') return false;
+        if (element !== host && style?.visibility === "hidden") return false;
         element = element.parentElement;
       }
       return true;
@@ -197,17 +213,20 @@ export function Editor(props: EditorProps): JSX.Element {
       const rect = host.getBoundingClientRect();
       const width = Math.max(0, rect.width || host.clientWidth);
       const height = Math.max(0, rect.height || host.clientHeight);
-      const intersectsViewport = rect.right > 0 && rect.bottom > 0
-        && rect.left < window.innerWidth && rect.top < window.innerHeight;
-      const documentVisible = document.visibilityState !== 'hidden';
-      const renderable = width > 0 && height > 0 && hasVisibleLayoutTree()
-        && intersectsViewport && documentVisible;
+      const intersectsViewport =
+        rect.right > 0 &&
+        rect.bottom > 0 &&
+        rect.left < window.innerWidth &&
+        rect.top < window.innerHeight;
+      const documentVisible = document.visibilityState !== "hidden";
+      const renderable =
+        width > 0 && height > 0 && hasVisibleLayoutTree() && intersectsViewport && documentVisible;
 
-      setMonacoHost((current) => current.width === width
-        && current.height === height
-        && current.renderable === renderable
-        ? current
-        : { width, height, renderable });
+      setMonacoHost((current) =>
+        current.width === width && current.height === height && current.renderable === renderable
+          ? current
+          : { width, height, renderable },
+      );
       if (renderable) setMonacoActivated(true);
     };
     const scheduleMeasure = (): void => {
@@ -219,24 +238,26 @@ export function Editor(props: EditorProps): JSX.Element {
     };
 
     measure();
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     resizeObserver?.observe(host);
-    const intersectionObserver = typeof IntersectionObserver === 'undefined'
-      ? null
-      : new IntersectionObserver(scheduleMeasure);
+    const intersectionObserver =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(scheduleMeasure);
     intersectionObserver?.observe(host);
-    window.addEventListener('resize', scheduleMeasure);
-    window.addEventListener('pageshow', scheduleMeasure);
-    window.addEventListener('focus', scheduleMeasure);
-    document.addEventListener('visibilitychange', scheduleMeasure);
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("pageshow", scheduleMeasure);
+    window.addEventListener("focus", scheduleMeasure);
+    document.addEventListener("visibilitychange", scheduleMeasure);
 
     return () => {
       resizeObserver?.disconnect();
       intersectionObserver?.disconnect();
-      window.removeEventListener('resize', scheduleMeasure);
-      window.removeEventListener('pageshow', scheduleMeasure);
-      window.removeEventListener('focus', scheduleMeasure);
-      document.removeEventListener('visibilitychange', scheduleMeasure);
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("pageshow", scheduleMeasure);
+      window.removeEventListener("focus", scheduleMeasure);
+      document.removeEventListener("visibilitychange", scheduleMeasure);
       if (measureFrame !== null) cancelAnimationFrame(measureFrame);
     };
   }, [monacoLayerElement, rendererAvailable]);
@@ -253,9 +274,12 @@ export function Editor(props: EditorProps): JSX.Element {
     setReadyFilePath(null);
     setMonacoFailure(reason);
   }, []);
-  const handleMonacoReady = useCallback((ready: boolean) => {
-    setReadyFilePath((current) => ready ? filePath : current === filePath ? null : current);
-  }, [filePath]);
+  const handleMonacoReady = useCallback(
+    (ready: boolean) => {
+      setReadyFilePath((current) => (ready ? filePath : current === filePath ? null : current));
+    },
+    [filePath],
+  );
   const retryMonaco = useCallback(() => {
     setMonacoFailure(null);
     setReadyFilePath(null);
@@ -294,7 +318,7 @@ export function Editor(props: EditorProps): JSX.Element {
           <div className="editor-renderer-stack" data-testid="editor-renderer-stack">
             <div
               ref={handleMonacoLayerMount}
-              className={`editor-monaco-layer${monacoReady ? ' editor-monaco-layer--ready' : ''}`}
+              className={`editor-monaco-layer${monacoReady ? " editor-monaco-layer--ready" : ""}`}
               data-testid="editor-monaco-layer"
               aria-hidden={!monacoReady}
             >

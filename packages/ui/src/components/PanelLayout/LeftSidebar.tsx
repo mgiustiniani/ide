@@ -3,8 +3,8 @@
 // Resizable-shell-compatible sidebar with independently collapsible sections.
 // ---------------------------------------------------------------------------
 
-import { useId, useState, type ReactNode } from 'react';
-import { Icon } from '../ui/Icon';
+import { useId, useState, type ReactNode } from "react";
+import { Icon } from "../ui/Icon";
 
 export interface LeftSidebarProps {
   /** Title displayed in the sidebar title bar. */
@@ -35,7 +35,7 @@ export interface LeftSidebarProps {
 }
 
 export function LeftSidebar({
-  title = 'Explorer',
+  title = "Explorer",
   isVisible,
   onToggle,
   children,
@@ -46,12 +46,13 @@ export function LeftSidebar({
   workspacesExpanded,
   defaultWorkspacesExpanded = true,
   onWorkspacesExpandedChange,
-  filesTitle = 'File Explorer',
-  workspacesTitle = 'Workspace Explorer',
+  filesTitle = "File Explorer",
+  workspacesTitle = "Workspace Explorer",
 }: LeftSidebarProps): JSX.Element {
-  const generatedId = useId().replace(/:/g, '');
+  const generatedId = useId().replace(/:/g, "");
   const [internalFilesExpanded, setInternalFilesExpanded] = useState(defaultFilesExpanded);
-  const [internalWorkspacesExpanded, setInternalWorkspacesExpanded] = useState(defaultWorkspacesExpanded);
+  const [internalWorkspacesExpanded, setInternalWorkspacesExpanded] =
+    useState(defaultWorkspacesExpanded);
   const filesOpen = filesExpanded ?? internalFilesExpanded;
   const workspacesOpen = workspacesExpanded ?? internalWorkspacesExpanded;
   const hasWorkspaces = workspaceContent !== undefined && workspaceContent !== null;
@@ -69,13 +70,15 @@ export function LeftSidebar({
 
   const layoutState = hasWorkspaces
     ? filesOpen && workspacesOpen
-      ? 'both-open'
+      ? "both-open"
       : filesOpen
-        ? 'files-only'
+        ? "files-only"
         : workspacesOpen
-          ? 'workspaces-only'
-          : 'both-closed'
-    : filesOpen ? 'files-only' : 'both-closed';
+          ? "workspaces-only"
+          : "both-closed"
+    : filesOpen
+      ? "files-only"
+      : "both-closed";
 
   return (
     <div className="left-sidebar flex flex-col h-full min-h-0" data-accordion-layout={layoutState}>
@@ -85,16 +88,16 @@ export function LeftSidebar({
           type="button"
           className="left-sidebar-icon-button"
           onClick={onToggle}
-          aria-label={isVisible ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={isVisible ? "Collapse sidebar" : "Expand sidebar"}
           aria-expanded={isVisible}
         >
-          <Icon type={isVisible ? 'chevron-down' : 'chevron-right'} size={12} />
+          <Icon type={isVisible ? "chevron-down" : "chevron-right"} size={12} />
         </button>
       </div>
 
       <div
         className={`left-sidebar-accordion flex-1 min-h-0 overflow-hidden flex flex-col panel-transition-max-height ${
-          isVisible ? 'panel-content-visible' : 'panel-content-hidden'
+          isVisible ? "panel-content-visible" : "panel-content-hidden"
         }`}
         aria-hidden={!isVisible}
         hidden={!isVisible}
@@ -104,7 +107,7 @@ export function LeftSidebar({
           expanded={filesOpen}
           panelId={filesPanelId}
           onToggle={() => setFilesOpen(!filesOpen)}
-          className={filesOpen ? 'left-sidebar-section--files-open' : ''}
+          className={filesOpen ? "left-sidebar-section--files-open" : ""}
         >
           {children}
         </SidebarSection>
@@ -115,7 +118,7 @@ export function LeftSidebar({
             expanded={workspacesOpen}
             panelId={workspacesPanelId}
             onToggle={() => setWorkspacesOpen(!workspacesOpen)}
-            className={workspacesOpen ? 'left-sidebar-section--workspaces-open' : ''}
+            className={workspacesOpen ? "left-sidebar-section--workspaces-open" : ""}
           >
             {workspaceContent}
           </SidebarSection>
@@ -139,7 +142,7 @@ function SidebarSection({
   expanded,
   panelId,
   onToggle,
-  className = '',
+  className = "",
   children,
 }: SidebarSectionProps): JSX.Element {
   return (
@@ -152,7 +155,7 @@ function SidebarSection({
           aria-expanded={expanded}
           aria-controls={panelId}
         >
-          <Icon type={expanded ? 'chevron-down' : 'chevron-right'} size={12} />
+          <Icon type={expanded ? "chevron-down" : "chevron-right"} size={12} />
           <span>{title}</span>
         </button>
       </h2>

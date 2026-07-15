@@ -3,11 +3,11 @@
 // Reusable button component with ripple effect, focus styles, and transitions.
 // ---------------------------------------------------------------------------
 
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { useRef, useState, useCallback } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useRef, useState, useCallback } from "react";
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Visual variant of the button. */
@@ -24,24 +24,24 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--button-bg)] text-[var(--button-text)] hover:bg-[var(--button-hover-bg)] border border-[var(--border-default)] shadow-sm',
+    "bg-[var(--button-bg)] text-[var(--button-text)] hover:bg-[var(--button-hover-bg)] border border-[var(--border-default)] shadow-sm",
   secondary:
-    'bg-[var(--surface-panel)] text-[var(--text-primary)] hover:bg-[var(--highlight-bg)] border border-[var(--border-default)]',
+    "bg-[var(--surface-panel)] text-[var(--text-primary)] hover:bg-[var(--highlight-bg)] border border-[var(--border-default)]",
   ghost:
-    'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--highlight-bg)] border border-transparent',
+    "bg-transparent text-[var(--text-secondary)] hover:bg-[var(--highlight-bg)] border border-transparent",
   danger:
-    'bg-[var(--danger-bg)] text-[var(--danger-text)] hover:bg-[var(--danger-hover-bg)] border border-[var(--danger-text)]',
+    "bg-[var(--danger-bg)] text-[var(--danger-text)] hover:bg-[var(--danger-hover-bg)] border border-[var(--danger-text)]",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: 'px-2 py-0.5 text-xs gap-1',
-  md: 'px-3 py-1 text-sm gap-1.5',
-  lg: 'px-4 py-2 text-base gap-2',
+  sm: "px-2 py-0.5 text-xs gap-1",
+  md: "px-3 py-1 text-sm gap-1.5",
+  lg: "px-4 py-2 text-base gap-2",
 };
 
 export function Button({
-  variant = 'primary',
-  size = 'md',
+  variant = "primary",
+  size = "md",
   icon,
   isLoading = false,
   disabled,
@@ -72,11 +72,9 @@ export function Button({
   }, []);
 
   const base =
-    'inline-flex items-center justify-center rounded-sm font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden';
+    "inline-flex items-center justify-center rounded-sm font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden";
 
-  const cls = [base, variantStyles[variant], sizeStyles[size], className]
-      .filter(Boolean)
-      .join(' ');
+  const cls = [base, variantStyles[variant], sizeStyles[size], className].filter(Boolean).join(" ");
 
   return (
     <button

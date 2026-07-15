@@ -3,9 +3,9 @@
 // Compact dynamic tool-window host for core and contextual project tools.
 // ---------------------------------------------------------------------------
 
-import type { KeyboardEvent, ReactNode } from 'react';
-import { useRef } from 'react';
-import type { DiagnosticSeverity } from '../diagnostics';
+import type { KeyboardEvent, ReactNode } from "react";
+import { useRef } from "react";
+import type { DiagnosticSeverity } from "../diagnostics";
 
 export interface BottomPanelBadgeMetadata {
   /** Visible badge value; use count when the value is numeric. */
@@ -32,7 +32,7 @@ export interface BottomPanelTab {
   /** Optional numeric count, used when badge is not supplied. */
   count?: number;
   /** Whether the contribution is always available or project-contextual. */
-  scope?: 'core' | 'project';
+  scope?: "core" | "project";
   /** Optional tooltip for the contribution. */
   title?: string;
   /** Prevents activation and keyboard focus. */
@@ -62,7 +62,7 @@ export function BottomPanel({
   const fallbackFocusableTabIndex = tabs.findIndex((tab) => !tab.disabled);
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
 
     const enabledIndexes = tabs
       .map((tab, tabIndex) => (tab.disabled ? -1 : tabIndex))
@@ -72,11 +72,12 @@ export function BottomPanel({
     event.preventDefault();
     const position = enabledIndexes.indexOf(index);
     let targetIndex: number;
-    if (event.key === 'Home') targetIndex = enabledIndexes[0];
-    else if (event.key === 'End') targetIndex = enabledIndexes[enabledIndexes.length - 1];
+    if (event.key === "Home") targetIndex = enabledIndexes[0];
+    else if (event.key === "End") targetIndex = enabledIndexes[enabledIndexes.length - 1];
     else {
-      const direction = event.key === 'ArrowRight' ? 1 : -1;
-      const nextPosition = (Math.max(position, 0) + direction + enabledIndexes.length) % enabledIndexes.length;
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const nextPosition =
+        (Math.max(position, 0) + direction + enabledIndexes.length) % enabledIndexes.length;
       targetIndex = enabledIndexes[nextPosition];
     }
 
@@ -94,34 +95,50 @@ export function BottomPanel({
           aria-orientation="horizontal"
         >
           {tabs.map((tab, index) => {
-            const badgeMetadata = typeof tab.badge === 'object' ? tab.badge : undefined;
+            const badgeMetadata = typeof tab.badge === "object" ? tab.badge : undefined;
             const badge = badgeMetadata?.value ?? badgeMetadata?.count ?? tab.badge ?? tab.count;
-            const badgeAriaLabel = badgeMetadata?.ariaLabel ?? (badge !== undefined && badge !== null ? String(badge) : undefined);
+            const badgeAriaLabel =
+              badgeMetadata?.ariaLabel ??
+              (badge !== undefined && badge !== null ? String(badge) : undefined);
             return (
               <button
                 key={tab.id}
-                ref={(element) => { tabRefs.current[index] = element; }}
+                ref={(element) => {
+                  tabRefs.current[index] = element;
+                }}
                 id={`bottom-panel-tab-${tab.id}`}
                 type="button"
                 className={[
-                  'relative inline-flex h-7 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors duration-100 focus-visible:z-10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--border-focus)]',
+                  "relative inline-flex h-7 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors duration-100 focus-visible:z-10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--border-focus)]",
                   tab.isActive
-                    ? 'border-[var(--tab-active-border)] bg-[var(--tab-active-bg)] font-medium text-[var(--text-primary)]'
-                    : 'border-transparent text-[var(--text-secondary)] hover:bg-[var(--tab-hover-bg)] hover:text-[var(--text-primary)]',
-                  tab.disabled ? 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--text-secondary)]' : '',
-                ].filter(Boolean).join(' ')}
+                    ? "border-[var(--tab-active-border)] bg-[var(--tab-active-bg)] font-medium text-[var(--text-primary)]"
+                    : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--tab-hover-bg)] hover:text-[var(--text-primary)]",
+                  tab.disabled
+                    ? "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--text-secondary)]"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 disabled={tab.disabled}
                 role="tab"
                 aria-controls="bottom-panel-content"
                 aria-label={badgeAriaLabel ? `${tab.label} ${badgeAriaLabel}` : undefined}
                 aria-selected={tab.isActive}
-                tabIndex={index === (focusableTabIndex >= 0 ? focusableTabIndex : fallbackFocusableTabIndex) ? 0 : -1}
+                tabIndex={
+                  index === (focusableTabIndex >= 0 ? focusableTabIndex : fallbackFocusableTabIndex)
+                    ? 0
+                    : -1
+                }
                 title={tab.title}
-                data-scope={tab.scope ?? 'core'}
+                data-scope={tab.scope ?? "core"}
                 onClick={() => onTabActivate(tab.id)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
               >
-                {tab.icon !== undefined ? <span className="flex shrink-0 items-center" aria-hidden="true">{tab.icon}</span> : null}
+                {tab.icon !== undefined ? (
+                  <span className="flex shrink-0 items-center" aria-hidden="true">
+                    {tab.icon}
+                  </span>
+                ) : null}
                 <span>{tab.label}</span>
                 {badge !== undefined && badge !== null ? (
                   <span
@@ -136,7 +153,14 @@ export function BottomPanel({
             );
           })}
         </div>
-        {actions ? <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--border-default)] px-1" aria-label="Tool window actions">{actions}</div> : null}
+        {actions ? (
+          <div
+            className="flex shrink-0 items-center gap-0.5 border-l border-[var(--border-default)] px-1"
+            aria-label="Tool window actions"
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
 
       <div

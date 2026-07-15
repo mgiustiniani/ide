@@ -1,11 +1,11 @@
-import { loader } from '@monaco-editor/react';
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
-import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
-import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import TypeScriptWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import { loader } from "@monaco-editor/react";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import CssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
+import HtmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
+import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
+import TypeScriptWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 
 type MonacoWorkerEnvironment = {
   getWorker(moduleId: string, label: string): Worker;
@@ -30,18 +30,18 @@ export function configureLocalMonaco(): typeof monaco {
     ...workerGlobal.MonacoEnvironment,
     getWorker(_moduleId, label) {
       switch (label) {
-        case 'json':
+        case "json":
           return new JsonWorker();
-        case 'css':
-        case 'scss':
-        case 'less':
+        case "css":
+        case "scss":
+        case "less":
           return new CssWorker();
-        case 'html':
-        case 'handlebars':
-        case 'razor':
+        case "html":
+        case "handlebars":
+        case "razor":
           return new HtmlWorker();
-        case 'typescript':
-        case 'javascript':
+        case "typescript":
+        case "javascript":
           return new TypeScriptWorker();
         default:
           return new EditorWorker();

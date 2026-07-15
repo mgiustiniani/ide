@@ -1,10 +1,10 @@
-export { Editor } from './Editor';
+export { Editor } from "./Editor";
 export type {
   EditorProps,
   EditorRevealRequest,
   JavaEditorSemanticContext,
   JavaEditorSemantics,
-} from './Editor';
+} from "./Editor";
 export type {
   DiagnosticCounts,
   DiagnosticPosition,
@@ -12,10 +12,10 @@ export type {
   DiagnosticSeverity,
   LanguageDiagnostic,
   LanguageDocumentIdentity,
-} from '../diagnostics';
+} from "../diagnostics";
 
-export { EditorTab } from './EditorTab';
-export type { EditorTabProps } from './EditorTab';
+export { EditorTab } from "./EditorTab";
+export type { EditorTabProps } from "./EditorTab";
 
-export { WelcomePage } from './WelcomePage';
-export type { WelcomePageProps } from './WelcomePage';
+export { WelcomePage } from "./WelcomePage";
+export type { WelcomePageProps } from "./WelcomePage";

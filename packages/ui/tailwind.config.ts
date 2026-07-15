@@ -74,13 +74,7 @@ const config: Config = {
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', "Fira Code", "monospace"],
-        sans: [
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
-          "sans-serif",
-        ],
+        sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
       },
       borderRadius: {
         sm: "2px",

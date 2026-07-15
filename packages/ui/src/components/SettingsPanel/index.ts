@@ -1,2 +1,6 @@
-export { SettingsPanel } from './SettingsPanel';
-export type { SettingsPanelAction, SettingsPanelProps, SettingsPanelSection } from './SettingsPanel';
+export { SettingsPanel } from "./SettingsPanel";
+export type {
+  SettingsPanelAction,
+  SettingsPanelProps,
+  SettingsPanelSection,
+} from "./SettingsPanel";

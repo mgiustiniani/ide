@@ -125,15 +125,10 @@ export function ExternalJavaImportPreviewDialog({
     (!needsLicenseAcknowledgement || licenseAcknowledged),
   );
   const backendBlockingReasons = plan
-    ? [
-        ...plan.refusalReasons,
-        ...plan.staleness.reasons,
-        ...plan.applyEligibility.blockers,
-      ]
+    ? [...plan.refusalReasons, ...plan.staleness.reasons, ...plan.applyEligibility.blockers]
     : [];
   const bannerReasons = backendBlockingReasons.filter(
-    (reason, index) =>
-      reason !== errorMessage && backendBlockingReasons.indexOf(reason) === index,
+    (reason, index) => reason !== errorMessage && backendBlockingReasons.indexOf(reason) === index,
   );
 
   return (

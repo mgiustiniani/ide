@@ -6,12 +6,12 @@
 // session status indicator, proper ANSI rendering.
 // ---------------------------------------------------------------------------
 
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { Terminal as XtermTerminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import type { TerminalOutput } from '@ide/contracts';
-import '@xterm/xterm/css/xterm.css';
-import { Icon } from '../ui/Icon';
+import { useRef, useEffect, useState, useCallback } from "react";
+import { Terminal as XtermTerminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import type { TerminalOutput } from "@ide/contracts";
+import "@xterm/xterm/css/xterm.css";
+import { Icon } from "../ui/Icon";
 
 export interface TerminalProps {
   /** Accumulated output lines to display. */
@@ -38,22 +38,22 @@ export interface TerminalProps {
 
 /** ANSI colour codes for 16-colour palette (matches VS Code theme). */
 const ANSI_COLORS: Record<number, string> = {
-  0: '#1e1e1e',   // black
-  1: '#ef4444',   // red
-  2: '#22c55e',   // green
-  3: '#eab308',   // yellow
-  4: '#3b82f6',   // blue
-  5: '#a855f7',   // magenta
-  6: '#22d3ee',   // cyan
-  7: '#d4d4d4',   // white
-  8: '#6a6a6a',   // bright black
-  9: '#ff6b6b',   // bright red
-  10: '#4ade80',  // bright green
-  11: '#facc15',  // bright yellow
-  12: '#60a5fa',  // bright blue
-  13: '#c084fc',  // bright magenta
-  14: '#67e8f9',  // bright cyan
-  15: '#ffffff',  // bright white
+  0: "#1e1e1e", // black
+  1: "#ef4444", // red
+  2: "#22c55e", // green
+  3: "#eab308", // yellow
+  4: "#3b82f6", // blue
+  5: "#a855f7", // magenta
+  6: "#22d3ee", // cyan
+  7: "#d4d4d4", // white
+  8: "#6a6a6a", // bright black
+  9: "#ff6b6b", // bright red
+  10: "#4ade80", // bright green
+  11: "#facc15", // bright yellow
+  12: "#60a5fa", // bright blue
+  13: "#c084fc", // bright magenta
+  14: "#67e8f9", // bright cyan
+  15: "#ffffff", // bright white
 };
 
 export function Terminal({
@@ -104,14 +104,14 @@ export function Terminal({
       cols: cols || 80,
       rows: rows || 24,
       cursorBlink: true,
-      cursorStyle: 'block',
+      cursorStyle: "block",
       fontSize: 14,
       fontFamily: '"JetBrains Mono", "Fira Code", monospace',
       theme: {
-        background: '#1e1e1e',
-        foreground: '#d4d4d4',
-        selectionBackground: '#264f78',
-        cursor: '#d4d4d4',
+        background: "#1e1e1e",
+        foreground: "#d4d4d4",
+        selectionBackground: "#264f78",
+        cursor: "#d4d4d4",
         black: ANSI_COLORS[0],
         red: ANSI_COLORS[1],
         green: ANSI_COLORS[2],
@@ -145,7 +145,7 @@ export function Terminal({
     term.write(promptRef.current);
 
     // Track current input buffer
-    let inputBuffer = '';
+    let inputBuffer = "";
 
     // Handle key events for native input
     term.onKey((e) => {
@@ -156,41 +156,42 @@ export function Terminal({
       // Prevent default browser handling
       domEvent.preventDefault();
 
-      if (domEvent.key === 'Enter') {
+      if (domEvent.key === "Enter") {
         // Submit command
         const cmd = inputBuffer;
-        term.write('\r\n');
+        term.write("\r\n");
         onCommandRef.current(cmd);
-        inputBuffer = '';
+        inputBuffer = "";
         historyIndexRef.current = -1;
         // Write prompt after command is processed
         term.write(promptRef.current);
         return;
       }
 
-      if (domEvent.key === 'Backspace') {
+      if (domEvent.key === "Backspace") {
         if (inputBuffer.length > 0) {
           inputBuffer = inputBuffer.slice(0, -1);
-          term.write('\b \b'); // Erase character
+          term.write("\b \b"); // Erase character
         }
         return;
       }
 
-      if (domEvent.key === 'ArrowUp') {
+      if (domEvent.key === "ArrowUp") {
         // Browse command history (older)
         const history = historyRef.current;
         if (history.length === 0) return;
 
-        const newIndex = historyIndexRef.current === -1
-          ? history.length - 1
-          : Math.max(0, historyIndexRef.current - 1);
+        const newIndex =
+          historyIndexRef.current === -1
+            ? history.length - 1
+            : Math.max(0, historyIndexRef.current - 1);
 
         historyIndexRef.current = newIndex;
         const cmd = history[newIndex];
 
         // Clear current line
         const clearLen = inputBuffer.length;
-        for (let i = 0; i < clearLen; i++) term.write('\b \b');
+        for (let i = 0; i < clearLen; i++) term.write("\b \b");
         // Write the history command
         term.write(cmd);
         inputBuffer = cmd;
@@ -198,7 +199,7 @@ export function Terminal({
         return;
       }
 
-      if (domEvent.key === 'ArrowDown') {
+      if (domEvent.key === "ArrowDown") {
         // Browse command history (newer)
         if (historyIndexRef.current === -1) return;
 
@@ -208,7 +209,7 @@ export function Terminal({
           historyIndexRef.current = -1;
           // Clear and show current input
           const clearLen = inputBuffer.length;
-          for (let i = 0; i < clearLen; i++) term.write('\b \b');
+          for (let i = 0; i < clearLen; i++) term.write("\b \b");
           inputBuffer = currentInputRef.current;
           term.write(inputBuffer);
           onInputChangeRef.current(inputBuffer);
@@ -218,7 +219,7 @@ export function Terminal({
         historyIndexRef.current = newIndex;
         const cmd = history[newIndex];
         const clearLen = inputBuffer.length;
-        for (let i = 0; i < clearLen; i++) term.write('\b \b');
+        for (let i = 0; i < clearLen; i++) term.write("\b \b");
         term.write(cmd);
         inputBuffer = cmd;
         onInputChangeRef.current(cmd);
@@ -249,8 +250,8 @@ export function Terminal({
     const handleResize = () => {
       fitAddonRef.current?.fit();
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   // Write output lines to xterm (with proper ANSI rendering)
@@ -263,9 +264,14 @@ export function Terminal({
     // In a real implementation, you'd use a cursor offset tracker.
     const lastOutput = output[output.length - 1];
     if (lastOutput) {
-      const color = lastOutput.type === 'stderr' ? '\x1b[31m' :
-                    lastOutput.type === 'input' ? '\x1b[36m' :
-                    lastOutput.type === 'system' ? '\x1b[2;3m' : '';
+      const color =
+        lastOutput.type === "stderr"
+          ? "\x1b[31m"
+          : lastOutput.type === "input"
+            ? "\x1b[36m"
+            : lastOutput.type === "system"
+              ? "\x1b[2;3m"
+              : "";
       term.write(`${color}${lastOutput.text}\x1b[0m\r\n`);
       // Re-write prompt after output
       term.write(promptRef.current);
@@ -290,12 +296,12 @@ export function Terminal({
           <span
             className={`inline-block h-2 w-2 rounded-full ${
               isSessionActive
-                ? 'bg-[var(--accent-green)] animate-pulse gradient-accent'
-                : 'bg-[var(--text-muted)]'
+                ? "bg-[var(--accent-green)] animate-pulse gradient-accent"
+                : "bg-[var(--text-muted)]"
             }`}
           />
           <span className="text-[var(--text-secondary)] font-medium">
-            {isSessionActive ? 'Session active' : 'Session inactive'}
+            {isSessionActive ? "Session active" : "Session inactive"}
           </span>
         </div>
         <div className="flex items-center gap-1">

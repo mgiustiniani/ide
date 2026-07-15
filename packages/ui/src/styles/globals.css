@@ -159,8 +159,8 @@
   html,
   body {
     @apply h-full overflow-hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, sans-serif;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-primary);
@@ -286,7 +286,10 @@
     border-right-color: transparent;
     border-radius: 0;
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    transition:
+      background 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease;
   }
 
   .activity-rail-tab:hover:not(:disabled) {
@@ -303,7 +306,7 @@
   }
 
   .activity-rail-tab--active::before {
-    content: '';
+    content: "";
     position: absolute;
     left: 0;
     top: 0;
@@ -350,7 +353,9 @@
     padding: 2px;
     border-radius: 2px;
     color: var(--text-secondary);
-    transition: color 120ms ease, background 120ms ease;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
   }
 
   .left-sidebar-icon-button:hover,
@@ -389,7 +394,9 @@
     gap: 4px;
     padding: 2px 8px;
     text-align: left;
-    transition: color 120ms ease, background 120ms ease;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
   }
 
   .left-sidebar-section-content {
@@ -403,11 +410,11 @@
   }
 
   .left-sidebar-section--files-open,
-  .left-sidebar[data-accordion-layout='workspaces-only'] .left-sidebar-section--workspaces-open {
+  .left-sidebar[data-accordion-layout="workspaces-only"] .left-sidebar-section--workspaces-open {
     flex: 1 1 0;
   }
 
-  .left-sidebar[data-accordion-layout='both-open'] .left-sidebar-section--workspaces-open {
+  .left-sidebar[data-accordion-layout="both-open"] .left-sidebar-section--workspaces-open {
     flex: 0 1 clamp(120px, 36%, 260px);
     max-height: 42%;
   }
@@ -616,7 +623,9 @@
   .file-tree-children {
     max-height: 0;
     overflow: hidden;
-    transition: max-height 200ms ease, opacity 150ms ease;
+    transition:
+      max-height 200ms ease,
+      opacity 150ms ease;
     opacity: 0;
   }
 
@@ -651,7 +660,9 @@
     border-right: 1px solid var(--border-default);
     border-bottom: 2px solid transparent;
     white-space: nowrap;
-    transition: background 100ms ease, color 100ms ease;
+    transition:
+      background 100ms ease,
+      color 100ms ease;
     position: relative;
   }
 
@@ -674,7 +685,9 @@
     height: 16px;
     border-radius: 3px;
     opacity: 0;
-    transition: opacity 100ms ease, background 100ms ease;
+    transition:
+      opacity 100ms ease,
+      background 100ms ease;
   }
 
   .editor-tab:hover .editor-tab-close,
@@ -750,8 +763,12 @@
     background: var(--border-default);
   }
 
-  .editor-opening-lines span:nth-child(2) { width: 78%; }
-  .editor-opening-lines span:nth-child(3) { width: 56%; }
+  .editor-opening-lines span:nth-child(2) {
+    width: 78%;
+  }
+  .editor-opening-lines span:nth-child(3) {
+    width: 56%;
+  }
 
   .editor-failure-placeholder button,
   .welcome-create-form button,
@@ -791,13 +808,35 @@
     border-bottom: 1px solid var(--border-default);
   }
 
-  .welcome-page-icon { color: var(--text-muted); flex: 0 0 auto; }
-  .welcome-page h2 { margin: 0 0 5px; font-size: 20px; font-weight: 600; }
-  .welcome-page p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+  .welcome-page-icon {
+    color: var(--text-muted);
+    flex: 0 0 auto;
+  }
+  .welcome-page h2 {
+    margin: 0 0 5px;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .welcome-page p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
 
-  .welcome-create-form { padding: 24px 0; border-bottom: 1px solid var(--border-default); }
-  .welcome-create-form > label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
-  .welcome-create-row { display: flex; gap: 8px; }
+  .welcome-create-form {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .welcome-create-form > label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .welcome-create-row {
+    display: flex;
+    gap: 8px;
+  }
   .welcome-create-row input {
     min-width: 0;
     flex: 1;
@@ -807,17 +846,50 @@
     color: var(--text-primary);
     background: var(--surface-panel);
   }
-  .welcome-create-row input:focus { border-color: var(--focus-ring); outline: 1px solid var(--focus-ring); }
-  .welcome-create-row input[aria-invalid='true'] { border-color: var(--danger-text); }
-  .welcome-create-form button:disabled { cursor: wait; opacity: 0.6; }
-  .welcome-create-target { margin-top: 7px !important; }
-  .welcome-create-error { margin-top: 7px !important; color: var(--danger-text) !important; }
+  .welcome-create-row input:focus {
+    border-color: var(--focus-ring);
+    outline: 1px solid var(--focus-ring);
+  }
+  .welcome-create-row input[aria-invalid="true"] {
+    border-color: var(--danger-text);
+  }
+  .welcome-create-form button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+  .welcome-create-target {
+    margin-top: 7px !important;
+  }
+  .welcome-create-error {
+    margin-top: 7px !important;
+    color: var(--danger-text) !important;
+  }
 
-  .welcome-recent { padding-top: 22px; }
-  .welcome-recent-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .welcome-recent-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
-  .welcome-recent-heading button { border: 0; padding: 3px 6px; color: var(--text-secondary); font-size: 12px; }
-  .welcome-recent ul { margin: 0; padding: 0; list-style: none; }
+  .welcome-recent {
+    padding-top: 22px;
+  }
+  .welcome-recent-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .welcome-recent-heading h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .welcome-recent-heading button {
+    border: 0;
+    padding: 3px 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .welcome-recent ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
   .welcome-recent li button {
     display: flex;
     width: 100%;
@@ -827,10 +899,25 @@
     color: var(--text-primary);
     text-align: left;
   }
-  .welcome-recent li button:hover { background: var(--highlight-bg); }
-  .welcome-recent li span { overflow: hidden; flex: 0 1 auto; text-overflow: ellipsis; white-space: nowrap; }
-  .welcome-recent li small { overflow: hidden; margin-left: auto; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
-  .welcome-recent-empty { padding: 6px 8px; }
+  .welcome-recent li button:hover {
+    background: var(--highlight-bg);
+  }
+  .welcome-recent li span {
+    overflow: hidden;
+    flex: 0 1 auto;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .welcome-recent li small {
+    overflow: hidden;
+    margin-left: auto;
+    color: var(--text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .welcome-recent-empty {
+    padding: 6px 8px;
+  }
 
   /* ─── Native code editor ─── */
   .native-code-editor-frame {
@@ -954,7 +1041,9 @@
     background: var(--surface-overlay);
     border: 1px solid var(--border-focus);
     border-radius: 6px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.42),
+      0 0 0 1px rgba(255, 255, 255, 0.04);
   }
 
   .native-code-editor-intellisense-item {
@@ -1047,7 +1136,9 @@
     background: var(--badge-bg);
     color: var(--badge-text);
     border: 1px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(0, 0, 0, 0.18);
+    box-shadow:
+      0 4px 14px rgba(0, 0, 0, 0.38),
+      0 0 0 1px rgba(0, 0, 0, 0.18);
     font-size: 11px;
     line-height: 16px;
     font-weight: 700;
@@ -1169,24 +1260,46 @@
 
   /* Animations */
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes slideUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @keyframes springPop {
-    0% { transform: scale(0.95); }
-    50% { transform: scale(1.02); }
-    100% { transform: scale(1); }
+    0% {
+      transform: scale(0.95);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+    100% {
+      transform: scale(1);
+    }
   }
 
   @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 
   .fade-in {
@@ -1203,7 +1316,7 @@
 
   /* Grid background pattern */
   .grid-bg {
-    background-image: 
+    background-image:
       linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     background-size: 24px 24px;
@@ -1211,7 +1324,9 @@
 
   /* Panel shadows */
   .panel-shadow {
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 0, 0, 0.2);
+    box-shadow:
+      -2px 0 8px rgba(0, 0, 0, 0.3),
+      0 0 8px rgba(0, 0, 0, 0.2);
   }
 
   /* Status bar gradient */
@@ -1222,11 +1337,13 @@
   /* ─── Glass hover effect for file tree rows ─── */
   .glass-hover {
     position: relative;
-    transition: background 150ms ease, transform 150ms ease;
+    transition:
+      background 150ms ease,
+      transform 150ms ease;
   }
 
   .glass-hover::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: 0;
     border-radius: 4px;
@@ -1247,7 +1364,9 @@
   /* ─── Gradient icon styling ─── */
   .gradient-icon {
     filter: drop-shadow(0 1px 2px rgba(86, 156, 214, 0.2));
-    transition: filter 150ms ease, transform 150ms ease;
+    transition:
+      filter 150ms ease,
+      transform 150ms ease;
   }
 
   .glass-hover:hover .gradient-icon {
@@ -1298,7 +1417,9 @@
   }
 
   .panel-transition-max-height {
-    transition: max-height 200ms ease, opacity 150ms ease;
+    transition:
+      max-height 200ms ease,
+      opacity 150ms ease;
   }
 
   .panel-content-visible {

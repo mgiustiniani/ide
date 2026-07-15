@@ -1,1 +1,1 @@
-export * from './DocumentPreviewPanel';
+export * from "./DocumentPreviewPanel";
