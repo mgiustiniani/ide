@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run --config ../../vitest.config.ts packages/tauri-adapters/src"
   },
   "dependencies": {
     "@ide/contracts": "workspace:*",
