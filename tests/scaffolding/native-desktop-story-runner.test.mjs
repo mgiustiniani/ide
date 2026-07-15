@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
@@ -21,6 +23,46 @@ import {
   runNativeDesktopStory,
   runOwnedProcess,
 } from "../../scripts/run-native-desktop-story.mjs";
+
+const repositoryRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const cucumberEntry = path.join(repositoryRoot, "node_modules/@cucumber/cucumber/bin/cucumber.js");
+
+function selectedScenarioCount(profile, config = "cucumber.js") {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cucumberEntry,
+      "--config",
+      config,
+      "--profile",
+      profile,
+      "--dry-run",
+      "--format",
+      "message",
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 30_000,
+    },
+  );
+  assert.equal(
+    result.status,
+    0,
+    result.error?.message ?? result.stderr ?? `Cucumber profile discovery failed: ${profile}`,
+  );
+
+  const selectedPickleIds = new Set();
+  for (const line of result.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const testCase = JSON.parse(line).testCase;
+    if (testCase) selectedPickleIds.add(testCase.pickleId);
+  }
+  return selectedPickleIds.size;
+}
 
 async function executable(directory, name) {
   const executablePath = path.join(directory, name);
@@ -253,10 +295,16 @@ test("selected native execution builds and records evidence before launching the
   }
 });
 
-test("parked zero-selection native profile skips without build or launch", async () => {
+test("synthetic parked zero-selection native profile skips without build or launch", async () => {
+  const profile = "parkedNativeGuiFixture";
+  assert.equal(selectedScenarioCount(profile, "tests/scaffolding/fixtures/parked-cucumber.js"), 0);
+
   const calls = [];
-  const result = await runNativeDesktopStory("desktopFileOpenNativeGui", {
-    selectsScenarios: () => false,
+  const result = await runNativeDesktopStory(profile, {
+    selectsScenarios: (selectedProfile) => {
+      assert.equal(selectedProfile, profile);
+      return false;
+    },
     buildApplication: async () => calls.push("build"),
     resolvePrerequisites: async () => calls.push("prerequisites"),
     createSandbox: async () => calls.push("sandbox"),
@@ -327,9 +375,11 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
   }
 });
 
-test("the focused native file-open profile excludes its parked scenario", () => {
-  assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), false);
-  assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), false);
+test("native runner profiles select exactly the promoted native GUI scenario", () => {
+  assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 1);
+  assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
+  assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
 });
 
 test("abort signal cleans up the fake build process group before binary verification", async () => {
