@@ -1,10 +1,10 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded JDT LS diagnostics, a conditional project-scoped Problems contribution, completion, hover, signature help, document synchronization, and cancellation are operational through provider-neutral components. This does not imply Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded JDT LS diagnostics, a conditional project-scoped Problems contribution, completion, hover, signature help, document synchronization, and cancellation cross provider-neutral components. This does not imply Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence.
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires seven current capability controllers and six extracted shell/document/editor controllers; derives presentation props; and renders the shell. Parked provider-support code is excluded from current C4 capability. Feature orchestration remains inside the controllers below rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires seven current capability controllers and six extracted shell/document/editor controllers; composes RefactorKit Symbol Navigation support behind its parked, non-capability boundary; derives presentation props; and renders the shell. Feature orchestration remains inside the controllers rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities.
 
@@ -15,6 +15,7 @@ Workspace Port ──ensure authorized current root──> Workspace Controller
                                                      ├─> Java Language Controller
                                                      ├─> RefactorKit Import Controller
                                                      ├─> RefactorKit Status Controller
+                                                     ├─> RefactorKit Symbol Navigation Support
                                                      ├─> AI Agent Controller
                                                      └─> XCOM Setup Controller
 
@@ -23,17 +24,18 @@ workspace-switch attempts; shared by collaborators to reject stale work.
 Exhaustion fails closed rather than reusing an old generation.
 ```
 
-Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, discover RefactorKit status/capabilities, and load XCOM monitor/transaction state. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
+Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, discover RefactorKit status/capabilities, and load XCOM monitor/transaction state. Workspace transitions also invalidate the composed RefactorKit Symbol Navigation support; this lifecycle wiring does not promote it to a capability. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
 
-| Current C3 component              | Stable structural responsibility                                                                                                                                                                                                                            |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace Controller**          | Owns registry metadata, authorized active-root state, loading/switching state, and the shared generation boundary. It invalidates or resets collaborators before a switch and suppresses stale cold-start or switch completion.                             |
-| **Desktop Editor Controller**     | Coordinates guarded open/create, tab lifecycle, deferred session restore, workspace reset, and safe presentation state. Only a tab with its matching loaded buffer becomes a ready active document.                                                         |
-| **Java Language Controller**      | Owns workspace-scoped language lifecycle, versioned Java document sync, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, guarded semantics, cancellation, and stale identity checks through provider-neutral ports. |
-| **RefactorKit Import Controller** | Owns the separate capability-gated clipboard import transaction: selection/workspace freshness, preview, exact displayed-plan approval, invalidation/discard, result refresh, and backend-authoritative result opening.                                     |
-| **RefactorKit Status Controller** | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
-| **AI Agent Controller**           | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
-| **XCOM Setup Controller**         | Owns workspace-scoped read-only monitoring, pure dry-run planning, transaction state/actions, authoritative re-read after events, and workspace activation failure settlement/restoration.                                                                  |
+| Current C3 component                      | Stable structural responsibility                                                                                                                                                                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace Controller**                  | Owns registry metadata, authorized active-root state, loading/switching state, and the shared generation boundary. It invalidates or resets collaborators before a switch and suppresses stale cold-start or switch completion.                             |
+| **Desktop Editor Controller**             | Coordinates guarded open/create, tab lifecycle, deferred session restore, workspace reset, and safe presentation state. Only a tab with its matching loaded buffer becomes a ready active document.                                                         |
+| **Java Language Controller**              | Owns workspace-scoped language lifecycle, versioned Java document sync, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, guarded semantics, cancellation, and stale identity checks through provider-neutral ports. |
+| **RefactorKit Import Controller**         | Owns the separate capability-gated clipboard import transaction: selection/workspace freshness, preview, exact displayed-plan approval, invalidation/discard, result refresh, and backend-authoritative result opening.                                     |
+| **RefactorKit Status Controller**         | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
+| **RefactorKit Symbol Navigation Support** | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup. It remains parked because read-only provider lifecycle can write hidden workspace metadata; it is not a current IDE capability.                              |
+| **AI Agent Controller**                   | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
+| **XCOM Setup Controller**                 | Owns workspace-scoped read-only monitoring, pure dry-run planning, transaction state/actions, authoritative re-read after events, and workspace activation failure settlement/restoration.                                                                  |
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
 
@@ -77,14 +79,16 @@ RefactorKit Import Controller
      └─ missing or incomplete required methods → unavailable before clipboard read; no force
   3. explicitly read clipboard once
   4. request rich targetDirectory preview and display normalized plan evidence
-  5. guard workspace + selection generation and exact approved planId
-  6. apply that exact planId through RefactorKit; display returned transaction
-  7. refresh tree/open primary file only from backend result paths
-  8. invoke refactor.discard on cancel or selection/workspace invalidation
-  9. rollback by opaque transaction ID when requested
+  5. require per-plan acknowledgement for unknown/high-risk license or provenance
+  6. guard workspace + selection generation and exact approved planId
+  7. apply that exact planId through RefactorKit; display returned transaction
+  8. refresh tree/open primary file only from backend result paths
+  9. invoke refactor.discard on cancel or selection/workspace invalidation
 ```
 
-The UI does not copy raw Java, infer a target package, construct a patch, or write files. Clipboard source is transient, routed only to RefactorKit preview, never logged, and has no Pi/AI Agent relationship.
+The UI does not copy raw Java, infer a target package, construct a patch, or write project content. Clipboard source is transient, routed only to RefactorKit preview, never logged, and has no Pi/AI Agent relationship. Preview/no-write is scoped to the imported target and other project content before Apply; it is not a byte-identical hidden-metadata guarantee because provider `project.open` may create `.refactorkit/workspace.lock`.
+
+Rollback is implemented only behind provider-neutral contracts, Tauri adapters, Rust commands, and provider transaction authority. The current Java import surface exposes no rollback action.
 
 The Rust bridge launches one `bin/refactorkit-daemon` NDJSON process for the canonical workspace and current workspace generation. Its thin Tauri facade delegates to separate application, capability-policy, contract, path-policy, and transport modules. Compatibility is provider-version-neutral: provider version is diagnostic metadata, while the advertised API and exact required import method features gate the transaction. Normalized language-kernel, runtime-limit, and safety metadata are retained evidence rather than blanket authorization. Malformed output, timeout, workspace switch, or app exit kills the process.
 
@@ -103,7 +107,7 @@ Tauri RefactorKit commands ──> thin RefactorKit Daemon facade
                                       └─ managed NDJSON transport
 ```
 
-The facades only expose inbound commands and re-export bounded types. Process ownership, use-case orchestration, policy, normalization, path authorization, and transport stay in the modules behind them. Current RefactorKit IDE scope is status/capability discovery plus the validated Java import transaction. These CURRENT/AS-BUILT boundaries do not promote parked support code, provider foundations, or frozen Java navigation, mutation, hierarchy, and activation ideas into IDE capabilities.
+The facades only expose inbound commands and re-export bounded types. Process ownership, use-case orchestration, policy, normalization, path authorization, and transport stay in the modules behind them. Current RefactorKit IDE scope is status/capability discovery plus the managed Java import transaction. Production desktop composition wires Symbol Navigation support and its workspace cleanup, but policy keeps it parked and outside current IDE capability. These boundaries do not promote provider foundations or frozen Java navigation, mutation, hierarchy, and activation ideas into IDE capabilities.
 
 ## Dynamic Bottom Tool-window Host
 
@@ -173,7 +177,7 @@ Desktop Settings / Java
 (no scan, definition/references results, or navigation in Settings mode)
 ```
 
-Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellation contracts; the Tauri adapters; guarded Monaco providers; the current conditional Problems projection; and the managed Rust JDT LS bridge are current. RefactorKit is current only for status/capability discovery and the separate validated Java import transaction. Legacy/support handlers and provider foundations are not current IDE capabilities. There is no Java project/module evidence evaluator, activation state, or full activation-scoped Java tooling suite.
+Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellation contracts; the Tauri adapters; guarded Monaco providers; the current conditional Problems projection; and the managed Rust JDT LS bridge are current. RefactorKit is current only for status/capability discovery and the separate managed Java import transaction. Legacy/support handlers and provider foundations are not current IDE capabilities. There is no Java project/module evidence evaluator, activation state, or full activation-scoped Java tooling suite.
 
 ## Global XCOM Machine Settings
 
@@ -209,7 +213,7 @@ The browser setup adapter explicitly reports unavailable unless deliberate simul
 
 ## UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY — Java
 
-Current guarded diagnostics and conditional Problems visibility, completion, hover, signature help, synchronization, cancellation, and stale guards remain maintained as-built. As of 2026-07-14, there is no active Java target or milestone beyond that boundary.
+Current guarded diagnostics and conditional Problems visibility, completion, hover, signature help, synchronization, cancellation, and stale guards remain maintained as-built. There is no active Java target or milestone beyond that boundary.
 
 ```text
 CURRENT (no module activation)
@@ -228,7 +232,7 @@ UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY
 
 This inventory is not target architecture, an ordered delivery plan, or an implied commitment. Its retained safety constraints require any explicitly reconsidered capability to preserve exact-model identity, serialized synchronization, cancellation, stale-result rejection, authorized paths, bounded results, safe edit previews, and untrusted-Markdown handling.
 
-Parked TypeScript diagnostics and semantic navigation requirements are not active: diagnostics lose required range, authority, snapshot, attestation, and structured outcome semantics; real navigation validation observed an unauthorized `.refactorkit/workspace.lock` write. Structural outline and identifier search remain provider foundations, while TypeScript references and rename remain experimental provider operations. None is a current IDE capability, and general Java refactoring beyond validated import remains TODO.
+Parked TypeScript diagnostics and semantic navigation are not active: diagnostics lose required range, authority, snapshot, attestation, and structured outcome semantics; provider `project.open` may create `.refactorkit/workspace.lock` despite its read-only contract. No metadata-write exception is authorized for that navigation flow. Structural outline and identifier search remain provider foundations, while TypeScript references and rename remain experimental provider operations. None is a current IDE capability, and general Java refactoring beyond the managed import remains TODO.
 
 Any reconsidered search integration requires a released strict typed bounded versioned machine-readable JSON contract, or equivalent daemon DTO, with structured errors, truncation, authorized locations, request/result correlation, and immutable real acceptance evidence. Human stdout is never parsed as an IDE protocol.
 

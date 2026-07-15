@@ -46,17 +46,25 @@ The current IDE capability bucket is deliberately limited to:
 1. provider status and strict capability discovery; and
 2. the capability-gated **Paste Java Class from Clipboard** transaction.
 
-For Java import, the directory-tree coordinator validates the selected directory, probes the exact API and import/apply/discard/rollback method features before one explicit clipboard read, presents the provider preview, applies only the exact approved `planId`, discards invalidated work, and rolls back by opaque transaction ID. RefactorKit is the sole writer. The IDE does not infer a package, reconstruct a patch, write directly, force compatibility, log source, or send source/plan/transaction data to Pi.
+For Java import, the directory-tree coordinator validates the selected directory, probes the exact API and import/apply/discard/rollback method features before one explicit clipboard read, presents the provider preview, requires acknowledgement for unknown/high-risk provenance, applies only the exact approved `planId`, and discards invalidated work. RefactorKit is the sole imported-project-content writer. The IDE does not infer a package, reconstruct a patch, write directly, force compatibility, log source, or send source/plan/transaction data to Pi. Rollback exists in contracts, adapters, Rust, and provider authority, but the current import UI has no rollback action.
 
-Real temporary-workspace evidence proved preview/no-write, discard invalidation, exact apply, and byte-for-byte rollback for the validated provider fixtures. Provider version remains diagnostic metadata; exact advertised capability plus real acceptance evidence authorizes only the operation tested.
+Real temporary-workspace evidence proved no imported-target or other project-content write before Apply, discard invalidation, exact apply, and byte-for-byte backend rollback for the validated provider fixtures. That preview result is not complete hidden workspace-tree identity: provider `project.open` may create `.refactorkit/workspace.lock`. Provider version remains diagnostic metadata; exact advertised capability plus real acceptance evidence authorizes only the operation tested.
 
 Fixed native scan/query/navigation handlers, support code, parsed fixtures, and provider advertisements do not by themselves create an IDE capability or UI contribution.
+
+### Promoted executable requirement boundary
+
+[`REQ-REFACTORKIT-JAVA-IMPORT-001`](arc42/appendix-requirements.adoc#REQ-REFACTORKIT-JAVA-IMPORT-001) is declared `@implemented-not-e2e-validated`. At IDE commit `54c28f3`, its deterministic `desktop/tauri-harness` Story passed 1 scenario and 22/22 steps. Under jsdom the harness renders the production desktop `App`, actual FileTree context action, review dialog, import controller, and typed Tauri adapters. A fake in-process Tauri backend supplies capability/preview/apply/discard responses and the imported file effect; Monaco is a mocked textarea.
+
+The Story establishes capability acceptance before exactly one clipboard read; the exact source-bearing preview DTO; complete rendered and structured review; acknowledgement before the exact authority-only Apply DTO; backend-reported parent refresh and primary-file open; a bounded trace without direct IDE mutation, Pi/AI request, source-bearing log, or clipboard source; and cancellation plus stale workspace, selection, request, and plan handling with correlated discard and fail-closed cleanup.
+
+This evidence does not exercise the OS clipboard, native Tauri GUI, real Monaco, a live or immutable RefactorKit provider/daemon, native filesystem authority, complete hidden-metadata identity, or a packaged application. It does not supersede the separate immutable-provider evidence and makes no claim that `project.open` leaves `.refactorkit/` unchanged.
 
 ## 3. RefactorKit Audit Buckets
 
 | Bucket                                                   | Capabilities                                                                                                                                                                 | Architecture status                                                                                                                                           |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Current IDE capability**                               | Provider status/capability discovery; validated Java external-class import transaction                                                                                       | Maintain as built. Revalidate against immutable releases when compatibility changes.                                                                          |
+| **Current IDE capability**                               | Provider status/capability discovery; managed Java external-class import transaction                                                                                         | Maintain as built. Its promoted requirement is bounded to deterministic non-native harness evidence; revalidate provider compatibility separately.            |
 | **Parked — confirmed provider/protocol bug**             | TypeScript/JavaScript diagnostics (`REQ-REFACTORKIT-TS-001`); saved-snapshot semantic navigation (`REQ-REFACTORKIT-TS-002`)                                                  | Not implemented. Report defects and wait for corrected released contracts plus applicable immutable real evidence. No approximation, fallback, or simulation. |
 | **Working provider foundation, not IDE capability**      | Structural outline and identifier search in the audited release                                                                                                              | Unscheduled TODO for any IDE integration. Provider stability alone does not establish typed IDE contracts, UI, or acceptance evidence.                        |
 | **Experimental provider foundation, not IDE capability** | TypeScript references; TypeScript rename proposal; semantic definition/workspace symbols where advertised experimental                                                       | Unscheduled TODO. Do not expose or imply support.                                                                                                             |
@@ -68,7 +76,7 @@ Fixed native scan/query/navigation handlers, support code, parsed fixtures, and 
 
 ### Parked semantic navigation
 
-`REQ-REFACTORKIT-TS-002` remains declared `@not-implemented`. Its deterministic desktop fixture is useful implementation evidence, but immutable real `v0.6.2` validation found that `project.open` adds `.refactorkit/workspace.lock` despite advertised `writesWorkspace:false`. No hidden metadata write is authorized. The operation remains parked until a corrected released capability and a repeated byte-tree audit establish the required no-write behavior.
+`REQ-REFACTORKIT-TS-002` remains declared `@not-implemented`. Its deterministic desktop fixture is useful implementation evidence, but immutable real `v0.6.2` validation found that `project.open` adds `.refactorkit/workspace.lock` despite advertised `writesWorkspace:false`. Option A grants no metadata exception for this read-only symbol-navigation requirement. The operation remains parked until a corrected released capability and a repeated byte-tree audit establish the required no-write behavior.
 
 ## 4. Machine-Readable Search Integration Gate
 
@@ -123,7 +131,7 @@ These are safety constraints, not acceptance criteria for an active milestone.
 ## 7. Provider Responsibility Boundary
 
 - JDT LS remains the provider for the already-as-built synchronized diagnostics, completion, hover, and signature-help loop.
-- RefactorKit remains the provider for the separately validated Java import transaction and any exact future operation that later satisfies the policy above.
+- RefactorKit remains the provider for the managed Java import transaction, with deterministic harness and provider evidence kept separate, and for any exact future operation that later satisfies the policy above.
 - The IDE-native layers own presentation, authority, cancellation, stale guards, previews, and recovery policy.
 - Build tools, debuggers, test runners, terminals, VCS, databases, containers, profilers, and AI transport are separate external-adapter concerns. This frozen Java inventory does not schedule them.
 
