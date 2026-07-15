@@ -172,6 +172,7 @@ test("interrupting an aggregate profile command terminates its process", async (
   const controller = new AbortController();
   let pid;
 
+  let testFailure;
   try {
     const running = runProfileCommand(
       process.execPath,
@@ -196,14 +197,27 @@ test("interrupting an aggregate profile command terminates its process", async (
     controller.abort();
     await assert.rejects(running, /aborted/);
     assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
-  } finally {
-    if (pid) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch (error) {
-        if (error.code !== "ESRCH") throw error;
-      }
+  } catch (error) {
+    testFailure = error;
+  }
+
+  const cleanupFailures = [];
+  if (pid) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch (error) {
+      if (error.code !== "ESRCH") cleanupFailures.push(error);
     }
+  }
+  try {
     await rm(directory, { recursive: true, force: true });
+  } catch (error) {
+    cleanupFailures.push(error);
+  }
+
+  const failures = testFailure ? [testFailure, ...cleanupFailures] : cleanupFailures;
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Story aggregate assertion and cleanup failures");
   }
 });

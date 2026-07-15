@@ -74,6 +74,79 @@ test("ESLint uses real JavaScript and TypeScript analysis with recommended rules
   assert.ok(ruleIds(hooksProbe).includes("react-hooks/rules-of-hooks"));
 });
 
+test("ESLint enforces the generic TypeScript baseline while allowing test fixtures", async () => {
+  const eslint = new ESLint({ cwd: workspaceRoot });
+  const productionPath = "packages/web-core/src/eslint-policy-probe.ts";
+  const testPath = "packages/web-core/src/eslint-policy-probe.test.ts";
+  const storyPath = "tests/story/support/eslint-policy-probe.ts";
+  const fixturePath = "packages/ui/src/eslint-policy-probe.fixture.ts";
+
+  const productionConfig = await eslint.calculateConfigForFile(productionPath);
+  assert.deepEqual(productionConfig.rules["@typescript-eslint/no-explicit-any"], [1]);
+  assert.deepEqual(productionConfig.rules["@typescript-eslint/no-unused-vars"], [
+    1,
+    {
+      args: "all",
+      argsIgnorePattern: "^_",
+      caughtErrors: "all",
+      caughtErrorsIgnorePattern: "^_",
+      destructuredArrayIgnorePattern: "^_",
+      varsIgnorePattern: "^_",
+    },
+  ]);
+
+  for (const fixture of [testPath, storyPath, fixturePath]) {
+    const config = await eslint.calculateConfigForFile(fixture);
+    assert.deepEqual(
+      config.rules["@typescript-eslint/no-explicit-any"],
+      [0],
+      `${fixture} should allow explicit test-double types`,
+    );
+  }
+
+  const [productionAny] = await eslint.lintText("export const value: any = 1;", {
+    filePath: productionPath,
+  });
+  assert.ok(ruleIds(productionAny).includes("@typescript-eslint/no-explicit-any"));
+
+  const [testAny] = await eslint.lintText("export const value: any = 1;", {
+    filePath: testPath,
+  });
+  assert.ok(!ruleIds(testAny).includes("@typescript-eslint/no-explicit-any"));
+
+  const [ordinaryUnused] = await eslint.lintText("const ordinaryUnused = 1;", {
+    filePath: productionPath,
+  });
+  assert.ok(ruleIds(ordinaryUnused).includes("@typescript-eslint/no-unused-vars"));
+  assert.ok(
+    ordinaryUnused.messages.some(
+      ({ ruleId, severity }) => ruleId === "@typescript-eslint/no-unused-vars" && severity === 1,
+    ),
+  );
+
+  const [underscorePlaceholders] = await eslint.lintText(
+    [
+      "export interface Handler {",
+      "  handle(_interfaceParameter: string): void;",
+      "}",
+      "export function handle(_functionParameter: string): void {}",
+      "const _unusedVariable = 1;",
+      "const [_unusedElement] = [1];",
+      "try {",
+      '  throw new Error("probe");',
+      "} catch (_caughtError) {}",
+    ].join("\n"),
+    { filePath: productionPath },
+  );
+  assert.ok(!ruleIds(underscorePlaceholders).includes("@typescript-eslint/no-unused-vars"));
+
+  const [unsafeFinally] = await eslint.lintText(
+    "function probe() { try { return 1; } finally { return 2; } }\nprobe();",
+    { filePath: "scripts/eslint-policy-probe.mjs" },
+  );
+  assert.ok(ruleIds(unsafeFinally).includes("no-unsafe-finally"));
+});
+
 test("ESLint rejects malformed syntax injected into an actual TypeScript source", async () => {
   const relativeSourcePath = "packages/web-core/src/index.ts";
   const actualSource = await readFile(path.join(workspaceRoot, relativeSourcePath), "utf8");

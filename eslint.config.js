@@ -5,6 +5,11 @@ import tseslint from "typescript-eslint";
 
 const javaScriptFiles = ["**/*.{js,mjs,cjs}"];
 const typeScriptFiles = ["**/*.{ts,tsx}"];
+const typeScriptFixtureFiles = [
+  "**/*.{test,spec,fixture,stories}.{ts,tsx}",
+  "**/__tests__/**/*.{ts,tsx}",
+  "tests/**/*.{ts,tsx}",
+];
 const nodeFiles = [
   "**/*.{js,mjs,cjs}",
   "**/*.config.{ts,tsx}",
@@ -54,8 +59,24 @@ export default tseslint.config(
     files: typeScriptFiles,
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          args: "all",
+          argsIgnorePattern: "^_",
+          caughtErrors: "all",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
       "prefer-const": "warn",
+    },
+  },
+  {
+    files: typeScriptFixtureFiles,
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   {
