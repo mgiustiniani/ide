@@ -5,33 +5,33 @@
 //   read_file, write_file
 // ---------------------------------------------------------------------------
 
-import { TauriAdapterError, invokeTauri } from './errors';
-import type { OpenFile, EditorContent, Language } from '@ide/contracts';
-import type { EditorPort } from '@ide/web-core/ports';
+import { TauriAdapterError, invokeTauri } from "./errors";
+import type { OpenFile, EditorContent, Language } from "@ide/contracts";
+import type { EditorPort } from "@ide/web-core/ports";
 
 /**
  * Extension-to-language mapping for when the Rust side doesn't return
  * a recognized language or for fallback detection.
  */
 const EXTENSION_LANG_MAP: Record<string, Language> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  rs: 'rust',
-  css: 'css',
-  html: 'html',
-  json: 'json',
-  md: 'markdown',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'toml',
-  sh: 'shell',
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  rs: "rust",
+  css: "css",
+  html: "html",
+  json: "json",
+  md: "markdown",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  sh: "shell",
 };
 
 function detectLanguage(filePath: string): Language {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return EXTENSION_LANG_MAP[ext] ?? 'plaintext';
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return EXTENSION_LANG_MAP[ext] ?? "plaintext";
 }
 
 export interface TauriEditorAdapterOptions {
@@ -45,9 +45,10 @@ export class TauriEditorAdapter implements EditorPort {
 
   constructor(options: TauriEditorAdapterOptions = {}) {
     const configuredTimeout = options.readTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
-    this.readTimeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-      ? configuredTimeout
-      : DEFAULT_READ_TIMEOUT_MS;
+    this.readTimeoutMs =
+      Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_READ_TIMEOUT_MS;
   }
 
   /** Load the content of the file at `filePath`. */
@@ -57,34 +58,38 @@ export class TauriEditorAdapter implements EditorPort {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
-        reject(new TauriAdapterError('read_file', 'File read timed out'));
+        reject(new TauriAdapterError("read_file", "File read timed out"));
       }, this.readTimeoutMs);
     });
 
     let result: Record<string, unknown>;
     try {
       result = await Promise.race([
-        invokeTauri<Record<string, unknown>>('read_file', { path: filePath }),
+        invokeTauri<Record<string, unknown>>("read_file", { path: filePath }),
         timeout,
       ]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
 
-    if (typeof result.content !== 'string') {
-      throw new TauriAdapterError('read_file', 'Invalid read_file response: missing string content');
+    if (typeof result.content !== "string") {
+      throw new TauriAdapterError(
+        "read_file",
+        "Invalid read_file response: missing string content",
+      );
     }
 
     const content = result.content;
-    const language = typeof result.language === 'string' && result.language.length > 0
-      ? result.language
-      : detectLanguage(filePath);
+    const language =
+      typeof result.language === "string" && result.language.length > 0
+        ? result.language
+        : detectLanguage(filePath);
 
     const openFiles = await this.getOpenFiles();
     if (!openFiles.some((file) => file.filePath === filePath)) {
       openFiles.push({
         filePath,
-        name: filePath.split('/').pop() ?? filePath,
+        name: filePath.split("/").pop() ?? filePath,
         language: language as Language,
         openedAt: Date.now(),
       });
@@ -100,7 +105,7 @@ export class TauriEditorAdapter implements EditorPort {
 
   /** Save `content` to the file at `filePath`. Returns the updated OpenFile list. */
   async saveContent(filePath: string, content: string): Promise<OpenFile[]> {
-    await invokeTauri<Record<string, unknown>>('write_file', {
+    await invokeTauri<Record<string, unknown>>("write_file", {
       path: filePath,
       content,
     });
@@ -109,7 +114,7 @@ export class TauriEditorAdapter implements EditorPort {
     // The Rust side doesn't maintain an open-files session, so we
     // reconstruct from a simple in-memory array.
     const openFiles = await this.getOpenFiles();
-    const fileName = filePath.split('/').pop() ?? filePath;
+    const fileName = filePath.split("/").pop() ?? filePath;
     const language = detectLanguage(filePath);
 
     const existing = openFiles.findIndex((f) => f.filePath === filePath);
@@ -143,9 +148,7 @@ export class TauriEditorAdapter implements EditorPort {
 
   /** Close the file at `filePath`. Returns the updated OpenFile list. */
   async closeFile(filePath: string): Promise<OpenFile[]> {
-    this._openFiles = this._openFiles.filter(
-      (f) => f.filePath !== filePath,
-    );
+    this._openFiles = this._openFiles.filter((f) => f.filePath !== filePath);
     return this.getOpenFiles();
   }
 }

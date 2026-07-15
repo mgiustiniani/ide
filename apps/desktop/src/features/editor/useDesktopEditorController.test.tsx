@@ -7,10 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 
-vi.mock(
-  "../../../../../packages/tauri-adapters/node_modules/@tauri-apps/api/core.js",
-  () => ({ invoke: invokeMock }),
-);
+vi.mock("../../../../../packages/tauri-adapters/node_modules/@tauri-apps/api/core.js", () => ({
+  invoke: invokeMock,
+}));
 import {
   DesktopEditorController,
   type DesktopEditorStoreState,
@@ -334,9 +333,7 @@ describe("useDesktopEditorController", () => {
       h.state.activeFilePath = path;
       h.state.contents[path] = "done";
       h.state.tabs = [{ filePath: path, isDirty: false, isActive: true }];
-      h.state.openFiles = [
-        { filePath: path, name: path, language: "typescript", openedAt: 1 },
-      ];
+      h.state.openFiles = [{ filePath: path, name: path, language: "typescript", openedAt: 1 }];
     });
 
     function Harness() {
