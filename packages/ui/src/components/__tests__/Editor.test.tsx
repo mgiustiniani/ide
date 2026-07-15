@@ -302,4 +302,45 @@ describe('Editor', () => {
       [expect.objectContaining({ severity: 8, startLineNumber: 1, startColumn: 2 })]
     );
   });
+
+  it('does not repeat reveal or marker registration for equivalent request and document identities', async () => {
+    const diagnostics = [{
+      severity: 'error' as const,
+      message: 'Broken',
+      range: { start: { line: 0, character: 1 }, end: { line: 0, character: 3 } },
+    }];
+    const editorProps = {
+      ...baseProps,
+      filePath: 'src/Main.java',
+      language: 'java' as const,
+      content: 'abc\ndef',
+      diagnosticOwner: 'jdtls',
+      diagnostics,
+    };
+    const { rerender } = render(<Editor
+      {...editorProps}
+      revealRequest={{ filePath: 'src/Main.java', line: 2, column: 2, requestId: 1 }}
+      documentIdentity={{ workspaceId: 'workspace-1', path: 'src/Main.java', uri: 'file:///src/Main.java' }}
+    />);
+    await giveMonacoHostPositiveSize();
+
+    rerender(<Editor
+      {...editorProps}
+      revealRequest={{ filePath: 'src/Main.java', line: 2, column: 2, requestId: 1 }}
+      documentIdentity={{ workspaceId: 'workspace-1', path: 'src/Main.java', uri: 'file:///src/Main.java' }}
+    />);
+
+    expect(monacoHarness.setPosition).toHaveBeenCalledTimes(1);
+    expect(monacoHarness.setModelMarkers).toHaveBeenCalledTimes(1);
+
+    rerender(<Editor
+      {...editorProps}
+      revealRequest={{ filePath: 'src/Main.java', line: 1, column: 3, requestId: 2 }}
+      documentIdentity={{ workspaceId: 'workspace-1', path: 'src/Main.java', uri: 'file:///src/Main.java' }}
+    />);
+
+    expect(monacoHarness.setPosition).toHaveBeenCalledTimes(2);
+    expect(monacoHarness.setPosition).toHaveBeenLastCalledWith({ lineNumber: 1, column: 3 });
+    expect(monacoHarness.setModelMarkers).toHaveBeenCalledTimes(1);
+  });
 });

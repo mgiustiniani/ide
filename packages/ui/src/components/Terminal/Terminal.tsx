@@ -149,7 +149,7 @@ export function Terminal({
 
     // Handle key events for native input
     term.onKey((e) => {
-      const { key, domEvent } = e;
+      const { domEvent } = e;
 
       if (!domEvent) return;
 

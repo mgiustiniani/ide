@@ -3,7 +3,7 @@ import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import React, { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { configureLocalMonaco } from '../../monaco/bootstrap';
 import type { LanguageDiagnostic } from '../diagnostics';
-import type { EditorProps, EditorRevealRequest, JavaEditorSemantics } from './Editor';
+import type { EditorProps, JavaEditorSemantics } from './Editor';
 import { registerJavaSemanticProviders } from './javaSemantics';
 import { getMonacoLanguage, getMonacoModelPath } from './monacoLanguage';
 
@@ -128,6 +128,12 @@ export function MonacoCodeEditor({
   renderableRef.current = isRenderable;
   semanticsRef.current = javaSemantics;
   const semanticContext = javaSemantics?.context;
+  const revealFilePath = revealRequest?.filePath;
+  const revealLine = revealRequest?.line;
+  const revealColumn = revealRequest?.column;
+  const revealRequestId = revealRequest?.requestId;
+  const hasDiagnosticDocumentIdentity = Boolean(documentIdentity);
+  const diagnosticDocumentPath = documentIdentity?.path;
   const modelPath = useMemo(
     () => semanticContext?.document.path === filePath ? semanticContext.document.uri : getMonacoModelPath(filePath),
     [filePath, semanticContext?.document.path, semanticContext?.document.uri],
@@ -189,18 +195,18 @@ export function MonacoCodeEditor({
 
   useEffect(() => {
     const editor = editorRef.current;
-    if (!mounted || !editor || !revealRequest || revealRequest.filePath !== filePath) return;
+    if (!mounted || !editor || revealFilePath !== filePath || revealLine === undefined || revealRequestId === undefined) return;
     const handled = handledRevealRef.current;
-    if (handled?.filePath === filePath && Object.is(handled.requestId, revealRequest.requestId)) return;
+    if (handled?.filePath === filePath && Object.is(handled.requestId, revealRequestId)) return;
 
     const model = editor.getModel();
-    const requested = { lineNumber: revealRequest.line, column: revealRequest.column ?? 1 };
+    const requested = { lineNumber: revealLine, column: revealColumn ?? 1 };
     const position = model?.validatePosition(requested) ?? requested;
     editor.setPosition(position);
     editor.revealPositionInCenter(position);
     editor.focus();
-    handledRevealRef.current = { filePath, requestId: revealRequest.requestId };
-  }, [filePath, mounted, revealRequest?.column, revealRequest?.filePath, revealRequest?.line, revealRequest?.requestId]);
+    handledRevealRef.current = { filePath, requestId: revealRequestId };
+  }, [filePath, mounted, revealColumn, revealFilePath, revealLine, revealRequestId]);
 
   useEffect(() => {
     const previous = markerRegistrationRef.current;
@@ -212,7 +218,7 @@ export function MonacoCodeEditor({
     const editor = editorRef.current;
     const api = monacoRef.current;
     const model = editor?.getModel();
-    const diagnosticsMatchActiveFile = !documentIdentity || documentIdentity.path === filePath;
+    const diagnosticsMatchActiveFile = !hasDiagnosticDocumentIdentity || diagnosticDocumentPath === filePath;
     if (!mounted || !api || !model || !diagnosticsMatchActiveFile) return;
 
     const owner = diagnosticOwner.trim() || 'language-diagnostics';
@@ -225,7 +231,7 @@ export function MonacoCodeEditor({
         markerRegistrationRef.current = null;
       }
     };
-  }, [diagnosticOwner, diagnostics, documentIdentity?.path, filePath, modelPath, mounted]);
+  }, [diagnosticDocumentPath, diagnosticOwner, diagnostics, filePath, hasDiagnosticDocumentIdentity, modelPath, mounted]);
 
   useEffect(() => {
     const editor = editorRef.current;

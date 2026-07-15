@@ -51,7 +51,7 @@ export function StatusBar({
         </span>
         <span className="statusbar-item">
           <Icon type="circle-filled" size={10} className="mr-1 opacity-70" />
-          <span className="opacity-60 mr-0.5">UTF-8</span>
+          <span className="opacity-60 mr-0.5">{encoding}</span>
         </span>
         <span className="statusbar-item">
           <Icon type="circle-filled" size={10} className="mr-1 opacity-70" />

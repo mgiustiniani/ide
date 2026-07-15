@@ -109,7 +109,6 @@ export function registerJavaSemanticProviders({
 
   async function request<TResponse extends { requestId: string; ok: boolean }, TResult>(
     candidate: Monaco.editor.ITextModel,
-    position: Monaco.Position,
     token: Monaco.CancellationToken,
     invoke: (requestId: string, cancellationId: string) => Promise<TResponse>,
     select: (response: TResponse) => TResult,
@@ -150,7 +149,7 @@ export function registerJavaSemanticProviders({
   const completion = api.languages.registerCompletionItemProvider('java', {
     provideCompletionItems(candidate, position, context, token) {
       return request<JavaCompletionResponse, Monaco.languages.CompletionList>(
-        candidate, position, token,
+        candidate, token,
         (requestId, cancellationId) => {
           const trigger = context.triggerKind === 1
             ? { kind: 'trigger-character' as const, character: context.triggerCharacter }
@@ -197,7 +196,7 @@ export function registerJavaSemanticProviders({
   const hover = api.languages.registerHoverProvider('java', {
     provideHover(candidate, position, token) {
       return request<JavaHoverResponse, Monaco.languages.Hover | null>(
-        candidate, position, token,
+        candidate, token,
         (requestId, cancellationId) => semantics.hover(baseRequest(position, requestId, cancellationId) as JavaHoverRequest),
         (response) => {
           if (!response.ok || !responseMatches(response.result, semantics)) return null;
@@ -213,7 +212,7 @@ export function registerJavaSemanticProviders({
     signatureHelpTriggerCharacters: ['(', ','],
     provideSignatureHelp(candidate, position, token, _context) {
       return request<JavaSignatureHelpResponse, Monaco.languages.SignatureHelpResult | null>(
-        candidate, position, token,
+        candidate, token,
         (requestId, cancellationId) => semantics.signatureHelp(baseRequest(position, requestId, cancellationId) as JavaSignatureHelpRequest),
         (response) => {
           if (!response.ok || !responseMatches(response.result, semantics)) return null;
