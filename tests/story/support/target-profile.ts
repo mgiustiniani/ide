@@ -2,12 +2,22 @@ export const TARGET_PROFILES = {
   unselected: { name: "unselected", driver: "unselected" },
   web: { name: "web", driver: "playwright" },
   desktop: { name: "desktop", driver: "tauri" },
+  desktopTauriWebdriver: { name: "desktop", driver: "tauri-webdriver" },
 } as const;
 
 export type TargetProfile = (typeof TARGET_PROFILES)[keyof typeof TARGET_PROFILES];
 
+export interface StoryTargetEvidence {
+  readonly kind: string;
+  readonly nativeGui: boolean;
+  readonly e2e: boolean;
+  readonly packagedApplication: boolean;
+  readonly artifactKind?: string;
+}
+
 export interface StoryWorldParameters {
   readonly target: TargetProfile;
+  readonly evidence?: StoryTargetEvidence;
 }
 
 /**
@@ -44,6 +54,20 @@ export function resolveTargetProfile(parameters: StoryWorldParameters): TargetPr
 
   for (const profile of Object.values(TARGET_PROFILES)) {
     if (configuredTarget.name === profile.name && configuredTarget.driver === profile.driver) {
+      if (profile === TARGET_PROFILES.desktopTauriWebdriver) {
+        const evidence = parameters.evidence;
+        if (
+          evidence?.kind !== "tauri-webdriver" ||
+          evidence.nativeGui !== true ||
+          evidence.e2e !== true ||
+          evidence.packagedApplication !== false ||
+          evidence.artifactKind !== "release-no-bundle"
+        ) {
+          throw new TypeError(
+            "desktop/tauri-webdriver requires explicit nativeGui/e2e release-no-bundle evidence",
+          );
+        }
+      }
       return profile;
     }
   }

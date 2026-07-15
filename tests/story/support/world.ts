@@ -1,6 +1,7 @@
 import { After, setWorldConstructor, World, type IWorldOptions } from "@cucumber/cucumber";
 
 import { ApplicationContentLayoutSession } from "./application-content-layout.js";
+import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
@@ -17,6 +18,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   readonly targetProfileSeam: TargetProfileSeam;
   #applicationContentLayoutSession?: ApplicationContentLayoutSession;
   #desktopPanelLayoutHarness?: SharedPanelLayoutHarness;
+  #nativeDesktopFileOpenSession?: NativeDesktopFileOpenSession;
+  #nativeDesktopEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #standaloneWebApp?: StandaloneWebApp;
 
@@ -103,15 +106,61 @@ export class StoryWorld extends World<StoryWorldParameters> {
     return this.#refactorKit062ProtocolFixture;
   }
 
+  createNativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native file-open Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (this.#nativeDesktopFileOpenSession) {
+      throw new Error("The native desktop file-open Story session has already been created");
+    }
+    const session = new NativeDesktopFileOpenSession();
+    this.#nativeDesktopFileOpenSession = session;
+    return session;
+  }
+
+  nativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
+    if (!this.#nativeDesktopFileOpenSession) {
+      throw new Error("The native desktop file-open Story session has not been created");
+    }
+    return this.#nativeDesktopFileOpenSession;
+  }
+
+  async attachNativeDesktopEvidence(): Promise<void> {
+    if (this.#nativeDesktopEvidenceAttached) return;
+    const session = this.nativeDesktopFileOpenSession();
+    await this.attach(JSON.stringify(session.evidence()), "application/json");
+    const diagnostics = session.redactedDiagnostics();
+    if (diagnostics) await this.attach(diagnostics, "text/plain");
+    this.#nativeDesktopEvidenceAttached = true;
+  }
+
   async dispose(): Promise<void> {
     const app = this.#standaloneWebApp;
     const desktopPanelLayoutHarness = this.#desktopPanelLayoutHarness;
+    const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
+    this.#nativeDesktopFileOpenSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     try {
+      if (nativeDesktopFileOpenSession) {
+        try {
+          if (!this.#nativeDesktopEvidenceAttached) {
+            await this.attach(
+              JSON.stringify(nativeDesktopFileOpenSession.evidence()),
+              "application/json",
+            );
+            const diagnostics = nativeDesktopFileOpenSession.redactedDiagnostics();
+            if (diagnostics) await this.attach(diagnostics, "text/plain");
+          }
+        } finally {
+          await nativeDesktopFileOpenSession.dispose();
+        }
+      }
       await app?.dispose();
       await desktopPanelLayoutHarness?.dispose();
       await refactorKitFixture?.dispose();
