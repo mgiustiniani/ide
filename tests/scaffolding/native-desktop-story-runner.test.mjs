@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,9 +15,14 @@ import {
   NativeDesktopStoryPrerequisiteError,
   NativeDesktopStoryTimeoutError,
   buildNativeDesktopApplication,
+  cleanupNativeDesktopSandboxProcesses,
+  createNativeDesktopRuntimeEnvironment,
   createNativeDesktopSandbox,
+  discoverNativeDesktopSelection,
+  findNativeDesktopSandboxProcesses,
   nativeDesktopBuildCommand,
   nativeDesktopLaunchCommand,
+  preflightNativeJavaImportPython,
   profileSelectsScenarios,
   resolveNativeDesktopPrerequisites,
   runNativeDesktopStory,
@@ -169,6 +174,73 @@ test("a missing native prerequisite fails with a typed error before execution", 
   );
 });
 
+test("native Java import preflight uses only absolute /usr/bin/python3 and PyGObject GTK3", () => {
+  let invocation;
+  const pythonPath = preflightNativeJavaImportPython({
+    run: (command, arguments_, options) => {
+      invocation = { command, arguments_, options };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  assert.equal(pythonPath, "/usr/bin/python3");
+  assert.equal(invocation.command, "/usr/bin/python3");
+  assert.deepEqual(invocation.arguments_.slice(0, 1), ["-c"]);
+  assert.match(invocation.arguments_[1], /require_version\('Gtk', '3\.0'\)/);
+  assert.match(invocation.arguments_[1], /from gi\.repository import Gtk/);
+  assert.equal(invocation.options.timeout, 10_000);
+});
+
+test("PyGObject GTK3 preflight is conditional on selected native Java import scenarios", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "native-story-python-preflight-"));
+  try {
+    const environment = {
+      PATH: "",
+      TAURI_DRIVER_PATH: await executable(directory, "tauri-driver"),
+      WEBKIT_WEBDRIVER_PATH: await executable(directory, "WebKitWebDriver"),
+      XVFB_RUN_PATH: await executable(directory, "xvfb-run"),
+      DBUS_RUN_SESSION_PATH: await executable(directory, "dbus-run-session"),
+      IDE_DESKTOP_APPLICATION_PATH: await executable(directory, "ide-desktop"),
+    };
+    let calls = 0;
+    const withoutJava = await resolveNativeDesktopPrerequisites(environment, {
+      applicationPath: environment.IDE_DESKTOP_APPLICATION_PATH,
+      preflightPython: () => {
+        calls += 1;
+        return "/usr/bin/python3";
+      },
+    });
+    assert.equal(calls, 0);
+    assert.equal(withoutJava.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+
+    const withJava = await resolveNativeDesktopPrerequisites(environment, {
+      applicationPath: environment.IDE_DESKTOP_APPLICATION_PATH,
+      requiresNativeJavaImport: true,
+      preflightPython: () => {
+        calls += 1;
+        return "/usr/bin/python3";
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(withJava.IDE_STORY_NATIVE_GUI_PYTHON_PATH, "/usr/bin/python3");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("native Java import preflight reports a typed failure without trying another Python", () => {
+  assert.throws(
+    () =>
+      preflightNativeJavaImportPython({
+        run: () => ({ status: 1, stdout: "", stderr: "ModuleNotFoundError: No module named gi" }),
+      }),
+    (error) =>
+      error instanceof NativeDesktopStoryPrerequisiteError &&
+      /\/usr\/bin\/python3 with PyGObject GTK3/.test(error.message) &&
+      /No module named gi/.test(error.message),
+  );
+});
+
 test("native build command is direct, production release/no-bundle, and non-recursive", () => {
   const build = nativeDesktopBuildCommand();
   assert.deepEqual(build, {
@@ -255,7 +327,11 @@ test("selected native execution builds and records evidence before launching the
     };
 
     const result = await runNativeDesktopStory("desktopFileOpenNativeGui", {
-      environment: { PATH: process.env.PATH },
+      environment: {
+        PATH: `/untrusted/global${path.delimiter}${process.env.PATH}`,
+        IDE_REFACTORKIT_DAEMON: "/untrusted/refactorkit",
+        IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+      },
       selectsScenarios: () => {
         calls.push("select");
         return true;
@@ -267,18 +343,33 @@ test("selected native execution builds and records evidence before launching the
       resolvePrerequisites: async (_environment, options) => {
         calls.push("prerequisites");
         assert.equal(options.applicationPath, applicationPath);
+        assert.equal(options.requiresNativeJavaImport, false);
         return prerequisites;
       },
       createSandbox: async (options) => {
         calls.push("sandbox");
         return createNativeDesktopSandbox({ ...options, artifactRoot });
       },
-      run: async () => {
+      run: async (_command, _arguments, options) => {
         calls.push("run");
+        assert.equal(options.environment.IDE_REFACTORKIT_DAEMON, undefined);
+        assert.equal(options.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+        assert.doesNotMatch(options.environment.PATH, /untrusted\/global/);
+        assert.equal(options.timeoutMs, NATIVE_DESKTOP_OUTER_TIMEOUT_MS);
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("cleanup");
+        return {
+          sandboxPath,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
       },
     });
 
-    assert.deepEqual(calls, ["select", "build", "prerequisites", "sandbox", "run"]);
+    assert.deepEqual(calls, ["select", "build", "prerequisites", "sandbox", "run", "cleanup"]);
     assert.equal(result.skipped, false);
     const manifest = JSON.parse(
       await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
@@ -290,6 +381,15 @@ test("selected native execution builds and records evidence before launching the
       command: application.command,
       timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
     });
+    assert.deepEqual(
+      JSON.parse(
+        await readFile(
+          path.join(result.sandbox.paths.artifacts, "post-run-process-cleanup.json"),
+          "utf8",
+        ),
+      ).survivorProcessIds,
+      [],
+    );
   } finally {
     await rm(artifactRoot, { recursive: true, force: true });
   }
@@ -313,6 +413,34 @@ test("synthetic parked zero-selection native profile skips without build or laun
 
   assert.deepEqual(result, { skipped: true });
   assert.deepEqual(calls, []);
+});
+
+test("focused Java import selection requests conditional Python/GTK preflight after fresh build", async () => {
+  const preflightBoundary = new NativeDesktopStoryPrerequisiteError("stop after preflight routing");
+  const calls = [];
+  await assert.rejects(
+    runNativeDesktopStory("refactorKitJavaImportNativeGui", {
+      selectsScenarios: () => ({
+        hasScenarios: true,
+        includesNativeJavaImport: true,
+        scenarios: [],
+      }),
+      buildApplication: async () => {
+        calls.push("build");
+        return { path: "/tmp/fresh-ide-desktop" };
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("preflight");
+        assert.equal(options.applicationPath, "/tmp/fresh-ide-desktop");
+        assert.equal(options.requiresNativeJavaImport, true);
+        throw preflightBoundary;
+      },
+      createSandbox: async () => calls.push("sandbox"),
+      run: async () => calls.push("run"),
+    }),
+    (error) => error === preflightBoundary,
+  );
+  assert.deepEqual(calls, ["build", "preflight"]);
 });
 
 test("selected native profile propagates build failure and build timeout without launch", async () => {
@@ -342,9 +470,15 @@ test("selected native profile propagates build failure and build timeout without
 test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", async () => {
   const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-sandbox-"));
   try {
+    const inheritedEnvironment = {
+      PATH: process.env.PATH,
+      HOME: "/must-not-leak",
+      IDE_REFACTORKIT_DAEMON: "/untrusted/global/refactorkit",
+      IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+    };
     const sandbox = await createNativeDesktopSandbox({
       artifactRoot,
-      environment: { PATH: process.env.PATH, HOME: "/must-not-leak" },
+      environment: inheritedEnvironment,
     });
     const containedVariables = [
       "HOME",
@@ -354,6 +488,7 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
       "XDG_STATE_HOME",
       "XDG_RUNTIME_DIR",
       "IDE_HOME",
+      "IDE_STORY_NATIVE_GUI_SCENARIO_ROOT",
       "IDE_WORKSPACE_ROOT",
       "TMPDIR",
       "TEMP",
@@ -367,6 +502,15 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
     }
     assert.equal(sandbox.environment.GDK_BACKEND, "x11");
     assert.equal(sandbox.environment.IDE_STORY_NATIVE_GUI_TARGET, "desktop/tauri-webdriver");
+    assert.equal(
+      sandbox.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT,
+      sandbox.paths.scenarioRoot,
+    );
+    assert.equal(sandbox.environment.IDE_REFACTORKIT_DAEMON, undefined);
+    assert.equal(sandbox.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+    assert.equal(inheritedEnvironment.IDE_REFACTORKIT_DAEMON, "/untrusted/global/refactorkit");
+    assert.equal(inheritedEnvironment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, "1");
+    assert.equal(Object.isFrozen(sandbox.environment), true);
     assert.equal("DISPLAY" in sandbox.environment, false);
     assert.equal("WAYLAND_DISPLAY" in sandbox.environment, false);
     assert.equal("DBUS_SESSION_BUS_ADDRESS" in sandbox.environment, false);
@@ -375,11 +519,199 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
   }
 });
 
-test("native runner profiles select exactly the promoted native GUI scenario", () => {
+test("per-scenario lease root is empty, distinct from legacy file-open workspace, and confined", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-scenario-root-"));
+  try {
+    const sandbox = await createNativeDesktopSandbox({ artifactRoot, environment: {} });
+    assert.notEqual(sandbox.paths.scenarioRoot, sandbox.paths.workspace);
+    assert.equal(path.relative(sandbox.root, sandbox.paths.scenarioRoot).startsWith(".."), false);
+    assert.deepEqual(await readdir(sandbox.paths.scenarioRoot), []);
+    assert.equal(
+      sandbox.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT,
+      sandbox.paths.scenarioRoot,
+    );
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
+test("runtime sanitation leaves the caller environment available for scenario restoration", () => {
+  const inherited = {
+    PATH: "/global/bin",
+    IDE_REFACTORKIT_DAEMON: "/global/refactorkit",
+    IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+  };
+  const snapshot = { ...inherited };
+  createNativeDesktopRuntimeEnvironment(inherited, {
+    IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: "/owned/bin/tauri-driver",
+    IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: "/owned/bin/WebKitWebDriver",
+    IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: "/usr/bin/xvfb-run",
+    IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: "/usr/bin/dbus-run-session",
+    IDE_STORY_NATIVE_GUI_APPLICATION_PATH: "/owned/application/ide-desktop",
+  });
+  assert.deepEqual(inherited, snapshot);
+});
+
+test("runtime PATH is closed to owned executable directories plus /usr/bin and /bin", () => {
+  const sandboxEnvironment = {
+    PATH: "/home/developer/.local/bin:/usr/local/bin",
+    IDE_REFACTORKIT_DAEMON: "/home/developer/.local/bin/refactorkit",
+    IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+  };
+  const prerequisites = {
+    IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: "/owned/tauri/bin/tauri-driver",
+    IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: "/owned/webkit/bin/WebKitWebDriver",
+    IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: "/usr/bin/xvfb-run",
+    IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: "/usr/bin/dbus-run-session",
+    IDE_STORY_NATIVE_GUI_APPLICATION_PATH: "/owned/application/ide-desktop",
+  };
+
+  const runtime = createNativeDesktopRuntimeEnvironment(sandboxEnvironment, prerequisites);
+
+  assert.equal(
+    runtime.PATH,
+    ["/owned/tauri/bin", "/owned/webkit/bin", "/usr/bin", "/owned/application", "/bin"].join(
+      path.delimiter,
+    ),
+  );
+  assert.equal(runtime.IDE_REFACTORKIT_DAEMON, undefined);
+  assert.equal(runtime.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+  assert.equal(sandboxEnvironment.PATH, "/home/developer/.local/bin:/usr/local/bin");
+  assert.equal(sandboxEnvironment.IDE_REFACTORKIT_DAEMON, "/home/developer/.local/bin/refactorkit");
+  assert.equal(Object.isFrozen(runtime), true);
+});
+
+test("native runner profiles preserve file-open and select parked Java import regardless status", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
   assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 1);
+  assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
+
+  const selection = discoverNativeDesktopSelection("refactorKitJavaImportNativeGui");
+  assert.equal(selection.hasScenarios, true);
+  assert.equal(selection.includesNativeJavaImport, true);
+  assert.equal(selection.scenarios.length, 1);
+  assert.ok(selection.scenarios[0].tags.includes("@REQ-REFACTORKIT-JAVA-IMPORT-002"));
+  assert.ok(selection.scenarios[0].tags.includes("@not-implemented"));
+});
+
+test("implemented native discovery dynamically excludes parked Java import until promotion", () => {
+  const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
+  assert.equal(selection.hasScenarios, true);
+  assert.equal(selection.includesNativeJavaImport, false);
+  assert.equal(selection.scenarios.length, 1);
+  assert.ok(selection.scenarios[0].tags.includes("@REQ-DESKTOP-FILE-OPEN-001"));
+});
+
+test("process scanning matches only the exact native sandbox environment value", async () => {
+  const procRoot = await mkdtemp(path.join(tmpdir(), "native-story-proc-"));
+  const sandboxPath = "/tmp/native-story-exact-sandbox";
+  try {
+    const environments = new Map([
+      [100, `A=1\0IDE_STORY_NATIVE_GUI_SANDBOX_PATH=${sandboxPath}\0`],
+      [101, `A=1\0OTHER_PATH=${sandboxPath}\0`],
+      [102, `IDE_STORY_NATIVE_GUI_SANDBOX_PATH=${sandboxPath}-other\0`],
+      [103, "A=1\0"],
+    ]);
+    for (const [processId, environment] of environments) {
+      const directory = path.join(procRoot, String(processId));
+      await mkdir(directory);
+      await writeFile(path.join(directory, "environ"), environment, "utf8");
+    }
+
+    assert.deepEqual(
+      await findNativeDesktopSandboxProcesses(sandboxPath, {
+        procRoot,
+        excludeProcessIds: [],
+      }),
+      [100],
+    );
+  } finally {
+    await rm(procRoot, { recursive: true, force: true });
+  }
+});
+
+test("post-run cleanup TERM/KILLs detached exact-sandbox processes without unrelated kills", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "native-story-detached-cleanup-"));
+  const sandboxPath = path.join(directory, "sandbox");
+  const script =
+    "import { writeFileSync } from 'node:fs'; process.on('SIGTERM', () => {}); writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);";
+  let owned;
+  let unrelated;
+  try {
+    owned = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", script, path.join(directory, "owned")],
+      {
+        detached: true,
+        env: { ...process.env, IDE_STORY_NATIVE_GUI_SANDBOX_PATH: sandboxPath },
+        stdio: "ignore",
+      },
+    );
+    unrelated = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", script, path.join(directory, "unrelated")],
+      {
+        detached: true,
+        env: { ...process.env, IDE_STORY_NATIVE_GUI_SANDBOX_PATH: `${sandboxPath}-unrelated` },
+        stdio: "ignore",
+      },
+    );
+    const ownedProcessId = Number(await waitForFile(path.join(directory, "owned")));
+    const unrelatedProcessId = Number(await waitForFile(path.join(directory, "unrelated")));
+
+    const evidence = await cleanupNativeDesktopSandboxProcesses(sandboxPath, {
+      termTimeoutMs: 25,
+      killTimeoutMs: 500,
+      pollIntervalMs: 10,
+    });
+
+    assert.ok(evidence.detectedProcessIds.includes(ownedProcessId));
+    assert.ok(evidence.termSignaledProcessIds.includes(ownedProcessId));
+    assert.ok(evidence.killSignaledProcessIds.includes(ownedProcessId));
+    assert.deepEqual(evidence.survivorProcessIds, []);
+    await assertProcessGone(ownedProcessId);
+    assert.doesNotThrow(() => process.kill(unrelatedProcessId, 0));
+    assert.equal(evidence.detectedProcessIds.includes(unrelatedProcessId), false);
+  } finally {
+    for (const child of [owned, unrelated]) {
+      if (!child?.pid) continue;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        assert.equal(error.code, "ESRCH");
+      }
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("sandbox cleanup records bounded TERM and KILL phases", async () => {
+  let remaining = [200, 201];
+  const signals = [];
+  const evidence = await cleanupNativeDesktopSandboxProcesses("/tmp/bounded-native-sandbox", {
+    findProcesses: async () => remaining,
+    sendSignal: (processId, signal) => {
+      signals.push([processId, signal]);
+      if (signal === "SIGKILL")
+        remaining = remaining.filter((candidate) => candidate !== processId);
+    },
+    termTimeoutMs: 1,
+    killTimeoutMs: 50,
+    pollIntervalMs: 1,
+  });
+
+  assert.deepEqual(signals.slice(0, 2), [
+    [200, "SIGTERM"],
+    [201, "SIGTERM"],
+  ]);
+  assert.ok(signals.some(([processId, signal]) => processId === 200 && signal === "SIGKILL"));
+  assert.ok(signals.some(([processId, signal]) => processId === 201 && signal === "SIGKILL"));
+  assert.deepEqual(evidence.detectedProcessIds, [200, 201]);
+  assert.deepEqual(evidence.survivorProcessIds, []);
+  assert.equal(evidence.termTimeoutMs, 1);
+  assert.equal(evidence.killTimeoutMs, 50);
 });
 
 test("abort signal cleans up the fake build process group before binary verification", async () => {

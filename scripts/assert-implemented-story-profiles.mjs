@@ -99,6 +99,7 @@ try {
   const validatedDesktop = discover("implementedDesktop");
   const desktopTauriHarness = discover("implementedDesktopTauriHarness");
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
+  const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const routing = evaluateDeclaredStoryRouting(declared);
   const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
   const failures = [...routing.failures];
@@ -138,6 +139,7 @@ try {
   );
   assertWorldParameters("desktopTauriWebdriver", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktop", desktopTauri, failures);
 
   compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
@@ -158,6 +160,12 @@ try {
     "implementedDesktopTauriWebdriver",
     desktopTauriWebdriver,
     routing.expectedDesktopTauriWebdriver,
+    failures,
+  );
+  compareProfileSelection(
+    "refactorKitJavaImportNativeGui",
+    javaImportNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-REFACTORKIT-JAVA-IMPORT-002")),
     failures,
   );
 

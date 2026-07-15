@@ -70,6 +70,15 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     cucumberProfiles.desktopFileOpenNativeGui.tags,
     "@REQ-DESKTOP-FILE-OPEN-001 and @implemented-and-validated and @desktop and @native-gui and not @web",
   );
+  assert.deepEqual(
+    cucumberProfiles.refactorKitJavaImportNativeGui.worldParameters,
+    nativeGuiEvidence,
+  );
+  assert.equal(
+    cucumberProfiles.refactorKitJavaImportNativeGui.tags,
+    "@REQ-REFACTORKIT-JAVA-IMPORT-002 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(cucumberProfiles.refactorKitJavaImportNativeGui.tags, /implemented|partial/);
 
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
@@ -83,6 +92,17 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     target: { name: "desktop", driver: "tauri" },
   });
   assert.equal(cucumberProfiles.desktop.tags, "@desktop and not @web");
+});
+
+test("focused native Java import package command makes no harness or package claim", async () => {
+  const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts["test:story:req-refactorkit-java-import-002"];
+
+  assert.equal(
+    command,
+    "node scripts/run-native-desktop-story.mjs --profile refactorKitJavaImportNativeGui",
+  );
+  assert.doesNotMatch(command, /tauri-harness|package|bundle/);
 });
 
 test("zero runnable selections are successful", () => {

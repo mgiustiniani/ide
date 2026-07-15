@@ -83,6 +83,12 @@ const desktopFileOpenNativeGui = {
   worldParameters: targets.desktopTauriWebdriver,
 };
 
+const refactorKitJavaImportNativeGui = {
+  ...common,
+  tags: "@REQ-REFACTORKIT-JAVA-IMPORT-002 and @desktop and @native-gui and not @web",
+  worldParameters: targets.desktopTauriWebdriver,
+};
+
 const web = {
   ...common,
   tags: "@web and not @desktop",
@@ -105,6 +111,7 @@ export {
   implementedDesktopTauriWebdriver,
   desktopTauriWebdriver,
   desktopFileOpenNativeGui,
+  refactorKitJavaImportNativeGui,
   web,
   desktop,
 };
