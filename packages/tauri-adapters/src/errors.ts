@@ -5,7 +5,7 @@
 // consistent Error instances with command context instead of raw strings.
 // ---------------------------------------------------------------------------
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 
 export class TauriAdapterError extends Error {
   constructor(
@@ -14,7 +14,7 @@ export class TauriAdapterError extends Error {
     public readonly cause?: unknown,
   ) {
     super(`[tauri:${command}] ${message}`);
-    this.name = 'TauriAdapterError';
+    this.name = "TauriAdapterError";
   }
 }
 
@@ -23,25 +23,22 @@ function extractMessage(error: unknown): string {
     return error.message;
   }
 
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     return error;
   }
 
-  if (error && typeof error === 'object') {
+  if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
     const message = record.message ?? record.error ?? record.reason;
-    if (typeof message === 'string') {
+    if (typeof message === "string") {
       return message;
     }
   }
 
-  return 'Tauri command failed';
+  return "Tauri command failed";
 }
 
-export function toTauriAdapterError(
-  command: string,
-  error: unknown,
-): TauriAdapterError {
+export function toTauriAdapterError(command: string, error: unknown): TauriAdapterError {
   if (error instanceof TauriAdapterError) {
     return error;
   }
@@ -49,10 +46,7 @@ export function toTauriAdapterError(
   return new TauriAdapterError(command, extractMessage(error), error);
 }
 
-export async function invokeTauri<T>(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
+export async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(command, args);
   } catch (error) {

@@ -5,24 +5,24 @@
 //   list_directory, create_file, create_directory, delete_path, rename_path
 // ---------------------------------------------------------------------------
 
-import { invokeTauri } from './errors';
-import type { FileNode, FileSelectionEvent } from '@ide/contracts';
-import type { FileTreePort } from '@ide/web-core/ports';
+import { invokeTauri } from "./errors";
+import type { FileNode, FileSelectionEvent } from "@ide/contracts";
+import type { FileTreePort } from "@ide/web-core/ports";
 
 /**
  * Parses a raw FileEntry from Rust into the contract FileNode shape.
  * The Rust side returns camelCase fields: name, path, type ("file"|"directory"), children.
  */
 function normalizePathSeparators(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+  return path.replace(/\\/g, "/").replace(/\/+/g, "/");
 }
 
 function stripTrailingSlash(path: string): string {
-  return path.length > 1 ? path.replace(/\/+$/g, '') : path;
+  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
 function normalizeNodePath(path: string): string {
-  const normalized = normalizePathSeparators(path).replace(/^\.\//, '');
+  const normalized = normalizePathSeparators(path).replace(/^\.\//, "");
   return stripTrailingSlash(normalized);
 }
 
@@ -30,11 +30,11 @@ function joinNodePath(parentPath: string, childPath: string): string {
   const parent = normalizeNodePath(parentPath);
   const child = normalizeNodePath(childPath);
 
-  if (!parent || parent === '.') {
+  if (!parent || parent === ".") {
     return child;
   }
 
-  if (!child || child === '.') {
+  if (!child || child === ".") {
     return parent;
   }
 
@@ -46,7 +46,7 @@ function relativePathInside(parentPath: string, childPath: string): string | nul
   const child = stripTrailingSlash(normalizePathSeparators(childPath));
 
   if (child === parent) {
-    return '';
+    return "";
   }
 
   const prefix = `${parent}/`;
@@ -54,13 +54,11 @@ function relativePathInside(parentPath: string, childPath: string): string | nul
 }
 
 function entryPath(entry: Record<string, unknown>): string | null {
-  return typeof entry.path === 'string' && entry.path.length > 0
-    ? entry.path
-    : null;
+  return typeof entry.path === "string" && entry.path.length > 0 ? entry.path : null;
 }
 
 function isAbsolutePath(path: string): boolean {
-  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path);
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
 function deriveNodePath(
@@ -97,7 +95,7 @@ function deriveNodePath(
 }
 
 function nodeIdFromPath(path: string): string {
-  return `node-${path.replace(/[\/\.]/g, '-')}`;
+  return `node-${path.replace(/[\/\.]/g, "-")}`;
 }
 
 function fileEntryToNode(
@@ -108,24 +106,19 @@ function fileEntryToNode(
 ): FileNode {
   const name = entry.name as string;
   const entryType = entry.type as string;
-  const nodePath = deriveNodePath(
-    entry,
-    parentNodePath,
-    parentEntryPath,
-    rootEntryPath,
-  );
+  const nodePath = deriveNodePath(entry, parentNodePath, parentEntryPath, rootEntryPath);
   const rawEntryPath = entryPath(entry);
 
   const node: FileNode = {
     id: nodeIdFromPath(nodePath),
     name,
     path: nodePath,
-    type: entryType === 'directory' ? 'folder' : 'file',
+    type: entryType === "directory" ? "folder" : "file",
   };
 
-  if (entryType === 'directory' && Array.isArray(entry.children)) {
-    node.children = (entry.children as Array<Record<string, unknown>>).map(
-      (child) => fileEntryToNode(child, nodePath, rawEntryPath, rootEntryPath),
+  if (entryType === "directory" && Array.isArray(entry.children)) {
+    node.children = (entry.children as Array<Record<string, unknown>>).map((child) =>
+      fileEntryToNode(child, nodePath, rawEntryPath, rootEntryPath),
     );
     node.isOpen = false;
   }
@@ -140,8 +133,8 @@ export class TauriFileTreeAdapter implements FileTreePort {
   async getRoot(): Promise<FileNode[]> {
     // Use the current working directory as the root. The Rust command
     // list_directory expects a path; we send "." for the project root.
-    const result = await invokeTauri<Record<string, unknown>>('list_directory', {
-      path: '.',
+    const result = await invokeTauri<Record<string, unknown>>("list_directory", {
+      path: ".",
     });
 
     const entry = result as Record<string, unknown>;
@@ -153,13 +146,13 @@ export class TauriFileTreeAdapter implements FileTreePort {
     }
 
     return children.map((child) =>
-      fileEntryToNode(child, '', this.workspaceRootPath, this.workspaceRootPath),
+      fileEntryToNode(child, "", this.workspaceRootPath, this.workspaceRootPath),
     );
   }
 
   /** Return the children of the folder at the given path. */
   async getChildren(path: string): Promise<FileNode[]> {
-    const result = await invokeTauri<Record<string, unknown>>('list_directory', {
+    const result = await invokeTauri<Record<string, unknown>>("list_directory", {
       path,
     });
 
@@ -177,38 +170,38 @@ export class TauriFileTreeAdapter implements FileTreePort {
 
   /** Create a new file at `path`. Returns the updated parent node list. */
   async createFile(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>('create_file', { path });
+    await invokeTauri<Record<string, unknown>>("create_file", { path });
 
     // After creation, return the parent's children.
-    const parentPath = path.split('/').slice(0, -1).join('/');
-    return this.getChildren(parentPath || '.');
+    const parentPath = path.split("/").slice(0, -1).join("/");
+    return this.getChildren(parentPath || ".");
   }
 
   /** Create a new folder at `path`. Returns the updated parent node list. */
   async createFolder(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>('create_directory', { path });
+    await invokeTauri<Record<string, unknown>>("create_directory", { path });
 
-    const parentPath = path.split('/').slice(0, -1).join('/');
-    return this.getChildren(parentPath || '.');
+    const parentPath = path.split("/").slice(0, -1).join("/");
+    return this.getChildren(parentPath || ".");
   }
 
   /** Delete the node at `path`. Returns the updated parent node list. */
   async delete(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>('delete_path', { path });
+    await invokeTauri<Record<string, unknown>>("delete_path", { path });
 
-    const parentPath = path.split('/').slice(0, -1).join('/');
-    return this.getChildren(parentPath || '.');
+    const parentPath = path.split("/").slice(0, -1).join("/");
+    return this.getChildren(parentPath || ".");
   }
 
   /** Rename a node from `path` to `newName`. Returns the updated parent node list. */
   async rename(path: string, newName: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>('rename_path', {
+    await invokeTauri<Record<string, unknown>>("rename_path", {
       path,
       newName,
     });
 
-    const parentPath = path.split('/').slice(0, -1).join('/');
-    return this.getChildren(parentPath || '.');
+    const parentPath = path.split("/").slice(0, -1).join("/");
+    return this.getChildren(parentPath || ".");
   }
 
   /** Subscribe to file selection events. Returns an unsubscribe function. */

@@ -4,39 +4,39 @@
 // Re-export all Tauri adapter implementations.
 // ---------------------------------------------------------------------------
 
-import { TauriFileTreeAdapter } from './file-tree-tauri';
-import { TauriEditorAdapter } from './editor-tauri';
-import { TauriTerminalAdapter } from './terminal-tauri';
-import { TauriAiAgentAdapter } from './ai-agent-tauri';
-import { TauriWorkspaceAdapter } from './workspace-tauri';
-import { TauriClipboardAdapter } from './clipboard-tauri';
-import { TauriRefactorKitAdapter } from './refactorkit-tauri';
-import { TauriLanguageSessionAdapter } from './language-session-tauri';
-import { TauriJavaIntelligenceAdapter } from './java-intelligence-tauri';
-import { TauriXcom2SetupMonitorAdapter } from './xcom2-setup-monitor-tauri';
-import { TauriXcom2SetupAdapter } from './xcom2-setup-tauri';
+import { TauriFileTreeAdapter } from "./file-tree-tauri";
+import { TauriEditorAdapter } from "./editor-tauri";
+import { TauriTerminalAdapter } from "./terminal-tauri";
+import { TauriAiAgentAdapter } from "./ai-agent-tauri";
+import { TauriWorkspaceAdapter } from "./workspace-tauri";
+import { TauriClipboardAdapter } from "./clipboard-tauri";
+import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
+import { TauriLanguageSessionAdapter } from "./language-session-tauri";
+import { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
+import { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
+import { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
 
-export { TauriFileTreeAdapter } from './file-tree-tauri';
-export { TauriEditorAdapter } from './editor-tauri';
-export { TauriTerminalAdapter } from './terminal-tauri';
-export { TauriAiAgentAdapter } from './ai-agent-tauri';
-export { TauriWorkspaceAdapter } from './workspace-tauri';
-export { TauriClipboardAdapter, TauriClipboardReadError } from './clipboard-tauri';
+export { TauriFileTreeAdapter } from "./file-tree-tauri";
+export { TauriEditorAdapter } from "./editor-tauri";
+export { TauriTerminalAdapter } from "./terminal-tauri";
+export { TauriAiAgentAdapter } from "./ai-agent-tauri";
+export { TauriWorkspaceAdapter } from "./workspace-tauri";
+export { TauriClipboardAdapter, TauriClipboardReadError } from "./clipboard-tauri";
 export {
   TauriRefactorKitAdapter,
   TauriRefactorKitManagedCommandError,
   TauriRefactorKitUpdateRequiredError,
-} from './refactorkit-tauri';
+} from "./refactorkit-tauri";
 export {
   TauriLanguageSessionAdapter,
   TauriLanguageSessionAdapter as TauriDocumentSyncAdapter,
-} from './language-session-tauri';
-export { TauriJavaIntelligenceAdapter } from './java-intelligence-tauri';
-export { TauriXcom2SetupMonitorAdapter } from './xcom2-setup-monitor-tauri';
-export type { Xcom2SetupMonitorPollOptions } from './xcom2-setup-monitor-tauri';
-export { TauriXcom2SetupAdapter } from './xcom2-setup-tauri';
-export type { Xcom2SetupPollOptions } from './xcom2-setup-tauri';
-export { TauriAdapterError, toTauriAdapterError } from './errors';
+} from "./language-session-tauri";
+export { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
+export { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
+export type { Xcom2SetupMonitorPollOptions } from "./xcom2-setup-monitor-tauri";
+export { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
+export type { Xcom2SetupPollOptions } from "./xcom2-setup-tauri";
+export { TauriAdapterError, toTauriAdapterError } from "./errors";
 
 /**
  * Factory function that returns all Tauri-based adapters.
