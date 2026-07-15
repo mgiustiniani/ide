@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14*. This appendix was reconciled on 2026-07-14 from every configured `features/**/*.feature` file and BDD scaffolding commit `81025e9`. The confirmation includes one amended target layout goal that remains unimplemented and unvalidated; it does not change Gherkin declarations or observed evidence. The feature sources declare `REQ-WEB-001` as `@implemented-and-validated` and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`; the dated target-specific results below are separate observed evidence and do not change those declarations. The two RefactorKit requirements are parked outside the active roadmap under the architecture policy; this scheduling decision does not alter Gherkin status.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-15 from every configured `features/**/*.feature` file after status commit `d8092c4`. The feature sources declare `REQ-WEB-001` and `REQ-LAYOUT-WEB-001` as `@implemented-and-validated`, `REQ-LAYOUT-DESKTOP-001` as `@implemented-not-e2e-validated`, and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two RefactorKit requirements remain parked outside the active roadmap under the frozen architecture policy; this scheduling decision does not alter Gherkin status.
 ====
 
 == Governance
@@ -39,9 +39,15 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |1
 |`REQ-WEB-001`
 |`@implemented-and-validated`
+
+|link:../../features/workspace/application-content-layout.feature[`features/workspace/application-content-layout.feature`]
+|Predictable application content geometry during panel changes
+|2
+|`REQ-LAYOUT-WEB-001`, `REQ-LAYOUT-DESKTOP-001`
+|Web: `@implemented-and-validated`; desktop: `@implemented-not-e2e-validated`
 |===
 
-NOTE: The configured inventory contains three feature files, three scenarios, and three repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
+NOTE: The configured inventory contains four feature files, five scenarios, and five repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
 
 == Requirement Catalogue
 
@@ -155,7 +161,7 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 |Evidence supports at most partial behavior. The declared status remains `@not-implemented`; neither implemented status is claimed. The documentation does not accept, permit, ignore, or normalize the lock write.
 
 |Desktop aggregate routing evidence
-|Commit `81025e9` adds deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`. The harness currently selects zero scenarios because both parked RefactorKit scenarios remain `@not-implemented`, so focused 18/18 GREEN is still not aggregate regression evidence for this requirement. The harness is explicitly not native GUI/E2E, and `@implemented-and-validated @desktop` remains unsupported until a packaged native GUI/E2E runner exists.
+|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`. The aggregate now selects `REQ-LAYOUT-DESKTOP-001`, but it still excludes this RefactorKit scenario because its declaration remains `@not-implemented`; focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement. The harness is explicitly not native GUI/E2E, and `@implemented-and-validated @desktop` remains unsupported until a packaged native GUI/E2E runner exists.
 
 |Packaged GUI/E2E evidence absence
 |No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
@@ -207,15 +213,101 @@ NOTE: The configured inventory contains three feature files, three scenarios, an
 |On 2026-07-14, `pnpm test:story:implemented:web` passed 1 scenario and 7/7 steps. The Playwright path launched real headless Chromium, navigated to the loopback web application, observed only the Terminal tool-window tab, observed the integrated terminal and active session, and observed no Java- or XCOM-named tool-window tab. This is Chromium evidence for this web scenario only; it is not proof for every browser, operating system, or IDE capability.
 
 |Desktop evidence / absence
-|This scenario is not tagged `@desktop`; its browser result supplies no desktop parity evidence. The separately tagged RefactorKit desktop scenarios have their own diagnostics-RED and symbol-navigation evidence boundaries and must not be merged into this result.
+|This scenario is not tagged `@desktop`; its browser result supplies no desktop parity evidence. The separately tagged layout and RefactorKit desktop scenarios retain their own evidence boundaries and must not be merged into this result.
+|===
+
+=== REQ-LAYOUT-WEB-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-LAYOUT-WEB-001]]`REQ-LAYOUT-WEB-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`); the scenario also carries `@accessibility`.
+
+|Actor / stakeholder
+|A person working in the IDE through a supported web browser.
+
+|Capability
+|Keep the activity rail and left sidebar full-height inside application content while the bottom shell/tool-window host remains in the editor-side column. Preserve separate top-level chrome/status geometry, bounded editor/right-sidebar geometry, panel changes, keyboard resizing, and separator accessibility semantics.
+
+|Scenario
+|_Preserve full-height navigation and editor-side bottom tools in a web workspace_
+
+|Feature path
+|link:../../features/workspace/application-content-layout.feature[`features/workspace/application-content-layout.feature`], scenario beginning at line 6
+
+|Tags
+|`@web`, `@REQ-LAYOUT-WEB-001`, `@functional-requirement`, `@non-functional-requirement`, `@accessibility`, `@implemented-and-validated`
+
+|Declared status
+|`@implemented-and-validated` — copied exactly from the feature source after status commit `d8092c4`.
+
+|Validation mode
+|Real Playwright-driven headless Chromium against the standalone `apps/web` application through its real Vite entry point at a 1280 x 720 viewport.
+
+|Observed target-specific evidence
+|On 2026-07-15, the focused web Story passed 1 scenario and 9/9 steps. Across expanded, keyboard-resized, and collapsed states, it measured full-height activity-rail/sidebar bounds, an editor-column-only bottom host, separate and stable status/chrome geometry, and keyboard-focusable separators with orientation, minimum, current-value, and +10-pixel resize behavior. The declaration and this observed real-browser result are recorded separately.
+
+|Responsive and right-sidebar evidence
+|The current frontend gate includes real Playwright Chromium layout checks at widths 1280, 700, and 480. At 1280 the optional right sidebar retained requested 420- and 320-pixel widths when room existed. At 700 and 480 both editor and right sidebar retained positive width, the right edge stayed within the editor row, and editor-row, workspace, and document horizontal overflow remained bounded.
+
+|Desktop evidence / absence
+|The real web run is not desktop evidence. Desktop evidence is recorded under `REQ-LAYOUT-DESKTOP-001` and remains explicitly non-native and non-E2E.
+|===
+
+=== REQ-LAYOUT-DESKTOP-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-LAYOUT-DESKTOP-001]]`REQ-LAYOUT-DESKTOP-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`); the scenario also carries `@accessibility`.
+
+|Actor / stakeholder
+|A person working in the desktop IDE.
+
+|Capability
+|Preserve the same shared PanelLayout geometry and accessibility contract for desktop composition: full-height navigation, editor-column-only bottom tools, separate stable top-level chrome/status geometry, bounded editor/right-sidebar geometry, and keyboard-resizable accessible panel boundaries.
+
+|Scenario
+|_Preserve full-height navigation and editor-side bottom tools in a desktop workspace_
+
+|Feature path
+|link:../../features/workspace/application-content-layout.feature[`features/workspace/application-content-layout.feature`], scenario beginning at line 17
+
+|Tags
+|`@desktop`, `@REQ-LAYOUT-DESKTOP-001`, `@functional-requirement`, `@non-functional-requirement`, `@accessibility`, `@implemented-not-e2e-validated`
+
+|Declared status
+|`@implemented-not-e2e-validated` — copied exactly from the feature source after status commit `d8092c4`.
+
+|Validation mode
+|Deterministic `desktop/tauri-harness` execution of the real shared `@ide/ui` PanelLayout contract in headless Chromium at a 1280 x 720 viewport, with explicit evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`.
+
+|Observed target-specific evidence
+|On 2026-07-15, the deterministic desktop harness passed 1 scenario and 9/9 steps. It exercised and measured the same expanded, keyboard-resized, and collapsed geometry and accessibility assertions as the web Story, including desktop top-level chrome outside the shared shell. This is deterministic desktop composition evidence only.
+
+|Responsive and right-sidebar evidence
+|Shared UI evidence in the current frontend gate covers widths 1280, 700, and 480. It keeps the right sidebar inside the editor row, preserves requested 420- and 320-pixel widths at 1280 when room exists, and bounds both editor/right-sidebar widths and horizontal overflow at 700 and 480. These shared UI checks support the implementation but do not upgrade the desktop validation mode.
+
+|Native GUI / E2E / packaged-app evidence absence
+|No native Tauri WebView/GUI, desktop E2E, or packaged application run completed this scenario. The harness is not native GUI evidence, not E2E evidence, and not packaged-app evidence; therefore the requirement is not declared `@implemented-and-validated`.
 |===
 
 == Reconciliation and Migration Status
 
-The web characterization slice is independently passing for its explicit web/Playwright validation mode. The RefactorKit diagnostics requirement has completed metadata/readiness-policy support and an expected meaningful RED, but remains declared `@not-implemented` with no native GUI/full Story GREEN. The separate symbol-navigation requirement has completed implementation and deterministic 18/18 desktop Story evidence, but remains declared `@not-implemented` and blocked under option A because real immutable `v0.6.2` evidence violates its no-workspace-write clause and no packaged GUI/E2E evidence exists. Deterministic aggregate routing now exists for declared web scenarios plus `@implemented-not-e2e-validated @desktop` scenarios through `desktop/tauri-harness`; the harness selects zero current scenarios because both parked RefactorKit requirements remain `@not-implemented`. `@implemented-and-validated @desktop` is still unsupported until a packaged native GUI/E2E runner exists. Both TypeScript/JavaScript requirements are parked outside the active roadmap. Structural outline/identifier search remain provider foundations, while TypeScript references/rename and general Java refactoring remain provider-foundation or IDE TODO according to observed support. Announced search operations with optional JSON remain TODO until a released strict typed bounded versioned machine-readable JSON contract or equivalent daemon DTO carries structured errors, truncation, authorized locations, and request/result correlation and passes immutable real acceptance evidence; human stdout is never an IDE protocol. The explicit Chapter 1 confirmation is a product-goal decision, not implementation evidence: its amended layout remains TARGET rather than AS-BUILT. These results do not establish that layout, complete BDD migration, or supersede broader frontend, Rust, Java, RefactorKit, XCOM, and GUI evidence boundaries.
+The full-height navigation/editor-column bottom-host amendment is now CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies.
 
-The canonical migration gate validates declared routing and runs the web plus desktop-harness aggregate routes, but this does not close the packaged native GUI/E2E runner gap. No requirement is promoted merely because legacy implementation, support code, upstream code, historical documentation, or Chapter 1 target confirmation exists. The Chapter 1 review blocker is closed. No final bdd-ts migration admission is claimed while `@implemented-and-validated @desktop` is unsupported and broader executable requirement coverage remains incomplete.
+The canonical migration aggregate now passes with two declared web scenarios and one deterministic desktop-harness scenario. The strict documentation and canonical migration gates passed after this reconciliation. This closes the layout status mismatch and the Chapter 1 review blocker, but not release/maturity gaps: no packaged native desktop GUI/E2E runner exists, `@implemented-and-validated @desktop` remains unsupported, and broader executable requirement coverage remains incomplete. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The frozen IntelliSense/JDT LS inventory and both RefactorKit wait-for-upstream policies remain unchanged.
 
 == Reconciliation Checks
 
-The 2026-07-14 reconciliation checked all three configured feature paths, scenarios, stable IDs, classifications, effective declared statuses, aggregate routing, target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check. The canonical `pnpm validate:bdd:migration` gate still uses the currently configured migration-mode command and runs declared web plus deterministic desktop-harness aggregate execution.
+The 2026-07-15 reconciliation checked all four configured feature paths, five scenarios, stable IDs, classifications, effective declared statuses, aggregate routing, target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate also passed, running the declared aggregate as two web scenarios plus one deterministic desktop-harness scenario.
