@@ -123,13 +123,19 @@ Then(
   },
 );
 
-Then("only the backend-reported primary file opens in Monaco", function (this: StoryWorld) {
-  this.refactorKitJavaImportSession().primary().assertOnlyPrimaryOpened();
-});
+Then(
+  "only the backend-reported primary file is routed to the desktop editor",
+  function (this: StoryWorld) {
+    this.refactorKitJavaImportSession().primary().assertPrimaryRoutedToDesktopEditor();
+  },
+);
 
-Then("Monaco contains exactly the clipboard fixture", function (this: StoryWorld) {
-  this.refactorKitJavaImportSession().primary().assertMonacoLogicalContent();
-});
+Then(
+  "the editor composition receives the exact logical clipboard content intended for Monaco",
+  function (this: StoryWorld) {
+    this.refactorKitJavaImportSession().primary().assertEditorCompositionLogicalContent();
+  },
+);
 
 Then(
   "the observable composition trace contains no direct IDE filesystem mutation, Pi or AI request, or clipboard-source-bearing log event",
@@ -148,7 +154,7 @@ Then(
 );
 
 Then(
-  "cleanup failure cannot restore the plan, mutate the workspace, or expose the clipboard source",
+  "after cleanup failure the bounded observable trace contains no Apply request, imported target, restored review authority, or clipboard source",
   async function (this: StoryWorld) {
     await this.refactorKitJavaImportSession().verifyCleanupFailureIsolation();
   },

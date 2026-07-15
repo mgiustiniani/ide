@@ -3,10 +3,11 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createRequire, register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { act, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, within, type RenderResult } from "@testing-library/react";
 import type {
   ApplyRefactorKitPlanRequest,
   PreviewExternalJavaImportRequest,
+  RefactorKitCapabilities,
   RefactorKitPatchPlan,
 } from "../../../packages/contracts/src/refactorkit.js";
 
@@ -32,6 +33,20 @@ public final class ClipboardImportProof {
   public static final String REQUIREMENT = "${JAVA_IMPORT_REQUIREMENT}";
 }`;
 
+const EXPECTED_RENDERED_DIFF = `--- /dev/null
++++ b/src/main/java/example/imports/ClipboardImportProof.java
+@@ -0,0 +1,5 @@
++package example.imports;
++
++public final class ClipboardImportProof {
++  public static final String REQUIREMENT = "REQ-REFACTORKIT-JAVA-IMPORT-001";
++}`;
+const EXPECTED_STRUCTURED_HUNK = `@@ -0,0 +1,5 @@
++package example.imports;
++
++public final class ClipboardImportProof {
++  public static final String REQUIREMENT = "REQ-REFACTORKIT-JAVA-IMPORT-001";
++}`;
 const OTHER_DIRECTORY = "src/main/java/example/other";
 const WORKSPACE_ID = "java-import-workspace";
 const PLAN_ID = "java-import-plan-001";
@@ -100,9 +115,11 @@ interface CapabilityExpectation {
 
 interface InvalidationEvidence {
   readonly variant: string;
-  readonly dialogClearedBeforeDiscardSettled: boolean;
-  readonly applyCount: number;
+  readonly reviewAuthorityClearedBeforeDiscardSettled: boolean;
+  readonly applyInvocationCount: number;
+  readonly applyRequestCount: number;
   readonly discardCount: number;
+  readonly pendingDiscardCount: number;
   readonly targetExists: boolean;
   readonly traceContainsSource: boolean;
 }
@@ -283,6 +300,7 @@ export class JavaImportDesktopHarness {
   readonly #options: Required<HarnessOptions>;
   readonly #globalDescriptors = new Map<string, PropertyDescriptor | undefined>();
   readonly #invocations: BoundaryInvocation[] = [];
+  readonly #capabilityResponses: RefactorKitCapabilities[] = [];
   readonly #trace: JavaImportTraceEvent[] = [];
   readonly #consoleEvents: string[] = [];
   readonly #latePreview = deferred<RefactorKitPatchPlan>();
@@ -377,7 +395,9 @@ export class JavaImportDesktopHarness {
   }
 
   assertCapabilities(expectations: readonly CapabilityExpectation[]): void {
+    assert.equal(expectations.length, 5);
     const expected = new Map(expectations.map((row) => [row.declaration, row.acceptedContract]));
+    assert.equal(expected.size, 5);
     assert.equal(expected.get("API version"), "0.2");
     assert.equal(
       expected.get("java.importExternalClass"),
@@ -386,8 +406,11 @@ export class JavaImportDesktopHarness {
     assert.equal(expected.get("refactor.apply"), "available");
     assert.equal(expected.get("refactor.discard"), "available");
     assert.equal(expected.get("patch.rollback"), "available");
-    assert.equal(CAPABILITIES.apiVersion, "0.2");
-    assert.deepEqual(CAPABILITIES.javaImportExternalClass, {
+
+    assert.ok(this.#capabilityResponses.length >= 1);
+    const acceptedCapabilities = this.#capabilityResponses.at(-1)!;
+    assert.equal(acceptedCapabilities.apiVersion, "0.2");
+    assert.deepEqual(acceptedCapabilities.javaImportExternalClass, {
       supported: true,
       targetDirectory: true,
       preview: true,
@@ -395,22 +418,32 @@ export class JavaImportDesktopHarness {
       rollback: true,
       stability: "experimental",
     });
-    assert.equal(CAPABILITIES.safety.transactionRollback, true);
+    assert.equal(acceptedCapabilities.safety?.transactionRollback, true);
 
-    const clipboard = this.#trace.find(({ kind }) => kind === "clipboard.read");
-    assert.ok(clipboard, "No clipboard read was observed");
-    const accepted = [...this.#trace]
-      .reverse()
-      .find(
-        ({ kind, sequence }) => kind === "capability.accepted" && sequence < clipboard.sequence,
-      );
-    assert.ok(accepted, "Capability acceptance did not precede clipboard access");
+    const capabilityInvocations = this.#invocations.filter(
+      ({ command }) => command === "get_refactorkit_capabilities",
+    );
+    const clipboardInvocations = this.#invocations.filter(
+      ({ command }) => command === "read_clipboard_text",
+    );
+    const previewInvocations = this.#invocations.filter(
+      ({ command }) => command === "preview_refactorkit_external_java_import",
+    );
+    assert.equal(capabilityInvocations.length, this.#capabilityResponses.length);
+    assert.equal(clipboardInvocations.length, 1);
+    assert.equal(previewInvocations.length, 1);
+    assert.ok(
+      capabilityInvocations.at(-1)!.sequence < clipboardInvocations[0]!.sequence,
+      "The production workflow did not accept capabilities before clipboard access",
+    );
     assert.equal(
-      this.#trace.some(
-        ({ kind, sequence }) => kind === "capability.accepted" && sequence > clipboard.sequence,
-      ),
+      capabilityInvocations.some(({ sequence }) => sequence > clipboardInvocations[0]!.sequence),
       false,
-      "Capability acceptance was recorded only after clipboard access",
+      "Capability acceptance was observed only after clipboard access",
+    );
+    assert.ok(
+      clipboardInvocations[0]!.sequence < previewInvocations[0]!.sequence,
+      "The production workflow did not proceed from capability acceptance to clipboard preview",
     );
   }
 
@@ -439,8 +472,9 @@ export class JavaImportDesktopHarness {
   }
 
   assertReview(expectations: readonly ReviewExpectation[]): void {
-    const plan = this.#expectedPlan();
+    assert.equal(expectations.length, 10);
     const expected = new Map(expectations.map((row) => [row.evidence, row.reviewedValue]));
+    assert.equal(expected.size, 10);
     assert.equal(expected.get("target"), JAVA_IMPORT_TARGET_DIRECTORY);
     assert.equal(
       expected.get("placement"),
@@ -464,56 +498,125 @@ export class JavaImportDesktopHarness {
     assert.equal(expected.get("staleness"), "current with no stale reasons");
     assert.equal(expected.get("blockers"), "backend eligible with no blockers");
 
-    assert.deepEqual(plan.placement, {
-      sourceRoot: "src/main/java",
-      packageName: "example.imports",
-      moduleName: "app",
-    });
-    assert.deepEqual(plan.affectedFiles, [
-      { change: "create", path: JAVA_IMPORT_PRIMARY_FILE, primary: true },
-    ]);
-    assert.equal(plan.riskLevel, "high");
-    assert.deepEqual(plan.conflicts, []);
-    assert.deepEqual(plan.staleness, { stale: false, reasons: [] });
-    assert.deepEqual(plan.applyEligibility, { eligible: true, blockers: [] });
-    assert.deepEqual(plan.provenance, {
-      sourceKind: "clipboard",
-      sourceUrl: null,
-      detectedLicense: "unknown",
-      licensePolicy: "warn",
-      notices: ["Review the unknown license before applying."],
-    });
-    assert.deepEqual(plan.diagnosticsAfterPreview, [
-      {
-        severity: "information",
-        code: "RK-JAVA-IMPORT-001",
-        message: "Package placement verified",
-        path: JAVA_IMPORT_PRIMARY_FILE,
-      },
-    ]);
-    for (const line of JAVA_IMPORT_FIXTURE.split("\n")) {
-      assert.ok(plan.renderedDiff.includes(`+${line}`));
-    }
+    const dialog = this.#reviewDialog();
+    assert.equal(dialog.getAttribute("aria-modal"), "true");
+    assert.equal(
+      within(dialog).getByRole("heading", { name: "Paste Java Class from Clipboard", level: 2 })
+        .textContent,
+      "Paste Java Class from Clipboard",
+    );
 
-    const surfaceText = this.#requireSurface().container.textContent ?? "";
-    for (const text of [
-      JAVA_IMPORT_TARGET_DIRECTORY,
-      "src/main/java",
-      "example.imports",
-      "app",
+    const target = this.#reviewSection("Selected target");
+    this.#assertDefinition(target, "Target directory", JAVA_IMPORT_TARGET_DIRECTORY);
+
+    const plan = this.#reviewSection("Plan and placement");
+    assert.equal(
+      within(plan).getByText("Create ClipboardImportProof.java in the selected Java package", {
+        exact: true,
+      }).textContent,
+      "Create ClipboardImportProof.java in the selected Java package",
+    );
+    this.#assertDefinition(plan, "Plan", PLAN_ID);
+    this.#assertDefinition(plan, "Status", "ready");
+    this.#assertDefinition(plan, "Provider", "refactorkit 0.6.2");
+    this.#assertDefinition(plan, "Source root", "src/main/java");
+    this.#assertDefinition(plan, "Package", "example.imports");
+    this.#assertDefinition(plan, "Module", "app");
+
+    const affectedFiles = this.#reviewSection("Affected files");
+    const affectedItems = within(affectedFiles).getAllByRole("listitem");
+    assert.equal(affectedItems.length, 1);
+    const affectedChange = within(affectedItems[0]!).getByText("create", { exact: true });
+    assert.equal(affectedChange.textContent, "create");
+    assert.ok(
+      affectedChange.classList.contains("uppercase"),
+      "The rendered affected-file change was not presented as CREATE",
+    );
+    assert.equal(
+      within(affectedItems[0]!).getByText(JAVA_IMPORT_PRIMARY_FILE, { exact: true }).textContent,
       JAVA_IMPORT_PRIMARY_FILE,
-      "RK-JAVA-IMPORT-001",
-      "Package placement verified",
-      "Clipboard",
-      "None provided",
-      "unknown",
-      "warn",
-      "high",
-      "Stale: No",
-      "Backend eligible: Yes",
-    ]) {
-      assert.ok(surfaceText.includes(text), `The real review dialog omitted ${text}`);
-    }
+    );
+    assert.equal(
+      within(affectedItems[0]!).getByText("Primary file", { exact: true }).textContent,
+      "Primary file",
+    );
+
+    const packageChanges = this.#reviewSection("Package changes");
+    assert.equal(
+      this.#normalizedText(within(packageChanges).getByRole("listitem")),
+      `${JAVA_IMPORT_PRIMARY_FILE}: (none) → example.imports`,
+    );
+
+    const diff = this.#reviewSection("Diff");
+    const diffBlocks = [...diff.querySelectorAll("pre")];
+    assert.equal(diffBlocks.length, 2);
+    assert.equal(diffBlocks[0]!.textContent, EXPECTED_RENDERED_DIFF);
+    assert.equal(
+      this.#normalizedText(
+        within(diff).getByText(
+          (_, element) =>
+            element?.tagName === "P" &&
+            element.textContent?.includes(JAVA_IMPORT_PRIMARY_FILE) === true,
+        ),
+      ),
+      `CREATE ${JAVA_IMPORT_PRIMARY_FILE}`,
+    );
+    assert.equal(diffBlocks[1]!.textContent, EXPECTED_STRUCTURED_HUNK);
+
+    const evidenceAndRisk = this.#reviewSection("Evidence and risk");
+    this.#assertDefinition(evidenceAndRisk, "Confidence", "1");
+    this.#assertDefinition(evidenceAndRisk, "Risk", "high");
+    const evidenceItem = within(evidenceAndRisk).getByRole("listitem");
+    assert.equal(
+      within(evidenceItem).getByText("package-placement: Package placement verified", {
+        exact: true,
+      }).textContent,
+      "package-placement: Package placement verified",
+    );
+    assert.equal(
+      within(evidenceItem).getByText(JAVA_IMPORT_PRIMARY_FILE, { exact: true }).textContent,
+      JAVA_IMPORT_PRIMARY_FILE,
+    );
+    assert.equal(
+      within(evidenceItem).getByText(
+        "Source root src/main/java; package example.imports; module app",
+        { exact: true },
+      ).textContent,
+      "Source root src/main/java; package example.imports; module app",
+    );
+
+    const warnings = this.#reviewSection("Warnings");
+    assert.equal(
+      within(warnings).getByRole("listitem").textContent,
+      "Unknown clipboard-source license requires acknowledgement.",
+    );
+
+    const diagnostics = this.#reviewSection("Diagnostics");
+    assert.equal(
+      within(diagnostics).getByRole("listitem").textContent,
+      `INFORMATION RK-JAVA-IMPORT-001: Package placement verified — ${JAVA_IMPORT_PRIMARY_FILE}`,
+    );
+
+    const provenance = this.#reviewSection("Provenance and license");
+    this.#assertDefinition(provenance, "Source", "Clipboard");
+    this.#assertDefinition(provenance, "Source URL", "None provided");
+    this.#assertDefinition(provenance, "Detected license", "unknown");
+    this.#assertDefinition(provenance, "License policy", "warn");
+    assert.equal(
+      within(provenance).getByRole("heading", { name: "Notices", level: 4 }).textContent,
+      "Notices",
+    );
+    assert.equal(
+      within(provenance).getByRole("listitem").textContent,
+      "Review the unknown license before applying.",
+    );
+
+    const conflicts = this.#reviewSection("Conflicts");
+    this.#assertEmptyState(conflicts, ["None"]);
+    const staleness = this.#reviewSection("Staleness");
+    this.#assertEmptyState(staleness, ["Stale: No", "None"]);
+    const blockers = this.#reviewSection("Apply blockers");
+    this.#assertEmptyState(blockers, ["Backend eligible: Yes", "None"]);
   }
 
   async assertPathAbsent(path: string): Promise<void> {
@@ -635,25 +738,39 @@ export class JavaImportDesktopHarness {
     assert.deepEqual(refreshes, [path]);
   }
 
-  assertOnlyPrimaryOpened(): void {
+  assertPrimaryRoutedToDesktopEditor(): void {
     assert.deepEqual(this.#readFilePaths, [JAVA_IMPORT_PRIMARY_FILE]);
     const selectedTab = this.#requireSurface().getByRole("tab", {
       name: /ClipboardImportProof\.java/u,
     });
     assert.equal(selectedTab.getAttribute("aria-selected"), "true");
+    assert.equal(
+      this.#requireSurface().queryAllByRole("tab", { name: /ClipboardImportProof\.java/u }).length,
+      1,
+    );
   }
 
-  assertMonacoLogicalContent(): void {
-    assert.ok(this.#requireSurface().getByTestId("editor-renderer-stack"));
-    assert.ok(this.#requireSurface().getByTestId("editor-monaco-layer"));
-    const monaco = this.#requireSurface().getByTestId("story-monaco-editor") as HTMLTextAreaElement;
-    assert.equal(monaco.value, this.#clipboardText);
-    assert.equal(monaco.getAttribute("aria-label"), `Code editor for ${JAVA_IMPORT_PRIMARY_FILE}`);
-    const readInvocation = this.#invocations.find(
+  assertEditorCompositionLogicalContent(): void {
+    const rendererStack = this.#requireSurface().getByTestId("editor-renderer-stack");
+    const monacoLayer = within(rendererStack).getByTestId("editor-monaco-layer");
+    const mockedMonacoBoundary = within(monacoLayer).getByTestId(
+      "story-monaco-editor",
+    ) as HTMLTextAreaElement;
+    assert.equal(
+      mockedMonacoBoundary.tagName,
+      "TEXTAREA",
+      "The Story claim must remain bounded to its mocked Monaco textarea boundary",
+    );
+    assert.equal(mockedMonacoBoundary.value, JAVA_IMPORT_FIXTURE);
+    assert.equal(
+      mockedMonacoBoundary.getAttribute("aria-label"),
+      `Code editor for ${JAVA_IMPORT_PRIMARY_FILE}`,
+    );
+    const readInvocations = this.#invocations.filter(
       ({ command, args }) => command === "read_file" && args?.path === JAVA_IMPORT_PRIMARY_FILE,
     );
-    assert.ok(readInvocation, "The real Editor composition did not load the primary file");
-    assert.equal(this.#readFilePaths.length, 1);
+    assert.equal(readInvocations.length, 1, "The real Editor composition did not load once");
+    assert.deepEqual(this.#readFilePaths, [JAVA_IMPORT_PRIMARY_FILE]);
   }
 
   assertSafeCompositionTrace(): void {
@@ -699,8 +816,57 @@ export class JavaImportDesktopHarness {
     return this.#discardRequests.map((request) => structuredClone(request));
   }
 
-  applyCount(): number {
+  applyRequestCount(): number {
     return this.#applyRequests.length;
+  }
+
+  applyInvocationCount(): number {
+    return this.#invocations.filter(({ command }) => command === "apply_refactorkit_plan").length;
+  }
+
+  pendingDiscardCount(): number {
+    return this.#discardResponses.length;
+  }
+
+  assertApplyBlockedByRenderedReview(): void {
+    const apply = this.#requireSurface().getByRole("button", { name: "Apply Import" });
+    assert.equal((apply as HTMLButtonElement).disabled, true);
+    fireEvent.click(apply);
+    assert.equal(this.applyInvocationCount(), 0);
+    assert.equal(this.applyRequestCount(), 0);
+  }
+
+  assertReviewAuthorityCleared(): void {
+    const surface = this.#requireSurface();
+    assert.equal(surface.queryByRole("dialog", { name: "Paste Java Class from Clipboard" }), null);
+    assert.equal(surface.queryByRole("button", { name: "Apply Import" }), null);
+    assert.equal(
+      surface.queryByRole("checkbox", {
+        name: /acknowledge the unknown or high-risk license and provenance information/u,
+      }),
+      null,
+    );
+    assert.equal(surface.container.textContent?.includes(PLAN_ID), false);
+  }
+
+  assertNoApplyActivity(): void {
+    assert.equal(this.applyInvocationCount(), 0);
+    assert.equal(this.applyRequestCount(), 0);
+  }
+
+  assertBoundedObservableTraceSourceFree(): void {
+    const boundedTrace = JSON.stringify(this.trace());
+    assert.equal(boundedTrace.includes(JAVA_IMPORT_FIXTURE), false);
+    for (const sourceFragment of [
+      "package example.imports;",
+      `REQUIREMENT = \"${JAVA_IMPORT_REQUIREMENT}\"`,
+    ]) {
+      assert.equal(boundedTrace.includes(sourceFragment), false);
+      assert.equal(
+        this.#consoleEvents.some((entry) => entry.includes(sourceFragment)),
+        false,
+      );
+    }
   }
 
   async selectOtherDirectory(): Promise<void> {
@@ -750,6 +916,16 @@ export class JavaImportDesktopHarness {
 
   async assertNoTarget(): Promise<void> {
     await this.assertPathAbsent(JAVA_IMPORT_PRIMARY_FILE);
+    assert.ok(this.#otherWorkspaceRoot, "The secondary isolated workspace was not created");
+    await assert.rejects(stat(join(this.#otherWorkspaceRoot, JAVA_IMPORT_PRIMARY_FILE)), {
+      code: "ENOENT",
+    });
+    assert.equal(
+      this.#requireSurface().container.querySelector(
+        `[role="treeitem"][data-path="${JAVA_IMPORT_PRIMARY_FILE}"]`,
+      ),
+      null,
+    );
   }
 
   async dispose(): Promise<void> {
@@ -873,7 +1049,9 @@ export class JavaImportDesktopHarness {
           version: "0.6.2",
           checkedAt: FIXED_TIME,
         };
-      case "get_refactorkit_capabilities":
+      case "get_refactorkit_capabilities": {
+        const capabilities = structuredClone(CAPABILITIES) as RefactorKitCapabilities;
+        this.#capabilityResponses.push(structuredClone(capabilities));
         this.#pushTrace("capability.accepted", command, {
           apiVersion: "0.2",
           targetDirectory: true,
@@ -882,7 +1060,8 @@ export class JavaImportDesktopHarness {
           discard: true,
           rollback: true,
         });
-        return structuredClone(CAPABILITIES);
+        return capabilities;
+      }
       case "read_clipboard_text":
         this.#pushTrace("clipboard.read", command, {
           readCount: this.#invocations.filter((item) => item.command === command).length,
@@ -1110,9 +1289,41 @@ export class JavaImportDesktopHarness {
     return row;
   }
 
-  #expectedPlan(): RefactorKitPatchPlan {
-    assert.ok(this.#previewRequests[0]);
-    return planFor(this.#previewRequests[0]);
+  #reviewDialog(): HTMLElement {
+    return this.#requireSurface().getByRole("dialog", {
+      name: "Paste Java Class from Clipboard",
+    });
+  }
+
+  #reviewSection(title: string): HTMLElement {
+    const heading = within(this.#reviewDialog()).getByRole("heading", {
+      name: title,
+      level: 3,
+    });
+    const section = heading.closest("section");
+    assert.ok(section, `The rendered review heading ${title} did not own a section`);
+    return section;
+  }
+
+  #assertDefinition(section: HTMLElement, label: string, expectedValue: string): void {
+    const term = within(section).getByText(label, { exact: true, selector: "dt" });
+    const definition = term.nextElementSibling;
+    assert.ok(definition, `The rendered review omitted the definition for ${label}`);
+    assert.equal(definition.tagName, "DD");
+    assert.equal(this.#normalizedText(definition), expectedValue);
+  }
+
+  #assertEmptyState(section: HTMLElement, expectedParagraphs: readonly string[]): void {
+    const paragraphTexts = [...section.children]
+      .filter((child): child is HTMLParagraphElement => child.tagName === "P")
+      .map((paragraph) => this.#normalizedText(paragraph));
+    assert.deepEqual(paragraphTexts, expectedParagraphs);
+    assert.equal(within(section).queryByRole("list"), null);
+    assert.equal(within(section).queryByRole("listitem"), null);
+  }
+
+  #normalizedText(element: Element): string {
+    return (element.textContent ?? "").replace(/\s+/gu, " ").trim();
   }
 
   #requireSurface(): RenderResult {
@@ -1169,13 +1380,18 @@ export class RefactorKitJavaImportStorySession {
       await requestHarness.start();
       await requestHarness.openContextMenu(JAVA_IMPORT_TARGET_DIRECTORY);
       await requestHarness.choosePasteAction("Paste Java Class from Clipboard");
+      requestHarness.assertApplyBlockedByRenderedReview();
       const preview = requestHarness.previewRequest();
       await requestHarness.cancelDialog();
+      requestHarness.assertReviewAuthorityCleared();
+      requestHarness.assertNoApplyActivity();
+      await requestHarness.assertNoTarget();
       assert.equal(requestHarness.discardRequests().length, 0);
+
       requestHarness.resolveLatePreview();
       await waitFor(() => assert.equal(requestHarness.discardRequests().length, 1));
       this.#assertCorrelatedDiscard(preview, requestHarness.discardRequests()[0]!);
-      this.#invalidationEvidence.push(await this.#captureEvidence("request", requestHarness, true));
+      this.#invalidationEvidence.push(await this.#captureEvidence("request", requestHarness));
       requestHarness.settleDiscards();
     } finally {
       await requestHarness.dispose();
@@ -1189,13 +1405,13 @@ export class RefactorKitJavaImportStorySession {
       await planHarness.start();
       await planHarness.openContextMenu(JAVA_IMPORT_TARGET_DIRECTORY);
       await planHarness.choosePasteAction("Paste Java Class from Clipboard");
+      planHarness.assertApplyBlockedByRenderedReview();
+      const preview = planHarness.previewRequest();
       await planHarness.cancelDialog();
+      planHarness.assertReviewAuthorityCleared();
       await waitFor(() => assert.equal(planHarness.discardRequests().length, 1));
-      this.#assertCorrelatedDiscard(
-        planHarness.previewRequest(),
-        planHarness.discardRequests()[0]!,
-      );
-      this.#invalidationEvidence.push(await this.#captureEvidence("plan", planHarness, true));
+      this.#assertCorrelatedDiscard(preview, planHarness.discardRequests()[0]!);
+      this.#invalidationEvidence.push(await this.#captureEvidence("plan", planHarness));
       planHarness.settleDiscards();
     } finally {
       await planHarness.dispose();
@@ -1206,9 +1422,11 @@ export class RefactorKitJavaImportStorySession {
       ["cancel", "selection", "workspace", "request", "plan"],
     );
     for (const evidence of this.#invalidationEvidence) {
-      assert.equal(evidence.dialogClearedBeforeDiscardSettled, true, evidence.variant);
-      assert.equal(evidence.applyCount, 0, evidence.variant);
+      assert.equal(evidence.reviewAuthorityClearedBeforeDiscardSettled, true, evidence.variant);
+      assert.equal(evidence.applyInvocationCount, 0, evidence.variant);
+      assert.equal(evidence.applyRequestCount, 0, evidence.variant);
       assert.equal(evidence.discardCount, 1, evidence.variant);
+      assert.equal(evidence.pendingDiscardCount, 1, evidence.variant);
       assert.equal(evidence.targetExists, false, evidence.variant);
       assert.equal(evidence.traceContainsSource, false, evidence.variant);
     }
@@ -1220,16 +1438,27 @@ export class RefactorKitJavaImportStorySession {
       await harness.start();
       await harness.openContextMenu(JAVA_IMPORT_TARGET_DIRECTORY);
       await harness.choosePasteAction("Paste Java Class from Clipboard");
+      harness.assertApplyBlockedByRenderedReview();
+      const preview = harness.previewRequest();
       await harness.cancelDialog();
+      harness.assertReviewAuthorityCleared();
+      harness.assertNoApplyActivity();
+      await harness.assertNoTarget();
       await waitFor(() => assert.equal(harness.discardRequests().length, 1));
+      this.#assertCorrelatedDiscard(preview, harness.discardRequests()[0]!);
+      assert.equal(harness.pendingDiscardCount(), 1);
+
       harness.settleDiscards(true);
       await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
       });
+
+      harness.assertNoApplyActivity();
       await harness.assertNoTarget();
-      assert.equal(harness.applyCount(), 0);
-      assert.equal(JSON.stringify(harness.trace()).includes(JAVA_IMPORT_FIXTURE), false);
+      harness.assertReviewAuthorityCleared();
+      harness.assertBoundedObservableTraceSourceFree();
+      assert.equal(harness.discardRequests().length, 1);
+      this.#assertCorrelatedDiscard(preview, harness.discardRequests()[0]!);
       this.#cleanupFailureVerified = true;
     } finally {
       await harness.dispose();
@@ -1251,11 +1480,13 @@ export class RefactorKitJavaImportStorySession {
       await harness.start();
       await harness.openContextMenu(JAVA_IMPORT_TARGET_DIRECTORY);
       await harness.choosePasteAction("Paste Java Class from Clipboard");
+      harness.assertApplyBlockedByRenderedReview();
       const preview = harness.previewRequest();
       await invalidate(harness);
+      harness.assertReviewAuthorityCleared();
       await waitFor(() => assert.equal(harness.discardRequests().length, 1));
       this.#assertCorrelatedDiscard(preview, harness.discardRequests()[0]!);
-      this.#invalidationEvidence.push(await this.#captureEvidence(variant, harness, true));
+      this.#invalidationEvidence.push(await this.#captureEvidence(variant, harness));
       harness.settleDiscards();
     } finally {
       await harness.dispose();
@@ -1279,22 +1510,20 @@ export class RefactorKitJavaImportStorySession {
   async #captureEvidence(
     variant: string,
     harness: JavaImportDesktopHarness,
-    dialogClearedBeforeDiscardSettled: boolean,
   ): Promise<InvalidationEvidence> {
-    let targetExists = true;
-    try {
-      await harness.assertNoTarget();
-      targetExists = false;
-    } catch {
-      targetExists = true;
-    }
+    harness.assertReviewAuthorityCleared();
+    harness.assertNoApplyActivity();
+    await harness.assertNoTarget();
+    harness.assertBoundedObservableTraceSourceFree();
     return {
       variant,
-      dialogClearedBeforeDiscardSettled,
-      applyCount: harness.applyCount(),
+      reviewAuthorityClearedBeforeDiscardSettled: true,
+      applyInvocationCount: harness.applyInvocationCount(),
+      applyRequestCount: harness.applyRequestCount(),
       discardCount: harness.discardRequests().length,
-      targetExists,
-      traceContainsSource: JSON.stringify(harness.trace()).includes(JAVA_IMPORT_FIXTURE),
+      pendingDiscardCount: harness.pendingDiscardCount(),
+      targetExists: false,
+      traceContainsSource: false,
     };
   }
 }
