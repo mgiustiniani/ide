@@ -292,7 +292,9 @@ describe("App", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("Root is read-only");
     expect(screen.getByText("No document open")).toBeDefined();
-    expect((screen.getByRole("textbox", { name: "Create a new file" }) as HTMLInputElement).value).toBe("blocked.ts");
+    expect(
+      (screen.getByRole("textbox", { name: "Create a new file" }) as HTMLInputElement).value,
+    ).toBe("blocked.ts");
     expect(testHarness.loadContent).not.toHaveBeenCalledWith("blocked.ts");
     expect(screen.queryByTestId("editor-opening-placeholder")).toBeNull();
     expect(screen.queryByRole("button", { name: "Native" })).toBeNull();
@@ -306,7 +308,9 @@ describe("App", () => {
     await waitFor(() => {
       expect(testHarness.loadContent).toHaveBeenCalledWith("src/main.tsx");
       expect(screen.getByTestId("editor-opening-placeholder").textContent).toContain("main.tsx");
-      expect(screen.getByTestId("editor-opening-placeholder").textContent).not.toContain('const main = "visible after click";');
+      expect(screen.getByTestId("editor-opening-placeholder").textContent).not.toContain(
+        'const main = "visible after click";',
+      );
     });
     expect(screen.queryByText("No document open")).toBeNull();
   });

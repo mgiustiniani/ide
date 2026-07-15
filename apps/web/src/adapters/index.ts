@@ -11,16 +11,16 @@ import type {
   EditorContent,
   TerminalOutput,
   Language,
-} from '@ide/contracts';
-import type { FileTreePort } from '@ide/web-core/ports';
-import type { EditorPort } from '@ide/web-core/ports';
-import type { TerminalPort } from '@ide/web-core/ports';
+} from "@ide/contracts";
+import type { FileTreePort } from "@ide/web-core/ports";
+import type { EditorPort } from "@ide/web-core/ports";
+import type { TerminalPort } from "@ide/web-core/ports";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-const LS_KEY_FILE_TREE = 'ide_web_file_tree';
-const LS_KEY_FILE_CONTENTS = 'ide_web_file_contents';
-const LS_KEY_OPEN_FILES = 'ide_web_open_files';
+const LS_KEY_FILE_TREE = "ide_web_file_tree";
+const LS_KEY_FILE_CONTENTS = "ide_web_file_contents";
+const LS_KEY_OPEN_FILES = "ide_web_open_files";
 
 /**
  * Read JSON from localStorage with a safe fallback.
@@ -46,60 +46,60 @@ function writeJSON(key: string, value: unknown): void {
 
 const DEFAULT_ROOT_NODES: FileNode[] = [
   {
-    id: 'folder-src',
-    name: 'src',
-    path: 'src',
-    type: 'folder',
+    id: "folder-src",
+    name: "src",
+    path: "src",
+    type: "folder",
     isOpen: true,
     children: [
       {
-        id: 'file-main.tsx',
-        name: 'main.tsx',
-        path: 'src/main.tsx',
-        type: 'file',
+        id: "file-main.tsx",
+        name: "main.tsx",
+        path: "src/main.tsx",
+        type: "file",
       },
       {
-        id: 'file-App.tsx',
-        name: 'App.tsx',
-        path: 'src/App.tsx',
-        type: 'file',
-      },
-    ],
-  },
-  {
-    id: 'folder-packages',
-    name: 'packages',
-    path: 'packages',
-    type: 'folder',
-    isOpen: false,
-    children: [
-      {
-        id: 'file-index.ts',
-        name: 'index.ts',
-        path: 'packages/index.ts',
-        type: 'file',
+        id: "file-App.tsx",
+        name: "App.tsx",
+        path: "src/App.tsx",
+        type: "file",
       },
     ],
   },
   {
-    id: 'folder-public',
-    name: 'public',
-    path: 'public',
-    type: 'folder',
+    id: "folder-packages",
+    name: "packages",
+    path: "packages",
+    type: "folder",
     isOpen: false,
     children: [
       {
-        id: 'file-index.html',
-        name: 'index.html',
-        path: 'public/index.html',
-        type: 'file',
+        id: "file-index.ts",
+        name: "index.ts",
+        path: "packages/index.ts",
+        type: "file",
+      },
+    ],
+  },
+  {
+    id: "folder-public",
+    name: "public",
+    path: "public",
+    type: "folder",
+    isOpen: false,
+    children: [
+      {
+        id: "file-index.html",
+        name: "index.html",
+        path: "public/index.html",
+        type: "file",
       },
     ],
   },
 ];
 
 const DEFAULT_FILE_CONTENTS: Record<string, string> = {
-  'src/main.tsx': `import React from 'react';
+  "src/main.tsx": `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './globals.css';
@@ -109,7 +109,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );`,
-  'src/App.tsx': `import { useState } from 'react';
+  "src/App.tsx": `import { useState } from 'react';
 
 export function App() {
   const [count, setCount] = useState(0);
@@ -122,8 +122,8 @@ export function App() {
     </div>
   );
 }`,
-  'packages/index.ts': `export const VERSION = '0.1.0';`,
-  'public/index.html': `<!DOCTYPE html>
+  "packages/index.ts": `export const VERSION = '0.1.0';`,
+  "public/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head><meta charset="UTF-8" /><title>IDE</title></head>
   <body><div id="root"></div></body>
@@ -133,24 +133,24 @@ export function App() {
 // ── Language detection ─────────────────────────────────────────────────
 
 const EXTENSION_LANG_MAP: Record<string, Language> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  rs: 'rust',
-  css: 'css',
-  html: 'html',
-  json: 'json',
-  md: 'markdown',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'toml',
-  sh: 'shell',
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  rs: "rust",
+  css: "css",
+  html: "html",
+  json: "json",
+  md: "markdown",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  sh: "shell",
 };
 
 function detectLanguage(filePath: string): Language {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return EXTENSION_LANG_MAP[ext] ?? 'plaintext';
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return EXTENSION_LANG_MAP[ext] ?? "plaintext";
 }
 
 // ── BrowserFileTreeAdapter ─────────────────────────────────────────────
@@ -169,13 +169,11 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    */
   async getChildren(path: string): Promise<FileNode[]> {
     const nodes = await this.getRoot();
-    const segments = path.split('/').filter(Boolean);
+    const segments = path.split("/").filter(Boolean);
 
     let current: FileNode[] = nodes;
     for (const seg of segments) {
-      const found = current.find(
-        (n) => n.type === 'folder' && n.name === seg,
-      );
+      const found = current.find((n) => n.type === "folder" && n.name === seg);
       if (!found || !found.children) return [];
       current = found.children;
     }
@@ -188,21 +186,19 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    */
   async createFile(path: string): Promise<FileNode[]> {
     const nodes = await this.getRoot();
-    const segments = path.split('/').filter(Boolean);
+    const segments = path.split("/").filter(Boolean);
     const fileName = segments.pop()!;
 
-    const parentPath = segments.join('/');
-    const parent = parentPath
-      ? this.findFolder(nodes, parentPath)
-      : { children: nodes };
+    const parentPath = segments.join("/");
+    const parent = parentPath ? this.findFolder(nodes, parentPath) : { children: nodes };
 
     if (!parent) return nodes;
 
     const newNode: FileNode = {
-      id: `file-${path.replace(/\//g, '-')}`,
+      id: `file-${path.replace(/\//g, "-")}`,
       name: fileName,
       path,
-      type: 'file',
+      type: "file",
     };
 
     parent.children!.push(newNode);
@@ -215,21 +211,19 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    */
   async createFolder(path: string): Promise<FileNode[]> {
     const nodes = await this.getRoot();
-    const segments = path.split('/').filter(Boolean);
+    const segments = path.split("/").filter(Boolean);
     const folderName = segments.pop()!;
 
-    const parentPath = segments.join('/');
-    const parent = parentPath
-      ? this.findFolder(nodes, parentPath)
-      : { children: nodes };
+    const parentPath = segments.join("/");
+    const parent = parentPath ? this.findFolder(nodes, parentPath) : { children: nodes };
 
     if (!parent) return nodes;
 
     const newNode: FileNode = {
-      id: `folder-${path.replace(/\//g, '-')}`,
+      id: `folder-${path.replace(/\//g, "-")}`,
       name: folderName,
       path,
-      type: 'folder',
+      type: "folder",
       isOpen: false,
       children: [],
     };
@@ -244,26 +238,19 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    */
   async delete(path: string): Promise<FileNode[]> {
     const nodes = await this.getRoot();
-    const segments = path.split('/').filter(Boolean);
+    const segments = path.split("/").filter(Boolean);
     const targetName = segments.pop()!;
 
-    const parentPath = segments.join('/');
-    const parent = parentPath
-      ? this.findFolder(nodes, parentPath)
-      : { children: nodes };
+    const parentPath = segments.join("/");
+    const parent = parentPath ? this.findFolder(nodes, parentPath) : { children: nodes };
 
     if (!parent) return nodes;
 
-    parent.children = parent.children!.filter(
-      (n) => n.name !== targetName,
-    );
+    parent.children = parent.children!.filter((n) => n.name !== targetName);
     writeJSON(LS_KEY_FILE_TREE, nodes);
 
     // Also clean up cached content.
-    const contents = readJSON<Record<string, string>>(
-      LS_KEY_FILE_CONTENTS,
-      {},
-    );
+    const contents = readJSON<Record<string, string>>(LS_KEY_FILE_CONTENTS, {});
     delete contents[path];
     writeJSON(LS_KEY_FILE_CONTENTS, contents);
 
@@ -275,29 +262,22 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    */
   async rename(path: string, newName: string): Promise<FileNode[]> {
     const nodes = await this.getRoot();
-    const segments = path.split('/').filter(Boolean);
+    const segments = path.split("/").filter(Boolean);
     const oldName = segments.pop()!;
 
-    const parentPath = segments.join('/');
-    const parent = parentPath
-      ? this.findFolder(nodes, parentPath)
-      : { children: nodes };
+    const parentPath = segments.join("/");
+    const parent = parentPath ? this.findFolder(nodes, parentPath) : { children: nodes };
 
     if (!parent) return nodes;
 
     const node = parent.children!.find((n) => n.name === oldName);
     if (node) {
       node.name = newName;
-      node.path = parentPath
-        ? `${parentPath}/${newName}`
-        : newName;
+      node.path = parentPath ? `${parentPath}/${newName}` : newName;
 
       // Move cached content if the node is a file.
-      if (node.type === 'file') {
-        const contents = readJSON<Record<string, string>>(
-          LS_KEY_FILE_CONTENTS,
-          {},
-        );
+      if (node.type === "file") {
+        const contents = readJSON<Record<string, string>>(LS_KEY_FILE_CONTENTS, {});
         if (path in contents) {
           contents[node.path] = contents[path];
           delete contents[path];
@@ -315,8 +295,7 @@ export class BrowserFileTreeAdapter implements FileTreePort {
    * Browser adapter: fires events synchronously when selectFile is called externally.
    * For simplicity, we store a single callback.
    */
-  private selectionCallback: ((event: FileSelectionEvent) => void) | null =
-    null;
+  private selectionCallback: ((event: FileSelectionEvent) => void) | null = null;
 
   onFileSelect(callback: (event: FileSelectionEvent) => void): () => void {
     this.selectionCallback = callback;
@@ -334,16 +313,11 @@ export class BrowserFileTreeAdapter implements FileTreePort {
 
   // ── Private helpers ─────────────────────────────────────────────────
 
-  private findFolder(
-    nodes: FileNode[],
-    path: string,
-  ): { children: FileNode[] } | null {
-    const segments = path.split('/').filter(Boolean);
+  private findFolder(nodes: FileNode[], path: string): { children: FileNode[] } | null {
+    const segments = path.split("/").filter(Boolean);
     let current: FileNode[] = nodes;
     for (const seg of segments) {
-      const found = current.find(
-        (n) => n.type === 'folder' && n.name === seg,
-      );
+      const found = current.find((n) => n.type === "folder" && n.name === seg);
       if (!found) return null;
       current = found.children ?? [];
     }
@@ -359,12 +333,9 @@ export class BrowserEditorAdapter implements EditorPort {
    * Reads from localStorage, falling back to the default contents.
    */
   async loadContent(filePath: string): Promise<EditorContent> {
-    const contents = readJSON<Record<string, string>>(
-      LS_KEY_FILE_CONTENTS,
-      DEFAULT_FILE_CONTENTS,
-    );
+    const contents = readJSON<Record<string, string>>(LS_KEY_FILE_CONTENTS, DEFAULT_FILE_CONTENTS);
 
-    const content = contents[filePath] ?? '';
+    const content = contents[filePath] ?? "";
     const language = detectLanguage(filePath);
 
     return { filePath, content, language };
@@ -374,24 +345,16 @@ export class BrowserEditorAdapter implements EditorPort {
    * Save `content` to the file at `filePath`.
    * Also updates the open-files list in localStorage.
    */
-  async saveContent(
-    filePath: string,
-    content: string,
-  ): Promise<OpenFile[]> {
+  async saveContent(filePath: string, content: string): Promise<OpenFile[]> {
     // Persist content.
-    const contents = readJSON<Record<string, string>>(
-      LS_KEY_FILE_CONTENTS,
-      DEFAULT_FILE_CONTENTS,
-    );
+    const contents = readJSON<Record<string, string>>(LS_KEY_FILE_CONTENTS, DEFAULT_FILE_CONTENTS);
     contents[filePath] = content;
     writeJSON(LS_KEY_FILE_CONTENTS, contents);
 
     // Update open-files list.
     const openFiles = await this.getOpenFiles();
-    const existing = openFiles.findIndex(
-      (f) => f.filePath === filePath,
-    );
-    const fileName = filePath.split('/').pop() ?? filePath;
+    const existing = openFiles.findIndex((f) => f.filePath === filePath);
+    const fileName = filePath.split("/").pop() ?? filePath;
     const language = detectLanguage(filePath);
 
     if (existing >= 0) {
@@ -426,9 +389,7 @@ export class BrowserEditorAdapter implements EditorPort {
    */
   async closeFile(filePath: string): Promise<OpenFile[]> {
     const openFiles = await this.getOpenFiles();
-    const filtered = openFiles.filter(
-      (f) => f.filePath !== filePath,
-    );
+    const filtered = openFiles.filter((f) => f.filePath !== filePath);
     writeJSON(LS_KEY_OPEN_FILES, filtered);
     return filtered;
   }
@@ -454,55 +415,55 @@ export class BrowserTerminalAdapter implements TerminalPort {
     const trimmed = command.trim();
 
     // Echo input.
-    this.emitOutput({ text: `$ ${trimmed}`, type: 'input', timestamp: Date.now() });
+    this.emitOutput({ text: `$ ${trimmed}`, type: "input", timestamp: Date.now() });
 
     if (!trimmed) {
       return;
     }
 
     // Simulate a few well-known commands.
-    if (trimmed === 'clear' || trimmed === 'cls') {
+    if (trimmed === "clear" || trimmed === "cls") {
       // Clear is handled by the view model; we just emit a system marker.
       this.emitOutput({
-        text: '',
-        type: 'system',
+        text: "",
+        type: "system",
         timestamp: Date.now(),
       });
       return;
     }
 
-    if (trimmed === 'exit') {
+    if (trimmed === "exit") {
       this.emitOutput({
-        text: 'Session terminated.',
-        type: 'system',
+        text: "Session terminated.",
+        type: "system",
         timestamp: Date.now(),
       });
       this.emitExit(0);
       return;
     }
 
-    if (trimmed === 'ls' || trimmed.startsWith('ls ')) {
+    if (trimmed === "ls" || trimmed.startsWith("ls ")) {
       this.emitOutput({
-        text: 'README.md  src/  packages/  public/',
-        type: 'stdout',
+        text: "README.md  src/  packages/  public/",
+        type: "stdout",
         timestamp: Date.now(),
       });
       return;
     }
 
-    if (trimmed === 'pwd') {
+    if (trimmed === "pwd") {
       this.emitOutput({
-        text: '/home/user/project',
-        type: 'stdout',
+        text: "/home/user/project",
+        type: "stdout",
         timestamp: Date.now(),
       });
       return;
     }
 
-    if (trimmed === 'echo hello') {
+    if (trimmed === "echo hello") {
       this.emitOutput({
-        text: 'hello',
-        type: 'stdout',
+        text: "hello",
+        type: "stdout",
         timestamp: Date.now(),
       });
       return;
@@ -511,7 +472,7 @@ export class BrowserTerminalAdapter implements TerminalPort {
     // Generic fallback.
     this.emitOutput({
       text: `[simulated] Command not implemented: ${trimmed}`,
-      type: 'stderr',
+      type: "stderr",
       timestamp: Date.now(),
     });
   }
@@ -551,13 +512,13 @@ export class BrowserTerminalAdapter implements TerminalPort {
    */
   startSession(): void {
     this.emitOutput({
-      text: 'Welcome to IDE Terminal (simulated)',
-      type: 'system',
+      text: "Welcome to IDE Terminal (simulated)",
+      type: "system",
       timestamp: Date.now(),
     });
     this.emitOutput({
       text: 'Type "exit" to close the session.',
-      type: 'system',
+      type: "system",
       timestamp: Date.now(),
     });
   }
@@ -567,8 +528,8 @@ export class BrowserTerminalAdapter implements TerminalPort {
    */
   stopSession(): void {
     this.emitOutput({
-      text: 'Session ended.',
-      type: 'system',
+      text: "Session ended.",
+      type: "system",
       timestamp: Date.now(),
     });
   }

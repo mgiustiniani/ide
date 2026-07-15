@@ -5,7 +5,7 @@
 // emitted declaration files from the referenced workspace package.
 // ---------------------------------------------------------------------------
 
-declare module '@ide/browser-adapters' {
+declare module "@ide/browser-adapters" {
   import type {
     FileTreePort,
     EditorPort,
@@ -14,7 +14,7 @@ declare module '@ide/browser-adapters' {
     LanguageSessionPort,
     Xcom2SetupMonitorPort,
     Xcom2SetupPort,
-  } from '@ide/web-core/ports';
+  } from "@ide/web-core/ports";
 
   export interface BrowserAdapters {
     fileTreeAdapter: FileTreePort;
