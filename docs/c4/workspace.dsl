@@ -306,6 +306,15 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         }
 
         styles {
+            element "Element" {
+                shape roundedbox
+            }
+            element "Boundary:SoftwareSystem" {
+                color #1168bd
+            }
+            element "Boundary:Container" {
+                color #438dd5
+            }
             element "Person" {
                 shape person
                 background #08427b
@@ -341,7 +350,7 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
             }
         }
 
-        theme default
+        // Keep rendering self-contained: the explicit styles above replace the remote default theme.
     }
 
     configuration {
