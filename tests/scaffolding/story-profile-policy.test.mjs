@@ -6,7 +6,10 @@ import test from "node:test";
 
 import * as cucumberProfiles from "../../cucumber.js";
 import { evaluateDeclaredStoryRouting, scenarioKey } from "../../scripts/story-profile-policy.mjs";
-import { runProfileCommand } from "../../scripts/run-implemented-story-aggregate.mjs";
+import {
+  runImplementedStoryAggregate,
+  runProfileCommand,
+} from "../../scripts/run-implemented-story-aggregate.mjs";
 
 const scenario = (name, tags) => ({
   uri: "features/scaffolding.feature",
@@ -31,11 +34,41 @@ test("profiles keep default and focused routing while declaring exact aggregate 
 
   assert.deepEqual(cucumberProfiles.implementedDesktopTauriHarness.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
-    evidence: { kind: "tauri-harness", nativeGui: false, e2e: false },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
   });
   assert.equal(
     cucumberProfiles.implementedDesktopTauriHarness.tags,
     "@implemented-not-e2e-validated and @desktop and not @web",
+  );
+
+  const nativeGuiEvidence = {
+    target: { name: "desktop", driver: "tauri-webdriver" },
+    evidence: {
+      kind: "tauri-webdriver",
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+    },
+  };
+  assert.deepEqual(
+    cucumberProfiles.implementedDesktopTauriWebdriver.worldParameters,
+    nativeGuiEvidence,
+  );
+  assert.equal(
+    cucumberProfiles.implementedDesktopTauriWebdriver.tags,
+    "@implemented-and-validated and @desktop and @native-gui and not @web",
+  );
+  assert.deepEqual(cucumberProfiles.desktopTauriWebdriver.worldParameters, nativeGuiEvidence);
+  assert.deepEqual(cucumberProfiles.desktopFileOpenNativeGui.worldParameters, nativeGuiEvidence);
+  assert.equal(
+    cucumberProfiles.desktopFileOpenNativeGui.tags,
+    "@REQ-DESKTOP-FILE-OPEN-001 and @implemented-and-validated and @desktop and @native-gui and not @web",
   );
 
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
@@ -58,20 +91,27 @@ test("zero runnable selections are successful", () => {
   assert.deepEqual(result.failures, []);
   assert.deepEqual(result.expectedWeb, []);
   assert.deepEqual(result.expectedDesktopTauriHarness, []);
+  assert.deepEqual(result.expectedDesktopTauriWebdriver, []);
   assert.deepEqual(result.unsupportedValidatedDesktop, []);
 });
 
-test("declared routing includes web and Tauri harness evidence but excludes parked statuses", () => {
+test("declared routing separates web, harness, and native GUI evidence while excluding parked statuses", () => {
   const web = scenario("validated web", ["@implemented-and-validated", "@web"]);
   const harness = scenario("desktop harness", ["@implemented-not-e2e-validated", "@desktop"]);
-  const notImplemented = scenario("parked", ["@not-implemented", "@desktop"]);
-  const partial = scenario("partial", ["@partial", "@desktop"]);
+  const nativeGui = scenario("native desktop", [
+    "@implemented-and-validated",
+    "@desktop",
+    "@native-gui",
+  ]);
+  const notImplemented = scenario("parked", ["@not-implemented", "@desktop", "@native-gui"]);
+  const partial = scenario("partial", ["@partial", "@desktop", "@native-gui"]);
 
-  const result = evaluateDeclaredStoryRouting([web, harness, notImplemented, partial]);
+  const result = evaluateDeclaredStoryRouting([web, harness, nativeGui, notImplemented, partial]);
 
   assert.deepEqual(result.failures, []);
   assert.deepEqual(result.expectedWeb.map(scenarioKey), [scenarioKey(web)]);
   assert.deepEqual(result.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(harness)]);
+  assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
 test("missing and multiple statuses are rejected", () => {
@@ -98,13 +138,31 @@ test("missing and multiple targets are rejected", () => {
   ]);
 });
 
-test("validated desktop remains unsupported without native GUI E2E evidence", () => {
+test("validated desktop is rejected unless it opts into native GUI E2E evidence", () => {
   const desktop = scenario("validated desktop", ["@implemented-and-validated", "@desktop"]);
   const result = evaluateDeclaredStoryRouting([desktop]);
 
   assert.deepEqual(result.unsupportedValidatedDesktop.map(scenarioKey), [scenarioKey(desktop)]);
   assert.deepEqual(result.failures, [
-    "features/scaffolding.feature:1 validated desktop is @implemented-and-validated @desktop but no packaged native GUI/E2E profile exists",
+    "features/scaffolding.feature:1 validated desktop is @implemented-and-validated @desktop but does not declare @native-gui for desktop/tauri-webdriver evidence",
+  ]);
+});
+
+test("implemented aggregate keeps web and harness routes and adds the bounded native runner", async () => {
+  const invocations = [];
+  await runImplementedStoryAggregate({
+    run: async (command, arguments_, options) => {
+      invocations.push({ command, arguments_, options });
+    },
+  });
+
+  assert.equal(invocations.length, 4);
+  assert.ok(invocations[1].arguments_.includes("implementedWeb"));
+  assert.ok(invocations[2].arguments_.includes("implementedDesktopTauriHarness"));
+  assert.deepEqual(invocations[3].arguments_, [
+    "scripts/run-native-desktop-story.mjs",
+    "--profile",
+    "implementedDesktopTauriWebdriver",
   ]);
 });
 

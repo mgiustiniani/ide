@@ -9,6 +9,16 @@ const targets = {
   unselected: { target: { name: "unselected", driver: "unselected" } },
   web: { target: { name: "web", driver: "playwright" } },
   desktop: { target: { name: "desktop", driver: "tauri" } },
+  desktopTauriWebdriver: {
+    target: { name: "desktop", driver: "tauri-webdriver" },
+    evidence: {
+      kind: "tauri-webdriver",
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+    },
+  },
 };
 
 const defaultProfile = {
@@ -46,8 +56,31 @@ const implementedDesktopTauriHarness = {
   tags: "@implemented-not-e2e-validated and @desktop and not @web",
   worldParameters: {
     ...targets.desktop,
-    evidence: { kind: "tauri-harness", nativeGui: false, e2e: false },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
   },
+};
+
+const implementedDesktopTauriWebdriver = {
+  ...common,
+  tags: "@implemented-and-validated and @desktop and @native-gui and not @web",
+  worldParameters: targets.desktopTauriWebdriver,
+};
+
+const desktopTauriWebdriver = {
+  ...common,
+  tags: "@implemented-and-validated and @desktop and @native-gui and not @web",
+  worldParameters: targets.desktopTauriWebdriver,
+};
+
+const desktopFileOpenNativeGui = {
+  ...common,
+  tags: "@REQ-DESKTOP-FILE-OPEN-001 and @implemented-and-validated and @desktop and @native-gui and not @web",
+  worldParameters: targets.desktopTauriWebdriver,
 };
 
 const web = {
@@ -69,6 +102,9 @@ export {
   implementedWeb,
   implementedDesktop,
   implementedDesktopTauriHarness,
+  implementedDesktopTauriWebdriver,
+  desktopTauriWebdriver,
+  desktopFileOpenNativeGui,
   web,
   desktop,
 };

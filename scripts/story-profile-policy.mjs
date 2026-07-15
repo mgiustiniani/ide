@@ -22,6 +22,7 @@ export function evaluateDeclaredStoryRouting(scenarios) {
   const failures = [];
   const expectedWeb = [];
   const expectedDesktopTauriHarness = [];
+  const expectedDesktopTauriWebdriver = [];
   const unsupportedValidatedDesktop = [];
 
   for (const scenario of scenarios) {
@@ -48,10 +49,14 @@ export function evaluateDeclaredStoryRouting(scenarios) {
     } else if (status === "@implemented-not-e2e-validated" && target === "@desktop") {
       expectedDesktopTauriHarness.push(scenario);
     } else if (status === "@implemented-and-validated" && target === "@desktop") {
-      unsupportedValidatedDesktop.push(scenario);
-      failures.push(
-        `${key} is @implemented-and-validated @desktop but no packaged native GUI/E2E profile exists`,
-      );
+      if (scenario.tags.has("@native-gui")) {
+        expectedDesktopTauriWebdriver.push(scenario);
+      } else {
+        unsupportedValidatedDesktop.push(scenario);
+        failures.push(
+          `${key} is @implemented-and-validated @desktop but does not declare @native-gui for desktop/tauri-webdriver evidence`,
+        );
+      }
     } else if (status === "@implemented-not-e2e-validated") {
       failures.push(`${key} has no supported ${status} ${target} Story evidence route`);
     }
@@ -61,6 +66,7 @@ export function evaluateDeclaredStoryRouting(scenarios) {
     failures,
     expectedWeb,
     expectedDesktopTauriHarness,
+    expectedDesktopTauriWebdriver,
     unsupportedValidatedDesktop,
   };
 }

@@ -21,8 +21,11 @@
     "test:story:implemented:web": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile implementedWeb",
     "test:story:implemented:desktop": "node scripts/assert-implemented-story-profiles.mjs --desktop-status",
     "test:story:implemented:desktop:tauri-harness": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile implementedDesktopTauriHarness",
+    "test:story:implemented:desktop:tauri-webdriver": "node scripts/run-native-desktop-story.mjs --profile implementedDesktopTauriWebdriver",
     "test:story:web": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile web",
     "test:story:desktop": "node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile desktop",
+    "test:story:desktop:tauri-webdriver": "node scripts/run-native-desktop-story.mjs --profile desktopTauriWebdriver",
+    "test:story:req-desktop-file-open-001": "node scripts/run-native-desktop-story.mjs --profile desktopFileOpenNativeGui",
     "test:spec": "vitest run --config vitest.spec.config.ts",
     "test:legacy-baseline": "node scripts/check-legacy-test-baseline.mjs",
     "typecheck:bdd": "tsc --project tsconfig.story.json",
@@ -54,6 +57,7 @@
     "rimraf": "^6.0.0",
     "tsx": "4.20.6",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "webdriverio": "9.27.1"
   }
 }

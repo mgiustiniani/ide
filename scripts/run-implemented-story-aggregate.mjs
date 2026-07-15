@@ -86,14 +86,15 @@ function cucumberArguments(profile) {
   return ["--import", "tsx", cucumberEntry, "--config", "cucumber.js", "--profile", profile];
 }
 
-export async function runImplementedStoryAggregate({ signal } = {}) {
-  await runProfileCommand(process.execPath, ["scripts/assert-implemented-story-profiles.mjs"], {
-    signal,
-  });
-  await runProfileCommand(process.execPath, cucumberArguments("implementedWeb"), { signal });
-  await runProfileCommand(process.execPath, cucumberArguments("implementedDesktopTauriHarness"), {
-    signal,
-  });
+export async function runImplementedStoryAggregate({ signal, run = runProfileCommand } = {}) {
+  await run(process.execPath, ["scripts/assert-implemented-story-profiles.mjs"], { signal });
+  await run(process.execPath, cucumberArguments("implementedWeb"), { signal });
+  await run(process.execPath, cucumberArguments("implementedDesktopTauriHarness"), { signal });
+  await run(
+    process.execPath,
+    ["scripts/run-native-desktop-story.mjs", "--profile", "implementedDesktopTauriWebdriver"],
+    { signal },
+  );
 }
 
 async function main() {

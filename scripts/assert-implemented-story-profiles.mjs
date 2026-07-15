@@ -98,6 +98,7 @@ try {
   const web = discover("implementedWeb");
   const validatedDesktop = discover("implementedDesktop");
   const desktopTauriHarness = discover("implementedDesktopTauriHarness");
+  const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
   const routing = evaluateDeclaredStoryRouting(declared);
   const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
   const failures = [...routing.failures];
@@ -106,7 +107,22 @@ try {
   const desktopTauri = { target: { name: "desktop", driver: "tauri" } };
   const desktopTauriHarnessEvidence = {
     ...desktopTauri,
-    evidence: { kind: "tauri-harness", nativeGui: false, e2e: false },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
+  };
+  const desktopTauriWebdriverEvidence = {
+    target: { name: "desktop", driver: "tauri-webdriver" },
+    evidence: {
+      kind: "tauri-webdriver",
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+    },
   };
 
   assertWorldParameters("default", unselected, failures);
@@ -115,6 +131,13 @@ try {
   assertWorldParameters("implementedWeb", webPlaywright, failures);
   assertWorldParameters("implementedDesktop", desktopTauri, failures);
   assertWorldParameters("implementedDesktopTauriHarness", desktopTauriHarnessEvidence, failures);
+  assertWorldParameters(
+    "implementedDesktopTauriWebdriver",
+    desktopTauriWebdriverEvidence,
+    failures,
+  );
+  assertWorldParameters("desktopTauriWebdriver", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktop", desktopTauri, failures);
 
   compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
@@ -122,7 +145,7 @@ try {
   compareProfileSelection(
     "implementedDesktop",
     validatedDesktop,
-    routing.unsupportedValidatedDesktop,
+    [...routing.expectedDesktopTauriWebdriver, ...routing.unsupportedValidatedDesktop],
     failures,
   );
   compareProfileSelection(
@@ -131,9 +154,15 @@ try {
     routing.expectedDesktopTauriHarness,
     failures,
   );
+  compareProfileSelection(
+    "implementedDesktopTauriWebdriver",
+    desktopTauriWebdriver,
+    routing.expectedDesktopTauriWebdriver,
+    failures,
+  );
 
   console.log(
-    `Declared Story routes: ${web.length} web/playwright E2E, ${desktopTauriHarness.length} desktop/tauri-harness (not native GUI/E2E), ${validatedDesktop.length} unsupported validated desktop, ${failures.length} routing failure(s).`,
+    `Declared Story routes: ${web.length} web/playwright E2E, ${desktopTauriHarness.length} desktop/tauri-harness (not native GUI/E2E), ${desktopTauriWebdriver.length} desktop/tauri-webdriver native GUI E2E, ${routing.unsupportedValidatedDesktop.length} unsupported validated desktop, ${failures.length} routing failure(s).`,
   );
 
   if (failures.length > 0) {
@@ -150,7 +179,7 @@ try {
 
   if (desktopStatusOnly) {
     console.log(
-      "Implemented-and-validated desktop Story status: UNSUPPORTED (no scenarios selected; no packaged native GUI/E2E profile exists).",
+      `Implemented-and-validated desktop Story status: ${desktopTauriWebdriver.length} scenario(s) routed to explicit desktop/tauri-webdriver release-no-bundle native GUI E2E evidence.`,
     );
   } else {
     console.log("Declared Story profile assertions: PASS");
