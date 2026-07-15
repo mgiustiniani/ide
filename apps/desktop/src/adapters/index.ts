@@ -5,4 +5,4 @@
 // Tauri bridge implementations live in @ide/tauri-adapters.
 // ---------------------------------------------------------------------------
 
-export { createTauriAdapters } from '@ide/tauri-adapters';
+export { createTauriAdapters } from "@ide/tauri-adapters";

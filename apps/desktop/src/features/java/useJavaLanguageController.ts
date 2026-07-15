@@ -238,32 +238,34 @@ export function useJavaLanguageController(
         document.pendingText = undefined;
         document.pendingVersion = undefined;
         const previous = document.changeQueue;
-        const send = previous.catch(() => undefined).then(async () => {
-          if (documentsRef.current.get(path) !== document || !document.open) return;
-          try {
-            await dependenciesRef.current.documentSync.didChange({
-              document: {
-                workspaceId: document.workspaceId,
-                path: document.path,
-                uri: document.uri,
-                languageId: "java",
-                text,
-                version,
-              },
-            });
-            document.sentVersion = Math.max(document.sentVersion, version);
-          } catch (syncError) {
-            if (
-              documentsRef.current.get(path) === document &&
-              document.version === version &&
-              document.pendingText === undefined
-            ) {
-              document.pendingText = text;
-              document.pendingVersion = version;
+        const send = previous
+          .catch(() => undefined)
+          .then(async () => {
+            if (documentsRef.current.get(path) !== document || !document.open) return;
+            try {
+              await dependenciesRef.current.documentSync.didChange({
+                document: {
+                  workspaceId: document.workspaceId,
+                  path: document.path,
+                  uri: document.uri,
+                  languageId: "java",
+                  text,
+                  version,
+                },
+              });
+              document.sentVersion = Math.max(document.sentVersion, version);
+            } catch (syncError) {
+              if (
+                documentsRef.current.get(path) === document &&
+                document.version === version &&
+                document.pendingText === undefined
+              ) {
+                document.pendingText = text;
+                document.pendingVersion = version;
+              }
+              throw syncError;
             }
-            throw syncError;
-          }
-        });
+          });
         document.changeQueue = send;
       }
 
@@ -373,7 +375,8 @@ export function useJavaLanguageController(
       }
 
       const current = statusRef.current;
-      if (current?.workspaceId === workspaceId && next.generation < current.generation) return false;
+      if (current?.workspaceId === workspaceId && next.generation < current.generation)
+        return false;
       if (
         current?.workspaceId === workspaceId &&
         (next.generation !== current.generation ||
@@ -420,9 +423,7 @@ export function useJavaLanguageController(
         const message = errorMessage(loadError);
         const failed = failedStatus(
           targetWorkspaceId,
-          statusRef.current?.workspaceId === targetWorkspaceId
-            ? statusRef.current.generation
-            : 0,
+          statusRef.current?.workspaceId === targetWorkspaceId ? statusRef.current.generation : 0,
           message,
         );
         statusRef.current = failed;
@@ -538,12 +539,7 @@ export function useJavaLanguageController(
       ) {
         return;
       }
-      const startupKey = JSON.stringify([
-        workspace.id,
-        initialSessionGeneration,
-        path,
-        syncEpoch,
-      ]);
+      const startupKey = JSON.stringify([workspace.id, initialSessionGeneration, path, syncEpoch]);
       const pending = startupsRef.current.get(startupKey);
       if (pending) return pending.promise;
 
@@ -575,10 +571,7 @@ export function useJavaLanguageController(
           syncEpoch = syncEpochRef.current;
           if (!tokenIsCurrent()) return;
         }
-        if (
-          !READY_SESSION_STATES.has(nextStatus.state) ||
-          !nextStatus.capabilities.documentSync
-        ) {
+        if (!READY_SESSION_STATES.has(nextStatus.state) || !nextStatus.capabilities.documentSync) {
           return;
         }
         const documentEpoch = syncEpochRef.current;
@@ -852,22 +845,22 @@ export function useJavaLanguageController(
       const ready = dependenciesRef.current.readyActiveDocument;
       return Boolean(
         current &&
-          current.open &&
-          !current.closing &&
-          ready?.path === request.document.path &&
-          ready.text === current.text &&
-          editor.activeFilePath === request.document.path &&
-          Object.prototype.hasOwnProperty.call(editor.contents, request.document.path) &&
-          editor.contents[request.document.path] === current.text &&
-          workspaceIdRef.current === request.workspaceId &&
-          statusRef.current?.workspaceId === request.workspaceId &&
-          statusRef.current?.generation === request.generation &&
-          current.workspaceId === request.workspaceId &&
-          current.generation === request.generation &&
-          current.syncEpoch === syncEpochRef.current &&
-          current.path === request.document.path &&
-          current.uri === request.document.uri &&
-          current.version === request.document.version
+        current.open &&
+        !current.closing &&
+        ready?.path === request.document.path &&
+        ready.text === current.text &&
+        editor.activeFilePath === request.document.path &&
+        Object.prototype.hasOwnProperty.call(editor.contents, request.document.path) &&
+        editor.contents[request.document.path] === current.text &&
+        workspaceIdRef.current === request.workspaceId &&
+        statusRef.current?.workspaceId === request.workspaceId &&
+        statusRef.current?.generation === request.generation &&
+        current.workspaceId === request.workspaceId &&
+        current.generation === request.generation &&
+        current.syncEpoch === syncEpochRef.current &&
+        current.path === request.document.path &&
+        current.uri === request.document.uri &&
+        current.version === request.document.version,
       );
     },
     [],
@@ -896,8 +889,8 @@ export function useJavaLanguageController(
     : undefined;
   const semanticSessionReady = Boolean(
     status &&
-      READY_SESSION_STATES.has(status.state) &&
-      status.workspaceId === dependencies.workspaceInfo?.id,
+    READY_SESSION_STATES.has(status.state) &&
+    status.workspaceId === dependencies.workspaceInfo?.id,
   );
   const hasSemanticCapability =
     capabilities.completion || capabilities.hover || capabilities.signature;
@@ -950,9 +943,7 @@ export function useJavaLanguageController(
           cancellationId: request.cancellationId,
           ...(request.trigger ? { trigger: { ...request.trigger } } : {}),
         });
-        return currentDocumentMatches(request)
-          ? response
-          : staleSemanticFailure(request.requestId);
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
       },
       async hover(request): Promise<JavaHoverResponse> {
         if (!statusRef.current?.capabilities.hover) {
@@ -972,9 +963,7 @@ export function useJavaLanguageController(
           requestId: request.requestId,
           cancellationId: request.cancellationId,
         });
-        return currentDocumentMatches(request)
-          ? response
-          : staleSemanticFailure(request.requestId);
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
       },
       async signatureHelp(request): Promise<JavaSignatureHelpResponse> {
         if (!statusRef.current?.capabilities.signature) {
@@ -994,9 +983,7 @@ export function useJavaLanguageController(
           requestId: request.requestId,
           cancellationId: request.cancellationId,
         });
-        return currentDocumentMatches(request)
-          ? response
-          : staleSemanticFailure(request.requestId);
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
       },
       cancel(cancellationId): void {
         void dependenciesRef.current.javaIntelligence.cancel(cancellationId).catch(() => undefined);

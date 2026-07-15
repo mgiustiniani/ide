@@ -300,7 +300,10 @@ describe("useJavaLanguageController", () => {
       error: { kind: "provider-error", summary: "late response" },
     });
     await expect(resultPromise).resolves.toEqual(
-      expect.objectContaining({ ok: false, error: expect.objectContaining({ kind: "stale-version" }) }),
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ kind: "stale-version" }),
+      }),
     );
 
     act(() => controller.result.current.javaSemantics?.cancel("exact-cancellation-id"));

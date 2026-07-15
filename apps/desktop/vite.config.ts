@@ -2,10 +2,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import {
-  manualChunks,
-  monacoChunkSizeWarningLimit,
-} from "../../config/vite/manualChunks";
+import { manualChunks, monacoChunkSizeWarningLimit } from "../../config/vite/manualChunks";
 
 const require = createRequire(new URL("../../packages/ui/package.json", import.meta.url));
 const tailwindcss = require("tailwindcss");
