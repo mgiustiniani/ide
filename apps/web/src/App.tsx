@@ -162,7 +162,7 @@ export function App(): JSX.Element {
       terminalStore.getState().setSessionActive(false);
       unsubscribe();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Callbacks ─────────────────────────────────────────────────────────
 
