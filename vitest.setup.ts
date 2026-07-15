@@ -4,11 +4,11 @@
 // Provides global mocks for browser APIs that are not available in jsdom.
 // ---------------------------------------------------------------------------
 
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // ── Mock matchMedia ─────────────────────────────────────────────────────
 
-Object.defineProperty(globalThis, 'matchMedia', {
+Object.defineProperty(globalThis, "matchMedia", {
   value: vi.fn(() => ({
     matches: false,
     addListener: vi.fn(),
@@ -22,12 +22,18 @@ Object.defineProperty(globalThis, 'matchMedia', {
 // ── Mock localStorage ───────────────────────────────────────────────────
 
 const store: Record<string, string> = {};
-Object.defineProperty(globalThis, 'localStorage', {
+Object.defineProperty(globalThis, "localStorage", {
   value: {
     getItem: vi.fn((key: string) => store[key] ?? null),
-    setItem: vi.fn((key: string, value: string) => { store[key] = value; }),
-    removeItem: vi.fn((key: string) => { delete store[key]; }),
-    clear: vi.fn(() => { for (const k in store) delete store[k]; }),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      for (const k in store) delete store[k];
+    }),
     length: 0,
     key: vi.fn((_: number) => null),
   },
@@ -35,7 +41,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 // ── Mock ResizeObserver ─────────────────────────────────────────────────
 
-Object.defineProperty(globalThis, 'ResizeObserver', {
+Object.defineProperty(globalThis, "ResizeObserver", {
   value: vi.fn(() => ({
     observe: vi.fn(),
     unobserve: vi.fn(),
@@ -45,7 +51,7 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 
 // ── Mock HTMLCanvasElement.getContext ───────────────────────────────────
 
-Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
   value: vi.fn(() => ({
     canvas: null,
     // Return a minimal mock context object for xterm.js
