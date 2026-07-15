@@ -4,13 +4,13 @@
 // Source-only contracts for identifying and listing user workspaces.
 
 /** Folder used as the workspace metadata marker at a workspace root. */
-export const WORKSPACE_MARKER_FOLDER = '.ide' as const;
+export const WORKSPACE_MARKER_FOLDER = ".ide" as const;
 
 /** Alias for consumers that prefer an explicit name suffix. */
 export const WORKSPACE_MARKER_FOLDER_NAME = WORKSPACE_MARKER_FOLDER;
 
 /** User-profile registry key/name for persisted workspace metadata. */
-export const USER_WORKSPACE_REGISTRY_KEY = 'ide.workspaces' as const;
+export const USER_WORKSPACE_REGISTRY_KEY = "ide.workspaces" as const;
 
 /** Shape/version identifier for the user workspace registry contract. */
 export const WORKSPACE_REGISTRY_VERSION = 1 as const;

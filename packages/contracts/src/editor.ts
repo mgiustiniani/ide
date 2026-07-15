@@ -57,14 +57,14 @@ export interface CursorPosition {
 
 /** Programming / markup language identifier. */
 export type Language =
-  | 'typescript'
-  | 'javascript'
-  | 'rust'
-  | 'css'
-  | 'html'
-  | 'json'
-  | 'markdown'
-  | 'yaml'
-  | 'toml'
-  | 'shell'
+  | "typescript"
+  | "javascript"
+  | "rust"
+  | "css"
+  | "html"
+  | "json"
+  | "markdown"
+  | "yaml"
+  | "toml"
+  | "shell"
   | string;

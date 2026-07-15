@@ -6,14 +6,14 @@
 
 /** Lifecycle and availability state of a managed language-service session. */
 export type LanguageServiceState =
-  | 'unavailable'
-  | 'stopped'
-  | 'starting'
-  | 'indexing'
-  | 'ready'
-  | 'degraded'
-  | 'failed'
-  | 'stopping';
+  | "unavailable"
+  | "stopped"
+  | "starting"
+  | "indexing"
+  | "ready"
+  | "degraded"
+  | "failed"
+  | "stopping";
 
 /** Stable identifier assigned to a request crossing a language-service boundary. */
 export type LanguageServiceRequestId = string;
@@ -130,7 +130,7 @@ export interface LanguageLocation {
   range: LanguageRange;
 }
 
-export type LanguageDiagnosticSeverity = 'error' | 'warning' | 'information' | 'hint';
+export type LanguageDiagnosticSeverity = "error" | "warning" | "information" | "hint";
 
 /** Related location attached to a diagnostic. */
 export interface LanguageDiagnosticRelatedInformation {
@@ -190,12 +190,12 @@ export interface RestartLanguageSessionRequest extends LanguageServiceRequestCon
 }
 
 export interface LanguageServiceStatusEvent {
-  type: 'status';
+  type: "status";
   status: LanguageServiceStatus;
 }
 
 export interface LanguageServiceProgressEvent {
-  type: 'progress';
+  type: "progress";
   workspaceId: string;
   generation: number;
   provider: string;
@@ -203,7 +203,7 @@ export interface LanguageServiceProgressEvent {
 }
 
 export interface LanguageServiceDiagnosticsEvent {
-  type: 'diagnostics';
+  type: "diagnostics";
   workspaceId: string;
   generation: number;
   provider: string;
@@ -213,9 +213,7 @@ export interface LanguageServiceDiagnosticsEvent {
 
 /** Push events emitted by a managed language-service adapter. */
 export type LanguageServiceEvent =
-  | LanguageServiceStatusEvent
-  | LanguageServiceProgressEvent
-  | LanguageServiceDiagnosticsEvent;
+  LanguageServiceStatusEvent | LanguageServiceProgressEvent | LanguageServiceDiagnosticsEvent;
 
 export type LanguageServiceEventListener = (event: LanguageServiceEvent) => void;
 

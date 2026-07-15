@@ -5,7 +5,7 @@
 // stores, and view models.
 
 /** The type of a node in the file tree. */
-export type FileNodeType = 'file' | 'folder';
+export type FileNodeType = "file" | "folder";
 
 /** A single node within the file tree. */
 export interface FileNode {

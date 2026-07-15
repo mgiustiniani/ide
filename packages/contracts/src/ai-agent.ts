@@ -6,22 +6,22 @@
 // adapters/backends own those integrations behind ports.
 
 /** Supported AI agent provider identifiers. */
-export type AiAgentProvider = 'pi';
+export type AiAgentProvider = "pi";
 
 /** Pi agent adapter integration modes. Only RPC via `pi --mode rpc` is configurable today; CLI/SDK are future/legacy literals kept for compatibility. */
-export type PiAgentIntegration = 'rpc' | 'cli' | 'sdk';
+export type PiAgentIntegration = "rpc" | "cli" | "sdk";
 
 /** Canonical Pi agent provider identifier. */
-export const PI_AGENT_PROVIDER: AiAgentProvider = 'pi';
+export const PI_AGENT_PROVIDER: AiAgentProvider = "pi";
 
 /** Preferred Pi integration: process-isolated RPC via `pi --mode rpc`. */
-export const PI_AGENT_PREFERRED_INTEGRATION: PiAgentIntegration = 'rpc';
+export const PI_AGENT_PREFERRED_INTEGRATION: PiAgentIntegration = "rpc";
 
 /** Default fallback integrations. Empty because the app supports RPC-only integration today. */
 export const PI_AGENT_FALLBACK_INTEGRATIONS = [] as const satisfies readonly PiAgentIntegration[];
 
 /** Source category for Pi Agent commands returned by RPC command discovery. */
-export type AiAgentCommandSource = 'skill' | 'prompt' | 'extension';
+export type AiAgentCommandSource = "skill" | "prompt" | "extension";
 
 /** Discoverable Pi Agent command/skill advertised by the adapter/backend. */
 export interface AiAgentCommand {
@@ -58,7 +58,7 @@ export interface PiAgentSettings {
 }
 
 /** Partial Settings UI update payload; adapters return a normalized full settings object. */
-export type PiAgentSettingsUpdate = Partial<Omit<PiAgentSettings, 'provider'>> & {
+export type PiAgentSettingsUpdate = Partial<Omit<PiAgentSettings, "provider">> & {
   provider?: AiAgentProvider;
 };
 
@@ -72,12 +72,7 @@ export const DEFAULT_PI_AGENT_SETTINGS = {
 
 /** High-level availability state reported by the concrete Pi adapter/backend. */
 export type PiAgentAvailability =
-  | 'disabled'
-  | 'available'
-  | 'not-installed'
-  | 'installing'
-  | 'unavailable'
-  | 'error';
+  "disabled" | "available" | "not-installed" | "installing" | "unavailable" | "error";
 
 /** Runtime status for the optional Pi agent integration. */
 export interface PiAgentStatus {
@@ -107,11 +102,7 @@ export interface PiAgentStatus {
 
 /** Installation outcomes for adapter/backends that can install or bootstrap Pi. */
 export type PiAgentInstallOutcome =
-  | 'installed'
-  | 'already-installed'
-  | 'failed'
-  | 'cancelled'
-  | 'unsupported';
+  "installed" | "already-installed" | "failed" | "cancelled" | "unsupported";
 
 /** Result returned by an adapter/backend after attempting Pi agent installation. */
 export interface PiAgentInstallResult {
@@ -164,7 +155,7 @@ export interface PiAgentSessionMessages {
 
 /** Multi-agent trace metadata attached to native Pi event records. */
 export interface PiMultiAgentTraceEnvelope {
-  schemaVersion: 'pi-multi-agent-trace-v1';
+  schemaVersion: "pi-multi-agent-trace-v1";
   runId: string;
   traceId: string;
   workspaceId: string;

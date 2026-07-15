@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  XCOM2_SETUP_OPERATION_KINDS,
-  type Xcom2SetupApproveRequest,
-} from "../xcom2-setup";
+import { XCOM2_SETUP_OPERATION_KINDS, type Xcom2SetupApproveRequest } from "../xcom2-setup";
 
 describe("XCOM 2 setup transaction contracts", () => {
   it("exposes only allowlisted operation kinds", () => {

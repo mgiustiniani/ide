@@ -10,7 +10,7 @@ import type {
   LanguageServiceCancellationId,
   LanguageServiceRequestId,
   VersionedLanguageDocument,
-} from './language-service';
+} from "./language-service";
 
 /** A synchronized document target inside the request's authorized workspace. */
 export interface JavaSemanticDocumentTarget {
@@ -34,10 +34,7 @@ export interface JavaSemanticRequest {
   cancellationId: LanguageServiceCancellationId;
 }
 
-export type JavaCompletionTriggerKind =
-  | 'invoked'
-  | 'trigger-character'
-  | 'incomplete-completions';
+export type JavaCompletionTriggerKind = "invoked" | "trigger-character" | "incomplete-completions";
 
 /** Optional reason for requesting completion, normalized independently of LSP. */
 export interface JavaCompletionTriggerContext {
@@ -62,7 +59,7 @@ export interface JavaSemanticProviderIdentity {
 
 /** Untrusted display data. Markdown must be sanitized by the presentation layer. */
 export interface JavaSemanticContent {
-  format: 'plaintext' | 'markdown';
+  format: "plaintext" | "markdown";
   value: string;
 }
 
@@ -83,32 +80,32 @@ export interface JavaWorkspaceTextEdit {
 
 /** Provider-neutral completion categories. */
 export type JavaCompletionItemKind =
-  | 'text'
-  | 'method'
-  | 'function'
-  | 'constructor'
-  | 'field'
-  | 'variable'
-  | 'class'
-  | 'interface'
-  | 'module'
-  | 'property'
-  | 'unit'
-  | 'value'
-  | 'enum'
-  | 'keyword'
-  | 'snippet'
-  | 'color'
-  | 'file'
-  | 'reference'
-  | 'folder'
-  | 'enum-member'
-  | 'constant'
-  | 'struct'
-  | 'event'
-  | 'operator'
-  | 'type-parameter'
-  | 'unknown';
+  | "text"
+  | "method"
+  | "function"
+  | "constructor"
+  | "field"
+  | "variable"
+  | "class"
+  | "interface"
+  | "module"
+  | "property"
+  | "unit"
+  | "value"
+  | "enum"
+  | "keyword"
+  | "snippet"
+  | "color"
+  | "file"
+  | "reference"
+  | "folder"
+  | "enum-member"
+  | "constant"
+  | "struct"
+  | "event"
+  | "operator"
+  | "type-parameter"
+  | "unknown";
 
 export interface JavaCompletionItem {
   label: string;
@@ -183,12 +180,7 @@ export interface JavaSignatureHelpResult extends JavaSemanticResponseMetadata {
 }
 
 export type JavaSemanticErrorKind =
-  | 'cancelled'
-  | 'timeout'
-  | 'unavailable'
-  | 'stale-version'
-  | 'provider-error'
-  | 'malformed-result';
+  "cancelled" | "timeout" | "unavailable" | "stale-version" | "provider-error" | "malformed-result";
 
 /**
  * Bounded, sanitized failure information safe to cross into presentation code.

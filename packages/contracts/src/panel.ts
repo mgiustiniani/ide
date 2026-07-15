@@ -4,7 +4,7 @@
 // Shared types describing the three‑panel IDE layout.
 
 /** Identifies one of the three IDE panels. */
-export type PanelId = 'leftSidebar' | 'mainArea' | 'bottomPanel';
+export type PanelId = "leftSidebar" | "mainArea" | "bottomPanel";
 
 /** Visibility state for a single panel. */
 export interface PanelVisibility {

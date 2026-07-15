@@ -4,7 +4,7 @@
 // Shared types for the terminal panel.
 
 /** Type of output line emitted by the terminal. */
-export type TerminalOutputType = 'stdout' | 'stderr' | 'input' | 'system';
+export type TerminalOutputType = "stdout" | "stderr" | "input" | "system";
 
 /** A single line of terminal output. */
 export interface TerminalOutput {
