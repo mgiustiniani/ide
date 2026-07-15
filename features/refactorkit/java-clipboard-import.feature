@@ -6,7 +6,7 @@ Business Need: Controlled desktop import of one external Java class
   User-facing rollback, general refactoring, TypeScript requirements, native GUI or package evidence, and complete hidden-metadata no-write claims are outside its scope.
   Its initial executable target after Story scaffolding is the deterministic desktop/tauri-harness profile, whose evidence can justify at most @implemented-not-e2e-validated.
 
-  @desktop @REQ-REFACTORKIT-JAVA-IMPORT-001 @functional-requirement @security @resilience @not-implemented
+  @desktop @REQ-REFACTORKIT-JAVA-IMPORT-001 @functional-requirement @security @resilience @implemented-not-e2e-validated
   Scenario: Review and apply exactly one external Java class from the clipboard
     Given the authorized Maven-like workspace "java-import-workspace" contains the existing package directory "src/main/java/example/imports"
     And "src/main/java/example/imports/ClipboardImportProof.java" does not exist
