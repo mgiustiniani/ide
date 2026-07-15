@@ -2,6 +2,7 @@ import { After, setWorldConstructor, World, type IWorldOptions } from "@cucumber
 
 import { ApplicationContentLayoutSession } from "./application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
+import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
@@ -23,6 +24,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #desktopPanelLayoutHarness?: SharedPanelLayoutHarness;
   #nativeDesktopFileOpenSession?: NativeDesktopFileOpenSession;
   #nativeDesktopEvidenceAttached = false;
+  #nativeRefactorKitJavaImportSession?: NativeRefactorKitJavaImportSession;
+  #nativeRefactorKitJavaImportEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
@@ -172,15 +175,47 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeDesktopEvidenceAttached = true;
   }
 
+  createNativeRefactorKitJavaImportSession(): NativeRefactorKitJavaImportSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native RefactorKit Java-import Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (this.#nativeRefactorKitJavaImportSession) {
+      throw new Error("The native RefactorKit Java-import Story session has already been created");
+    }
+    const session = new NativeRefactorKitJavaImportSession();
+    this.#nativeRefactorKitJavaImportSession = session;
+    return session;
+  }
+
+  nativeRefactorKitJavaImportSession(): NativeRefactorKitJavaImportSession {
+    if (!this.#nativeRefactorKitJavaImportSession) {
+      throw new Error("The native RefactorKit Java-import Story session has not been created");
+    }
+    return this.#nativeRefactorKitJavaImportSession;
+  }
+
+  async attachNativeRefactorKitJavaImportEvidence(): Promise<void> {
+    if (this.#nativeRefactorKitJavaImportEvidenceAttached) return;
+    const session = this.nativeRefactorKitJavaImportSession();
+    await this.attach(JSON.stringify(session.evidence()), "application/json");
+    const diagnostics = session.redactedDiagnostics();
+    if (diagnostics) await this.attach(diagnostics, "text/plain");
+    this.#nativeRefactorKitJavaImportEvidenceAttached = true;
+  }
+
   async dispose(): Promise<void> {
     const app = this.#standaloneWebApp;
     const desktopPanelLayoutHarness = this.#desktopPanelLayoutHarness;
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
+    const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
     this.#nativeDesktopFileOpenSession = undefined;
+    this.#nativeRefactorKitJavaImportSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
@@ -199,6 +234,20 @@ export class StoryWorld extends World<StoryWorldParameters> {
           await nativeDesktopFileOpenSession.dispose();
         }
       }
+      if (nativeRefactorKitJavaImportSession) {
+        try {
+          if (!this.#nativeRefactorKitJavaImportEvidenceAttached) {
+            await this.attach(
+              JSON.stringify(nativeRefactorKitJavaImportSession.evidence()),
+              "application/json",
+            );
+            const diagnostics = nativeRefactorKitJavaImportSession.redactedDiagnostics();
+            if (diagnostics) await this.attach(diagnostics, "text/plain");
+          }
+        } finally {
+          await nativeRefactorKitJavaImportSession.dispose();
+        }
+      }
       await app?.dispose();
       await desktopPanelLayoutHarness?.dispose();
       await refactorKitFixture?.dispose();
@@ -211,6 +260,6 @@ export class StoryWorld extends World<StoryWorldParameters> {
 
 setWorldConstructor(StoryWorld);
 
-After<StoryWorld>({ timeout: 10_000 }, async function () {
+After<StoryWorld>({ timeout: 20_000 }, async function () {
   await this.dispose();
 });

@@ -20,6 +20,10 @@ Given(
 );
 
 Given("{string} does not exist", async function (this: StoryWorld, path: string) {
+  if (this.targetProfile.driver === "tauri-webdriver") {
+    await this.nativeRefactorKitJavaImportSession().assertPathAbsent(path);
+    return;
+  }
   assert.equal(path, JAVA_IMPORT_PRIMARY_FILE);
   await this.refactorKitJavaImportSession().primary().assertPathAbsent(path);
 });
@@ -84,6 +88,10 @@ Then(
 When(
   "the developer gives that acknowledgement and chooses {string}",
   async function (this: StoryWorld, label: string) {
+    if (this.targetProfile.driver === "tauri-webdriver") {
+      await this.nativeRefactorKitJavaImportSession().acknowledgeAndApply(label);
+      return;
+    }
     await this.refactorKitJavaImportSession().primary().acknowledgeAndApply(label);
   },
 );
