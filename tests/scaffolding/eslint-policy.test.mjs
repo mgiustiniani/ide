@@ -1,0 +1,141 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import { ESLint } from "eslint";
+
+const require = createRequire(import.meta.url);
+const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const lintDependencies = {
+  "@eslint/js": "9.39.4",
+  "eslint-plugin-react-hooks": "7.1.1",
+  globals: "17.7.0",
+  "typescript-eslint": "8.64.0",
+};
+const packageManifestPaths = [
+  "package.json",
+  "apps/desktop/package.json",
+  "apps/web/package.json",
+  "packages/browser-adapters/package.json",
+  "packages/contracts/package.json",
+  "packages/tauri-adapters/package.json",
+  "packages/ui/package.json",
+  "packages/web-core/package.json",
+];
+
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(workspaceRoot, relativePath), "utf8"));
+}
+
+function ruleIds(result) {
+  return result.messages.map(({ ruleId }) => ruleId);
+}
+
+test("ESLint uses real JavaScript and TypeScript analysis with recommended rules", async () => {
+  const configSource = await readFile(path.join(workspaceRoot, "eslint.config.js"), "utf8");
+  assert.doesNotMatch(configSource, /empty[-A-Za-z]*typescript[-A-Za-z]*parser/i);
+  assert.doesNotMatch(configSource, /parseForESLint/);
+
+  const eslint = new ESLint({ cwd: workspaceRoot });
+  const javaScriptConfig = await eslint.calculateConfigForFile("scripts/eslint-policy-probe.mjs");
+  const typeScriptConfig = await eslint.calculateConfigForFile(
+    "packages/web-core/src/eslint-policy-probe.ts",
+  );
+  const tsxConfig = await eslint.calculateConfigForFile("packages/ui/src/eslint-policy-probe.tsx");
+
+  assert.ok(Object.keys(javaScriptConfig.rules).length > 0);
+  assert.ok(Object.keys(typeScriptConfig.rules).length > 0);
+  assert.equal(typeScriptConfig.languageOptions.parser.meta.name, "typescript-eslint/parser");
+  assert.deepEqual(typeScriptConfig.rules["@typescript-eslint/no-explicit-any"], [1]);
+  assert.deepEqual(tsxConfig.rules["react-hooks/rules-of-hooks"], [1]);
+
+  const [javaScriptProbe] = await eslint.lintText("missingWorkspaceGlobal();", {
+    filePath: "scripts/eslint-policy-probe.mjs",
+  });
+  assert.ok(ruleIds(javaScriptProbe).includes("no-undef"));
+
+  const [typeScriptProbe] = await eslint.lintText("const value: any = 1;", {
+    filePath: "packages/web-core/src/eslint-policy-probe.ts",
+  });
+  assert.ok(ruleIds(typeScriptProbe).includes("@typescript-eslint/no-explicit-any"));
+
+  const [hooksProbe] = await eslint.lintText(
+    [
+      'import { useEffect } from "react";',
+      "function Probe({ active }: { active: boolean }) {",
+      "  if (active) useEffect(() => {});",
+      "  return null;",
+      "}",
+    ].join("\n"),
+    { filePath: "packages/ui/src/eslint-policy-probe.tsx" },
+  );
+  assert.ok(ruleIds(hooksProbe).includes("react-hooks/rules-of-hooks"));
+});
+
+test("ESLint rejects malformed syntax injected into an actual TypeScript source", async () => {
+  const relativeSourcePath = "packages/web-core/src/index.ts";
+  const actualSource = await readFile(path.join(workspaceRoot, relativeSourcePath), "utf8");
+  const eslint = new ESLint({ cwd: workspaceRoot });
+  const [result] = await eslint.lintText(`${actualSource}\nconst lintSyntaxProbe: = 1;\n`, {
+    filePath: relativeSourcePath,
+  });
+
+  assert.ok(result.messages.some(({ fatal, ruleId }) => fatal === true && ruleId === null));
+});
+
+test("lint tooling is exact-pinned, dev-only, and absent from runtime manifests", async () => {
+  const rootManifest = await readJson("package.json");
+  assert.equal(rootManifest.scripts.lint, "eslint .");
+  assert.equal(rootManifest.scripts["lint:strict"], "eslint . --max-warnings=0");
+  assert.doesNotMatch(rootManifest.scripts.lint, /pnpm\s+-r/);
+
+  for (const [dependency, version] of Object.entries(lintDependencies)) {
+    assert.equal(rootManifest.devDependencies[dependency], version);
+  }
+  assert.equal(rootManifest.devDependencies["@eslint/js"], require("eslint/package.json").version);
+
+  for (const manifestPath of packageManifestPaths) {
+    const manifest = await readJson(manifestPath);
+    for (const dependency of Object.keys(lintDependencies)) {
+      for (const section of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+        assert.equal(
+          manifest[section]?.[dependency],
+          undefined,
+          `${dependency} leaked into ${section} in ${manifestPath}`,
+        );
+      }
+      if (manifestPath !== "package.json") {
+        assert.equal(
+          manifest.devDependencies?.[dependency],
+          undefined,
+          `${dependency} should be installed only once at the workspace root`,
+        );
+      }
+    }
+  }
+});
+
+test("ESLint preserves generated and build output ignores", async () => {
+  const eslint = new ESLint({ cwd: workspaceRoot });
+  const ignoredPaths = [
+    "apps/web/node_modules/probe.js",
+    "apps/web/dist/probe.js",
+    "apps/web/.turbo/probe.js",
+    "coverage/probe.js",
+    "test-results/probe.mjs",
+    "apps/desktop/src-tauri/target/probe.js",
+    "packages/contracts/src/probe.d.ts",
+    "apps/web/src/generated.js",
+    "apps/web/tsconfig.tsbuildinfo",
+  ];
+
+  for (const relativePath of ignoredPaths) {
+    assert.equal(
+      await eslint.isPathIgnored(relativePath),
+      true,
+      `${relativePath} must stay ignored`,
+    );
+  }
+});
