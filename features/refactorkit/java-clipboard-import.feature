@@ -4,7 +4,7 @@ Business Need: Controlled desktop import of one external Java class
 
   This requirement is bounded to one selected existing package directory in an authorized Maven-like workspace.
   User-facing rollback, general refactoring, TypeScript requirements, native GUI or package evidence, and complete hidden-metadata no-write claims are outside its scope.
-  Its initial executable target after Story scaffolding is the deterministic desktop/tauri-harness profile, whose evidence can justify at most @implemented-not-e2e-validated.
+  Its executable target is the deterministic desktop/tauri-harness profile, whose evidence justifies at most @implemented-not-e2e-validated.
 
   @desktop @REQ-REFACTORKIT-JAVA-IMPORT-001 @functional-requirement @security @resilience @implemented-not-e2e-validated
   Scenario: Review and apply exactly one external Java class from the clipboard
