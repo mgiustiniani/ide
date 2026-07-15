@@ -12,44 +12,37 @@ import type {
   EditorContent,
   TerminalOutput,
   Language,
-} from '@ide/contracts';
-import type {
-  FileTreePort,
-  EditorPort,
-  TerminalPort,
-} from '@ide/web-core/ports';
-import { BrowserClipboardAdapter } from './clipboard-browser';
-import { BrowserLanguageSessionAdapter } from './language-session-browser';
-import { BrowserRefactorKitAdapter } from './refactorkit-browser';
-import { BrowserXcom2SetupAdapter } from './xcom2-setup-browser';
-import { BrowserXcom2SetupMonitorAdapter } from './xcom2-setup-monitor-browser';
+} from "@ide/contracts";
+import type { FileTreePort, EditorPort, TerminalPort } from "@ide/web-core/ports";
+import { BrowserClipboardAdapter } from "./clipboard-browser";
+import { BrowserLanguageSessionAdapter } from "./language-session-browser";
+import { BrowserRefactorKitAdapter } from "./refactorkit-browser";
+import { BrowserXcom2SetupAdapter } from "./xcom2-setup-browser";
+import { BrowserXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-browser";
 
 export {
   BrowserClipboardAdapter,
   BrowserClipboardReadDeniedError,
   BrowserClipboardUnavailableError,
-} from './clipboard-browser';
+} from "./clipboard-browser";
 export {
   BrowserLanguageSessionAdapter,
   BrowserLanguageSessionUnavailableError,
-} from './language-session-browser';
+} from "./language-session-browser";
 export {
   BrowserRefactorKitAdapter,
   BrowserRefactorKitUnavailableError,
-} from './refactorkit-browser';
-export {
-  BrowserXcom2SetupAdapter,
-  BrowserXcom2SetupUnavailableError,
-} from './xcom2-setup-browser';
-export type { BrowserXcom2SetupOperation } from './xcom2-setup-browser';
-export { BrowserXcom2SetupMonitorAdapter } from './xcom2-setup-monitor-browser';
+} from "./refactorkit-browser";
+export { BrowserXcom2SetupAdapter, BrowserXcom2SetupUnavailableError } from "./xcom2-setup-browser";
+export type { BrowserXcom2SetupOperation } from "./xcom2-setup-browser";
+export { BrowserXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-browser";
 
 // ── Storage helpers ─────────────────────────────────────────────────────
 
 export const BROWSER_STORAGE_KEYS = {
-  fileTree: 'ide_web_file_tree',
-  fileContents: 'ide_web_file_contents',
-  openFiles: 'ide_web_open_files',
+  fileTree: "ide_web_file_tree",
+  fileContents: "ide_web_file_contents",
+  openFiles: "ide_web_open_files",
 } as const;
 
 const volatileStorage = new Map<string, string>();
@@ -81,11 +74,7 @@ function readRaw(key: string): string | null {
   }
 }
 
-function readJSON<T>(
-  key: string,
-  fallback: T,
-  validate?: (value: unknown) => value is T,
-): T {
+function readJSON<T>(key: string, fallback: T, validate?: (value: unknown) => value is T): T {
   const raw = readRaw(key);
   if (raw === null) return cloneJSON(fallback);
 
@@ -120,60 +109,60 @@ function writeJSON(key: string, value: unknown): void {
 
 const DEFAULT_ROOT_NODES: FileNode[] = [
   {
-    id: 'folder-src',
-    name: 'src',
-    path: 'src',
-    type: 'folder',
+    id: "folder-src",
+    name: "src",
+    path: "src",
+    type: "folder",
     isOpen: true,
     children: [
       {
-        id: 'file-main.tsx',
-        name: 'main.tsx',
-        path: 'src/main.tsx',
-        type: 'file',
+        id: "file-main.tsx",
+        name: "main.tsx",
+        path: "src/main.tsx",
+        type: "file",
       },
       {
-        id: 'file-App.tsx',
-        name: 'App.tsx',
-        path: 'src/App.tsx',
-        type: 'file',
-      },
-    ],
-  },
-  {
-    id: 'folder-packages',
-    name: 'packages',
-    path: 'packages',
-    type: 'folder',
-    isOpen: false,
-    children: [
-      {
-        id: 'file-index.ts',
-        name: 'index.ts',
-        path: 'packages/index.ts',
-        type: 'file',
+        id: "file-App.tsx",
+        name: "App.tsx",
+        path: "src/App.tsx",
+        type: "file",
       },
     ],
   },
   {
-    id: 'folder-public',
-    name: 'public',
-    path: 'public',
-    type: 'folder',
+    id: "folder-packages",
+    name: "packages",
+    path: "packages",
+    type: "folder",
     isOpen: false,
     children: [
       {
-        id: 'file-index.html',
-        name: 'index.html',
-        path: 'public/index.html',
-        type: 'file',
+        id: "file-index.ts",
+        name: "index.ts",
+        path: "packages/index.ts",
+        type: "file",
+      },
+    ],
+  },
+  {
+    id: "folder-public",
+    name: "public",
+    path: "public",
+    type: "folder",
+    isOpen: false,
+    children: [
+      {
+        id: "file-index.html",
+        name: "index.html",
+        path: "public/index.html",
+        type: "file",
       },
     ],
   },
 ];
 
 const DEFAULT_FILE_CONTENTS: Record<string, string> = {
-  'src/main.tsx': `import React from 'react';
+  "src/main.tsx": `import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './globals.css';
@@ -183,7 +172,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );`,
-  'src/App.tsx': `import { useState } from 'react';
+  "src/App.tsx": `import { useState } from 'react';
 
 export function App() {
   const [count, setCount] = useState(0);
@@ -196,8 +185,8 @@ export function App() {
     </div>
   );
 }`,
-  'packages/index.ts': `export const VERSION = '0.1.0';`,
-  'public/index.html': `<!DOCTYPE html>
+  "packages/index.ts": `export const VERSION = '0.1.0';`,
+  "public/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head><meta charset="UTF-8" /><title>IDE</title></head>
   <body><div id="root"></div></body>
@@ -209,17 +198,17 @@ export function App() {
 const INVALID_NAME_PATTERN = /[\\/\0-\x1F\x7F]/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isFileNode(value: unknown): value is FileNode {
   if (!isRecord(value)) return false;
-  if (typeof value.id !== 'string') return false;
-  if (typeof value.name !== 'string') return false;
-  if (typeof value.path !== 'string') return false;
-  if (value.type !== 'file' && value.type !== 'folder') return false;
+  if (typeof value.id !== "string") return false;
+  if (typeof value.name !== "string") return false;
+  if (typeof value.path !== "string") return false;
+  if (value.type !== "file" && value.type !== "folder") return false;
   if (value.children !== undefined && !isFileNodeArray(value.children)) return false;
-  if (value.isOpen !== undefined && typeof value.isOpen !== 'boolean') return false;
+  if (value.isOpen !== undefined && typeof value.isOpen !== "boolean") return false;
   return true;
 }
 
@@ -228,16 +217,16 @@ function isFileNodeArray(value: unknown): value is FileNode[] {
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
-  return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
 }
 
 function isOpenFile(value: unknown): value is OpenFile {
   if (!isRecord(value)) return false;
   return (
-    typeof value.filePath === 'string' &&
-    typeof value.name === 'string' &&
-    typeof value.language === 'string' &&
-    typeof value.openedAt === 'number'
+    typeof value.filePath === "string" &&
+    typeof value.name === "string" &&
+    typeof value.language === "string" &&
+    typeof value.openedAt === "number"
   );
 }
 
@@ -247,24 +236,24 @@ function isOpenFileArray(value: unknown): value is OpenFile[] {
 
 function validateNodeName(name: string): void {
   if (name.trim() !== name || name.length === 0) {
-    throw new Error('File or folder name cannot be empty or padded with whitespace.');
+    throw new Error("File or folder name cannot be empty or padded with whitespace.");
   }
 
-  if (name === '.' || name === '..' || INVALID_NAME_PATTERN.test(name)) {
+  if (name === "." || name === ".." || INVALID_NAME_PATTERN.test(name)) {
     throw new Error(`Invalid file or folder name: ${name}`);
   }
 }
 
 function parsePath(path: string): string[] {
-  if (path.trim() !== path || path.length === 0 || path.startsWith('/') || path.endsWith('/')) {
+  if (path.trim() !== path || path.length === 0 || path.startsWith("/") || path.endsWith("/")) {
     throw new Error(`Invalid path: ${path}`);
   }
 
-  if (path.includes('\\') || path.includes('//')) {
+  if (path.includes("\\") || path.includes("//")) {
     throw new Error(`Invalid path: ${path}`);
   }
 
-  const segments = path.split('/');
+  const segments = path.split("/");
   for (const segment of segments) {
     validateNodeName(segment);
   }
@@ -273,7 +262,7 @@ function parsePath(path: string): string[] {
 }
 
 function parentPathForSegments(segments: string[]): string {
-  return segments.slice(0, -1).join('/');
+  return segments.slice(0, -1).join("/");
 }
 
 function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string): string {
@@ -285,24 +274,24 @@ function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string): 
 // ── Language detection ─────────────────────────────────────────────────
 
 const EXTENSION_LANG_MAP: Record<string, Language> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  rs: 'rust',
-  css: 'css',
-  html: 'html',
-  json: 'json',
-  md: 'markdown',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'toml',
-  sh: 'shell',
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  rs: "rust",
+  css: "css",
+  html: "html",
+  json: "json",
+  md: "markdown",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  sh: "shell",
 };
 
 function detectLanguage(filePath: string): Language {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return EXTENSION_LANG_MAP[ext] ?? 'plaintext';
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  return EXTENSION_LANG_MAP[ext] ?? "plaintext";
 }
 
 // ── BrowserFileTreeAdapter ─────────────────────────────────────────────
@@ -311,11 +300,7 @@ export class BrowserFileTreeAdapter implements FileTreePort {
   private selectionCallback: ((event: FileSelectionEvent) => void) | null = null;
 
   async getRoot(): Promise<FileNode[]> {
-    return readJSON<FileNode[]>(
-      BROWSER_STORAGE_KEYS.fileTree,
-      DEFAULT_ROOT_NODES,
-      isFileNodeArray,
-    );
+    return readJSON<FileNode[]>(BROWSER_STORAGE_KEYS.fileTree, DEFAULT_ROOT_NODES, isFileNodeArray);
   }
 
   async getChildren(path: string): Promise<FileNode[]> {
@@ -334,10 +319,10 @@ export class BrowserFileTreeAdapter implements FileTreePort {
     this.assertUniqueName(parent.children, fileName);
 
     parent.children.push({
-      id: `file-${path.replace(/\//g, '-')}`,
+      id: `file-${path.replace(/\//g, "-")}`,
       name: fileName,
       path,
-      type: 'file',
+      type: "file",
     });
 
     writeJSON(BROWSER_STORAGE_KEYS.fileTree, nodes);
@@ -354,10 +339,10 @@ export class BrowserFileTreeAdapter implements FileTreePort {
     this.assertUniqueName(parent.children, folderName);
 
     parent.children.push({
-      id: `folder-${path.replace(/\//g, '-')}`,
+      id: `folder-${path.replace(/\//g, "-")}`,
       name: folderName,
       path,
-      type: 'folder',
+      type: "folder",
       isOpen: false,
       children: [],
     });
@@ -444,9 +429,7 @@ export class BrowserFileTreeAdapter implements FileTreePort {
     let folder: FileNode | null = null;
 
     for (const segment of segments) {
-      folder = current.find(
-        (node) => node.type === 'folder' && node.name === segment,
-      ) ?? null;
+      folder = current.find((node) => node.type === "folder" && node.name === segment) ?? null;
       if (!folder) return null;
       current = folder.children ?? [];
     }
@@ -519,19 +502,17 @@ export class BrowserFileTreeAdapter implements FileTreePort {
   }
 
   private renamePersistedOpenFiles(oldPath: string, newPath: string): void {
-    const openFiles = readJSON<OpenFile[]>(
-      BROWSER_STORAGE_KEYS.openFiles,
-      [],
-      isOpenFileArray,
-    ).map((file) => {
-      const filePath = replacePathPrefix(file.filePath, oldPath, newPath);
-      return {
-        ...file,
-        filePath,
-        name: filePath.split('/').pop() ?? file.name,
-        language: detectLanguage(filePath),
-      };
-    });
+    const openFiles = readJSON<OpenFile[]>(BROWSER_STORAGE_KEYS.openFiles, [], isOpenFileArray).map(
+      (file) => {
+        const filePath = replacePathPrefix(file.filePath, oldPath, newPath);
+        return {
+          ...file,
+          filePath,
+          name: filePath.split("/").pop() ?? file.name,
+          language: detectLanguage(filePath),
+        };
+      },
+    );
 
     writeJSON(BROWSER_STORAGE_KEYS.openFiles, openFiles);
   }
@@ -549,7 +530,7 @@ export class BrowserEditorAdapter implements EditorPort {
 
     return {
       filePath,
-      content: contents[filePath] ?? '',
+      content: contents[filePath] ?? "",
       language: detectLanguage(filePath),
     };
   }
@@ -567,7 +548,7 @@ export class BrowserEditorAdapter implements EditorPort {
 
     const openFiles = await this.getOpenFiles();
     const existing = openFiles.findIndex((file) => file.filePath === filePath);
-    const fileName = filePath.split('/').pop() ?? filePath;
+    const fileName = filePath.split("/").pop() ?? filePath;
     const language = detectLanguage(filePath);
 
     if (existing >= 0) {
@@ -591,17 +572,11 @@ export class BrowserEditorAdapter implements EditorPort {
   }
 
   async getOpenFiles(): Promise<OpenFile[]> {
-    return readJSON<OpenFile[]>(
-      BROWSER_STORAGE_KEYS.openFiles,
-      [],
-      isOpenFileArray,
-    );
+    return readJSON<OpenFile[]>(BROWSER_STORAGE_KEYS.openFiles, [], isOpenFileArray);
   }
 
   async closeFile(filePath: string): Promise<OpenFile[]> {
-    const openFiles = (await this.getOpenFiles()).filter(
-      (file) => file.filePath !== filePath,
-    );
+    const openFiles = (await this.getOpenFiles()).filter((file) => file.filePath !== filePath);
     writeJSON(BROWSER_STORAGE_KEYS.openFiles, openFiles);
     return openFiles;
   }
@@ -618,39 +593,43 @@ export class BrowserTerminalAdapter implements TerminalPort {
   async executeCommand(command: string): Promise<void> {
     const trimmed = command.trim();
 
-    this.emitOutput({ text: `$ ${trimmed}`, type: 'input', timestamp: Date.now() });
+    this.emitOutput({ text: `$ ${trimmed}`, type: "input", timestamp: Date.now() });
 
     if (!trimmed) return;
 
-    if (trimmed === 'clear' || trimmed === 'cls') {
-      this.emitOutput({ text: '', type: 'system', timestamp: Date.now() });
+    if (trimmed === "clear" || trimmed === "cls") {
+      this.emitOutput({ text: "", type: "system", timestamp: Date.now() });
       return;
     }
 
-    if (trimmed === 'exit') {
-      this.emitOutput({ text: 'Session terminated.', type: 'system', timestamp: Date.now() });
+    if (trimmed === "exit") {
+      this.emitOutput({ text: "Session terminated.", type: "system", timestamp: Date.now() });
       this.emitExit(0);
       return;
     }
 
-    if (trimmed === 'ls' || trimmed.startsWith('ls ')) {
-      this.emitOutput({ text: 'README.md  src/  packages/  public/', type: 'stdout', timestamp: Date.now() });
+    if (trimmed === "ls" || trimmed.startsWith("ls ")) {
+      this.emitOutput({
+        text: "README.md  src/  packages/  public/",
+        type: "stdout",
+        timestamp: Date.now(),
+      });
       return;
     }
 
-    if (trimmed === 'pwd') {
-      this.emitOutput({ text: '/home/user/project', type: 'stdout', timestamp: Date.now() });
+    if (trimmed === "pwd") {
+      this.emitOutput({ text: "/home/user/project", type: "stdout", timestamp: Date.now() });
       return;
     }
 
-    if (trimmed === 'echo hello') {
-      this.emitOutput({ text: 'hello', type: 'stdout', timestamp: Date.now() });
+    if (trimmed === "echo hello") {
+      this.emitOutput({ text: "hello", type: "stdout", timestamp: Date.now() });
       return;
     }
 
     this.emitOutput({
       text: `[simulated] Command not implemented: ${trimmed}`,
-      type: 'stderr',
+      type: "stderr",
       timestamp: Date.now(),
     });
   }
@@ -677,12 +656,20 @@ export class BrowserTerminalAdapter implements TerminalPort {
   }
 
   startSession(): void {
-    this.emitOutput({ text: 'Welcome to IDE Terminal (simulated)', type: 'system', timestamp: Date.now() });
-    this.emitOutput({ text: 'Type "exit" to close the session.', type: 'system', timestamp: Date.now() });
+    this.emitOutput({
+      text: "Welcome to IDE Terminal (simulated)",
+      type: "system",
+      timestamp: Date.now(),
+    });
+    this.emitOutput({
+      text: 'Type "exit" to close the session.',
+      type: "system",
+      timestamp: Date.now(),
+    });
   }
 
   stopSession(): void {
-    this.emitOutput({ text: 'Session ended.', type: 'system', timestamp: Date.now() });
+    this.emitOutput({ text: "Session ended.", type: "system", timestamp: Date.now() });
   }
 
   private emitOutput(output: TerminalOutput): void {

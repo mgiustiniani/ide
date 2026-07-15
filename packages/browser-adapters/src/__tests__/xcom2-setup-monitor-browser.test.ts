@@ -111,7 +111,10 @@ describe("BrowserXcom2SetupMonitorAdapter", () => {
     const sourcePath = process.cwd().endsWith("packages/browser-adapters")
       ? resolve(process.cwd(), "src/xcom2-setup-monitor-browser.ts")
       : process.cwd().endsWith("apps/web")
-        ? resolve(process.cwd(), "../../packages/browser-adapters/src/xcom2-setup-monitor-browser.ts")
+        ? resolve(
+            process.cwd(),
+            "../../packages/browser-adapters/src/xcom2-setup-monitor-browser.ts",
+          )
         : resolve(process.cwd(), "packages/browser-adapters/src/xcom2-setup-monitor-browser.ts");
     const source = readFileSync(sourcePath, "utf8");
 

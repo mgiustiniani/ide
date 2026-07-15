@@ -5,11 +5,11 @@ import {
   type Xcom2SetupMonitorUnsubscribe,
   type Xcom2SteamProductIdentifier,
   type Xcom2SteamProductStatus,
-} from '@ide/contracts';
-import type { Xcom2SetupMonitorPort } from '@ide/web-core/ports';
+} from "@ide/contracts";
+import type { Xcom2SetupMonitorPort } from "@ide/web-core/ports";
 
 const UNAVAILABLE_MESSAGE =
-  'Native Steam manifest and download monitoring is desktop-only and unavailable in a browser.';
+  "Native Steam manifest and download monitoring is desktop-only and unavailable in a browser.";
 
 function unavailableProduct(
   product: Xcom2SteamProductIdentifier,
@@ -17,7 +17,7 @@ function unavailableProduct(
 ): Xcom2SteamProductStatus {
   return Object.freeze({
     product,
-    lifecycle: 'not-found',
+    lifecycle: "not-found",
     installDirectoryPresent: false,
     downloadDirectoryPresent: false,
     complete: false,
@@ -26,12 +26,12 @@ function unavailableProduct(
     ]),
     stable: false,
     stabilityReasons: Object.freeze([
-      'No native Steam state is available to establish product stability.',
+      "No native Steam state is available to establish product stability.",
     ]),
     mutationBlocked: true,
     mutationBlockedReasons: Object.freeze([
       UNAVAILABLE_MESSAGE,
-      'Setup planning and application are unavailable from this read-only browser boundary.',
+      "Setup planning and application are unavailable from this read-only browser boundary.",
     ]),
     checkedAt,
   });
@@ -41,14 +41,14 @@ function createUnavailableSnapshot(): Xcom2SetupMonitorSnapshot {
   const checkedAt = new Date().toISOString();
 
   return Object.freeze({
-    workspaceId: 'browser-unavailable',
+    workspaceId: "browser-unavailable",
     generation: 0,
-    steamRoot: Object.freeze({ source: 'unknown', pathRedacted: true }),
+    steamRoot: Object.freeze({ source: "unknown", pathRedacted: true }),
     products: Object.freeze([
       unavailableProduct(XCOM2_STEAM_PRODUCTS.game, checkedAt),
       unavailableProduct(XCOM2_STEAM_PRODUCTS.wotcDevelopmentTools, checkedAt),
     ]),
-    overallState: 'not-found',
+    overallState: "not-found",
     canPlanSetup: false,
     canApplySetup: false,
     blockers: Object.freeze([UNAVAILABLE_MESSAGE]),
@@ -79,8 +79,8 @@ export class BrowserXcom2SetupMonitorAdapter implements Xcom2SetupMonitorPort {
     let active = true;
 
     listener({
-      type: 'snapshot',
-      cause: 'initial',
+      type: "snapshot",
+      cause: "initial",
       sequence: 1,
       snapshot: this.currentSnapshot,
     });

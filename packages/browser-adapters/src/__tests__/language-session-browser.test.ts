@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BrowserLanguageSessionAdapter,
   BrowserLanguageSessionUnavailableError,
   createBrowserAdapters,
-} from '../index';
+} from "../index";
 
 const ALL_FALSE_CAPABILITIES = {
   documentSync: false,
@@ -25,74 +25,71 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('BrowserLanguageSessionAdapter', () => {
-  it('reports a truthful provider-neutral unavailable status', async () => {
+describe("BrowserLanguageSessionAdapter", () => {
+  it("reports a truthful provider-neutral unavailable status", async () => {
     const status = await new BrowserLanguageSessionAdapter().getStatus({
-      workspaceId: 'workspace-1',
+      workspaceId: "workspace-1",
     });
 
     expect(status).toMatchObject({
-      state: 'unavailable',
-      provider: 'external',
-      workspaceId: 'workspace-1',
+      state: "unavailable",
+      provider: "external",
+      workspaceId: "workspace-1",
       generation: 0,
       capabilities: ALL_FALSE_CAPABILITIES,
     });
     expect(status.lastError).toMatch(/desktop-only/i);
     expect(status.lastError).toMatch(/external language service/i);
-    expect(status).not.toHaveProperty('javaExecutable');
-    expect(status).not.toHaveProperty('serverPath');
+    expect(status).not.toHaveProperty("javaExecutable");
+    expect(status).not.toHaveProperty("serverPath");
     expect(Date.parse(status.checkedAt)).not.toBeNaN();
   });
 
-  it('rejects start and restart instead of simulating lifecycle success', async () => {
+  it("rejects start and restart instead of simulating lifecycle success", async () => {
     const adapter = new BrowserLanguageSessionAdapter();
 
-    await expect(adapter.start({ workspaceId: 'workspace-1' })).rejects.toEqual(
+    await expect(adapter.start({ workspaceId: "workspace-1" })).rejects.toEqual(
       expect.objectContaining({
-        name: 'BrowserLanguageSessionUnavailableError',
-        code: 'BROWSER_LANGUAGE_SESSION_UNAVAILABLE',
+        name: "BrowserLanguageSessionUnavailableError",
+        code: "BROWSER_LANGUAGE_SESSION_UNAVAILABLE",
         message: expect.stringMatching(/cannot start.*browser.*desktop-only/is),
       }),
     );
     await expect(
-      adapter.restart({ workspaceId: 'workspace-1', generation: 4 }),
+      adapter.restart({ workspaceId: "workspace-1", generation: 4 }),
     ).rejects.toBeInstanceOf(BrowserLanguageSessionUnavailableError);
   });
 
-  it('makes stop idempotently report that no managed browser session exists', async () => {
+  it("makes stop idempotently report that no managed browser session exists", async () => {
     const adapter = new BrowserLanguageSessionAdapter();
-    const request = { workspaceId: 'workspace-1', generation: 99 };
+    const request = { workspaceId: "workspace-1", generation: 99 };
 
     await expect(adapter.stop(request)).resolves.toMatchObject({
-      state: 'unavailable',
-      workspaceId: 'workspace-1',
+      state: "unavailable",
+      workspaceId: "workspace-1",
       generation: 0,
       capabilities: ALL_FALSE_CAPABILITIES,
     });
     await expect(adapter.stop(request)).resolves.toMatchObject({
-      state: 'unavailable',
+      state: "unavailable",
       generation: 0,
     });
   });
 
-  it('delivers current status immediately with no polling or network activity', () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+  it("delivers current status immediately with no polling or network activity", () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
+    vi.stubGlobal("fetch", fetchSpy);
     const listener = vi.fn();
 
-    const unsubscribe = new BrowserLanguageSessionAdapter().subscribe(
-      'workspace-1',
-      listener,
-    );
+    const unsubscribe = new BrowserLanguageSessionAdapter().subscribe("workspace-1", listener);
 
     expect(listener).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledWith({
-      type: 'status',
+      type: "status",
       status: expect.objectContaining({
-        state: 'unavailable',
-        workspaceId: 'workspace-1',
+        state: "unavailable",
+        workspaceId: "workspace-1",
         capabilities: ALL_FALSE_CAPABILITIES,
       }),
     });
@@ -104,7 +101,7 @@ describe('BrowserLanguageSessionAdapter', () => {
     }).not.toThrow();
   });
 
-  it('includes the unavailable adapter in the browser factory', () => {
+  it("includes the unavailable adapter in the browser factory", () => {
     expect(createBrowserAdapters().languageSessionAdapter).toBeInstanceOf(
       BrowserLanguageSessionAdapter,
     );

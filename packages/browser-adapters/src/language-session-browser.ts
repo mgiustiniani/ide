@@ -7,11 +7,11 @@ import type {
   RestartLanguageSessionRequest,
   StartLanguageSessionRequest,
   StopLanguageSessionRequest,
-} from '@ide/contracts';
-import type { LanguageSessionPort } from '@ide/web-core/ports';
+} from "@ide/contracts";
+import type { LanguageSessionPort } from "@ide/web-core/ports";
 
 const UNAVAILABLE_MESSAGE =
-  'Managed local JDK and JDT LS process management is desktop-only; browser clients must use an external language service.';
+  "Managed local JDK and JDT LS process management is desktop-only; browser clients must use an external language service.";
 
 const UNAVAILABLE_CAPABILITIES: Readonly<LanguageServiceCapabilities> = Object.freeze({
   documentSync: false,
@@ -30,18 +30,20 @@ const UNAVAILABLE_CAPABILITIES: Readonly<LanguageServiceCapabilities> = Object.f
 
 /** Error raised when browser code requests desktop-only language-service lifecycle management. */
 export class BrowserLanguageSessionUnavailableError extends Error {
-  readonly code = 'BROWSER_LANGUAGE_SESSION_UNAVAILABLE';
+  readonly code = "BROWSER_LANGUAGE_SESSION_UNAVAILABLE";
 
-  constructor(operation: 'start' | 'restart') {
-    super(`Cannot ${operation} a managed local Java language service in a browser. ${UNAVAILABLE_MESSAGE}`);
-    this.name = 'BrowserLanguageSessionUnavailableError';
+  constructor(operation: "start" | "restart") {
+    super(
+      `Cannot ${operation} a managed local Java language service in a browser. ${UNAVAILABLE_MESSAGE}`,
+    );
+    this.name = "BrowserLanguageSessionUnavailableError";
   }
 }
 
 function unavailableStatus(workspaceId: string): LanguageServiceStatus {
   return {
-    state: 'unavailable',
-    provider: 'external',
+    state: "unavailable",
+    provider: "external",
     workspaceId,
     generation: 0,
     capabilities: { ...UNAVAILABLE_CAPABILITIES },
@@ -62,7 +64,7 @@ export class BrowserLanguageSessionAdapter implements LanguageSessionPort {
   }
 
   start(_request: StartLanguageSessionRequest): Promise<LanguageServiceStatus> {
-    return Promise.reject(new BrowserLanguageSessionUnavailableError('start'));
+    return Promise.reject(new BrowserLanguageSessionUnavailableError("start"));
   }
 
   stop(request: StopLanguageSessionRequest): Promise<LanguageServiceStatus> {
@@ -70,7 +72,7 @@ export class BrowserLanguageSessionAdapter implements LanguageSessionPort {
   }
 
   restart(_request: RestartLanguageSessionRequest): Promise<LanguageServiceStatus> {
-    return Promise.reject(new BrowserLanguageSessionUnavailableError('restart'));
+    return Promise.reject(new BrowserLanguageSessionUnavailableError("restart"));
   }
 
   subscribe(
@@ -78,7 +80,7 @@ export class BrowserLanguageSessionAdapter implements LanguageSessionPort {
     listener: LanguageServiceEventListener,
   ): LanguageServiceUnsubscribe {
     let active = true;
-    listener({ type: 'status', status: unavailableStatus(workspaceId) });
+    listener({ type: "status", status: unavailableStatus(workspaceId) });
 
     return () => {
       if (!active) return;

@@ -1,22 +1,22 @@
-import type { ClipboardPort } from '@ide/web-core/ports';
+import type { ClipboardPort } from "@ide/web-core/ports";
 
 /** Error raised when the browser does not expose the asynchronous Clipboard API. */
 export class BrowserClipboardUnavailableError extends Error {
-  readonly code = 'BROWSER_CLIPBOARD_UNAVAILABLE';
+  readonly code = "BROWSER_CLIPBOARD_UNAVAILABLE";
 
   constructor() {
-    super('Clipboard reading is unavailable in this browser context.');
-    this.name = 'BrowserClipboardUnavailableError';
+    super("Clipboard reading is unavailable in this browser context.");
+    this.name = "BrowserClipboardUnavailableError";
   }
 }
 
 /** Error raised when the browser rejects an explicit clipboard read request. */
 export class BrowserClipboardReadDeniedError extends Error {
-  readonly code = 'BROWSER_CLIPBOARD_READ_DENIED';
+  readonly code = "BROWSER_CLIPBOARD_READ_DENIED";
 
   constructor() {
-    super('Clipboard read permission was denied.');
-    this.name = 'BrowserClipboardReadDeniedError';
+    super("Clipboard read permission was denied.");
+    this.name = "BrowserClipboardReadDeniedError";
   }
 }
 
@@ -24,7 +24,7 @@ export class BrowserClipboardReadDeniedError extends Error {
 export class BrowserClipboardAdapter implements ClipboardPort {
   async readText(): Promise<string> {
     const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard || typeof clipboard.readText !== 'function') {
+    if (!clipboard || typeof clipboard.readText !== "function") {
       throw new BrowserClipboardUnavailableError();
     }
 
