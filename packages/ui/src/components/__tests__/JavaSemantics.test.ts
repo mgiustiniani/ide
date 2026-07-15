@@ -1,9 +1,7 @@
 import type {
   JavaCompletionResponse,
   JavaCompletionResult,
-  JavaHoverResponse,
   JavaHoverResult,
-  JavaSignatureHelpResponse,
   JavaSignatureHelpResult,
 } from '@ide/contracts';
 import { describe, expect, it, vi } from 'vitest';
