@@ -57,8 +57,8 @@ Business Need: Controlled desktop import of one external Java class
     And the Apply request contains no clipboard source, code, patch, target directory, or targetPackage
     When RefactorKit reports a successful transaction whose only changed and primary file is "src/main/java/example/imports/ClipboardImportProof.java"
     Then File Explorer refreshes only the backend-reported parent "src/main/java/example/imports"
-    And only the backend-reported primary file opens in Monaco
-    And Monaco contains exactly the clipboard fixture
+    And only the backend-reported primary file is routed to the desktop editor
+    And the editor composition receives the exact logical clipboard content intended for Monaco
     And the observable composition trace contains no direct IDE filesystem mutation, Pi or AI request, or clipboard-source-bearing log event
     And cancellation or a stale workspace, selection, request, or plan generation prevents Apply, clears retained review state, and requests discard cleanup for each correlated retained or late plan
-    And cleanup failure cannot restore the plan, mutate the workspace, or expose the clipboard source
+    And after cleanup failure the bounded observable trace contains no Apply request, imported target, restored review authority, or clipboard source
