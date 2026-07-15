@@ -5,7 +5,7 @@
 // FileTree, Editor, and Terminal.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BottomPanelTab, PanelLayoutActivity } from "@ide/ui";
 
 // ── Store creation ──────────────────────────────────────────────────────
@@ -383,30 +383,32 @@ export function App(): JSX.Element {
     refreshXcom2Setup: handleRefreshXcom2Setup,
   });
 
-  workspaceCollaboratorsRef.current = {
-    editor: {
-      resetWorkspace: desktopEditorController.resetWorkspace,
-      restoreWorkspace: desktopEditorController.restoreWorkspace,
-    },
-    java: {
-      detach: javaLanguage.detach,
-      attach: javaLanguage.attach,
-      load: (workspaceId, workspaceGeneration) =>
-        javaLanguage.load(workspaceId, workspaceGeneration),
-    },
-    refactorKitImport: {
-      resetWorkspace: refactorKitImport.resetWorkspace,
-    },
-    refactorKitStatus: refactorKitStatus.workspaceCollaborator,
-    semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
-    xcom: xcom2SetupWorkspaceCollaborator,
-    ai: aiAgentWorkspaceCollaborator,
-    shell: {
-      clearClosedPreviews: documentNavigation.clearClosedPreviews,
-      resetTerminal: terminal.resetWorkspace,
-      loadFileTree: () => fileTreeViewModel.loadRoot(),
-    },
-  };
+  useLayoutEffect(() => {
+    workspaceCollaboratorsRef.current = {
+      editor: {
+        resetWorkspace: desktopEditorController.resetWorkspace,
+        restoreWorkspace: desktopEditorController.restoreWorkspace,
+      },
+      java: {
+        detach: javaLanguage.detach,
+        attach: javaLanguage.attach,
+        load: (workspaceId, workspaceGeneration) =>
+          javaLanguage.load(workspaceId, workspaceGeneration),
+      },
+      refactorKitImport: {
+        resetWorkspace: refactorKitImport.resetWorkspace,
+      },
+      refactorKitStatus: refactorKitStatus.workspaceCollaborator,
+      semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
+      xcom: xcom2SetupWorkspaceCollaborator,
+      ai: aiAgentWorkspaceCollaborator,
+      shell: {
+        clearClosedPreviews: documentNavigation.clearClosedPreviews,
+        resetTerminal: terminal.resetWorkspace,
+        loadFileTree: () => fileTreeViewModel.loadRoot(),
+      },
+    };
+  });
 
   // ── Derived values ──────────────────────────────────────────────────
 
