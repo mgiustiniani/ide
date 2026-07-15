@@ -1,6 +1,16 @@
 import type { FileNode } from "@ide/contracts";
+import { TauriEditorAdapter } from "@ide/tauri-adapters";
+import { createEditorStore } from "@ide/web-core/state";
+import { EditorViewModel } from "@ide/web-core/view-models";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+
+vi.mock(
+  "../../../../../packages/tauri-adapters/node_modules/@tauri-apps/api/core.js",
+  () => ({ invoke: invokeMock }),
+);
 import {
   DesktopEditorController,
   type DesktopEditorStoreState,
@@ -240,6 +250,80 @@ describe("DesktopEditorController", () => {
 });
 
 describe("useDesktopEditorController", () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it("publishes the restored native session's first synchronously-read file as a tab", async () => {
+    const editorStore = createEditorStore();
+    const editorViewModel = new EditorViewModel(editorStore.getState, new TauriEditorAdapter());
+    const workspace: DesktopEditorWorkspaceContext = {
+      generation: 1,
+      workspaceId: "workspace-one",
+      isSwitching: false,
+      isMetadataLoading: false,
+    };
+    const fileTreeViewModel = {
+      selectFile: vi.fn(),
+      createFile: vi.fn(),
+      subscribeToFileSelection: vi.fn(() => vi.fn()),
+    };
+    invokeMock.mockResolvedValue({
+      path: "/authorized/workspace/native-open-proof.ts",
+      content: "export const nativeProof = 42;\n",
+      language: "typescript",
+    });
+
+    // Desktop startup restores the adapter's initially empty open-file session.
+    await editorViewModel.restoreSession();
+
+    function NativeLikeHarness() {
+      const editorState: DesktopEditorStoreState = {
+        activeFilePath: editorStore((state) => state.activeFilePath),
+        contents: editorStore((state) => state.contents),
+        openFiles: editorStore((state) => state.openFiles),
+        tabs: editorStore((state) => state.tabs),
+      };
+      const editor = useDesktopEditorController({
+        editorViewModel,
+        fileTreeViewModel,
+        getEditorState: editorStore.getState,
+        getWorkspaceContext: () => workspace,
+        clearFileTreeSelection: vi.fn(),
+        resetEditorBuffers: vi.fn(),
+        editorState,
+        deferSessionRestore: true,
+      });
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => void editor.selectTreeFile(fileNode("native-open-proof.ts"))}
+          >
+            Open native file
+          </button>
+          <output data-testid="native-state">
+            {editor.openState.status}:{editor.readyActiveFilePath ?? ""}:{editorState.tabs.length}:
+            {editor.activeContent}
+          </output>
+        </>
+      );
+    }
+
+    render(<NativeLikeHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Open native file" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("native-state").textContent).toBe(
+        "ready:native-open-proof.ts:1:export const nativeProof = 42;\n",
+      ),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("read_file", { path: "native-open-proof.ts" });
+    expect(editorStore.getState().tabs).toEqual([
+      { filePath: "native-open-proof.ts", isDirty: false, isActive: true },
+    ]);
+  });
+
   it("flushes a direct-click opening publication before calling the adapter", async () => {
     const h = createHarness();
     const load = deferred<void>();

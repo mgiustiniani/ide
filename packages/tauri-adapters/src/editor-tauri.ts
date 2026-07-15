@@ -130,15 +130,15 @@ export class TauriEditorAdapter implements EditorPort {
     }
 
     this._openFiles = openFiles;
-    return openFiles;
+    return this.getOpenFiles();
   }
 
   /** In-memory list of open files (not persisted to Rust). */
   private _openFiles: OpenFile[] = [];
 
-  /** Return the list of currently open files. */
+  /** Return a snapshot so consumers cannot mutate the adapter-owned session. */
   async getOpenFiles(): Promise<OpenFile[]> {
-    return this._openFiles;
+    return this._openFiles.map((file) => ({ ...file }));
   }
 
   /** Close the file at `filePath`. Returns the updated OpenFile list. */
@@ -146,6 +146,6 @@ export class TauriEditorAdapter implements EditorPort {
     this._openFiles = this._openFiles.filter(
       (f) => f.filePath !== filePath,
     );
-    return this._openFiles;
+    return this.getOpenFiles();
   }
 }
