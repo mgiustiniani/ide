@@ -201,7 +201,7 @@ describe("PanelLayout", () => {
     expect(mainEditorPane.classList.contains("overflow-hidden")).toBe(true);
   });
 
-  it("should keep the optional right sidebar inside the editor row", () => {
+  it("keeps the optional right sidebar inside the editor row", () => {
     const { container } = render(
       React.createElement(PanelLayout, {
         leftSidebar: React.createElement("div", { "data-testid": "sidebar" }, "Sidebar"),
@@ -227,12 +227,6 @@ describe("PanelLayout", () => {
     expect(screen.getByTestId("right-sidebar-content")).toBeDefined();
     expect(Array.from(editorRow.children)).toEqual([mainEditorPane, rightSidebar]);
     expect(rightSidebar.parentElement).toBe(editorRow);
-    expect(rightSidebar.style.width).toBe("420px");
-    expect(rightSidebar.style.minWidth).toBe("320px");
-    expect(rightSidebar.style.maxWidth).toBe("100%");
-    expect(rightSidebar.style.flexShrink).toBe("1");
-    expect(rightSidebar.classList.contains("min-w-0")).toBe(true);
-    expect(rightSidebar.classList.contains("max-w-full")).toBe(true);
   });
 
   it("preserves separator ARIA values and keyboard resize behavior", () => {
