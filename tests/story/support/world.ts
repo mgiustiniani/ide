@@ -3,11 +3,13 @@ import { After, setWorldConstructor, World, type IWorldOptions } from "@cucumber
 import { ApplicationContentLayoutSession } from "./application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
+import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
 import {
   createTargetProfileSeam,
   resolveTargetProfile,
+  type StoryTargetEvidence,
   type StoryWorldParameters,
   type TargetProfile,
   type TargetProfileSeam,
@@ -16,11 +18,13 @@ import {
 export class StoryWorld extends World<StoryWorldParameters> {
   readonly targetProfile: TargetProfile;
   readonly targetProfileSeam: TargetProfileSeam;
+  readonly targetEvidence?: StoryTargetEvidence;
   #applicationContentLayoutSession?: ApplicationContentLayoutSession;
   #desktopPanelLayoutHarness?: SharedPanelLayoutHarness;
   #nativeDesktopFileOpenSession?: NativeDesktopFileOpenSession;
   #nativeDesktopEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
+  #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
 
   constructor(options: IWorldOptions<StoryWorldParameters>) {
@@ -28,6 +32,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
 
     this.targetProfile = resolveTargetProfile(options.parameters);
     this.targetProfileSeam = createTargetProfileSeam(this.targetProfile);
+    this.targetEvidence = options.parameters.evidence;
   }
 
   async startStandaloneWebApp(): Promise<void> {
@@ -106,6 +111,37 @@ export class StoryWorld extends World<StoryWorldParameters> {
     return this.#refactorKit062ProtocolFixture;
   }
 
+  async createRefactorKitJavaImportSession(workspaceName: string): Promise<void> {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The RefactorKit Java-import Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The RefactorKit Java-import Story requires explicit deterministic tauri-harness evidence",
+      );
+    }
+    if (this.#refactorKitJavaImportSession) {
+      throw new Error("The RefactorKit Java-import Story session has already been created");
+    }
+    const session = new RefactorKitJavaImportStorySession();
+    this.#refactorKitJavaImportSession = session;
+    await session.createPrimary(workspaceName);
+  }
+
+  refactorKitJavaImportSession(): RefactorKitJavaImportStorySession {
+    if (!this.#refactorKitJavaImportSession) {
+      throw new Error("The RefactorKit Java-import Story session has not been created");
+    }
+    return this.#refactorKitJavaImportSession;
+  }
+
   createNativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -141,11 +177,13 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const desktopPanelLayoutHarness = this.#desktopPanelLayoutHarness;
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
+    const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
     this.#nativeDesktopFileOpenSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
+    this.#refactorKitJavaImportSession = undefined;
     try {
       if (nativeDesktopFileOpenSession) {
         try {
@@ -164,6 +202,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
       await app?.dispose();
       await desktopPanelLayoutHarness?.dispose();
       await refactorKitFixture?.dispose();
+      await refactorKitJavaImportSession?.dispose();
     } finally {
       await this.targetProfileSeam.dispose();
     }
