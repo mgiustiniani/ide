@@ -2,7 +2,7 @@ Business Need: Predictable application content geometry during panel changes
   To keep navigation available without allowing bottom tools to cover it
   People working in the IDE need side and bottom regions to retain their intended boundaries as panels change.
 
-  @web @REQ-LAYOUT-WEB-001 @functional-requirement @non-functional-requirement @accessibility @not-implemented
+  @web @REQ-LAYOUT-WEB-001 @functional-requirement @non-functional-requirement @accessibility @implemented-and-validated
   Scenario: Preserve full-height navigation and editor-side bottom tools in a web workspace
     Given a person has opened a workspace in a supported web browser
     And the application content includes an activity rail, a left sidebar, an editor area, and a bottom shell/tool-window host
@@ -13,7 +13,7 @@ Business Need: Predictable application content geometry during panel changes
     And they retain the positions and extents they had before the panel changes
     And keyboard resizing and the existing accessibility semantics of each resizable panel boundary remain available
 
-  @desktop @REQ-LAYOUT-DESKTOP-001 @functional-requirement @non-functional-requirement @accessibility @not-implemented
+  @desktop @REQ-LAYOUT-DESKTOP-001 @functional-requirement @non-functional-requirement @accessibility @implemented-not-e2e-validated
   Scenario: Preserve full-height navigation and editor-side bottom tools in a desktop workspace
     Given a person has opened a workspace in the desktop IDE
     And the application content includes an activity rail, a left sidebar, an editor area, and a bottom shell/tool-window host
