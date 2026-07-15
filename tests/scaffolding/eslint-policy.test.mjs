@@ -33,6 +33,10 @@ function ruleIds(result) {
   return result.messages.map(({ ruleId }) => ruleId);
 }
 
+function configuredSeverity(ruleConfig) {
+  return Array.isArray(ruleConfig) ? ruleConfig[0] : ruleConfig;
+}
+
 test("ESLint uses real JavaScript and TypeScript analysis with recommended rules", async () => {
   const configSource = await readFile(path.join(workspaceRoot, "eslint.config.js"), "utf8");
   assert.doesNotMatch(configSource, /empty[-A-Za-z]*typescript[-A-Za-z]*parser/i);
@@ -72,6 +76,73 @@ test("ESLint uses real JavaScript and TypeScript analysis with recommended rules
     { filePath: "packages/ui/src/eslint-policy-probe.tsx" },
   );
   assert.ok(ruleIds(hooksProbe).includes("react-hooks/rules-of-hooks"));
+});
+
+test("ESLint limits React Hooks linting to canonical runtime correctness rules", async () => {
+  const canonicalHookRules = ["react-hooks/exhaustive-deps", "react-hooks/rules-of-hooks"];
+  const explicitlyExcludedCompilerRules = [
+    "react-hooks/preserve-manual-memoization",
+    "react-hooks/refs",
+    "react-hooks/set-state-in-effect",
+    "react-hooks/static-components",
+    "react-hooks/use-memo",
+  ];
+  const eslint = new ESLint({ cwd: workspaceRoot });
+  const tsxPath = "packages/ui/src/eslint-react-hooks-policy-probe.tsx";
+  const tsxConfig = await eslint.calculateConfigForFile(tsxPath);
+
+  assert.ok(tsxConfig.plugins["react-hooks"], "the React Hooks plugin must remain installed");
+  for (const ruleId of canonicalHookRules) {
+    assert.equal(configuredSeverity(tsxConfig.rules[ruleId]), 1, `${ruleId} must be a warning`);
+  }
+
+  const enabledHookRules = Object.entries(tsxConfig.rules)
+    .filter(
+      ([ruleId, ruleConfig]) =>
+        ruleId.startsWith("react-hooks/") && configuredSeverity(ruleConfig) !== 0,
+    )
+    .map(([ruleId]) => ruleId)
+    .sort();
+  assert.deepEqual(enabledHookRules, canonicalHookRules);
+
+  for (const ruleId of explicitlyExcludedCompilerRules) {
+    const severity = configuredSeverity(tsxConfig.rules[ruleId]);
+    assert.ok(severity === undefined || severity === 0, `${ruleId} must be absent or off`);
+  }
+
+  const [conditionalHookProbe] = await eslint.lintText(
+    [
+      'import { useEffect } from "react";',
+      "function Probe({ active }: { active: boolean }) {",
+      "  if (active) useEffect(() => {});",
+      "  return null;",
+      "}",
+    ].join("\n"),
+    { filePath: tsxPath },
+  );
+  assert.ok(
+    conditionalHookProbe.messages.some(
+      ({ ruleId, severity }) => ruleId === "react-hooks/rules-of-hooks" && severity === 1,
+    ),
+    "a conditional Hook must produce a rules-of-hooks warning",
+  );
+
+  const [missingDependencyProbe] = await eslint.lintText(
+    [
+      'import { useEffect } from "react";',
+      "function Probe({ value }: { value: string }) {",
+      "  useEffect(() => { document.title = value; }, []);",
+      "  return null;",
+      "}",
+    ].join("\n"),
+    { filePath: tsxPath },
+  );
+  assert.ok(
+    missingDependencyProbe.messages.some(
+      ({ ruleId, severity }) => ruleId === "react-hooks/exhaustive-deps" && severity === 1,
+    ),
+    "a missing effect dependency must produce an exhaustive-deps warning",
+  );
 });
 
 test("ESLint enforces the generic TypeScript baseline while allowing test fixtures", async () => {

@@ -93,15 +93,13 @@ export default tseslint.config(
   },
   {
     files: ["**/*.tsx"],
-    plugins: reactHooks.configs.flat.recommended.plugins,
+    plugins: {
+      "react-hooks": reactHooks,
+    },
+    // React Compiler-specific rules require a separate adoption decision and supporting evidence; this compatibility scope keeps runtime Hook rules without disabling the plugin.
     rules: {
-      ...reactHooks.configs.flat.recommended.rules,
-      "react-hooks/preserve-manual-memoization": "warn",
-      "react-hooks/refs": "warn",
+      "react-hooks/exhaustive-deps": "warn",
       "react-hooks/rules-of-hooks": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/static-components": "warn",
-      "react-hooks/use-memo": "warn",
     },
   },
 );
