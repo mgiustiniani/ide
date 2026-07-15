@@ -154,9 +154,13 @@ ide/
 
 ## Test Status
 
-The dated evidence ledger is centralized in [ARC42 section 10](ARC42.md#section-10-quality-requirements). The final Java-import gate records **857/857 frontend tests across 66 files**, **120/120 Spec tests**, and **171 Rust tests passed with 8 ignored**. Its strict documentation and canonical migration checks passed. The Java-import Story is bounded to 1 scenario and 22/22 deterministic `desktop/tauri-harness` steps; native file opening separately passed 1 scenario and 16/16 steps against a fresh Linux X11/Xvfb release/no-bundle executable. The canonical aggregate is **2 web, 2 harness, and 1 native GUI**.
+The dated evidence ledger is centralized in [ARC42 section 10](ARC42.md#section-10-quality-requirements). At quality-tooling roadmap HEAD `645a79c`, `pnpm test:coverage` passes **859/859 frontend tests across 67 files**. V8 measures owned production TS/TSX in contracts, web-core, UI, browser/Tauri adapters, web, and desktop at **85.94% statements/lines (19,611/22,817), 82.14% branches (4,540/5,527), and 86.59% functions (904/1,044)**, excluding declarations, tests, dependencies, build output, and generated code. No coverage thresholds are configured. The 120-case Spec suite, Story profiles, real-browser execution, native GUI/WebDriver, and Rust suites remain separate evidence rather than being included in a combined coverage claim.
 
-Coverage evidence is absent: `@vitest/coverage-v8` is not installed, and the documented test forwarding does not produce a coverage report. The configured web E2E command currently discovers zero tests, so it supplies no browser E2E evidence. Repository-wide Prettier remains a known baseline gap with 133 legacy files; scoped slice formatting and final diff checks pass. No CachyOS/Synapse package has been built or tested, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone.
+The generic `pnpm test:e2e` route now passes **2 Playwright Chromium web scenarios/16 steps**, followed by **1 Linux Tauri-WebDriver native file-open scenario/16 steps** against a freshly built release/no-bundle executable. It intentionally excludes the deterministic `desktop/tauri-harness`, while the broader canonical declared Story aggregate remains **2 web, 2 harness, and 1 native GUI scenario**. The Java-import Story remains bounded to 1 scenario and 22/22 harness steps over jsdom, fake Tauri effects, and mocked Monaco; no native Java-import evidence exists.
+
+ESLint 9 performs substantive JavaScript and TypeScript analysis through `@eslint/js` and `typescript-eslint`, and `pnpm lint:strict` passes with zero warnings. The React 18 compatibility scope enables the canonical `react-hooks/rules-of-hooks` and `react-hooks/exhaustive-deps` rules only; React Compiler-specific rules require a separate adoption decision. The repository-wide Prettier gate passes with zero failures after isolated AST-equivalent formatting batches across root/configuration and every application/package area.
+
+The locally styled architecture model validates with no remote Cloud theme dependency or EOL warning, including a network-isolated run once Structurizr CLI 2026.06.28 is available. First-time CLI or execution-image acquisition may still require network access and remains an execution-environment responsibility. Remaining quality/maturity gaps are explicit: no V8 thresholds, the generic E2E route is narrower than the declared Story aggregate, native Java-import evidence is absent, both TypeScript/JavaScript RefactorKit requirements remain parked under option A, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone.
 
 Real JDT LS lifecycle and semantic smokes passed; the semantic smoke covered repeated completion containing `repeat`, helper hover, signature help containing `substring(int beginIndex)`, cancellation, `didClose`, and stop. Separate temporary-workspace RefactorKit evidence establishes no imported-target or other project-content write before Apply, discard invalidation, exact apply, and byte-for-byte backend rollback for the tested fixtures; it is not complete hidden-metadata identity or user-facing rollback evidence. Synthetic XCOM fixtures continue to prove repeatable apply→rollback and conflict-safe recovery, while the ignored live Prepare audit reported exactly 15 executable operations with no blockers and performed no live Apply.
 
@@ -230,10 +234,15 @@ Earlier time-specific monitor samples captured download/staging behavior before 
 ### Test
 
 ```bash
-# Run all unit tests
-pnpm test
+# Run the 859-test frontend suite and owned TS/TSX V8 baseline
+pnpm test:coverage
 
-# Coverage reporting is not configured; install and configure a coverage provider first
+# Run implemented real E2E routes only (web Playwright, then native Tauri WebDriver)
+pnpm test:e2e
+
+# Run substantive ESLint with zero warnings and the repository-wide formatting gate
+pnpm lint:strict
+pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,css,md}"
 ```
 
 ---

@@ -106,6 +106,16 @@ Chapter 1 goals, quality goals, and stakeholders remain confirmed. The full-heig
 
 `REQ-DESKTOP-FILE-OPEN-001` is separately `@implemented-and-validated`. On 2026-07-15 its Linux X11/Xvfb Tauri WebKitWebDriver Story passed 1 scenario and 16/16 steps against a freshly built release/no-bundle executable (SHA-256 `e19af16c60712631caab7c934d88f8750c54e46f5a1456fcad9d08d68119a8a6`). The canonical implemented aggregate now routes **2 web, 2 desktop harness, and 1 native GUI** scenarios; the second harness scenario is the bounded Java clipboard import above. This is deterministic harness plus direct repository-build evidence, not CachyOS/Synapse package evidence. Packaging `synapse-ide-desktop` is postponed until the full-build milestone and must use repository-only runtime dependencies. See [ARC42](ARC42.md#ddd-roadmap-status) and the [requirements appendix](docs/arc42/appendix-requirements.adoc) for evidence boundaries and limitations.
 
+### Current quality tooling
+
+At roadmap HEAD `645a79c`, `pnpm test:coverage` passes **859/859 tests across 67 files** and records the owned production TS/TSX V8 baseline: **85.94% statements/lines, 82.14% branches, and 86.59% functions**. The scope covers contracts, web-core, UI, browser/Tauri adapters, and both app frontends, with declarations, tests, dependencies, generated code, and build output excluded. No coverage thresholds are configured; Story, Spec, browser, native GUI, and Rust evidence remain separate rather than being folded into these percentages.
+
+The generic `pnpm test:e2e` command truthfully runs **2 Playwright Chromium web scenarios/16 steps**, then **1 Linux Tauri-WebDriver native file-open scenario/16 steps** against a fresh release/no-bundle executable. It intentionally excludes the deterministic desktop harness, so it adds no native layout or native Java-import evidence and is narrower than the canonical declared Story aggregate above.
+
+ESLint 9 now performs substantive JavaScript and TypeScript analysis through `@eslint/js` and `typescript-eslint`; `pnpm lint:strict` passes with zero warnings. For the current React 18 runtime, React Hooks linting enables only canonical `rules-of-hooks` and `exhaustive-deps`; React Compiler-specific rules remain out of scope pending a separate adoption decision. Repository-wide Prettier also passes with zero failures after isolated AST-equivalent batches replaced the former formatting baseline debt.
+
+The architecture model owns its default styling locally and validates without the retired remote Cloud theme or its EOL warning, including offline validation once Structurizr CLI is available. First-time CLI or execution-image acquisition may still require network access.
+
 ---
 
 ## Package Layout
