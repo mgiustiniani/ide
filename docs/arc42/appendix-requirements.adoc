@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-15 from every configured `features/**/*.feature` file after status commit `d8092c4`. The feature sources declare `REQ-WEB-001` and `REQ-LAYOUT-WEB-001` as `@implemented-and-validated`, `REQ-LAYOUT-DESKTOP-001` as `@implemented-not-e2e-validated`, and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two RefactorKit requirements remain parked outside the active roadmap under the frozen architecture policy; this scheduling decision does not alter Gherkin status.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-15 from every configured `features/**/*.feature` file after native requirement promotion `e8a8bf5` and runner reconciliation `48dab05`. The feature sources declare `REQ-WEB-001`, `REQ-LAYOUT-WEB-001`, and `REQ-DESKTOP-FILE-OPEN-001` as `@implemented-and-validated`; `REQ-LAYOUT-DESKTOP-001` as `@implemented-not-e2e-validated`; and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two RefactorKit requirements remain parked outside the active roadmap under the frozen architecture policy; this scheduling decision does not alter Gherkin status.
 ====
 
 == Governance
@@ -45,9 +45,15 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |2
 |`REQ-LAYOUT-WEB-001`, `REQ-LAYOUT-DESKTOP-001`
 |Web: `@implemented-and-validated`; desktop: `@implemented-not-e2e-validated`
+
+|link:../../features/workspace/native-desktop-file-opening.feature[`features/workspace/native-desktop-file-opening.feature`]
+|Trustworthy native desktop opening of an existing authorized workspace file
+|1
+|`REQ-DESKTOP-FILE-OPEN-001`
+|`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains four feature files, five scenarios, and five repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
+NOTE: The configured inventory contains five feature files, six scenarios, and six repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
 
 == Requirement Catalogue
 
@@ -161,7 +167,7 @@ NOTE: The configured inventory contains four feature files, five scenarios, and 
 |Evidence supports at most partial behavior. The declared status remains `@not-implemented`; neither implemented status is claimed. The documentation does not accept, permit, ignore, or normalize the lock write.
 
 |Desktop aggregate routing evidence
-|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`. The aggregate now selects `REQ-LAYOUT-DESKTOP-001`, but it still excludes this RefactorKit scenario because its declaration remains `@not-implemented`; focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement. The harness is explicitly not native GUI/E2E, and `@implemented-and-validated @desktop` remains unsupported until a packaged native GUI/E2E runner exists.
+|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`; later runner reconciliation added a separate Linux `desktop/tauri-webdriver` route for `@implemented-and-validated @desktop @native-gui`. The aggregate selects the layout harness and the unrelated native file-open scenario, but still excludes this RefactorKit scenario because its declaration remains `@not-implemented`. Focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement, and neither desktop route supplies this requirement's missing real-provider no-write proof.
 
 |Packaged GUI/E2E evidence absence
 |No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
@@ -174,6 +180,55 @@ NOTE: The configured inventory contains four feature files, five scenarios, and 
 
 |Roadmap effect
 |The requirement is parked outside the active roadmap. Deterministic support remains evidence, but no IntelliSense/JDT LS expansion or RefactorKit navigation milestone is scheduled from it.
+|===
+
+=== REQ-DESKTOP-FILE-OPEN-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-DESKTOP-FILE-OPEN-001]]`REQ-DESKTOP-FILE-OPEN-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`); the scenario also carries `@resilience` and `@accessibility`.
+
+|Actor / stakeholder
+|A person evaluating the native desktop IDE against one authorized workspace.
+
+|Capability
+|Open one deterministic existing root file through the accessible File Explorer into an exactly selected editor tab and exact Monaco model, within one bounded interaction deadline, while isolating desktop user state and shutting down cleanly.
+
+|Scenario
+|_Open a deterministic root file through the real native desktop interface_
+
+|Feature path
+|link:../../features/workspace/native-desktop-file-opening.feature[`features/workspace/native-desktop-file-opening.feature`], scenario beginning at line 9
+
+|Tags
+|`@desktop`, `@native-gui`, `@REQ-DESKTOP-FILE-OPEN-001`, `@functional-requirement`, `@non-functional-requirement`, `@resilience`, `@accessibility`, `@implemented-and-validated`
+
+|Declared status
+|`@implemented-and-validated` — copied exactly from the feature source after promotion commit `e8a8bf5`; it is recorded separately from the run below.
+
+|Validation mode
+|Real Linux native GUI/E2E through the explicit `desktop/tauri-webdriver` profile. The runner performs `pnpm --filter @ide/desktop tauri build --no-bundle --ci` before every selected run, then launches the resulting production release ELF through an isolated D-Bus session, X11 `xvfb-run` at 1440 x 900 x 24, `tauri-driver` 2.0.6, `/usr/bin/WebKitWebDriver`, WebdriverIO, and the real Tauri WebView. Evidence metadata is `nativeGui: true`, `e2e: true`, `packagedApplication: false`, and `artifactKind: release-no-bundle`.
+
+|Dated native GUI evidence
+|On 2026-07-15 at repository HEAD `48dab05`, the canonical migration native profile passed 1 scenario and 16/16 steps in 4.220 seconds. Its fresh build produced the 15,113,992-byte `apps/desktop/src-tauri/target/release/ide-desktop` executable with SHA-256 `e19af16c60712631caab7c934d88f8750c54e46f5a1456fcad9d08d68119a8a6`; the runner recorded that digest before launch and disallows overriding the freshly built path.
+
+|Production defect discovered and fixed
+|The first real native run reached and selected the file-tree item but published no first editor tab for the shared 15-second bound. `TauriEditorAdapter.getOpenFiles()` returned its mutable adapter-owned `_openFiles` array by alias; after startup restore, consumer mutation prevented the first newly opened file from becoming a publishable state change. Commit `9b4af2a` changed open/close/get results to defensive array/object snapshots and added the native-like controller regression test. The same real native Story then passed; this is production-defect evidence, not merely a test-fixture correction.
+
+|Exact sandbox and content evidence
+|The dated canonical migration run used sandbox root `/home/paperboy/workspace/ide/test-results/native-desktop-story/run-xr6Amo`. `HOME`; all configured XDG config/cache/data/state/runtime roots; `IDE_HOME`; `IDE_WORKSPACE_ROOT`; and `TMPDIR`/`TEMP`/`TMP` were exact descendants, checked both lexically and after canonicalization. The clicked item exposed source path `native-open-proof.ts`; the selected absolute path was exactly `/home/paperboy/workspace/ide/test-results/native-desktop-story/run-xr6Amo/workspace/native-open-proof.ts`; the selected accessible tab was exactly `native-open-proof.ts`; and Monaco matched exactly `export const nativeOpenProof = "REQ-DESKTOP-FILE-OPEN-001";`. No opening/failure placeholder or matching file-open alert remained.
+
+|Deadline, responsiveness, exit, and cleanup evidence
+|One shared 15-second deadline began at the click and covered selected path, selected tab, and exact Monaco content. The visible native document remained responsive under a separate 2-second probe. Window close passed; the observed release process disappeared within the 5-second exit bound; the Cucumber/runner command returned zero; sandbox confinement passed; and a post-run process check found no remaining `tauri-driver`, `WebKitWebDriver`, `ide-desktop`, or Xvfb process.
+
+|Evidence limits and packaging status
+|This proves one deterministic root-file open on the observed Linux X11/Xvfb Tauri WebKit stack. It does not cover saving, editing, nested navigation, workspace switching, other files, performance benchmarking, Wayland, other operating systems, installation, upgrade, desktop layout, RefactorKit, or arbitrary host-filesystem writes beyond the explicitly redirected/canonicalized state roots and checked workspace contents. It is explicitly not CachyOS or Synapse package evidence: `synapse-ide-desktop` packaging is postponed until the full-build milestone and must use repository-only runtime dependencies. No bundle or installer was produced or exercised.
 |===
 
 === REQ-WEB-001
@@ -304,10 +359,10 @@ NOTE: The configured inventory contains four feature files, five scenarios, and 
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment is now CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. `REQ-DESKTOP-FILE-OPEN-001` is separately declared `@implemented-and-validated` and passed its real Linux X11/Xvfb release/no-bundle native GUI Story 16/16 after production fix `9b4af2a`. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies.
 
-The canonical migration aggregate now passes with two declared web scenarios and one deterministic desktop-harness scenario. The strict documentation and canonical migration gates passed after this reconciliation. This closes the layout status mismatch and the Chapter 1 review blocker, but not release/maturity gaps: no packaged native desktop GUI/E2E runner exists, `@implemented-and-validated @desktop` remains unsupported, and broader executable requirement coverage remains incomplete. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The frozen IntelliSense/JDT LS inventory and both RefactorKit wait-for-upstream policies remain unchanged.
+The canonical migration aggregate now passes with two declared web scenarios, one deterministic desktop-harness scenario, and one native GUI scenario. The native route freshly builds before running and remains non-packaged evidence. This closes the native file-open declaration/evidence mismatch, not the release packaging gap: no CachyOS/Synapse package was built or tested, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The confirmed layout evidence, frozen IntelliSense/JDT LS inventory, and both RefactorKit wait-for-upstream policies remain unchanged.
 
 == Reconciliation Checks
 
-The 2026-07-15 reconciliation checked all four configured feature paths, five scenarios, stable IDs, classifications, effective declared statuses, aggregate routing, target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate also passed, running the declared aggregate as two web scenarios plus one deterministic desktop-harness scenario.
+The 2026-07-15 reconciliation checked all five configured feature paths, six scenarios, stable IDs, classifications, effective declared statuses, aggregate routing (2 web, 1 harness, 1 native), target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate also passed, including a fresh native release/no-bundle build and Linux X11/Xvfb WebKitWebDriver run.
