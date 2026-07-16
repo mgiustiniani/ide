@@ -26,6 +26,8 @@ const defaultArtifactRoot = path.join(repositoryRoot, "test-results/native-deskt
 export const NATIVE_DESKTOP_BUILD_TIMEOUT_MS = 600_000;
 export const NATIVE_DESKTOP_OUTER_TIMEOUT_MS = 90_000;
 export const NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS = 2_000;
+export const NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH = 1440;
+export const NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT = 900;
 const PROCESS_STOP_TIMEOUT_MS = 2_000;
 const NATIVE_JAVA_IMPORT_TAG = "@REQ-REFACTORKIT-JAVA-IMPORT-002";
 const NATIVE_JAVA_IMPORT_PYTHON_PATH = "/usr/bin/python3";
@@ -37,6 +39,7 @@ const supportedProfiles = new Set([
   "desktopTauriWebdriver",
   "desktopFileOpenNativeGui",
   "refactorKitJavaImportNativeGui",
+  "desktopLayoutNativeGui",
 ]);
 
 const executablePrerequisites = [
@@ -276,6 +279,8 @@ export async function createNativeDesktopSandbox({
     TMP: paths.temporary,
     GDK_BACKEND: "x11",
     IDE_STORY_NATIVE_GUI_TARGET: "desktop/tauri-webdriver",
+    IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_WIDTH: String(NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH),
+    IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_HEIGHT: String(NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT),
     IDE_STORY_NATIVE_GUI_SANDBOX_PATH: root,
     IDE_STORY_NATIVE_GUI_ARTIFACT_PATH: paths.artifacts,
   };
@@ -627,7 +632,7 @@ export function nativeDesktopLaunchCommand(prerequisites, profile) {
       "--",
       prerequisites.IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH,
       "--auto-servernum",
-      "--server-args=-screen 0 1440x900x24",
+      `--server-args=-screen 0 ${NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH}x${NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT}x24`,
       "--",
       process.execPath,
       "--import",
@@ -699,6 +704,10 @@ export async function runNativeDesktopStory(
     build: {
       command: application.command,
       timeoutMs: application.timeoutMs,
+    },
+    desiredWebViewViewport: {
+      width: NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH,
+      height: NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT,
     },
     sandbox: sandbox.paths,
     executables: prerequisites,

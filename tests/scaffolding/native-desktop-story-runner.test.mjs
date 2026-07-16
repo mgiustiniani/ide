@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+  NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT,
+  NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH,
   NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
   NativeDesktopStoryAbortedError,
   NativeDesktopStoryExecutionError,
@@ -159,6 +161,8 @@ test("preflight resolves every native executable and release/no-bundle binary to
     assert.deepEqual(launch.arguments.slice(-2), ["--profile", "desktopFileOpenNativeGui"]);
     assert.equal(NATIVE_DESKTOP_BUILD_TIMEOUT_MS, 600_000);
     assert.equal(NATIVE_DESKTOP_OUTER_TIMEOUT_MS, 90_000);
+    assert.equal(NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH, 1440);
+    assert.equal(NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT, 900);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -381,6 +385,7 @@ test("selected native execution builds and records evidence before launching the
       command: application.command,
       timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
     });
+    assert.deepEqual(manifest.desiredWebViewViewport, { width: 1440, height: 900 });
     assert.deepEqual(
       JSON.parse(
         await readFile(
@@ -443,6 +448,84 @@ test("focused Java import selection requests conditional Python/GTK preflight af
   assert.deepEqual(calls, ["build", "preflight"]);
 });
 
+test("focused desktop layout fresh-builds in isolated state without Java Python preflight and cleans up", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-layout-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const calls = [];
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: "b".repeat(64),
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+
+    const result = await runNativeDesktopStory("desktopLayoutNativeGui", {
+      environment: { PATH: process.env.PATH },
+      buildApplication: async () => {
+        calls.push("fresh-build");
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("prerequisites-without-java-python");
+        assert.equal(options.applicationPath, applicationPath);
+        assert.equal(options.requiresNativeJavaImport, false);
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("isolated-sandbox");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async (_command, arguments_, options) => {
+        calls.push("native-run");
+        assert.deepEqual(arguments_.slice(-2), ["--profile", "desktopLayoutNativeGui"]);
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_WIDTH, "1440");
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_HEIGHT, "900");
+        assert.equal(path.relative(artifactRoot, options.environment.HOME).startsWith(".."), false);
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("cleanup");
+        return {
+          sandboxPath,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "fresh-build",
+      "prerequisites-without-java-python",
+      "isolated-sandbox",
+      "native-run",
+      "cleanup",
+    ]);
+    assert.equal(result.skipped, false);
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.deepEqual(manifest.desiredWebViewViewport, { width: 1440, height: 900 });
+    assert.equal(manifest.selectedScenarios.length, 1);
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@REQ-LAYOUT-DESKTOP-001"));
+    assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
 test("selected native profile propagates build failure and build timeout without launch", async () => {
   const failures = [
     new NativeDesktopStoryExecutionError("fake build failure"),
@@ -502,6 +585,8 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
     }
     assert.equal(sandbox.environment.GDK_BACKEND, "x11");
     assert.equal(sandbox.environment.IDE_STORY_NATIVE_GUI_TARGET, "desktop/tauri-webdriver");
+    assert.equal(sandbox.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_WIDTH, "1440");
+    assert.equal(sandbox.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_HEIGHT, "900");
     assert.equal(
       sandbox.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT,
       sandbox.paths.scenarioRoot,
@@ -581,13 +666,22 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
   assert.equal(Object.isFrozen(runtime), true);
 });
 
-test("native runner profiles select the promoted file-open and Java import scenarios", () => {
+test("native runner profiles select promoted and focused pre-promotion scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
   assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 2);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
+  assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
   assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
+  assert.equal(profileSelectsScenarios("desktopLayoutNativeGui"), true);
+
+  const layoutSelection = discoverNativeDesktopSelection("desktopLayoutNativeGui");
+  assert.equal(layoutSelection.hasScenarios, true);
+  assert.equal(layoutSelection.includesNativeJavaImport, false);
+  assert.equal(layoutSelection.scenarios.length, 1);
+  assert.ok(layoutSelection.scenarios[0].tags.includes("@REQ-LAYOUT-DESKTOP-001"));
+  assert.ok(layoutSelection.scenarios[0].tags.includes("@implemented-not-e2e-validated"));
 
   const selection = discoverNativeDesktopSelection("refactorKitJavaImportNativeGui");
   assert.equal(selection.hasScenarios, true);
@@ -607,6 +701,10 @@ test("implemented native discovery selects exactly both promoted requirements", 
     ["@REQ-DESKTOP-FILE-OPEN-001", "@REQ-REFACTORKIT-JAVA-IMPORT-002"],
   );
   assert.ok(selection.scenarios.every(({ tags }) => tags.includes("@implemented-and-validated")));
+  assert.equal(
+    selection.scenarios.some(({ tags }) => tags.includes("@REQ-LAYOUT-DESKTOP-001")),
+    false,
+  );
 });
 
 test("process scanning matches only the exact native sandbox environment value", async () => {

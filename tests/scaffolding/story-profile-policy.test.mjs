@@ -79,6 +79,12 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     "@REQ-REFACTORKIT-JAVA-IMPORT-002 and @desktop and @native-gui and not @web",
   );
   assert.doesNotMatch(cucumberProfiles.refactorKitJavaImportNativeGui.tags, /implemented|partial/);
+  assert.deepEqual(cucumberProfiles.desktopLayoutNativeGui.worldParameters, nativeGuiEvidence);
+  assert.equal(
+    cucumberProfiles.desktopLayoutNativeGui.tags,
+    "@REQ-LAYOUT-DESKTOP-001 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(cucumberProfiles.desktopLayoutNativeGui.tags, /implemented|partial/);
 
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
@@ -94,15 +100,24 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   assert.equal(cucumberProfiles.desktop.tags, "@desktop and not @web");
 });
 
-test("focused native Java import package command makes no harness or package claim", async () => {
+test("focused native package commands make no harness or package claim", async () => {
   const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
-  const command = manifest.scripts["test:story:req-refactorkit-java-import-002"];
+  const commands = new Map([
+    [
+      "test:story:req-refactorkit-java-import-002",
+      "node scripts/run-native-desktop-story.mjs --profile refactorKitJavaImportNativeGui",
+    ],
+    [
+      "test:story:req-layout-desktop-001:native",
+      "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
+    ],
+  ]);
 
-  assert.equal(
-    command,
-    "node scripts/run-native-desktop-story.mjs --profile refactorKitJavaImportNativeGui",
-  );
-  assert.doesNotMatch(command, /tauri-harness|package|bundle/);
+  for (const [name, expected] of commands) {
+    const command = manifest.scripts[name];
+    assert.equal(command, expected);
+    assert.doesNotMatch(command, /tauri-harness|package|bundle/);
+  }
 });
 
 test("zero runnable selections are successful", () => {
@@ -132,6 +147,35 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedWeb.map(scenarioKey), [scenarioKey(web)]);
   assert.deepEqual(result.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(harness)]);
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
+});
+
+test("desktop layout remains on the harness until promotion then joins native selection", () => {
+  const beforePromotion = scenario("desktop layout", [
+    "@REQ-LAYOUT-DESKTOP-001",
+    "@implemented-not-e2e-validated",
+    "@desktop",
+    "@native-gui",
+  ]);
+  const afterPromotion = scenario("desktop layout", [
+    "@REQ-LAYOUT-DESKTOP-001",
+    "@implemented-and-validated",
+    "@desktop",
+    "@native-gui",
+  ]);
+
+  const before = evaluateDeclaredStoryRouting([beforePromotion]);
+  assert.deepEqual(before.failures, []);
+  assert.deepEqual(before.expectedDesktopTauriHarness.map(scenarioKey), [
+    scenarioKey(beforePromotion),
+  ]);
+  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
+
+  const after = evaluateDeclaredStoryRouting([afterPromotion]);
+  assert.deepEqual(after.failures, []);
+  assert.deepEqual(after.expectedDesktopTauriHarness, []);
+  assert.deepEqual(after.expectedDesktopTauriWebdriver.map(scenarioKey), [
+    scenarioKey(afterPromotion),
+  ]);
 });
 
 test("missing and multiple statuses are rejected", () => {
