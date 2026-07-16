@@ -304,6 +304,144 @@ describe("PanelLayout", () => {
     fireEvent.mouseUp(document);
   });
 
+  it("does not expose sidebar or bottom-panel toggles without their optional callbacks", () => {
+    const hiddenLayout = {
+      ...defaultLayout,
+      visibility: {
+        ...defaultLayout.visibility,
+        leftSidebar: { visible: false, active: false },
+        bottomPanel: { visible: false, active: false },
+      },
+    };
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Sidebar Content"),
+        mainContent: React.createElement("div", null, "Main"),
+        bottomContent: React.createElement("div", null, "Bottom Content"),
+        layout: hiddenLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    expect(screen.queryByRole("button", { name: "Expand sidebar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand bottom panel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse bottom panel" })).toBeNull();
+  });
+
+  it("keeps a native Expand sidebar button when collapsed content is unmounted", () => {
+    const onToggleLeftSidebar = vi.fn();
+    const hiddenLayout = {
+      ...defaultLayout,
+      visibility: {
+        ...defaultLayout.visibility,
+        leftSidebar: { visible: false, active: false },
+      },
+    };
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Sidebar Content"),
+        mainContent: React.createElement("div", null, "Main"),
+        bottomContent: React.createElement("div", null, "Bottom"),
+        layout: hiddenLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+        onToggleLeftSidebar,
+      }),
+    );
+
+    expect(screen.queryByText("Sidebar Content")).toBeNull();
+
+    const expandSidebar = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(expandSidebar.tagName).toBe("BUTTON");
+    expect(expandSidebar.getAttribute("aria-label")).toBe("Expand sidebar");
+    expect(expandSidebar.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(expandSidebar);
+
+    expect(onToggleLeftSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the exact bottom toggle available in expanded and hidden states", () => {
+    const onToggleBottomPanel = vi.fn();
+    const createPanel = (showBottomPanel: boolean) =>
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Sidebar"),
+        mainContent: React.createElement("div", null, "Main"),
+        bottomContent: React.createElement("div", null, "Bottom Content"),
+        layout: defaultLayout,
+        showBottomPanel,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+        onToggleBottomPanel,
+      });
+    const { rerender } = render(createPanel(true));
+
+    const collapseBottom = screen.getByRole("button", { name: "Collapse bottom panel" });
+    expect(collapseBottom.closest(".statusbar")).not.toBeNull();
+    expect(collapseBottom.getAttribute("aria-label")).toBe("Collapse bottom panel");
+    expect(collapseBottom.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(collapseBottom);
+
+    rerender(createPanel(false));
+
+    const expandBottom = screen.getByRole("button", { name: "Expand bottom panel" });
+    expect(expandBottom.closest(".statusbar")).not.toBeNull();
+    expect(expandBottom.getAttribute("aria-label")).toBe("Expand bottom panel");
+    expect(expandBottom.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(expandBottom);
+
+    expect(onToggleBottomPanel).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-expands controlled panels without changing the editor-side bottom parent", () => {
+    const collapsedLayout = {
+      ...defaultLayout,
+      visibility: {
+        ...defaultLayout.visibility,
+        leftSidebar: { visible: false, active: false },
+      },
+    };
+    const createPanel = (layout: PanelLayoutType, showBottomPanel: boolean) =>
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Controlled Sidebar"),
+        mainContent: React.createElement("div", null, "Main"),
+        bottomContent: React.createElement("div", null, "Controlled Bottom"),
+        layout,
+        showBottomPanel,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+        onToggleLeftSidebar: vi.fn(),
+        onToggleBottomPanel: vi.fn(),
+      });
+    const { container, rerender } = render(createPanel(collapsedLayout, false));
+    const contentColumn = container.querySelector(".ide-content-column") as HTMLElement;
+    const editorRow = container.querySelector(".ide-editor-row") as HTMLElement;
+    const bottomPanel = container.querySelector(".ide-bottom-panel") as HTMLDivElement;
+
+    expect(screen.queryByText("Controlled Sidebar")).toBeNull();
+    expect(screen.queryByText("Controlled Bottom")).toBeNull();
+    expect(Array.from(contentColumn.children)).toEqual([editorRow, bottomPanel]);
+    expect(bottomPanel.parentElement).toBe(contentColumn);
+
+    rerender(createPanel(defaultLayout, true));
+
+    expect(screen.getByText("Controlled Sidebar")).toBeDefined();
+    expect(screen.getByText("Controlled Bottom")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Expand sidebar" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Collapse bottom panel" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(Array.from(contentColumn.children)).toEqual([
+      editorRow,
+      screen.getByRole("separator", { name: "Resize bottom panel" }),
+      bottomPanel,
+    ]);
+    expect(bottomPanel.parentElement).toBe(contentColumn);
+  });
+
   it("should collapse the left sidebar without changing workspace sibling topology", () => {
     const hiddenLayout = {
       ...defaultLayout,
