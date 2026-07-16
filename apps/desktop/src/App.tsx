@@ -44,6 +44,7 @@ import {
   useWorkspaceController,
   type WorkspaceControllerCollaborators,
 } from "./features/workspace/useWorkspaceController";
+import { useXcom2ModuleActivationController } from "./features/xcom2-module-activation/useXcom2ModuleActivationController";
 import {
   useXcom2SetupController,
   type Xcom2SetupEventSources,
@@ -88,6 +89,7 @@ const {
   languageSessionAdapter,
   documentSyncAdapter,
   javaIntelligenceAdapter,
+  xcom2ModuleScannerAdapter,
   xcom2SetupAdapter,
   xcom2SetupMonitorAdapter,
 } = createTauriAdapters();
@@ -175,6 +177,9 @@ export function App(): JSX.Element {
   const refactorKitStatus = useRefactorKitStatusController({
     refactorKit: refactorKitAdapter,
     deferWorkspaceActivation: true,
+  });
+  const xcom2ModuleActivation = useXcom2ModuleActivationController({
+    scanner: xcom2ModuleScannerAdapter,
   });
   const workspace = useWorkspaceController({
     workspace: workspaceAdapter,
@@ -399,6 +404,7 @@ export function App(): JSX.Element {
       },
       refactorKitStatus: refactorKitStatus.workspaceCollaborator,
       semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
+      xcom2ModuleActivation: xcom2ModuleActivation.workspaceCollaborator,
       xcom: xcom2SetupWorkspaceCollaborator,
       ai: aiAgentWorkspaceCollaborator,
       shell: {

@@ -2,6 +2,10 @@ import type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
 import type { WorkspacePort } from "@ide/web-core/ports";
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { RefactorKitStatusWorkspaceCollaborator } from "../refactorkit-status/useRefactorKitStatusController";
+import type {
+  Xcom2ModuleActivationWorkspaceCollaborator,
+  Xcom2ModuleActivationWorkspaceSwitchToken,
+} from "../xcom2-module-activation/useXcom2ModuleActivationController";
 
 const INITIAL_WORKSPACE_GENERATION = 1;
 const INITIAL_ACTIVATION_ERROR = "Unable to activate the current workspace.";
@@ -32,6 +36,7 @@ export interface WorkspaceControllerCollaborators {
     /** Stops and invalidates the old saved-snapshot session before authorization changes. */
     resetWorkspace(nextWorkspaceGeneration: WorkspaceGeneration): Promise<void>;
   };
+  xcom2ModuleActivation: Xcom2ModuleActivationWorkspaceCollaborator;
   xcom: {
     beginWorkspaceSwitch(workspaceGeneration: WorkspaceGeneration): WorkspaceXcomSwitchToken;
     activateWorkspace(workspace: WorkspaceInfo): void;
@@ -239,6 +244,7 @@ export function useWorkspaceController(
       initialActivationRef.current === activationId &&
       generationRef.current === workspaceGeneration;
 
+    let xcom2ModuleActivationToken: Xcom2ModuleActivationWorkspaceSwitchToken | null = null;
     let xcomToken: WorkspaceXcomSwitchToken | null = null;
     let refactorKitStatusGeneration: number | null = null;
 
@@ -275,10 +281,13 @@ export function useWorkspaceController(
       setWorkspaceRegistry(promotedRegistry);
 
       // Establish the shared generation boundary only after authorization and registry promotion.
+      xcom2ModuleActivationToken =
+        collaborators.xcom2ModuleActivation.beginWorkspaceSwitch(workspaceGeneration);
       xcomToken = collaborators.xcom.beginWorkspaceSwitch(workspaceGeneration);
       refactorKitStatusGeneration =
         collaborators.refactorKitStatus.beginWorkspaceSwitch(workspaceGeneration);
       collaborators.ai.beginWorkspaceSwitch();
+      collaborators.xcom2ModuleActivation.activateWorkspace(ensuredWorkspace);
       collaborators.xcom.activateWorkspace(ensuredWorkspace);
       collaborators.java.attach(ensuredWorkspace, workspaceGeneration);
       const workspaceKey = collaborators.ai.activateWorkspace(ensuredWorkspace);
@@ -292,6 +301,10 @@ export function useWorkspaceController(
         collaborators.java.load(ensuredWorkspace.id, workspaceGeneration),
         collaborators.ai.loadCommands(workspaceKey),
         collaborators.refactorKitStatus.load(refactorKitStatusGeneration),
+        collaborators.xcom2ModuleActivation.loadWorkspace(
+          xcom2ModuleActivationToken,
+          ensuredWorkspace.id,
+        ),
         collaborators.xcom.loadWorkspace(xcomToken, ensuredWorkspace.id),
       ]);
       if (!isCurrent()) return;
@@ -299,6 +312,11 @@ export function useWorkspaceController(
     } catch (activationError) {
       if (!isCurrent()) return;
       setError(INITIAL_ACTIVATION_ERROR);
+      if (xcom2ModuleActivationToken) {
+        dependencies.collaboratorsRef.current?.xcom2ModuleActivation.settleFailedWorkspaceActivation(
+          xcom2ModuleActivationToken,
+        );
+      }
       if (xcomToken) {
         dependencies.collaboratorsRef.current?.xcom.settleFailedWorkspaceActivation?.(xcomToken);
       }
@@ -341,6 +359,9 @@ export function useWorkspaceController(
       generationRef.current = workspaceGeneration;
       setGeneration(workspaceGeneration);
       switchingRef.current = true;
+      // Revoke recognized module contributions synchronously, before any native root transition.
+      const xcom2ModuleActivationToken =
+        collaborators.xcom2ModuleActivation.beginWorkspaceSwitch(workspaceGeneration);
       collaborators.editor.resetWorkspace();
       collaborators.refactorKitImport.resetWorkspace();
 
@@ -365,6 +386,7 @@ export function useWorkspaceController(
 
         workspaceInfoRef.current = switchedWorkspace;
         setWorkspaceInfo(switchedWorkspace);
+        collaborators.xcom2ModuleActivation.activateWorkspace(switchedWorkspace);
         collaborators.xcom.activateWorkspace(switchedWorkspace);
         collaborators.java.attach(switchedWorkspace, workspaceGeneration);
         const switchedWorkspaceKey = collaborators.ai.activateWorkspace(switchedWorkspace);
@@ -378,11 +400,16 @@ export function useWorkspaceController(
           collaborators.ai.loadCommands(switchedWorkspaceKey),
           collaborators.refactorKitStatus.load(refactorKitStatusGeneration),
           collaborators.java.load(switchedWorkspace.id, workspaceGeneration),
+          collaborators.xcom2ModuleActivation.loadWorkspace(
+            xcom2ModuleActivationToken,
+            switchedWorkspace.id,
+          ),
           collaborators.xcom.loadWorkspace(xcomToken, switchedWorkspace.id),
         ]);
       } catch (switchError) {
         if (generationRef.current !== workspaceGeneration) return;
         setError(getErrorMessage(switchError));
+        collaborators.xcom2ModuleActivation.restoreWorkspace(xcom2ModuleActivationToken);
         collaborators.xcom.restoreWorkspace(xcomToken);
         collaborators.refactorKitStatus.settleFailedWorkspaceSwitch(refactorKitStatusGeneration);
         if (oldWorkspace) {

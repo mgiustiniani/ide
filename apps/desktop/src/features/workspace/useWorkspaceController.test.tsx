@@ -99,6 +99,24 @@ function createHarness(
         order.push(`refactorkit-status.settle:${generation}`);
       }),
     },
+    xcom2ModuleActivation: {
+      beginWorkspaceSwitch: vi.fn((generation) => {
+        order.push(`xcom2-module.begin:${generation}`);
+        return { generation, previousWorkspaceId: currentWorkspace.id };
+      }),
+      activateWorkspace: vi.fn((nextWorkspace) => {
+        order.push(`xcom2-module.activate:${nextWorkspace.id}`);
+      }),
+      loadWorkspace: vi.fn(async (token, workspaceId) => {
+        order.push(`xcom2-module.load:${workspaceId}:${token.generation}`);
+      }),
+      restoreWorkspace: vi.fn((token) => {
+        order.push(`xcom2-module.restore:${token.previousWorkspaceId}:${token.generation}`);
+      }),
+      settleFailedWorkspaceActivation: vi.fn((token) => {
+        order.push(`xcom2-module.settle:${token.previousWorkspaceId}:${token.generation}`);
+      }),
+    },
     xcom: {
       beginWorkspaceSwitch: vi.fn((generation) => {
         order.push(`xcom.begin:${generation}`);
@@ -232,9 +250,11 @@ describe("useWorkspaceController", () => {
     });
     expect(harness.controller.result.current.currentWorkspaceId).toBe(workspaceOne.id);
     expect(harness.order).toEqual([
+      "xcom2-module.begin:1",
       "xcom.begin:1",
       "refactorkit-status.begin:1",
       "ai.begin",
+      `xcom2-module.activate:${workspaceOne.id}`,
       `xcom.activate:${workspaceOne.id}`,
       `java.attach:${workspaceOne.id}:1`,
       `ai.activate:${workspaceOne.id}`,
@@ -242,6 +262,7 @@ describe("useWorkspaceController", () => {
       `java.load:${workspaceOne.id}:1`,
       `ai.load:ai:${workspaceOne.id}`,
       "refactorkit-status.load:101",
+      `xcom2-module.load:${workspaceOne.id}:1`,
       `xcom.load:${workspaceOne.id}:1`,
       "shell.load-tree",
     ]);
@@ -410,6 +431,7 @@ describe("useWorkspaceController", () => {
     expect(harness.controller.result.current.switchingWorkspaceId).toBe(workspaceTwo.id);
     expect(harness.controller.result.current.isLoading).toBe(true);
     expect(harness.order).toEqual([
+      `xcom2-module.begin:${nextGeneration}`,
       "editor.reset",
       "refactorkit-import.reset",
       `java.detach:${nextGeneration}`,
@@ -426,6 +448,10 @@ describe("useWorkspaceController", () => {
     expect(harness.controller.result.current.currentWorkspaceId).toBe(workspaceTwo.id);
     expect(harness.collaborators.java.attach).toHaveBeenCalledWith(workspaceTwo, nextGeneration);
     expect(harness.collaborators.java.load).toHaveBeenCalledWith(workspaceTwo.id, nextGeneration);
+    expect(harness.collaborators.xcom2ModuleActivation.loadWorkspace).toHaveBeenCalledWith(
+      { generation: nextGeneration, previousWorkspaceId: workspaceOne.id },
+      workspaceTwo.id,
+    );
     expect(harness.collaborators.xcom.loadWorkspace).toHaveBeenCalledWith(
       { generation: nextGeneration, previousWorkspaceId: workspaceOne.id },
       workspaceTwo.id,
@@ -446,6 +472,9 @@ describe("useWorkspaceController", () => {
     expect(harness.collaborators.refactorKitStatus.beginWorkspaceSwitch).toHaveBeenLastCalledWith(
       nextGeneration + 1,
     );
+    expect(
+      harness.collaborators.xcom2ModuleActivation.beginWorkspaceSwitch,
+    ).toHaveBeenLastCalledWith(nextGeneration + 1);
     expect(harness.collaborators.xcom.beginWorkspaceSwitch).toHaveBeenLastCalledWith(
       nextGeneration + 1,
     );
@@ -474,6 +503,10 @@ describe("useWorkspaceController", () => {
     expect(harness.controller.result.current.currentWorkspaceId).toBe(workspaceOne.id);
     expect(harness.controller.result.current.generation).toBe(generation);
     expect(harness.controller.result.current.error).toBe("switch denied");
+    expect(harness.collaborators.xcom2ModuleActivation.restoreWorkspace).toHaveBeenCalledWith({
+      generation,
+      previousWorkspaceId: workspaceOne.id,
+    });
     expect(harness.collaborators.xcom.restoreWorkspace).toHaveBeenCalledWith({
       generation,
       previousWorkspaceId: workspaceOne.id,
@@ -509,6 +542,10 @@ describe("useWorkspaceController", () => {
 
     expect(thrown).toBe(detachError);
     expect(harness.workspaceMocks.switchWorkspace).not.toHaveBeenCalled();
+    expect(harness.collaborators.xcom2ModuleActivation.restoreWorkspace).toHaveBeenCalledWith({
+      generation,
+      previousWorkspaceId: workspaceOne.id,
+    });
     expect(harness.collaborators.xcom.restoreWorkspace).toHaveBeenCalledWith({
       generation,
       previousWorkspaceId: workspaceOne.id,

@@ -218,6 +218,8 @@ const testHarness = vi.hoisted(() => {
       checkedAt: "2026-07-11T00:00:00.000Z",
     };
     harness.xcom2SetupError = null;
+    harness.xcom2ModuleScanObservations = [];
+    harness.xcom2ModuleScanError = null;
     harness.xcom2Transaction = null;
     harness.xcom2Transactions = [];
     harness.xcom2TransactionError = null;
@@ -619,6 +621,24 @@ vi.mock("@ide/tauri-adapters", () => {
   };
   testHarness.javaIntelligenceAdapter = javaIntelligenceAdapter;
 
+  const xcom2ModuleScannerAdapter = {
+    scan: vi.fn((request: any) =>
+      testHarness.xcom2ModuleScanError
+        ? Promise.reject(testHarness.xcom2ModuleScanError)
+        : Promise.resolve({
+            workspaceId: request.workspaceId,
+            workspaceGeneration: request.workspaceGeneration,
+            scanId: request.scanId,
+            scanGeneration: request.scanGeneration,
+            completeness: "complete",
+            issues: [],
+            limits: request.limits,
+            observations: testHarness.xcom2ModuleScanObservations,
+          }),
+    ),
+  };
+  testHarness.xcom2ModuleScannerAdapter = xcom2ModuleScannerAdapter;
+
   const xcom2SetupMonitorAdapter = {
     getSnapshot: vi.fn(() =>
       testHarness.xcom2SetupError
@@ -677,6 +697,7 @@ vi.mock("@ide/tauri-adapters", () => {
       languageSessionAdapter,
       documentSyncAdapter: languageSessionAdapter,
       javaIntelligenceAdapter,
+      xcom2ModuleScannerAdapter,
       xcom2SetupAdapter,
       xcom2SetupMonitorAdapter,
     })),
@@ -2432,6 +2453,54 @@ describe("App", () => {
       );
       expect(screen.getByTestId("Terminal")).toBeDefined();
     });
+  });
+
+  it("runs one workspace-generation module scan independently of machine Settings", async () => {
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const { XCOM2_MODULE_SCAN_LIMITS } = await import("@ide/contracts");
+    const { App } = await import("../App");
+    render(<App />);
+
+    await waitFor(() =>
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1),
+    );
+    const initialRequest = testHarness.xcom2ModuleScannerAdapter.scan.mock.calls[0][0];
+    expect(initialRequest).toEqual({
+      workspaceId: "workspace-one",
+      workspaceGeneration: 1,
+      scanId: "xcom2-module-scan:1",
+      scanGeneration: 1,
+      limits: XCOM2_MODULE_SCAN_LIMITS,
+    });
+    expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Settings" })).toBeDefined());
+    expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("option", { name: /Workspace Two/ }));
+    await waitFor(() =>
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(2),
+    );
+    expect(testHarness.xcom2ModuleScannerAdapter.scan.mock.calls[1][0]).toEqual({
+      workspaceId: "workspace-two",
+      workspaceGeneration: 2,
+      scanId: "xcom2-module-scan:2",
+      scanGeneration: 2,
+      limits: XCOM2_MODULE_SCAN_LIMITS,
+    });
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Modules" })).toBeNull();
   });
 
   it("keeps XCOM 2 out of bottom tabs and shows active setup progress in Settings", async () => {
