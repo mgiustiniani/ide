@@ -236,9 +236,13 @@ Use **Monaco Editor 0.52.2 as the only editor**:
 
 ## ADR 0007 — Machine Settings and Evidence-Activated XCOM Project Contributions
 
+**Status:** Accepted; the first-slice module-activation design is approved but remains FUTURE/TARGET.
+
 ### Context
 
 XCOM game/SDK/Steam download state, environment health, and operational setup describe a machine, not every opened workspace. Presenting them as a global XCOM activity entry or bottom tab creates false project context; starting polling in a generic web workspace creates hidden work for a native capability the browser cannot provide. Conversely, XCOM build, diagnostics, logs, and language support are meaningful only for an XCOM project/module. The first-party feature is built-in, experimental, and plugin-shaped, but the IDE has no extension install/remove lifecycle or generic third-party runtime. Java, IntelliJ-direction work, JDT LS, and RefactorKit are independent core capabilities.
+
+The generic target permits project/module activation after explicit configuration or conservative evidence evaluation. The approved first slice deliberately narrows that target to bounded convention evidence: explicit configuration and manual confirmation are deferred.
 
 ### Decision
 
@@ -246,24 +250,36 @@ Treat the current `ide.xcom2-wotc` monitor, pure dry-run planner, and transactio
 
 The concrete fingerprinted SDK operation set is available for exact-digest approval, but no live Apply has been performed. Protontricks, Steam shortcut, prefix, package-manager, and interactive work remain FUTURE/TARGET and non-executable. This narrow transaction approval is not a general external-root grant.
 
-Separately, future XCOM project/module contributions activate only after explicit configuration or conservative evidence evaluation. Candidate evidence includes `*.x2proj`, `*.XComMod`, `.scripts/build.ps1` together with X2ModBuildCommon, `Config/XComEngine.ini`, and `Src/<package>/Classes/*.uc`. The evaluator must scope matches to modules, combine weak evidence conservatively, and expose confidence and reasons. A directory, repository, or workspace name containing `xcom` is never sufficient. Only activated modules receive contextual XCOM project UI, Build, Problems, Logs, and language contributions.
-
 Plugin-shaped metadata remains a first-party composition boundary, not executable authority. A generic plugin runtime, third-party loading, and extension install/remove lifecycle require a separate decision; their absence is not the primary architectural property of this feature.
+
+#### Accepted first-slice module-activation policy
+
+This amendment fixes the architecture for the first `REQ-XCOM2-MODULE-ACTIVATION-001` slice. It is a design decision only: the scanner, activation state, and recognition contribution remain FUTURE/TARGET, and approval of this policy is not implementation or validation evidence.
+
+- **Platform and authority:** Detection is Linux-only and scans exactly one workspace-authorized root. It must not inspect or accept evidence from an external root or follow a path outside that authority. Matching uses exact, case-sensitive Linux names and extensions. The separate launcher policy that matches ASCII case-insensitively is intentionally not reused.
+- **Dedicated read-only scanner:** A separate metadata/name scanner enumerates directory entries and reads only the metadata needed to classify names and file types. It does not consume, extend, or route through the FileTree DTO/path, and it does not parse file contents. Only regular, non-symlink files and directories are eligible. The scanner checks entry type without following symlinks; a symlink is neither traversed nor accepted as evidence, including when it points back inside the authorized root.
+- **Bounds and exclusions:** The workspace root is depth 0. Entries through maximum depth 8 may be examined, and the scanner encounters at most 20,000 entries below the root. Every encountered directory entry consumes the budget whether or not it becomes accepted evidence, including excluded directories, symlinks, wrong-case names, unsupported file types, and otherwise rejected entries. A regular directory whose basename exactly matches `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, or `.vite` is counted when encountered but is not traversed or treated as evidence.
+- **Completeness:** An unreadable entry or subtree, a required descent beyond depth 8, or exhaustion of the encountered-entry budget makes the scan `partial` and emits a corresponding issue; otherwise it is `complete`. Partial regions and unreadable or unvisited entries never become evidence of absence. Every result discloses completeness and all observed limitations/issues.
+- **Exact evidence and roots:** Accepted evidence has exactly five kinds. `x2proj` is a regular file `<module-root>/<name>.x2proj`, with the lowercase `.x2proj` extension. `xcommod` is a regular file `<module-root>/<name>.XComMod`, with exactly that extension case. `x2mbc-script-pair` requires both the regular file `<module-root>/.scripts/build.ps1` and regular directory `<module-root>/.scripts/X2ModBuildCommon`. `engine-config` is the regular file `<module-root>/Config/XComEngine.ini`. `unrealscript-layout` is a regular file `<module-root>/Src/<package>/Classes/<name>.uc`, with one non-empty package directory segment and the lowercase `.uc` extension. All literal path segments are exact and case-sensitive. Each match infers the canonical workspace-relative `<module-root>` shown by its pattern; evidence is grouped only under that root. No directory, repository, project, or workspace name containing `xcom` is evidence by itself.
+- **Independent modules and deterministic reasons:** Multiple module roots, including nested roots, are evaluated independently. Evidence inferred for one root does not bubble to any parent or child root. Reasons are ordered by evidence kind in this exact sequence: `x2proj`, `xcommod`, `x2mbc-script-pair`, `engine-config`, `unrealscript-layout`; reasons within a kind are then ordered lexically by workspace-relative path. For the paired kind, both exact paths are reported in lexical order.
+- **Decision rule:** The count is of distinct accepted evidence kinds per inferred module root, not the number of matching files. Exactly one kind produces `needs-confirmation`, medium confidence, and no contribution. At least two kinds produce `active` with high confidence. If no kind and therefore no module root is inferred, workspace recognition is `inactive` with `none` confidence. An inactive result from a partial scan means only that no kind was observed in the completed portion; it is not evidence that qualifying paths are absent. Strong observed corroboration of at least two kinds may therefore produce `active` despite partial completeness, but the result must still disclose `partial` completeness and every observed issue.
+- **Lifecycle and stale results:** Run one scan when a workspace is activated and one scan when it is switched; do not poll. A consumer accepts a result only when its workspace identity, workspace generation, scan identity, and scan generation all match the current activation. Any mismatch is stale and rejected.
+- **First-slice boundary and contribution:** The first slice excludes `.ide/xcom2.json`, explicit configuration, manual confirmation and confirmation persistence, external grants or roots, content parsing, Build, Problems, Logs, language support, actions, and machine Settings evidence. Machine health or setup state cannot activate a module. Only an `active` decision may enable a recognition-only **XCOM 2 Project** activity panel. That panel displays the workspace-relative module root, state, confidence, ordered reasons, completeness, and limitations/issues; it implies no other contribution. `needs-confirmation` and `inactive` decisions contribute nothing.
 
 ### Consequences
 
 **Positive:**
 
-- Machine setup remains discoverable without falsely classifying ordinary projects.
-- Generic workspaces and web avoid irrelevant XCOM UI and hidden polling.
-- Contextual tooling has an explicit, testable activation boundary with no name-based false positives.
-- The current monitor remains narrow, auditable, and non-mutating.
-- Java/JDT LS/RefactorKit/IntelliJ capabilities remain independent.
+- Machine and project scope remain separate, and names alone cannot classify a workspace.
+- Exact convention matching, independent canonical module roots, deterministic reason ordering, and a distinct-kind threshold make activation decisions reproducible.
+- Bounded read-only scanning, no symlink traversal, explicit partial completeness, and four-part stale-result rejection constrain authority and prevent uncertain traversal from becoming false absence.
+- A recognition-only contribution preserves the first-slice boundary while leaving explicit configuration and contextual tools for later decisions or slices.
 
 **Negative:**
 
-- Activation detection, confidence/reason reporting, module lifecycle, and false-positive fixtures must be implemented before contextual XCOM tooling appears.
-- External interactive setup, XCOM-specific language/build/log flows, and a general external-root grant model remain target work.
+- Depth, entry, exclusion, unreadable-path, and Linux-only limits can produce partial results or omit evidence that a broader scanner could discover.
+- A single evidence kind cannot activate the recognition panel, and this slice provides no manual confirmation path.
+- External interactive setup, explicit configuration, XCOM-specific build/problem/log/language/action flows, and a general external-root grant model remain target work.
 - A future generic extension runtime may require descriptor/API migration.
 
 ---
