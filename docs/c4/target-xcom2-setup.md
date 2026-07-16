@@ -6,14 +6,15 @@ This roadmap is independent of the [current Java boundary and frozen unscheduled
 
 ## Architectural Separation
 
-| Responsibility                         | Scope                                 | Status and behavior                                                                                                                                               |
-| -------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Machine health and descriptive dry run | Desktop Settings                      | **CURRENT:** conservative monitor plus pure export-safe, non-executable dry run.                                                                                  |
-| Concrete WOTC SDK transaction          | Desktop Settings + Rust backend       | **CURRENT:** stable Prepare, exact-digest one-transaction approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                            |
-| Optional provisioning                  | External Steam/prefix/package tooling | **TARGET/NON-EXECUTABLE:** Protontricks, Steam shortcut, compatibility prefix, package-manager, and interactive work are excluded from current Prepare and Apply. |
-| Project/module activation and tooling  | Opened project/module                 | **TARGET:** evidence-based or explicit activation gates contextual Problems, Build, Tests, Logs, and XCOM tools.                                                  |
+| Responsibility                         | Scope                                    | Status and behavior                                                                                                                                               |
+| -------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Machine runtime lifecycle              | Settings visibility + workspace identity | **CURRENT:** open Settings exclusively owns one monitor and one transaction adapter lifecycle; transaction authority remains workspace-correlated.                |
+| Machine health and descriptive dry run | Desktop Settings                         | **CURRENT:** conservative monitor plus pure export-safe, non-executable dry run.                                                                                  |
+| Concrete WOTC SDK transaction          | Desktop Settings + Rust backend          | **CURRENT:** stable Prepare, exact-digest one-transaction approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                            |
+| Optional provisioning                  | External Steam/prefix/package tooling    | **TARGET/NON-EXECUTABLE:** Protontricks, Steam shortcut, compatibility prefix, package-manager, and interactive work are excluded from current Prepare and Apply. |
+| Project/module activation and tooling  | Opened project/module                    | **TARGET:** evidence-based or explicit activation gates contextual Problems, Build, Tests, Logs, and XCOM tools.                                                  |
 
-A generic workspace remains generic: no XCOM activity entry, bottom tab, Problems/Build/Tests/Logs/XCOM contribution, language contribution, or hidden monitor polling. Machine setup remains in Settings and does not require XCOM project activation.
+A generic workspace remains generic: no XCOM scanner, activity entry, bottom tab, Problems/Build/Tests/Logs/XCOM contribution, language contribution, project/module state, or activation. With Settings closed, cold start and workspace switching perform no XCOM monitor snapshot/refresh, transaction history/detail, poll, or subscription work. Machine setup remains in Settings and does not require XCOM project activation.
 
 ## AS-BUILT Concrete Native Setup
 
@@ -52,6 +53,8 @@ Apply is unavailable without an external SDK write grant matching the reviewed d
 
 ## Target Activation Decision
 
+This entire activation path is FUTURE/TARGET: no current scanner, evaluator, project/module state, activity entry, bottom contribution, or contextual tool is created by workspace loading or machine Settings.
+
 The future activation evaluator returns a structured decision rather than a name-based boolean:
 
 ```text
@@ -67,6 +70,10 @@ Candidate evidence includes explicit configuration, `*.x2proj`, `*.XComMod`, `.s
 Only activated modules may receive contextual Problems, Build, Tests, Logs, XCOM tools, and language contributions. Closing, removing, or invalidating a module removes them.
 
 ## Current and Future Component Boundaries
+
+### Current Settings-owned lifecycle
+
+Machine setup transaction authority is correlated to the current workspace and generation, but workspace authorization/loading does not own or independently start XCOM runtime work. Open Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle, each with its own subscription and poll timer. Close revokes request authority, unsubscribes both, and clears both timers; reopen creates one fresh lifecycle of each. A workspace switch restarts them only if Settings remains open.
 
 ### Current transaction engine
 

@@ -6,7 +6,7 @@
 
 `App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires seven current capability controllers and six extracted shell/document/editor controllers; composes RefactorKit Symbol Navigation support behind its parked, non-capability boundary; derives presentation props; and renders the shell. Feature orchestration remains inside the controllers rather than in `App.tsx`.
 
-The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities.
+The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities. It carries XCOM workspace correlation and invalidation, but open Settings exclusively owns the XCOM runtime.
 
 ```text
 Workspace Port ──ensure authorized current root──> Workspace Controller
@@ -18,30 +18,32 @@ Workspace Port ──ensure authorized current root──> Workspace Controller
                                                      ├─> RefactorKit Symbol Navigation Support
                                                      ├─> AI Agent Controller
                                                      └─> XCOM Setup Controller
+                                                          (workspace correlation only;
+                                                           not runtime ownership)
 
 WorkspaceGeneration: positive and monotonically increasing for runtime
 workspace-switch attempts; shared by collaborators to reject stale work.
 Exhaustion fails closed rather than reusing an old generation.
 ```
 
-Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, discover RefactorKit status/capabilities, and load XCOM monitor/transaction state. Workspace transitions also invalidate the composed RefactorKit Symbol Navigation support; this lifecycle wiring does not promote it to a capability. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
+Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, and discover RefactorKit status/capabilities. For XCOM it only passes current workspace/generation correlation and invalidates stale transaction authority. While Settings is closed, its collaborator calls return without monitor snapshots or refreshes, transaction history or detail reads, polling, or subscriptions. Opening Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle; closing Settings invalidates their requests, unsubscribes both, and clears their poll timers. A workspace switch restarts those lifecycles only when Settings remains open. Workspace transitions also invalidate the composed RefactorKit Symbol Navigation support; this lifecycle wiring does not promote it to a capability. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
 
 | Current C3 component                      | Stable structural responsibility                                                                                                                                                                                                                            |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace Controller**                  | Owns registry metadata, authorized active-root state, loading/switching state, and the shared generation boundary. It invalidates or resets collaborators before a switch and suppresses stale cold-start or switch completion.                             |
+| **Workspace Controller**                  | Owns registry metadata, authorized active-root state, loading/switching state, and the shared generation boundary. Its XCOM collaboration correlates transaction authority and invalidates stale work; it does not own adapter lifetime.                    |
 | **Desktop Editor Controller**             | Coordinates guarded open/create, tab lifecycle, deferred session restore, workspace reset, and safe presentation state. Only a tab with its matching loaded buffer becomes a ready active document.                                                         |
 | **Java Language Controller**              | Owns workspace-scoped language lifecycle, versioned Java document sync, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, guarded semantics, cancellation, and stale identity checks through provider-neutral ports. |
 | **RefactorKit Import Controller**         | Owns the separate capability-gated clipboard import transaction: selection/workspace freshness, preview, exact displayed-plan approval, invalidation/discard, result refresh, and backend-authoritative result opening.                                     |
 | **RefactorKit Status Controller**         | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
 | **RefactorKit Symbol Navigation Support** | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup. It remains parked because read-only provider lifecycle can write hidden workspace metadata; it is not a current IDE capability.                              |
 | **AI Agent Controller**                   | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
-| **XCOM Setup Controller**                 | Owns workspace-scoped read-only monitoring, pure dry-run planning, transaction state/actions, authoritative re-read after events, and workspace activation failure settlement/restoration.                                                                  |
+| **XCOM Setup Controller**                 | Keeps machine setup transaction authority correlated to workspace/generation identity. Only open Settings owns one monitor and one transaction adapter lifecycle; close invalidates requests, unsubscribes both, and clears their poll timers.              |
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
 
 | Current extracted C3 component     | Stable structural responsibility                                                                                                                                                                                               |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Settings Controller**            | Owns Settings visibility and coordinates refresh requests to independently owned AI, workspace, Java, RefactorKit, and XCOM controllers without absorbing their state.                                                         |
+| **Settings Controller**            | Owns Settings visibility. Its open state gates the independently owned XCOM lifecycle; its explicit open coordinator refreshes AI, workspace, Java, and RefactorKit without directly starting or refreshing XCOM.              |
 | **Terminal Controller**            | Owns workspace-independent terminal connection/session lifecycle, command and input coordination, output clearing, and workspace-reset presentation cleanup.                                                                   |
 | **File Explorer Controller**       | Coordinates folder expansion and empty-editor file creation through the file-tree and Desktop Editor boundaries.                                                                                                               |
 | **Document Navigation Controller** | Owns document-preview visibility and diagnostic navigation; it opens the target through the Desktop Editor Controller before issuing a reveal request.                                                                         |
@@ -196,7 +198,12 @@ Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellatio
 
 ```text
 Desktop Settings / XCOM 2
-  ├─ conservative machine health/download state
+  ├─ Settings closed
+  │    └─ no monitor/history/detail reads, polling, or subscriptions
+  ├─ Settings open
+  │    ├─ exactly one monitor adapter lifecycle
+  │    ├─ exactly one transaction adapter lifecycle
+  │    └─ conservative machine health/download state
   ├─ Plan Setup ──> pure export-safe dry-run planner
   │                      (separate, descriptive, non-executable)
   └─ Transactions
@@ -218,7 +225,7 @@ Desktop Settings / XCOM 2
        └─ Restore Vanilla SDK + conflict-safe rollback + Prepare Again
 ```
 
-This surface is machine scoped. Apply requires an external SDK write grant matching the reviewed digest exactly and scoped to one transaction. Restore returns to the captured exact vanilla baseline; conflicts never overwrite, and rollback/recovery precedes Prepare Again. Transaction rollback storage is IDE-owned local state: backups are limited to 16 MiB each, with 64 removable transactions and 256 events retained. Export payloads omit paths and content.
+This surface is machine scoped, while transaction authority remains correlated to the current workspace and generation. Opening Settings creates one fresh monitor snapshot/history load and one subscription/poll lifecycle for each typed adapter. Closing it first revokes request authority, then unsubscribes both adapters and clears their timers; reopening creates one new lifecycle of each. A cold start or workspace switch with Settings closed performs no XCOM monitor, history, detail, poll, or subscription work. Apply requires an external SDK write grant matching the reviewed digest exactly and scoped to one transaction. Restore returns to the captured exact vanilla baseline; conflicts never overwrite, and rollback/recovery precedes Prepare Again. Transaction rollback storage is IDE-owned local state: backups are limited to 16 MiB each, with 64 removable transactions and 256 events retained. Export payloads omit paths and content.
 
 Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain FUTURE/TARGET and non-executable.
 
@@ -251,6 +258,8 @@ Any reconsidered search integration requires a released strict typed bounded ver
 
 ## FUTURE/TARGET XCOM Activation and Contributions
 
+Every element in this section is target-only. No current XCOM scanner, project/module evaluator, activation state, activity entry, BottomPanel tab, or contextual contribution exists, and machine Settings creates none of them.
+
 ```text
 Explicit XCOM configuration ─┐
 Credible XCOM module evidence ├─> XCOM Module Activation Evaluator
@@ -265,6 +274,6 @@ Candidate evidence may include `*.x2proj`, `*.XComMod`, `.scripts/build.ps1` wit
 
 Concrete WOTC SDK setup is CURRENT/AS-BUILT with a fixed 15-operation plan, exact external approval, durable baseline capture, and conflict-safe restore. Optional Steam/prefix/package/interactive provisioning remains FUTURE/TARGET and must not enter current Prepare or Apply without a separate design and authorization.
 
-XCOM project activation and its activation-scoped tooling suite remain FUTURE/TARGET under the separate XCOM boundary. No current plugin runtime, XCOM project detection, or XCOM project activation is claimed.
+XCOM project activation and its activation-scoped tooling suite remain FUTURE/TARGET under the separate XCOM boundary. No current plugin runtime, XCOM scanner, project/module detection, activation state, activity entry, bottom contribution, or contextual tooling is claimed.
 
 Java activation, contextual tooling, definition/references, symbols/hierarchy, code actions, formatting, rename, general refactoring, and broader JDT LS expansion are instead frozen unscheduled inventory. The current guarded Java Problems tab is not activation, and no Java project detection or activation is claimed.
