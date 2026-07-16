@@ -7,7 +7,6 @@ import {
   NATIVE_JAVA_IMPORT_PRIMARY_FILE,
   NATIVE_JAVA_IMPORT_TARGET_DIRECTORY,
 } from "../fixtures/native-refactorkit-java-import-fixtures.js";
-import { nativeJavaImportAuthorityFields } from "../support/native-refactorkit-java-import.js";
 import type { StoryWorld } from "../support/world.js";
 
 Given<StoryWorld>(
@@ -87,9 +86,9 @@ When<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "the production native clipboard command reads the exact fixture once from the Linux X11 clipboard owner for the first preview",
+  "the first actual directory context-menu action produces exactly one corresponding native preview carrying the exact fixture from the sandbox-owned Linux X11 clipboard owner through the production native clipboard command, with no duplicate preview",
   async function () {
-    await this.nativeRefactorKitJavaImportSession().assertClipboardRead(1);
+    await this.nativeRefactorKitJavaImportSession().assertNativePreviewAfterAction(1);
   },
 );
 
@@ -147,9 +146,9 @@ When<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "the production native clipboard command reads the exact fixture once from the Linux X11 clipboard owner for the second preview",
+  "the repeated actual directory context-menu action produces exactly one corresponding native preview carrying the exact fixture from the sandbox-owned Linux X11 clipboard owner through the production native clipboard command, with no duplicate preview",
   async function () {
-    await this.nativeRefactorKitJavaImportSession().assertClipboardRead(2);
+    await this.nativeRefactorKitJavaImportSession().assertNativePreviewAfterAction(2);
   },
 );
 
@@ -168,29 +167,33 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "the production Apply command sends only these fresh plan authority fields:",
-  async function (table: DataTable) {
-    const fields = table
-      .raw()
-      .slice(1)
-      .map(([field]) => field ?? "");
-    assert.deepEqual(fields, nativeJavaImportAuthorityFields());
-    await this.nativeRefactorKitJavaImportSession().assertApplyAuthorityFields(fields);
-  },
-);
-
-Then<StoryWorld>(
-  "it sends no clipboard source, code, patch, target directory, or target package",
+  "the production native path applies only the distinct fresh reviewed plan",
   async function () {
-    await this.nativeRefactorKitJavaImportSession().assertApplySourceAndTargetsExcluded();
+    await this.nativeRefactorKitJavaImportSession().assertDistinctFreshReviewedPlanApplied();
   },
 );
 
 Then<StoryWorld>(
-  "the deterministic daemon reports and exclusively writes exactly one changed and primary target, {string}",
+  "the deterministic daemon receives only that exact planId, with no clipboard source, code, patch, target directory, or target package",
+  async function () {
+    await this.nativeRefactorKitJavaImportSession().assertExactApplyPlanIdParams();
+  },
+);
+
+Then<StoryWorld>(
+  "after Apply the deterministic fixture daemon records exactly one target creation and reports it as the primary project file, {string}",
   async function (relativePath: string) {
     assert.equal(relativePath, NATIVE_JAVA_IMPORT_PRIMARY_FILE);
-    await this.nativeRefactorKitJavaImportSession().assertExclusiveTargetWrite(relativePath);
+    await this.nativeRefactorKitJavaImportSession().assertSingleReportedTargetCreation(
+      relativePath,
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "the exact workspace tree gains only that one reported primary project file",
+  async function () {
+    await this.nativeRefactorKitJavaImportSession().assertWorkspaceTreeGainedOnlyReportedTarget();
   },
 );
 
@@ -232,9 +235,9 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "all HOME, XDG, workspace, daemon, transcript, and clipboard-owner effects remain confined to the scenario sandbox",
+  "the configured HOME, XDG, workspace, daemon, transcript, and clipboard paths and sandbox-marked process artifacts remain confined to the scenario sandbox",
   async function () {
-    await this.nativeRefactorKitJavaImportSession().assertScenarioConfinement();
+    await this.nativeRefactorKitJavaImportSession().assertConfiguredPathAndProcessConfinement();
     await this.attachNativeRefactorKitJavaImportEvidence();
   },
 );

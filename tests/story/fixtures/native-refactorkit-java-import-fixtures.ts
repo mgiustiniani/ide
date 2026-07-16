@@ -133,7 +133,7 @@ def write_state(status):
     os.replace(temporary, STATE_PATH)
 
 
-def record(request_id, method, plan=None, target=None, length=None, sha256=None):
+def record(request_id, method, plan=None, target=None, length=None, sha256=None, params=None, change=None, primary=None, recorded_write_count=None):
     event = {"id": request_id, "method": method}
     if plan is not None:
         event["plan"] = plan
@@ -143,6 +143,14 @@ def record(request_id, method, plan=None, target=None, length=None, sha256=None)
         event["length"] = length
     if sha256 is not None:
         event["sha256"] = sha256
+    if params is not None:
+        event["params"] = params
+    if change is not None:
+        event["change"] = change
+    if primary is not None:
+        event["primary"] = primary
+    if recorded_write_count is not None:
+        event["writeCount"] = recorded_write_count
     with open(TRANSCRIPT_PATH, "a", encoding="utf-8") as stream:
         stream.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\\n")
 
@@ -296,7 +304,18 @@ try:
                 target.flush()
                 os.fsync(target.fileno())
             write_count += 1
-            record(request_id, method, plan=SECOND_PLAN, target=${pythonLiteral(NATIVE_JAVA_IMPORT_PRIMARY_FILE)}, length=SOURCE_LENGTH, sha256=SHA256)
+            record(
+                request_id,
+                method,
+                plan=SECOND_PLAN,
+                target=${pythonLiteral(NATIVE_JAVA_IMPORT_PRIMARY_FILE)},
+                length=SOURCE_LENGTH,
+                sha256=SHA256,
+                params=params,
+                change="create",
+                primary=True,
+                recorded_write_count=write_count,
+            )
             respond(request_id, {
                 "transactionId": TRANSACTION,
                 "planId": SECOND_PLAN,

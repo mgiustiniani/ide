@@ -38,16 +38,6 @@ const PROCESS_EXIT_TIMEOUT_MS = 5_000;
 const PREVIEW_DEADLINE_MS = 20_000;
 const APPLY_DEADLINE_MS = 20_000;
 const DIAGNOSTIC_LIMIT = 16 * 1024;
-const AUTHORITY_FIELDS = [
-  "planId",
-  "workspaceId",
-  "workspaceGeneration",
-  "selectionGeneration",
-  "requestId",
-  "approval.approvalId",
-  "approval.approvedPlanId",
-  "approval.approvedAt",
-] as const;
 const OVERRIDDEN_ENVIRONMENT = [
   "HOME",
   "XDG_CONFIG_HOME",
@@ -77,6 +67,17 @@ interface TranscriptEvent {
   readonly target?: string;
   readonly length?: number;
   readonly sha256?: string;
+  readonly params?: Readonly<{ planId: string }>;
+  readonly change?: "create";
+  readonly primary?: boolean;
+  readonly writeCount?: number;
+}
+
+interface WorkspaceTreeEntry {
+  readonly path: string;
+  readonly kind: "directory" | "file";
+  readonly length?: number;
+  readonly sha256?: string;
 }
 
 interface FixtureState {
@@ -102,16 +103,17 @@ interface NativeJavaImportEvidence {
   firstPlan?: string;
   secondPlan?: string;
   transaction?: string;
-  clipboardReads?: number;
+  nativePreviews?: number;
   daemonWrites?: number;
-  authorityFields?: readonly string[];
+  workspaceEntriesBeforeApply?: number;
+  workspaceEntriesAfterApply?: number;
   selectedTab?: string;
   monacoContentMatched?: boolean;
   applicationExited?: boolean;
   daemonExited?: boolean;
   clipboardOwnerExited?: boolean;
   driverExited?: boolean;
-  sandboxConfined?: boolean;
+  configuredPathsAndMarkedProcessesConfined?: boolean;
   environmentRestored?: boolean;
 }
 
@@ -292,6 +294,12 @@ export class NativeRefactorKitJavaImportSession {
   #driverDiagnostic = "";
   #browser?: Awaited<ReturnType<typeof remote>>;
   #applicationProcessId?: number;
+  #daemonProcessId?: number;
+  #clipboardProcessId?: number;
+  #driverProcessId?: number;
+  #previewCountBeforeLastAction?: number;
+  #workspaceTreeBeforeApply?: readonly WorkspaceTreeEntry[];
+  readonly #sandboxMarkedProcessIds = new Set<number>();
   #previewDeadline?: number;
   #applyDeadline?: number;
   #environmentRestored = false;
@@ -408,6 +416,8 @@ export class NativeRefactorKitJavaImportSession {
     });
     const state = await this.waitForState(paths.clipboardState, ({ status }) => status === "owned");
     assert.equal(state.pid, child.pid);
+    this.#clipboardProcessId = state.pid;
+    await this.assertSandboxMarkedProcess(state.pid);
     assert.equal(state.length, Buffer.byteLength(source));
     assert.equal(state.sha256, createHash("sha256").update(source).digest("hex"));
     this.#evidence.fixtureLength = state.length;
@@ -498,6 +508,9 @@ export class NativeRefactorKitJavaImportSession {
       { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
     this.#driver = driver;
+    assert.ok(driver.pid, "tauri-driver process ID is unavailable");
+    this.#driverProcessId = driver.pid;
+    await this.assertSandboxMarkedProcess(driver.pid);
     driver.stdout?.on("data", (chunk: Buffer) => this.captureDiagnostic(chunk));
     driver.stderr?.on("data", (chunk: Buffer) => this.captureDiagnostic(chunk));
     this.#driverExit = new Promise((resolve, reject) => {
@@ -523,6 +536,7 @@ export class NativeRefactorKitJavaImportSession {
         "WebdriverIO native Java-import session start",
       );
       this.#applicationProcessId = await this.waitForApplicationProcess();
+      await this.assertSandboxMarkedProcess(this.#applicationProcessId);
       this.#evidence.applicationSha256 = await sha256File(this.#applicationPath);
       const explorer = await this.browser().$('[role="tree"][aria-label="File Explorer"]');
       await explorer.waitForDisplayed({ timeout: 15_000, interval: 100 });
@@ -561,6 +575,10 @@ export class NativeRefactorKitJavaImportSession {
 
   async openContextMenuAndChoose(label: string): Promise<void> {
     assert.equal(label, "Paste Java Class from Clipboard");
+    const transcriptBeforeAction = await this.transcriptIfPresent();
+    this.#previewCountBeforeLastAction = transcriptBeforeAction.filter(
+      ({ method }) => method === "java.importExternalClass",
+    ).length;
     this.#previewDeadline = Date.now() + PREVIEW_DEADLINE_MS;
     const directory = await this.directoryItem(NATIVE_JAVA_IMPORT_TARGET_DIRECTORY);
     await directory.click({ button: "right" });
@@ -573,22 +591,31 @@ export class NativeRefactorKitJavaImportSession {
     await dialog.waitForDisplayed({ timeout: this.remainingPreviewTime(), interval: 50 });
   }
 
-  async assertClipboardRead(previewNumber: 1 | 2): Promise<void> {
-    const transcript = await this.waitForTranscriptLength(previewNumber === 1 ? 3 : 5);
+  async assertNativePreviewAfterAction(previewNumber: 1 | 2): Promise<void> {
+    const transcript = await this.transcript();
     const previews = transcript.filter(({ method }) => method === "java.importExternalClass");
+    assert.equal(this.#previewCountBeforeLastAction, previewNumber - 1);
     assert.equal(previews.length, previewNumber);
-    assert.equal(previews.at(-1)?.length, Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE));
-    assert.equal(previews.at(-1)?.sha256, this.#evidence.fixtureSha256);
+    assert.equal(previews.length - this.#previewCountBeforeLastAction, 1);
+    assert.equal(new Set(previews.map(({ id }) => id)).size, previews.length);
+    for (const preview of previews) {
+      assert.equal(preview.length, Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE));
+      assert.equal(preview.sha256, this.#evidence.fixtureSha256);
+    }
     const clipboard = await this.readState(this.paths().clipboardState);
     assert.equal(clipboard.status, "owned");
+    assert.equal(clipboard.length, Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE));
     assert.equal(clipboard.sha256, this.#evidence.fixtureSha256);
-    this.#evidence.clipboardReads = previewNumber;
+    const daemon = await this.readState(this.paths().daemonState);
+    this.#daemonProcessId = daemon.pid;
+    this.#evidence.nativePreviews = previewNumber;
   }
 
   async assertExactPreview(previewNumber: 1 | 2): Promise<void> {
-    const expectedLength = previewNumber === 1 ? 3 : 5;
-    const transcript = await this.waitForTranscriptLength(expectedLength);
-    const preview = transcript.at(-1)!;
+    const transcript = await this.transcript();
+    const previews = transcript.filter(({ method }) => method === "java.importExternalClass");
+    assert.equal(previews.length, previewNumber);
+    const preview = previews[previewNumber - 1]!;
     assert.equal(preview.method, "java.importExternalClass");
     assert.equal(
       preview.plan,
@@ -734,6 +761,9 @@ export class NativeRefactorKitJavaImportSession {
     const apply = await dialog.$("button=Apply Import");
     await acknowledgement.click();
     assert.equal(await apply.isEnabled(), true);
+    await this.assertPathAbsent(NATIVE_JAVA_IMPORT_PRIMARY_FILE);
+    this.#workspaceTreeBeforeApply = await this.canonicalWorkspaceTree();
+    this.#evidence.workspaceEntriesBeforeApply = this.#workspaceTreeBeforeApply.length;
     await apply.click();
     await this.waitForTranscriptLength(8, this.remainingApplyTime());
     await this.browser().waitUntil(
@@ -753,38 +783,39 @@ export class NativeRefactorKitJavaImportSession {
     );
   }
 
-  async assertApplyAuthorityFields(expectedFields: readonly string[]): Promise<void> {
-    assert.deepEqual(expectedFields, AUTHORITY_FIELDS);
-    const transcript = await this.transcript();
-    const apply = transcript.filter(({ method }) => method === "refactor.apply");
-    assert.equal(apply.length, 1);
-    assert.equal(apply[0]?.plan, NATIVE_JAVA_IMPORT_SECOND_PLAN);
-    // The real Tauri command reached the daemon only after the native closed DTO accepted every
-    // required authority field; deny_unknown_fields rejects any additional top-level or approval
-    // field before refactor.apply can be emitted.
-    this.#evidence.authorityFields = [...AUTHORITY_FIELDS];
+  async assertDistinctFreshReviewedPlanApplied(): Promise<void> {
+    assert.equal(this.#evidence.firstPlan, NATIVE_JAVA_IMPORT_FIRST_PLAN);
+    assert.equal(this.#evidence.secondPlan, NATIVE_JAVA_IMPORT_SECOND_PLAN);
+    assert.notEqual(this.#evidence.firstPlan, this.#evidence.secondPlan);
+    const applies = (await this.transcript()).filter(({ method }) => method === "refactor.apply");
+    assert.equal(applies.length, 1);
+    assert.equal(applies[0]?.plan, this.#evidence.secondPlan);
+    assert.notEqual(applies[0]?.plan, this.#evidence.firstPlan);
   }
 
-  async assertApplySourceAndTargetsExcluded(): Promise<void> {
-    const transcript = await this.transcript();
-    const apply = transcript.find(({ method }) => method === "refactor.apply");
-    assert.ok(apply);
-    assert.deepEqual(Object.keys(apply).sort(), [
-      "id",
-      "length",
-      "method",
-      "plan",
-      "sha256",
+  async assertExactApplyPlanIdParams(): Promise<void> {
+    const applies = (await this.transcript()).filter(({ method }) => method === "refactor.apply");
+    assert.equal(applies.length, 1);
+    assert.deepEqual(applies[0]?.params, { planId: NATIVE_JAVA_IMPORT_SECOND_PLAN });
+    const serializedParams = JSON.stringify(applies[0]?.params);
+    assert.equal(serializedParams.includes(NATIVE_JAVA_IMPORT_FIXTURE), false);
+    for (const forbidden of [
+      "code",
+      "patch",
       "target",
-    ]);
-    const serialized = JSON.stringify(apply);
-    assert.equal(serialized.includes(NATIVE_JAVA_IMPORT_FIXTURE), false);
-    for (const forbidden of ["code", "patch", "targetDirectory", "targetPackage", "sourceKind"]) {
-      assert.equal(serialized.includes(`\"${forbidden}\"`), false, `Apply leaked ${forbidden}`);
+      "targetDirectory",
+      "targetPackage",
+      "sourceKind",
+    ]) {
+      assert.equal(
+        serializedParams.includes(`\"${forbidden}\"`),
+        false,
+        `Apply params leaked ${forbidden}`,
+      );
     }
   }
 
-  async assertExclusiveTargetWrite(relativePath: string): Promise<void> {
+  async assertSingleReportedTargetCreation(relativePath: string): Promise<void> {
     assert.equal(relativePath, NATIVE_JAVA_IMPORT_PRIMARY_FILE);
     assert.equal(
       await readFile(path.join(this.paths().workspace, relativePath), "utf8"),
@@ -793,16 +824,41 @@ export class NativeRefactorKitJavaImportSession {
     const state = await this.readState(this.paths().daemonState);
     assert.equal(state.writeCount, 1);
     const transcript = await this.transcript();
-    const applies = transcript.filter(({ method }) => method === "refactor.apply");
-    assert.equal(applies.length, 1);
-    assert.deepEqual(applies[0], {
-      id: 6,
-      method: "refactor.apply",
-      plan: NATIVE_JAVA_IMPORT_SECOND_PLAN,
-      target: NATIVE_JAVA_IMPORT_PRIMARY_FILE,
-      length: Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE),
-      sha256: this.#evidence.fixtureSha256,
+    const creations = transcript.filter(
+      ({ method, change }) => method === "refactor.apply" && change === "create",
+    );
+    assert.deepEqual(creations, [
+      {
+        id: 6,
+        method: "refactor.apply",
+        plan: NATIVE_JAVA_IMPORT_SECOND_PLAN,
+        target: NATIVE_JAVA_IMPORT_PRIMARY_FILE,
+        length: Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE),
+        sha256: this.#evidence.fixtureSha256,
+        params: { planId: NATIVE_JAVA_IMPORT_SECOND_PLAN },
+        change: "create",
+        primary: true,
+        writeCount: 1,
+      },
+    ]);
+    const reportedFiles = await this.browser().execute(() => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+      const affectedFiles = [...(dialog?.querySelectorAll<HTMLElement>("h3") ?? [])]
+        .find(({ textContent }) => textContent?.trim() === "Affected files")
+        ?.closest<HTMLElement>("section");
+      return [...(affectedFiles?.querySelectorAll<HTMLElement>("li") ?? [])].map((item) => ({
+        change: item.querySelector("span")?.textContent?.trim().toLowerCase(),
+        path: item.querySelector("code")?.textContent?.trim(),
+        primary: item.querySelector("strong")?.textContent?.trim(),
+      }));
     });
+    assert.deepEqual(reportedFiles, [
+      {
+        change: "create",
+        path: NATIVE_JAVA_IMPORT_PRIMARY_FILE,
+        primary: "Primary file",
+      },
+    ]);
     await this.browser().waitUntil(
       async () =>
         (await this.browser().execute(
@@ -816,6 +872,30 @@ export class NativeRefactorKitJavaImportSession {
     );
     this.#evidence.transaction = NATIVE_JAVA_IMPORT_TRANSACTION;
     this.#evidence.daemonWrites = 1;
+  }
+
+  async assertWorkspaceTreeGainedOnlyReportedTarget(): Promise<void> {
+    assert.ok(this.#workspaceTreeBeforeApply, "workspace tree was not captured before Apply");
+    const afterApply = await this.canonicalWorkspaceTree();
+    const expectedTarget: WorkspaceTreeEntry = {
+      path: NATIVE_JAVA_IMPORT_PRIMARY_FILE,
+      kind: "file",
+      length: Buffer.byteLength(NATIVE_JAVA_IMPORT_FIXTURE),
+      sha256: this.#evidence.fixtureSha256,
+    };
+    assert.equal(
+      this.#workspaceTreeBeforeApply.some(
+        ({ path: entryPath }) => entryPath === expectedTarget.path,
+      ),
+      false,
+    );
+    assert.deepEqual(
+      afterApply,
+      [...this.#workspaceTreeBeforeApply, expectedTarget].sort((left, right) =>
+        left.path.localeCompare(right.path),
+      ),
+    );
+    this.#evidence.workspaceEntriesAfterApply = afterApply.length;
   }
 
   async assertRefreshedFileExplorer(relativePath: string): Promise<void> {
@@ -934,6 +1014,7 @@ export class NativeRefactorKitJavaImportSession {
     this.#evidence.applicationExited = true;
 
     const daemonState = await this.readState(this.paths().daemonState);
+    assert.equal(daemonState.pid, this.#daemonProcessId);
     await this.waitForProcessExit(daemonState.pid, "deterministic daemon");
     this.#evidence.daemonExited = true;
 
@@ -970,23 +1051,51 @@ export class NativeRefactorKitJavaImportSession {
     assert.equal(this.#evidence.daemonExited, true);
     assert.equal(this.#evidence.clipboardOwnerExited, true);
     assert.equal(this.#evidence.driverExited, true);
-    for (const processId of [
+    const processIds = [
       this.#applicationProcessId,
-      (await this.readState(this.paths().daemonState)).pid,
-      this.#clipboardOwner?.pid,
-      this.#driver?.pid,
-    ]) {
+      this.#daemonProcessId,
+      this.#clipboardProcessId,
+      this.#driverProcessId,
+    ];
+    assert.equal(
+      processIds.every((processId) => processId !== undefined),
+      true,
+    );
+    for (const processId of processIds) {
       if (processId !== undefined) assert.equal(await processExists(processId), false);
     }
   }
 
-  async assertScenarioConfinement(): Promise<void> {
+  async assertConfiguredPathAndProcessConfinement(): Promise<void> {
     const paths = this.paths();
     const canonicalRunner = await realpath(this.#runnerSandbox);
     const canonicalScenario = await realpath(paths.root);
     assert.ok(isContained(canonicalRunner, canonicalScenario));
-    for (const value of Object.values(paths)) assert.ok(isContained(paths.root, value), value);
-    await this.assertNoSymlinks(paths.root);
+    const configuredRoots = [
+      paths.home,
+      paths.xdgConfig,
+      paths.xdgCache,
+      paths.xdgData,
+      paths.xdgState,
+      paths.xdgRuntime,
+      paths.ideHome,
+      paths.workspace,
+      paths.daemon,
+      path.dirname(paths.transcript),
+      paths.clipboard,
+      paths.evidence,
+    ];
+    for (const configuredRoot of configuredRoots) {
+      assert.ok(isContained(paths.root, configuredRoot), configuredRoot);
+      assert.ok(isContained(canonicalScenario, await realpath(configuredRoot)), configuredRoot);
+      await this.assertNoSymlinks(configuredRoot);
+    }
+    assert.deepEqual(
+      [...this.#sandboxMarkedProcessIds].sort((left, right) => left - right),
+      [this.#applicationProcessId, this.#clipboardProcessId, this.#driverProcessId].sort(
+        (left, right) => (left ?? 0) - (right ?? 0),
+      ),
+    );
     assert.equal(
       await readFile(path.join(paths.workspace, NATIVE_JAVA_IMPORT_PRIMARY_FILE), "utf8"),
       NATIVE_JAVA_IMPORT_FIXTURE,
@@ -999,7 +1108,7 @@ export class NativeRefactorKitJavaImportSession {
       "workspace.json",
     ]);
     assert.equal(this.#environmentRestored, true);
-    this.#evidence.sandboxConfined = true;
+    this.#evidence.configuredPathsAndMarkedProcessesConfined = true;
     await writeFile(
       path.join(paths.evidence, "redacted-evidence.json"),
       `${JSON.stringify(this.#evidence, null, 2)}\n`,
@@ -1117,15 +1226,88 @@ export class NativeRefactorKitJavaImportSession {
       .filter(Boolean)
       .map((line) => {
         const value = JSON.parse(line) as TranscriptEvent;
-        const allowed = new Set(["id", "method", "plan", "target", "length", "sha256"]);
+        const allowed = new Set([
+          "id",
+          "method",
+          "plan",
+          "target",
+          "length",
+          "sha256",
+          "params",
+          "change",
+          "primary",
+          "writeCount",
+        ]);
         assert.equal(
           Object.keys(value).every((key) => allowed.has(key)),
           true,
         );
         assert.equal(Number.isInteger(value.id), true);
         assert.equal(typeof value.method, "string");
+        if (value.params !== undefined) {
+          assert.deepEqual(Object.keys(value.params), ["planId"]);
+          assert.equal(typeof value.params.planId, "string");
+        }
         return value;
       });
+  }
+
+  private async transcriptIfPresent(): Promise<TranscriptEvent[]> {
+    try {
+      return await this.transcript();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  private async canonicalWorkspaceTree(): Promise<readonly WorkspaceTreeEntry[]> {
+    const canonicalWorkspace = await realpath(this.paths().workspace);
+    const entries: WorkspaceTreeEntry[] = [];
+    const pending = [canonicalWorkspace];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      const children = await readdir(directory, { withFileTypes: true });
+      for (const child of children.sort((left, right) => left.name.localeCompare(right.name))) {
+        const candidate = path.join(directory, child.name);
+        const metadata = await lstat(candidate);
+        assert.equal(
+          metadata.isSymbolicLink(),
+          false,
+          `workspace entry is a symlink: ${child.name}`,
+        );
+        const canonicalCandidate = await realpath(candidate);
+        assert.ok(isContained(canonicalWorkspace, canonicalCandidate), canonicalCandidate);
+        const relativePath = path.relative(canonicalWorkspace, canonicalCandidate);
+        if (metadata.isDirectory()) {
+          entries.push({ path: relativePath, kind: "directory" });
+          pending.push(canonicalCandidate);
+        } else {
+          assert.equal(metadata.isFile(), true, `workspace entry is not a file: ${relativePath}`);
+          entries.push({
+            path: relativePath,
+            kind: "file",
+            length: metadata.size,
+            sha256: await sha256File(canonicalCandidate),
+          });
+        }
+      }
+    }
+    return entries.sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  private async assertSandboxMarkedProcess(processId: number): Promise<void> {
+    const environment = (await readFile(`/proc/${processId}/environ`, "utf8")).split("\0");
+    assert.equal(
+      environment.includes(`IDE_STORY_NATIVE_GUI_SANDBOX_PATH=${this.#runnerSandbox}`),
+      true,
+    );
+    assert.equal(
+      environment.includes(`IDE_STORY_NATIVE_GUI_ARTIFACT_PATH=${this.paths().evidence}`),
+      true,
+    );
+    assert.ok(isContained(this.paths().root, this.paths().evidence));
+    this.#sandboxMarkedProcessIds.add(processId);
   }
 
   private async waitForTranscriptLength(
@@ -1235,8 +1417,4 @@ export class NativeRefactorKitJavaImportSession {
     }
     throw new Error("release/no-bundle application was not observed under tauri-driver");
   }
-}
-
-export function nativeJavaImportAuthorityFields(): readonly string[] {
-  return AUTHORITY_FIELDS;
 }
