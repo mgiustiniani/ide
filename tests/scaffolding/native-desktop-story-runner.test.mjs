@@ -581,27 +581,32 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
   assert.equal(Object.isFrozen(runtime), true);
 });
 
-test("native runner profiles preserve file-open and select parked Java import regardless status", () => {
+test("native runner profiles select the promoted file-open and Java import scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 1);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 2);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
+  assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
 
   const selection = discoverNativeDesktopSelection("refactorKitJavaImportNativeGui");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
   assert.equal(selection.scenarios.length, 1);
   assert.ok(selection.scenarios[0].tags.includes("@REQ-REFACTORKIT-JAVA-IMPORT-002"));
-  assert.ok(selection.scenarios[0].tags.includes("@not-implemented"));
+  assert.ok(selection.scenarios[0].tags.includes("@implemented-and-validated"));
 });
 
-test("implemented native discovery dynamically excludes parked Java import until promotion", () => {
+test("implemented native discovery selects exactly both promoted requirements", () => {
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
-  assert.equal(selection.includesNativeJavaImport, false);
-  assert.equal(selection.scenarios.length, 1);
-  assert.ok(selection.scenarios[0].tags.includes("@REQ-DESKTOP-FILE-OPEN-001"));
+  assert.equal(selection.includesNativeJavaImport, true);
+  assert.equal(selection.scenarios.length, 2);
+  assert.deepEqual(
+    selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
+    ["@REQ-DESKTOP-FILE-OPEN-001", "@REQ-REFACTORKIT-JAVA-IMPORT-002"],
+  );
+  assert.ok(selection.scenarios.every(({ tags }) => tags.includes("@implemented-and-validated")));
 });
 
 test("process scanning matches only the exact native sandbox environment value", async () => {
