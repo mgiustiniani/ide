@@ -9,7 +9,7 @@ Business Need: Settings-owned XCOM machine runtime lifecycle
   Eventual executable evidence is bounded to the production App, controllers, and typed Tauri adapters over a fake in-process Tauri command backend and fake timers.
   It makes no native GUI, real IPC, live Steam, real filesystem, application package, or installer claim.
 
-  @REQ-XCOM2-MACHINE-SETTINGS-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @resource-lifecycle @resilience @not-implemented
+  @REQ-XCOM2-MACHINE-SETTINGS-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @resource-lifecycle @resilience @implemented-not-e2e-validated
   Scenario: Keep one bounded XCOM machine runtime exclusively owned by open Settings
     Given the deterministic desktop Tauri harness cold-starts the production App on generic non-XCOM workspace "generic-cold"
     And the harness drives the production controllers and typed Tauri adapters through a fake in-process Tauri command backend and fake timers
