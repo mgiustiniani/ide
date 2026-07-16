@@ -56,6 +56,7 @@ pub fn run() {
             commands::workspace_registry::ensure_current_workspace,
             commands::workspace_registry::list_workspaces,
             commands::workspace_registry::switch_workspace,
+            commands::xcom2_module_evidence::scan_xcom2_module_evidence,
             commands::xcom2_setup_monitor::get_xcom2_setup_monitor_snapshot,
             commands::xcom2_setup_monitor::refresh_xcom2_setup_monitor_snapshot,
             commands::xcom2_setup_monitor::poll_xcom2_setup_monitor_events,
