@@ -8,9 +8,11 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AiAgentResponsePanel } from "../AiAgentResponsePanel/AiAgentResponsePanel";
 import { PanelLayout } from "../PanelLayout/PanelLayout";
 import type { AiAgentActivityEvent } from "../AiAgentResponsePanel/AiAgentResponsePanel";
+import type { PanelLayoutActivityContribution } from "../PanelLayout/PanelLayout";
 import type { PanelLayout as PanelLayoutType } from "@ide/contracts";
 import { DEFAULT_PANEL_LAYOUT } from "@ide/contracts";
 
@@ -636,6 +638,307 @@ describe("PanelLayout", () => {
     expect(onActivityChange).toHaveBeenLastCalledWith("search");
     expect(document.activeElement).toBe(searchTab);
     expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("renders valid contribution descriptors in deterministic input order with exact accessible linkage", () => {
+    const contributions = [
+      {
+        id: "xcom2-project",
+        label: "XCOM 2 Project",
+        title: "Inspect XCOM 2 project recognition",
+        content: React.createElement("div", null, "Recognition evidence"),
+      },
+      {
+        id: "database",
+        label: "Database",
+        content: React.createElement("div", null, "Database browser"),
+      },
+    ] as const satisfies readonly Readonly<PanelLayoutActivityContribution>[];
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        searchActivityContent: React.createElement("div", null, "Search results"),
+        activityContributions: contributions,
+        activeActivity: "xcom2-project",
+        onActivityChange: vi.fn(),
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const navigation = screen.getByRole("navigation", { name: "Primary activity" });
+    const tabs = within(navigation).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
+      "Explorer",
+      "Search",
+      "XCOM 2 Project",
+      "Database",
+      "Docs",
+      "Settings",
+    ]);
+
+    const explorerTab = within(navigation).getByRole("tab", { name: "Explorer" });
+    const searchTab = within(navigation).getByRole("tab", { name: "Search" });
+    const xcomTab = within(navigation).getByRole("tab", { name: "XCOM 2 Project" });
+    const databaseTab = within(navigation).getByRole("tab", { name: "Database" });
+    const docsTab = within(navigation).getByRole("tab", { name: "Docs" });
+    const settingsTab = within(navigation).getByRole("tab", { name: "Settings" });
+    const panel = screen.getByRole("tabpanel", { name: "XCOM 2 Project" });
+
+    expect(xcomTab.title).toBe("Inspect XCOM 2 project recognition");
+    expect(databaseTab.title).toBe("Database");
+    expect(xcomTab.getAttribute("aria-selected")).toBe("true");
+    expect(xcomTab.tabIndex).toBe(0);
+    expect(panel.getAttribute("aria-labelledby")).toBe(xcomTab.id);
+    for (const tab of [explorerTab, searchTab, xcomTab, databaseTab]) {
+      expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+    }
+    expect(docsTab.getAttribute("aria-controls")).toBeNull();
+    expect(settingsTab.getAttribute("aria-controls")).toBeNull();
+    expect(within(panel).getByText("Recognition evidence")).toBeDefined();
+  });
+
+  it("rejects every reserved contribution descriptor", () => {
+    const reservedContributions = ["explorer", "search", "docs", "settings"].map((id) => ({
+      id,
+      label: `Injected ${id}`,
+      content: React.createElement("div", null, `Injected ${id} content`),
+    }));
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        activityContributions: reservedContributions,
+        activeActivity: "docs",
+        onActivityChange: vi.fn(),
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const navigation = screen.getByRole("navigation", { name: "Primary activity" });
+    expect(within(navigation).getAllByRole("tab")).toHaveLength(4);
+    for (const id of ["explorer", "search", "docs", "settings"]) {
+      expect(within(navigation).queryByRole("tab", { name: `Injected ${id}` })).toBeNull();
+      expect(screen.queryByText(`Injected ${id} content`)).toBeNull();
+    }
+    expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeDefined();
+  });
+
+  it("keeps only the first duplicate contribution descriptor", () => {
+    const duplicateContributions = [
+      {
+        id: "xcom2-project",
+        label: "XCOM 2 Project",
+        content: React.createElement("div", null, "First recognition panel"),
+      },
+      {
+        id: "xcom2-project",
+        label: "Duplicate XCOM 2 Project",
+        content: React.createElement("div", null, "Duplicate recognition panel"),
+      },
+    ];
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        activityContributions: duplicateContributions,
+        activeActivity: "xcom2-project",
+        onActivityChange: vi.fn(),
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    expect(screen.getAllByRole("tab", { name: "XCOM 2 Project" })).toHaveLength(1);
+    expect(screen.queryByRole("tab", { name: "Duplicate XCOM 2 Project" })).toBeNull();
+    const panel = screen.getByRole("tabpanel", { name: "XCOM 2 Project" });
+    expect(within(panel).getByText("First recognition panel")).toBeDefined();
+    expect(within(panel).queryByText("Duplicate recognition panel")).toBeNull();
+  });
+
+  it("provides roving Arrow, Home, End, wrap, and Enter keyboard behavior", async () => {
+    const user = userEvent.setup();
+    const onActivityChange = vi.fn();
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        searchActivityContent: React.createElement("div", null, "Search results"),
+        activityContributions: [
+          {
+            id: "xcom2-project",
+            label: "XCOM 2 Project",
+            content: React.createElement("div", null, "Recognition evidence"),
+          },
+          {
+            id: "database",
+            label: "Database",
+            content: React.createElement("div", null, "Database browser"),
+          },
+        ],
+        activeActivity: "explorer",
+        onActivityChange,
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    const explorerTab = screen.getByRole("tab", { name: "Explorer" });
+    const searchTab = screen.getByRole("tab", { name: "Search" });
+    const xcomTab = screen.getByRole("tab", { name: "XCOM 2 Project" });
+    const databaseTab = screen.getByRole("tab", { name: "Database" });
+
+    explorerTab.focus();
+    fireEvent.keyDown(explorerTab, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(searchTab);
+    fireEvent.keyDown(searchTab, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(xcomTab);
+    fireEvent.keyDown(xcomTab, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(searchTab);
+    fireEvent.keyDown(searchTab, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(explorerTab);
+    fireEvent.keyDown(explorerTab, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(databaseTab);
+    fireEvent.keyDown(databaseTab, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(explorerTab);
+    fireEvent.keyDown(explorerTab, { key: "End" });
+    expect(document.activeElement).toBe(databaseTab);
+    fireEvent.keyDown(databaseTab, { key: "Home" });
+    expect(document.activeElement).toBe(explorerTab);
+
+    xcomTab.focus();
+    await user.keyboard("{Enter}");
+
+    expect(onActivityChange.mock.calls.map(([activity]) => activity)).toEqual([
+      "search",
+      "xcom2-project",
+      "search",
+      "explorer",
+      "database",
+      "explorer",
+      "database",
+      "explorer",
+      "xcom2-project",
+    ]);
+    expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeDefined();
+  });
+
+  it("keeps contributed activity content controlled by the host", () => {
+    const onActivityChange = vi.fn();
+    const contributions = [
+      {
+        id: "xcom2-project",
+        label: "XCOM 2 Project",
+        content: React.createElement("div", null, "Recognition evidence"),
+      },
+    ];
+    const createLayout = (activeActivity: string) =>
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        activityContributions: contributions,
+        activeActivity,
+        onActivityChange,
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      });
+    const { rerender } = render(createLayout("explorer"));
+    const xcomTab = screen.getByRole("tab", { name: "XCOM 2 Project" });
+
+    fireEvent.click(xcomTab);
+
+    expect(onActivityChange).toHaveBeenCalledWith("xcom2-project");
+    expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeDefined();
+    expect(screen.queryByText("Recognition evidence")).toBeNull();
+
+    rerender(createLayout("xcom2-project"));
+
+    expect(xcomTab.getAttribute("aria-selected")).toBe("true");
+    expect(
+      within(screen.getByRole("tabpanel", { name: "XCOM 2 Project" })).getByText(
+        "Recognition evidence",
+      ),
+    ).toBeDefined();
+  });
+
+  it("falls back to Explorer after the selected contribution is removed", () => {
+    const createLayout = (
+      activityContributions: readonly Readonly<PanelLayoutActivityContribution>[],
+    ) =>
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer fallback"),
+        activityContributions,
+        activeActivity: "xcom2-project",
+        onActivityChange: vi.fn(),
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      });
+    const contribution = {
+      id: "xcom2-project",
+      label: "XCOM 2 Project",
+      content: React.createElement("div", null, "Recognition evidence"),
+    };
+    const { rerender } = render(createLayout([contribution]));
+
+    expect(screen.getByRole("tabpanel", { name: "XCOM 2 Project" })).toBeDefined();
+
+    rerender(createLayout([]));
+
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    const explorerTab = screen.getByRole("tab", { name: "Explorer" });
+    const panel = screen.getByRole("tabpanel", { name: "Explorer" });
+    expect(explorerTab.getAttribute("aria-selected")).toBe("true");
+    expect(explorerTab.tabIndex).toBe(0);
+    expect(panel.getAttribute("aria-labelledby")).toBe(explorerTab.id);
+    expect(within(panel).getByText("Explorer fallback")).toBeDefined();
+  });
+
+  it("does not mutate the contribution array or its readonly descriptors", () => {
+    const contribution = Object.freeze({
+      id: "xcom2-project",
+      label: "XCOM 2 Project",
+      title: "Recognition",
+      content: React.createElement("div", null, "Recognition evidence"),
+    });
+    const contributions = Object.freeze([contribution]);
+
+    render(
+      React.createElement(PanelLayout, {
+        leftSidebar: React.createElement("div", null, "Explorer files"),
+        activityContributions: contributions,
+        activeActivity: "xcom2-project",
+        onActivityChange: vi.fn(),
+        mainContent: React.createElement("div", null, "Editor"),
+        bottomContent: React.createElement("div", null, "Terminal"),
+        layout: defaultLayout,
+        onResizeLeft: vi.fn(),
+        onResizeBottom: vi.fn(),
+      }),
+    );
+
+    expect(contributions).toEqual([contribution]);
+    expect(contributions[0]).toBe(contribution);
+    expect(Object.isFrozen(contributions)).toBe(true);
+    expect(Object.isFrozen(contribution)).toBe(true);
   });
 
   it("keeps Search unavailable when the host does not provide activity control", () => {
