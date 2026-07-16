@@ -6,7 +6,7 @@ export type DesktopBottomTabId = "terminal" | "ai-agent" | "problems";
 export interface DesktopPanelActions {
   setLeftSidebarWidth(width: number): void;
   setBottomPanelHeight(height: number): void;
-  toggleVisibility(panel: "leftSidebar"): void;
+  toggleVisibility(panel: "leftSidebar" | "bottomPanel"): void;
   setActivePanel(panel: "bottomPanel"): void;
 }
 
@@ -59,6 +59,10 @@ export function useDesktopShellController({
     (): void => getPanelActions().toggleVisibility("leftSidebar"),
     [getPanelActions],
   );
+  const toggleBottomPanel = useCallback(
+    (): void => getPanelActions().toggleVisibility("bottomPanel"),
+    [getPanelActions],
+  );
   const activateBottomTab = useCallback(
     (tabId: string): void => {
       if (tabId !== "terminal" && tabId !== "ai-agent" && tabId !== "problems") return;
@@ -77,6 +81,7 @@ export function useDesktopShellController({
     resizeLeft,
     resizeBottom,
     toggleLeftSidebar,
+    toggleBottomPanel,
     activateBottomTab,
   };
 }

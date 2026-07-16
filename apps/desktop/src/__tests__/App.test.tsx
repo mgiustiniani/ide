@@ -693,6 +693,8 @@ vi.mock("@ide/ui", () => ({
     searchActivityContent,
     activeActivity = "explorer",
     onActivityChange,
+    onToggleLeftSidebar,
+    onToggleBottomPanel,
     mainContent,
     rightSidebarContent,
     bottomContent,
@@ -701,6 +703,8 @@ vi.mock("@ide/ui", () => ({
       activeActivity,
       hasSearchActivityContent: searchActivityContent !== undefined,
       onActivityChange,
+      onToggleLeftSidebar,
+      onToggleBottomPanel,
     };
     return (
       <div data-testid="PanelLayout" data-active-activity={activeActivity}>
@@ -1720,6 +1724,29 @@ describe("App", () => {
     expect(screen.getByTestId("Editor").dataset.hasTabClose).toBe("true");
     expect(screen.getByTestId("Terminal").dataset.hasClear).toBe("true");
     expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  });
+
+  it("composes persistent panel controls while retaining the sidebar collapse control", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    expect(testHarness.latestPanelLayoutProps).toMatchObject({
+      onToggleLeftSidebar: expect.any(Function),
+      onToggleBottomPanel: expect.any(Function),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    act(() => {
+      testHarness.latestPanelLayoutProps.onToggleLeftSidebar();
+      testHarness.latestPanelLayoutProps.onToggleBottomPanel();
+    });
+
+    expect(testHarness.panelState.toggleVisibility.mock.calls).toEqual([
+      ["leftSidebar"],
+      ["leftSidebar"],
+      ["bottomPanel"],
+    ]);
   });
 
   it("keeps Search host-controlled and composes the semantic panel through PanelLayout", async () => {

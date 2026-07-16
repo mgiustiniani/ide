@@ -527,6 +527,8 @@ export function App(): JSX.Element {
           }
           onResizeLeft={shell.resizeLeft}
           onResizeBottom={shell.resizeBottom}
+          onToggleLeftSidebar={shell.toggleLeftSidebar}
+          onToggleBottomPanel={shell.toggleBottomPanel}
           leftSidebar={
             <LeftSidebar
               title="Explorer"

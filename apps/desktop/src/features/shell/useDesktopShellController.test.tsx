@@ -49,19 +49,27 @@ function createDependencies(
 }
 
 describe("useDesktopShellController", () => {
-  it("resizes both panels and toggles the left sidebar through current panel actions", () => {
+  it("resizes both panels and delegates both visibility toggles to current panel actions", () => {
     const dependencies = createDependencies();
-    const { result } = renderHook(() => useDesktopShellController(dependencies));
+    const { result, rerender } = renderHook(() => useDesktopShellController(dependencies));
+    const toggleBottomPanel = result.current.toggleBottomPanel;
+
+    rerender();
+    expect(result.current.toggleBottomPanel).toBe(toggleBottomPanel);
 
     act(() => {
       result.current.resizeLeft(320);
       result.current.resizeBottom(240);
       result.current.toggleLeftSidebar();
+      result.current.toggleBottomPanel();
     });
 
-    expect(dependencies.actions.setLeftSidebarWidth).toHaveBeenCalledWith(320);
-    expect(dependencies.actions.setBottomPanelHeight).toHaveBeenCalledWith(240);
-    expect(dependencies.actions.toggleVisibility).toHaveBeenCalledWith("leftSidebar");
+    expect(dependencies.actions.setLeftSidebarWidth).toHaveBeenCalledExactlyOnceWith(320);
+    expect(dependencies.actions.setBottomPanelHeight).toHaveBeenCalledExactlyOnceWith(240);
+    expect(dependencies.actions.toggleVisibility.mock.calls).toEqual([
+      ["leftSidebar"],
+      ["bottomPanel"],
+    ]);
   });
 
   it("activates supported tabs, opens the bottom panel, and lazily loads AI commands", () => {
