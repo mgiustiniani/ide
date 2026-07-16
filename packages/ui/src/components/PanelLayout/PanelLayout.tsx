@@ -37,6 +37,10 @@ export interface PanelLayoutProps {
   onResizeLeft: (width: number) => void;
   /** Called when the user resizes the bottom panel height. */
   onResizeBottom: (height: number) => void;
+  /** Optional controlled request to toggle whole-sidebar visibility. */
+  onToggleLeftSidebar?: () => void;
+  /** Optional controlled request to toggle bottom-panel visibility. */
+  onToggleBottomPanel?: () => void;
   /** Optional status bar content (left section). */
   statusBarLeft?: ReactNode;
   /** Optional status bar content (right section). */
@@ -66,6 +70,8 @@ export function PanelLayout({
   layout,
   onResizeLeft,
   onResizeBottom,
+  onToggleLeftSidebar,
+  onToggleBottomPanel,
   statusBarLeft,
   statusBarRight,
   rightSidebarContent,
@@ -181,6 +187,23 @@ export function PanelLayout({
               );
             })}
           </div>
+
+          {!sidebarVisible && onToggleLeftSidebar ? (
+            <button
+              type="button"
+              className="activity-rail-tab"
+              aria-label="Expand sidebar"
+              aria-expanded={false}
+              title="Expand sidebar"
+              onClick={onToggleLeftSidebar}
+            >
+              <span
+                className="activity-rail-label"
+                aria-hidden="true"
+                data-label="Expand sidebar"
+              />
+            </button>
+          ) : null}
         </nav>
 
         {/* Left sidebar with smooth width transition */}
@@ -313,7 +336,20 @@ export function PanelLayout({
       {/* Status bar */}
       <div className="statusbar statusbar-gradient">
         <div className="statusbar-left">{statusBarLeft}</div>
-        <div className="statusbar-right">{statusBarRight}</div>
+        <div className="statusbar-right">
+          {onToggleBottomPanel ? (
+            <button
+              type="button"
+              className="statusbar-item"
+              aria-label={bottomExpanded ? "Collapse bottom panel" : "Expand bottom panel"}
+              aria-expanded={bottomExpanded}
+              onClick={onToggleBottomPanel}
+            >
+              {bottomExpanded ? "Collapse bottom panel" : "Expand bottom panel"}
+            </button>
+          ) : null}
+          {statusBarRight}
+        </div>
       </div>
     </div>
   );
