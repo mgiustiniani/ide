@@ -11,6 +11,7 @@ import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixtur
 import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
+import { Xcom2MachineSettingsHarness } from "./xcom2-machine-settings.js";
 import {
   createTargetProfileSeam,
   resolveTargetProfile,
@@ -35,6 +36,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
+  #xcom2MachineSettingsSession?: Xcom2MachineSettingsHarness;
+  #xcom2MachineSettingsEvidenceAttached = false;
 
   constructor(options: IWorldOptions<StoryWorldParameters>) {
     super(options);
@@ -185,6 +188,37 @@ export class StoryWorld extends World<StoryWorldParameters> {
     return this.#refactorKitJavaImportSession;
   }
 
+  async createXcom2MachineSettingsSession(workspaceName: string): Promise<void> {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The XCOM machine Settings Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The XCOM machine Settings Story requires explicit non-native, non-E2E tauri-harness evidence",
+      );
+    }
+    if (this.#xcom2MachineSettingsSession) {
+      throw new Error("The XCOM machine Settings Story session has already been created");
+    }
+    const session = new Xcom2MachineSettingsHarness(workspaceName);
+    this.#xcom2MachineSettingsSession = session;
+    await session.start();
+  }
+
+  xcom2MachineSettingsSession(): Xcom2MachineSettingsHarness {
+    if (!this.#xcom2MachineSettingsSession) {
+      throw new Error("The XCOM machine Settings Story session has not been created");
+    }
+    return this.#xcom2MachineSettingsSession;
+  }
+
   createNativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -253,6 +287,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
+    const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
     this.#nativeApplicationContentLayoutSession = undefined;
@@ -261,6 +296,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
+    this.#xcom2MachineSettingsSession = undefined;
     try {
       if (nativeApplicationContentLayoutSession) {
         try {
@@ -308,6 +344,19 @@ export class StoryWorld extends World<StoryWorldParameters> {
       await desktopPanelLayoutHarness?.dispose();
       await refactorKitFixture?.dispose();
       await refactorKitJavaImportSession?.dispose();
+      if (xcom2MachineSettingsSession) {
+        try {
+          if (!this.#xcom2MachineSettingsEvidenceAttached) {
+            await this.attach(
+              JSON.stringify(xcom2MachineSettingsSession.evidence()),
+              "application/json",
+            );
+            this.#xcom2MachineSettingsEvidenceAttached = true;
+          }
+        } finally {
+          await xcom2MachineSettingsSession.dispose();
+        }
+      }
     } finally {
       await this.targetProfileSeam.dispose();
     }
