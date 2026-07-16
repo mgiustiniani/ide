@@ -9,6 +9,15 @@ const targets = {
   unselected: { target: { name: "unselected", driver: "unselected" } },
   web: { target: { name: "web", driver: "playwright" } },
   desktop: { target: { name: "desktop", driver: "tauri" } },
+  desktopTauriHarness: {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
+  },
   desktopTauriWebdriver: {
     target: { name: "desktop", driver: "tauri-webdriver" },
     evidence: {
@@ -54,15 +63,7 @@ const implementedDesktop = {
 const implementedDesktopTauriHarness = {
   ...common,
   tags: "@implemented-not-e2e-validated and @desktop and not @web",
-  worldParameters: {
-    ...targets.desktop,
-    evidence: {
-      kind: "tauri-harness",
-      nativeGui: false,
-      e2e: false,
-      packagedApplication: false,
-    },
-  },
+  worldParameters: targets.desktopTauriHarness,
 };
 
 const implementedDesktopTauriWebdriver = {
@@ -95,6 +96,12 @@ const desktopLayoutNativeGui = {
   worldParameters: targets.desktopTauriWebdriver,
 };
 
+const xcom2MachineSettingsTauriHarness = {
+  ...common,
+  tags: "@REQ-XCOM2-MACHINE-SETTINGS-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const web = {
   ...common,
   tags: "@web and not @desktop",
@@ -119,6 +126,7 @@ export {
   desktopFileOpenNativeGui,
   refactorKitJavaImportNativeGui,
   desktopLayoutNativeGui,
+  xcom2MachineSettingsTauriHarness,
   web,
   desktop,
 };

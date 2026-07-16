@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,6 +18,56 @@ const scenario = (name, tags) => ({
   name,
   tags: new Set(tags),
 });
+
+function selectedScenarios(profile) {
+  const cucumberEntry = path.join(process.cwd(), "node_modules/@cucumber/cucumber/bin/cucumber.js");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cucumberEntry,
+      "--config",
+      "cucumber.js",
+      "--profile",
+      profile,
+      "--dry-run",
+      "--format",
+      "message",
+    ],
+    { cwd: process.cwd(), encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 30_000 },
+  );
+  assert.equal(
+    result.status,
+    0,
+    result.error?.message ?? result.stderr ?? `Cucumber profile discovery failed: ${profile}`,
+  );
+
+  const pickles = new Map();
+  const selectedPickleIds = new Set();
+  for (const line of result.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const envelope = JSON.parse(line);
+    if (envelope.pickle) {
+      pickles.set(envelope.pickle.id, {
+        uri: envelope.pickle.uri,
+        line: envelope.pickle.location.line,
+        name: envelope.pickle.name,
+        tags: new Set(envelope.pickle.tags.map(({ name }) => name)),
+      });
+    }
+    if (envelope.testCase) selectedPickleIds.add(envelope.testCase.pickleId);
+  }
+  return [...selectedPickleIds].map((pickleId) => {
+    const selected = pickles.get(pickleId);
+    assert.ok(selected, `${profile} selected unknown Cucumber pickle ${pickleId}`);
+    return selected;
+  });
+}
+
+function requirementIds(selected) {
+  return [...selected.tags].filter((tag) => tag.startsWith("@REQ-")).sort();
+}
 
 test("profiles keep default and focused routing while declaring exact aggregate evidence", () => {
   assert.deepEqual(cucumberProfiles.default.worldParameters, {
@@ -86,6 +137,24 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   );
   assert.doesNotMatch(cucumberProfiles.desktopLayoutNativeGui.tags, /implemented|partial/);
 
+  assert.deepEqual(cucumberProfiles.xcom2MachineSettingsTauriHarness.worldParameters, {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
+  });
+  assert.equal(
+    cucumberProfiles.xcom2MachineSettingsTauriHarness.tags,
+    "@REQ-XCOM2-MACHINE-SETTINGS-001",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2MachineSettingsTauriHarness.tags,
+    /implemented|partial|not-implemented/,
+  );
+
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
   });
@@ -98,6 +167,31 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     target: { name: "desktop", driver: "tauri" },
   });
   assert.equal(cucumberProfiles.desktop.tags, "@desktop and not @web");
+});
+
+test("focused XCOM machine Settings profile selects only its requirement", () => {
+  const selected = selectedScenarios("xcom2MachineSettingsTauriHarness");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-MACHINE-SETTINGS-001"]);
+  assert.equal(selected[0].uri, "features/xcom2/machine-settings-runtime.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+});
+
+test("focused XCOM machine Settings command declares only deterministic harness evidence", async () => {
+  const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts["test:story:req-xcom2-machine-settings-001"];
+
+  assert.equal(
+    command,
+    "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2MachineSettingsTauriHarness",
+  );
+  assert.match(command, /^IDE_STORY_TARGET=desktop\/tauri-harness\b/);
+  assert.doesNotMatch(command, /native|webdriver|build|package|bundle/i);
+  assert.equal(
+    cucumberProfiles.xcom2MachineSettingsTauriHarness.worldParameters.evidence.artifactKind,
+    undefined,
+  );
 });
 
 test("focused native package commands make no harness or package claim", async () => {
@@ -147,6 +241,32 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedWeb.map(scenarioKey), [scenarioKey(web)]);
   assert.deepEqual(result.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(harness)]);
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
+});
+
+test("XCOM machine Settings stays parked then dynamically joins the implemented harness", () => {
+  const [parked] = selectedScenarios("xcom2MachineSettingsTauriHarness");
+  const currentHarness = selectedScenarios("implementedDesktopTauriHarness");
+  assert.deepEqual(currentHarness.flatMap(requirementIds), ["@REQ-REFACTORKIT-JAVA-IMPORT-001"]);
+
+  const before = evaluateDeclaredStoryRouting([parked]);
+  assert.deepEqual(before.failures, []);
+  assert.deepEqual(before.expectedWeb, []);
+  assert.deepEqual(before.expectedDesktopTauriHarness, []);
+  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
+
+  const promoted = {
+    ...parked,
+    tags: new Set(
+      [...parked.tags, "@implemented-not-e2e-validated"].filter(
+        (tag) => tag !== "@not-implemented",
+      ),
+    ),
+  };
+  const after = evaluateDeclaredStoryRouting([promoted]);
+  assert.deepEqual(after.failures, []);
+  assert.deepEqual(after.expectedWeb, []);
+  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
 });
 
 test("promoted desktop layout routes only to native GUI evidence", () => {
