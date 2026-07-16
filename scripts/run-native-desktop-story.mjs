@@ -40,6 +40,7 @@ const supportedProfiles = new Set([
   "desktopFileOpenNativeGui",
   "refactorKitJavaImportNativeGui",
   "desktopLayoutNativeGui",
+  "xcom2ModuleActivationNativeGui",
 ]);
 
 const executablePrerequisites = [
@@ -289,6 +290,7 @@ export async function createNativeDesktopSandbox({
   delete sandboxEnvironment.DBUS_SESSION_BUS_ADDRESS;
   delete sandboxEnvironment.IDE_REFACTORKIT_DAEMON;
   delete sandboxEnvironment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE;
+  delete sandboxEnvironment.IDE_STORY_NATIVE_GUI_PYTHON_PATH;
 
   return Object.freeze({
     root,

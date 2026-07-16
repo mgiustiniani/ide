@@ -155,6 +155,19 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     /implemented|partial|not-implemented/,
   );
 
+  assert.deepEqual(
+    cucumberProfiles.xcom2ModuleActivationNativeGui.worldParameters,
+    nativeGuiEvidence,
+  );
+  assert.equal(
+    cucumberProfiles.xcom2ModuleActivationNativeGui.tags,
+    "@REQ-XCOM2-MODULE-ACTIVATION-001 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2ModuleActivationNativeGui.tags,
+    /implemented|partial|not-implemented/,
+  );
+
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
   });
@@ -198,6 +211,19 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
+test("focused XCOM module activation profile stays status-independent before promotion", () => {
+  const selected = selectedScenarios("xcom2ModuleActivationNativeGui");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-MODULE-ACTIVATION-001"]);
+  assert.equal(selected[0].uri, "features/xcom2/module-activation.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.equal(
+    cucumberProfiles.xcom2ModuleActivationNativeGui.tags,
+    "@REQ-XCOM2-MODULE-ACTIVATION-001 and @desktop and @native-gui and not @web",
+  );
+});
+
 test("focused native package commands make no harness or package claim", async () => {
   const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
   const commands = new Map([
@@ -208,6 +234,10 @@ test("focused native package commands make no harness or package claim", async (
     [
       "test:story:req-layout-desktop-001:native",
       "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
+    ],
+    [
+      "test:story:req-xcom2-module-activation-001:native",
+      "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleActivationNativeGui",
     ],
   ]);
 
@@ -247,7 +277,7 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("promoted XCOM Settings joins the exact declared routes and leaves only TS requirements parked", () => {
+test("declared routes stay exact while XCOM module activation remains parked until promotion", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -267,8 +297,35 @@ test("promoted XCOM Settings joins the exact declared routes and leaves only TS 
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-MODULE-ACTIVATION-001",
   ]);
-  assert.ok(parked.every(({ tags }) => !tags.has("@REQ-XCOM2-MACHINE-SETTINGS-001")));
+  assert.equal(web.length, 2);
+  assert.equal(harness.length, 2);
+  assert.equal(nativeGui.length, 3);
+
+  const afterPromotion = declared.map((candidate) =>
+    candidate.tags.has("@REQ-XCOM2-MODULE-ACTIVATION-001")
+      ? {
+          ...candidate,
+          tags: new Set(
+            [...candidate.tags, "@implemented-and-validated"].filter(
+              (tag) => tag !== "@not-implemented",
+            ),
+          ),
+        }
+      : candidate,
+  );
+  const promotedRouting = evaluateDeclaredStoryRouting(afterPromotion);
+  assert.deepEqual(promotedRouting.failures, []);
+  assert.equal(promotedRouting.expectedWeb.length, 2);
+  assert.equal(promotedRouting.expectedDesktopTauriHarness.length, 2);
+  assert.equal(promotedRouting.expectedDesktopTauriWebdriver.length, 4);
+  assert.deepEqual(promotedRouting.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(), [
+    "@REQ-DESKTOP-FILE-OPEN-001",
+    "@REQ-LAYOUT-DESKTOP-001",
+    "@REQ-REFACTORKIT-JAVA-IMPORT-002",
+    "@REQ-XCOM2-MODULE-ACTIVATION-001",
+  ]);
 });
 
 test("promoted desktop layout routes only to native GUI evidence", () => {

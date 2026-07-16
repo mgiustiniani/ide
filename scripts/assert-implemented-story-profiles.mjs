@@ -101,6 +101,7 @@ try {
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
+  const xcom2ModuleActivationNativeGui = discover("xcom2ModuleActivationNativeGui");
   const routing = evaluateDeclaredStoryRouting(declared);
   const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
   const failures = [...routing.failures];
@@ -142,6 +143,7 @@ try {
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopLayoutNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters("xcom2ModuleActivationNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktop", desktopTauri, failures);
 
   compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
@@ -174,6 +176,12 @@ try {
     "desktopLayoutNativeGui",
     desktopLayoutNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-LAYOUT-DESKTOP-001")),
+    failures,
+  );
+  compareProfileSelection(
+    "xcom2ModuleActivationNativeGui",
+    xcom2ModuleActivationNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MODULE-ACTIVATION-001")),
     failures,
   );
 

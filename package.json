@@ -29,6 +29,7 @@
     "test:story:desktop:tauri-webdriver": "node scripts/run-native-desktop-story.mjs --profile desktopTauriWebdriver",
     "test:story:req-layout-desktop-001:native": "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
     "test:story:req-xcom2-machine-settings-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2MachineSettingsTauriHarness",
+    "test:story:req-xcom2-module-activation-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleActivationNativeGui",
     "test:story:req-desktop-file-open-001": "node scripts/run-native-desktop-story.mjs --profile desktopFileOpenNativeGui",
     "test:story:req-refactorkit-java-import-002": "node scripts/run-native-desktop-story.mjs --profile refactorKitJavaImportNativeGui",
     "test:spec": "vitest run --config vitest.spec.config.ts",

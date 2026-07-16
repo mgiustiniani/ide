@@ -541,6 +541,147 @@ test("focused desktop layout fresh-builds in isolated state without Java Python 
   }
 });
 
+test("focused XCOM activation fresh-builds with empty isolated state, no Java preflight, and cleanup", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-xcom-activation-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const calls = [];
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: "c".repeat(64),
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+    const untrustedEnvironment = {
+      PATH: process.env.PATH,
+      HOME: "/untrusted/home",
+      XDG_CONFIG_HOME: "/untrusted/xdg/config",
+      XDG_CACHE_HOME: "/untrusted/xdg/cache",
+      XDG_DATA_HOME: "/untrusted/xdg/data",
+      XDG_STATE_HOME: "/untrusted/xdg/state",
+      XDG_RUNTIME_DIR: "/untrusted/xdg/runtime",
+      IDE_HOME: "/untrusted/ide-home",
+      IDE_WORKSPACE_ROOT: "/untrusted/workspace",
+      TMPDIR: "/untrusted/tmp",
+      TEMP: "/untrusted/tmp",
+      TMP: "/untrusted/tmp",
+      IDE_REFACTORKIT_DAEMON: "/untrusted/refactorkit",
+      IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+      IDE_STORY_NATIVE_GUI_PYTHON_PATH: "/untrusted/python",
+    };
+
+    const result = await runNativeDesktopStory("xcom2ModuleActivationNativeGui", {
+      environment: untrustedEnvironment,
+      buildApplication: async () => {
+        calls.push("fresh-build");
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("common-native-preflight");
+        assert.deepEqual(options, {
+          applicationPath,
+          requiresNativeJavaImport: false,
+        });
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("empty-isolated-sandbox");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async (_command, arguments_, options) => {
+        calls.push("native-run");
+        assert.deepEqual(arguments_.slice(-2), ["--profile", "xcom2ModuleActivationNativeGui"]);
+        const isolatedVariables = [
+          "HOME",
+          "XDG_CONFIG_HOME",
+          "XDG_CACHE_HOME",
+          "XDG_DATA_HOME",
+          "XDG_STATE_HOME",
+          "XDG_RUNTIME_DIR",
+          "IDE_HOME",
+          "IDE_STORY_NATIVE_GUI_SCENARIO_ROOT",
+          "IDE_WORKSPACE_ROOT",
+          "TMPDIR",
+          "TEMP",
+          "TMP",
+        ];
+        for (const variable of isolatedVariables) {
+          assert.equal(
+            path
+              .relative(
+                options.environment.IDE_STORY_NATIVE_GUI_SANDBOX_PATH,
+                options.environment[variable],
+              )
+              .startsWith(".."),
+            false,
+            variable,
+          );
+        }
+        assert.deepEqual(await readdir(options.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT), []);
+        assert.deepEqual(await readdir(options.environment.IDE_WORKSPACE_ROOT), []);
+        assert.equal(options.environment.IDE_REFACTORKIT_DAEMON, undefined);
+        assert.equal(options.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("cleanup");
+        return {
+          sandboxPath,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "fresh-build",
+      "common-native-preflight",
+      "empty-isolated-sandbox",
+      "native-run",
+      "cleanup",
+    ]);
+    assert.equal(result.skipped, false);
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.equal(manifest.target, "desktop/tauri-webdriver");
+    assert.equal(manifest.profile, "xcom2ModuleActivationNativeGui");
+    assert.deepEqual(manifest.evidence, {
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+      applicationSha256: application.sha256,
+    });
+    assert.equal(manifest.selectedScenarios.length, 1);
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@REQ-XCOM2-MODULE-ACTIVATION-001"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
+    assert.deepEqual(
+      JSON.parse(
+        await readFile(
+          path.join(result.sandbox.paths.artifacts, "post-run-process-cleanup.json"),
+          "utf8",
+        ),
+      ).survivorProcessIds,
+      [],
+    );
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
 test("selected native profile propagates build failure and build timeout without launch", async () => {
   const failures = [
     new NativeDesktopStoryExecutionError("fake build failure"),
@@ -573,6 +714,7 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
       HOME: "/must-not-leak",
       IDE_REFACTORKIT_DAEMON: "/untrusted/global/refactorkit",
       IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+      IDE_STORY_NATIVE_GUI_PYTHON_PATH: "/untrusted/global/python",
     };
     const sandbox = await createNativeDesktopSandbox({
       artifactRoot,
@@ -608,6 +750,7 @@ test("sandbox contains HOME, XDG, IDE, workspace, temp, and diagnostic state", a
     );
     assert.equal(sandbox.environment.IDE_REFACTORKIT_DAEMON, undefined);
     assert.equal(sandbox.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+    assert.equal(sandbox.environment.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
     assert.equal(inheritedEnvironment.IDE_REFACTORKIT_DAEMON, "/untrusted/global/refactorkit");
     assert.equal(inheritedEnvironment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, "1");
     assert.equal(Object.isFrozen(sandbox.environment), true);
@@ -686,10 +829,19 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 3);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
+  assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
   assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
   assert.equal(profileSelectsScenarios("desktopLayoutNativeGui"), true);
+  assert.equal(profileSelectsScenarios("xcom2ModuleActivationNativeGui"), true);
+
+  const xcomSelection = discoverNativeDesktopSelection("xcom2ModuleActivationNativeGui");
+  assert.equal(xcomSelection.hasScenarios, true);
+  assert.equal(xcomSelection.includesNativeJavaImport, false);
+  assert.equal(xcomSelection.scenarios.length, 1);
+  assert.ok(xcomSelection.scenarios[0].tags.includes("@REQ-XCOM2-MODULE-ACTIVATION-001"));
+  assert.ok(xcomSelection.scenarios[0].tags.includes("@not-implemented"));
 
   const layoutSelection = discoverNativeDesktopSelection("desktopLayoutNativeGui");
   assert.equal(layoutSelection.hasScenarios, true);
