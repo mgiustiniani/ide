@@ -19,6 +19,7 @@ export * from "./components/JavaIntelligencePanel";
 export * from "./components/RefactorKitLanguageLab";
 export * from "./components/ProblemsPanel";
 export * from "./components/Xcom2SetupPanel";
+export * from "./components/Xcom2ProjectRecognitionPanel";
 export * from "./components/WorkspaceExplorer";
 export * from "./components/SemanticSymbolSearchPanel";
 export type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
@@ -37,6 +38,7 @@ export {
 } from "./components/PanelLayout";
 export type {
   PanelLayoutActivity,
+  PanelLayoutActivityContribution,
   PanelLayoutProps,
   LeftSidebarProps,
   BottomPanelBadgeMetadata,

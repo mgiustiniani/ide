@@ -8,14 +8,50 @@
 import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
 import type { PanelLayout as PanelLayoutType } from "@ide/contracts";
 
-export type PanelLayoutActivity = "explorer" | "search";
-type ActivityRailTabId = PanelLayoutActivity | "docs" | "settings";
+export type PanelLayoutActivity = "explorer" | "search" | (string & {});
+
+/** Host-provided activity content. Input order is preserved by the activity rail. */
+export interface PanelLayoutActivityContribution {
+  readonly id: string;
+  readonly label: string;
+  readonly title?: string;
+  readonly content: ReactNode;
+}
 
 interface ActivityRailTab {
-  id: ActivityRailTabId;
-  label: string;
-  isActive: boolean;
-  disabled?: boolean;
+  readonly id: string;
+  readonly label: string;
+  readonly title?: string;
+  readonly isActive: boolean;
+  readonly disabled?: boolean;
+}
+
+const RESERVED_ACTIVITY_IDS = new Set(["explorer", "search", "docs", "settings"]);
+
+function validActivityContributions(
+  contributions: readonly Readonly<PanelLayoutActivityContribution>[],
+): readonly Readonly<PanelLayoutActivityContribution>[] {
+  const ids = new Set(RESERVED_ACTIVITY_IDS);
+
+  return contributions.filter((contribution) => {
+    if (
+      !contribution ||
+      typeof contribution !== "object" ||
+      typeof contribution.id !== "string" ||
+      contribution.id.length === 0 ||
+      contribution.id.trim() !== contribution.id ||
+      typeof contribution.label !== "string" ||
+      contribution.label.trim().length === 0 ||
+      (contribution.title !== undefined && typeof contribution.title !== "string") ||
+      !Object.prototype.hasOwnProperty.call(contribution, "content") ||
+      ids.has(contribution.id)
+    ) {
+      return false;
+    }
+
+    ids.add(contribution.id);
+    return true;
+  });
 }
 
 export interface PanelLayoutProps {
@@ -23,9 +59,11 @@ export interface PanelLayoutProps {
   leftSidebar: ReactNode;
   /** Optional host-composed content for the generic Search activity. */
   searchActivityContent?: ReactNode;
+  /** Immutable host-composed project activities, rendered in the supplied order. */
+  activityContributions?: readonly Readonly<PanelLayoutActivityContribution>[];
   /** Host-controlled selected activity. Defaults to Explorer. */
   activeActivity?: PanelLayoutActivity;
-  /** Enables activity selection when supplied with searchActivityContent. */
+  /** Enables host-controlled activity selection. */
   onActivityChange?: (activity: PanelLayoutActivity) => void;
   /** Main content area (editor). */
   mainContent: ReactNode;
@@ -63,6 +101,7 @@ export interface PanelLayoutProps {
 export function PanelLayout({
   leftSidebar,
   searchActivityContent,
+  activityContributions = [],
   activeActivity = "explorer",
   onActivityChange,
   mainContent,
@@ -81,18 +120,34 @@ export function PanelLayout({
   showBottomPanel = true,
 }: PanelLayoutProps): JSX.Element {
   const activityIdPrefix = useId();
-  const activityTabRefs = useRef<Record<PanelLayoutActivity, HTMLButtonElement | null>>({
-    explorer: null,
-    search: null,
-  });
+  const activityTabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const { visibility, sizes, minSizes } = layout;
 
+  const contributions = validActivityContributions(activityContributions);
+  const contributionById = new Map(
+    contributions.map((contribution) => [contribution.id, contribution] as const),
+  );
   const searchEnabled = searchActivityContent !== undefined && Boolean(onActivityChange);
+  const selectedContribution = contributionById.get(activeActivity);
   const selectedActivity: PanelLayoutActivity =
-    activeActivity === "search" && searchEnabled ? "search" : "explorer";
+    activeActivity === "search" && searchEnabled
+      ? "search"
+      : selectedContribution
+        ? selectedContribution.id
+        : "explorer";
   const selectedActivityContent =
-    selectedActivity === "search" ? searchActivityContent : leftSidebar;
+    selectedActivity === "search"
+      ? searchActivityContent
+      : selectedContribution
+        ? selectedContribution.content
+        : leftSidebar;
   const activityPanelId = `${activityIdPrefix}-activity-panel`;
+  const contributionTabs: ActivityRailTab[] = contributions.map((contribution) => ({
+    id: contribution.id,
+    label: contribution.label,
+    title: contribution.title,
+    isActive: selectedActivity === contribution.id,
+  }));
   const activityTabs: ActivityRailTab[] = [
     { id: "explorer", label: "Explorer", isActive: selectedActivity === "explorer" },
     {
@@ -101,33 +156,41 @@ export function PanelLayout({
       isActive: selectedActivity === "search",
       disabled: !searchEnabled,
     },
+    ...contributionTabs,
     { id: "docs", label: "Docs", isActive: false, disabled: true },
     { id: "settings", label: "Settings", isActive: false, disabled: true },
+  ];
+  const selectableActivities: PanelLayoutActivity[] = [
+    "explorer",
+    ...(searchEnabled ? (["search"] as const) : []),
+    ...contributions.map(({ id }) => id),
   ];
 
   const handleActivityKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
     activity: PanelLayoutActivity,
   ): void => {
-    if (!searchEnabled) return;
+    const currentIndex = selectableActivities.indexOf(activity);
+    if (currentIndex < 0) return;
 
-    const activities: PanelLayoutActivity[] = ["explorer", "search"];
-    const currentIndex = activities.indexOf(activity);
     let nextActivity: PanelLayoutActivity | undefined;
 
     if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      nextActivity = activities[(currentIndex - 1 + activities.length) % activities.length];
+      nextActivity =
+        selectableActivities[
+          (currentIndex - 1 + selectableActivities.length) % selectableActivities.length
+        ];
     } else if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      nextActivity = activities[(currentIndex + 1) % activities.length];
+      nextActivity = selectableActivities[(currentIndex + 1) % selectableActivities.length];
     } else if (event.key === "Home") {
-      nextActivity = activities[0];
+      nextActivity = selectableActivities[0];
     } else if (event.key === "End") {
-      nextActivity = activities[activities.length - 1];
+      nextActivity = selectableActivities[selectableActivities.length - 1];
     }
 
     if (nextActivity) {
       event.preventDefault();
-      activityTabRefs.current[nextActivity]?.focus();
+      activityTabRefs.current.get(nextActivity)?.focus();
       onActivityChange?.(nextActivity);
     }
   };
@@ -149,8 +212,7 @@ export function PanelLayout({
         <nav className="activity-rail" aria-label="Primary activity">
           <div className="activity-rail-tabs" role="tablist" aria-orientation="vertical">
             {activityTabs.map((tab) => {
-              const selectableActivity =
-                tab.id === "explorer" || tab.id === "search" ? tab.id : undefined;
+              const selectableActivity = tab.disabled ? undefined : tab.id;
 
               return (
                 <button
@@ -159,7 +221,8 @@ export function PanelLayout({
                   ref={
                     selectableActivity
                       ? (element) => {
-                          activityTabRefs.current[selectableActivity] = element;
+                          if (element) activityTabRefs.current.set(selectableActivity, element);
+                          else activityTabRefs.current.delete(selectableActivity);
                         }
                       : undefined
                   }
@@ -172,7 +235,7 @@ export function PanelLayout({
                   aria-disabled={tab.disabled ? true : undefined}
                   aria-label={tab.label}
                   disabled={tab.disabled}
-                  title={tab.disabled ? `${tab.label} (coming soon)` : tab.label}
+                  title={tab.disabled ? `${tab.label} (coming soon)` : (tab.title ?? tab.label)}
                   onClick={
                     selectableActivity ? () => onActivityChange?.(selectableActivity) : undefined
                   }

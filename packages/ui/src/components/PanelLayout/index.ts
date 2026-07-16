@@ -1,5 +1,9 @@
 export { PanelLayout } from "./PanelLayout";
-export type { PanelLayoutActivity, PanelLayoutProps } from "./PanelLayout";
+export type {
+  PanelLayoutActivity,
+  PanelLayoutActivityContribution,
+  PanelLayoutProps,
+} from "./PanelLayout";
 
 export { LeftSidebar } from "./LeftSidebar";
 export type { LeftSidebarProps } from "./LeftSidebar";
