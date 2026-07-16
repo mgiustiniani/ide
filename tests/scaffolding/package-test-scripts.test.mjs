@@ -10,8 +10,36 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const fixturePrefix = ".panel-layout-browser-";
 const packages = [
-  { name: "@ide/ui", directory: "packages/ui" },
-  { name: "@ide/tauri-adapters", directory: "packages/tauri-adapters" },
+  {
+    name: "@ide/web",
+    directory: "apps/web",
+    expectedScript: "vitest run --config ../../vitest.config.ts apps/web/src",
+  },
+  {
+    name: "@ide/browser-adapters",
+    directory: "packages/browser-adapters",
+    expectedScript: "vitest run --config ../../vitest.config.ts packages/browser-adapters/src",
+  },
+  {
+    name: "@ide/contracts",
+    directory: "packages/contracts",
+    expectedScript: "vitest run --config ../../vitest.config.ts packages/contracts/src",
+  },
+  {
+    name: "@ide/tauri-adapters",
+    directory: "packages/tauri-adapters",
+    expectedScript: "vitest run --config ../../vitest.config.ts packages/tauri-adapters/src",
+  },
+  {
+    name: "@ide/ui",
+    directory: "packages/ui",
+    expectedScript: "vitest run --config ../../vitest.config.ts packages/ui/src",
+  },
+  {
+    name: "@ide/web-core",
+    directory: "packages/web-core",
+    expectedScript: "vitest run --config ../../vitest.config.ts packages/web-core/src",
+  },
 ];
 
 async function collectTestFiles(directory) {
@@ -96,7 +124,16 @@ function resultFiles(report) {
   return report.testResults.map(({ name }) => path.resolve(name)).sort();
 }
 
-test("package test scripts are cwd-independent, exact, and leak-free", async () => {
+test("package test scripts select the root config and exact package source", async () => {
+  for (const package_ of packages) {
+    const manifest = JSON.parse(
+      await readFile(path.join(workspaceRoot, package_.directory, "package.json"), "utf8"),
+    );
+    assert.equal(manifest.scripts?.test, package_.expectedScript);
+  }
+});
+
+test("package test scripts avoid root-suite collection and cwd-sensitive failures", async () => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "ide-package-tests-"));
   const fixturesBefore = await fixtureDirectories();
   let failure;

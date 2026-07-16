@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run --config ../../vitest.config.ts packages/contracts/src"
   },
   "devDependencies": {
     "eslint": "^9.10.0",
