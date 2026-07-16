@@ -242,7 +242,7 @@ Use **Monaco Editor 0.52.2 as the only editor**:
 
 XCOM game/SDK/Steam download state, environment health, and operational setup describe a machine, not every opened workspace. Presenting them as a global XCOM activity entry or bottom tab creates false project context; starting polling in a generic web workspace creates hidden work for a native capability the browser cannot provide. Conversely, XCOM build, diagnostics, logs, and language support are meaningful only for an XCOM project/module. The first-party feature is built-in, experimental, and plugin-shaped, but the IDE has no extension install/remove lifecycle or generic third-party runtime. Java, IntelliJ-direction work, JDT LS, and RefactorKit are independent core capabilities.
 
-The generic target permits project/module activation after explicit configuration or conservative evidence evaluation. The current first slice deliberately narrows that target to bounded convention evidence: explicit configuration and manual confirmation are deferred.
+The generic target permits project/module activation after explicit configuration or conservative evidence evaluation. The current first slice deliberately narrows that target to bounded convention evidence: explicit configuration and manual confirmation were deferred from that implementation. The exact activation-only v1 configuration contract below is now approved as FUTURE/TARGET architecture before implementation; manual confirmation remains a separate concern.
 
 ### Decision
 
@@ -266,6 +266,20 @@ This Option A policy was accepted before implementation. At HEAD `5cdc9c0`, the 
 - **Lifecycle and stale results:** Run one scan when a workspace is activated and one scan when it is switched; do not poll. A consumer accepts a result only when its workspace identity, workspace generation, scan identity, and scan generation all match the current activation. Any mismatch is stale and rejected.
 - **First-slice boundary and contribution:** The first slice excludes `.ide/xcom2.json`, explicit configuration, manual confirmation and confirmation persistence, external grants or roots, content parsing, Build, Problems, Logs, language support, actions, and machine Settings evidence. Machine health or setup state cannot activate a module. Only an `active` decision may dynamically enable the accessible **XCOM 2 Project** activity entry and its recognition-only panel. The panel displays the workspace-relative module root, state, confidence, ordered reasons, completeness, and limitations/issues; it implies no other contribution. `needs-confirmation` and `inactive` decisions contribute nothing.
 
+#### Approved FUTURE/TARGET activation-only `.ide/xcom2.json` v1
+
+This subsection records an approved target architecture decision before implementation. It is not evidence that configuration reading, activation, refresh, diagnostics, or validation exists. It supplements the implemented Option A convention path above without changing that path's evidence or current status.
+
+- **Exact file contract:** The data model is exactly `{version: 1, target: 'wotc', moduleRoots: [...]}`. The file is strict JSON encoded as UTF-8, with a maximum size of 64 KiB and exactly the fields `version`, `target`, and `moduleRoots`. `version` must be the number `1`, `target` must be the string `wotc`, and no coercion is permitted. Duplicate keys, comments, trailing data, missing fields, extra fields, and unsupported values are rejected.
+- **Configured-root constraints:** `moduleRoots` contains 1–64 unique roots. `.` is allowed. Every other root is a normalized, relative, exact-case path of at most 4096 UTF-8 bytes. It must name an existing directory, every path component must be regular and non-symlink, and its canonical result must remain contained in the authorized workspace. Multiple and nested configured roots are additive and independent.
+- **Native authority and ownership:** The native side authorizes the one fixed path `.ide/xcom2.json`; callers supply neither a workspace root nor a configuration path. Configuration handling does not parse module content. The file is project-owned, read-only to the IDE, Git-shareable, and contains no secrets or machine- or tool-specific values. The IDE neither writes the file nor automatically mutates `.gitignore`.
+- **Activation and evidence:** A valid configuration alone grants recognition-only `active` state with activation source `configured` and activation confidence `explicit`. Recognition confidence remains a separate `none` / `medium` / `high` value derived from Option A observations. When convention observations also exist for a configured root, the activation source is `configured-and-recognized`. The configuration reason precedes all Option A reasons; Option A's established evidence-kind and lexical ordering remains unchanged after it.
+- **Invalid configuration:** Invalid or unsupported configuration grants no configured authority and does not suppress an independent Option A recognition result. Failures are exposed only through presentation-safe typed diagnostics.
+- **Authority boundary:** Configuration activation creates no manual prompt or persistence record because it grants no tool, process, external, or mutation authority. External roots, weak-evidence manual confirmation, Build, Problems, Logs, language support, and actions remain separate concerns.
+- **Refresh and revocation:** Configuration refresh occurs only through explicit **Workspace Refresh**, with no watch or poll. Refresh synchronously revokes prior configured state, increments the feature activation generation, jointly correlates configuration and scan results, and rejects stale or late results. Removing the file revokes the configuration basis; Option A recognition may independently remain.
+- **Platform boundary:** Browser behavior is unchanged.
+- **Requirements lifecycle:** This exact activation-only decision replaces the broad proposed FR-X2CFG-001 v1 schema in `docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md`, which must be reconciled later. It does not accept that proposal's machine/tool configuration fields or expand this decision beyond recognition-only activation.
+
 #### Implementation and evidence
 
 At HEAD `5cdc9c0`, the implementation follows this policy through separate bounded components:
@@ -285,13 +299,13 @@ The promoted [BDD Story](features/xcom2/module-activation.feature) passed one sc
 - Machine and project scope remain separate, and names alone cannot classify a workspace.
 - Exact convention matching, independent canonical module roots, deterministic reason ordering, and a distinct-kind threshold make activation decisions reproducible.
 - Bounded read-only scanning, no symlink traversal, explicit partial completeness, and four-part stale-result rejection constrain authority and prevent uncertain traversal from becoming false absence.
-- A recognition-only contribution preserves the first-slice boundary while leaving explicit configuration and contextual tools for later decisions or slices.
+- A recognition-only contribution preserves the first-slice boundary while leaving the approved activation-only configuration contract for later implementation and evidence, and contextual tools for separate decisions or slices.
 
 **Negative:**
 
 - Depth, entry, exclusion, unreadable-path, and Linux-only limits can produce partial results or omit evidence that a broader scanner could discover.
 - A single evidence kind cannot activate the recognition panel, and this slice provides no manual confirmation path.
-- External interactive setup, explicit configuration, XCOM-specific build/problem/log/language/action flows, and a general external-root grant model remain target work.
+- External interactive setup, the approved but unimplemented explicit configuration contract, XCOM-specific build/problem/log/language/action flows, and a general external-root grant model remain target work.
 - A future generic extension runtime may require descriptor/API migration.
 
 ---
