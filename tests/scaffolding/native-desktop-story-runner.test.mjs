@@ -721,7 +721,7 @@ test("implemented desktop discovery selects the exact harness and native require
     selectedScenarios("implementedDesktopTauriHarness")
       .flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-")))
       .sort(),
-    ["@REQ-REFACTORKIT-JAVA-IMPORT-001"],
+    ["@REQ-REFACTORKIT-JAVA-IMPORT-001", "@REQ-XCOM2-MACHINE-SETTINGS-001"],
   );
 });
 

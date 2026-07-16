@@ -169,13 +169,17 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   assert.equal(cucumberProfiles.desktop.tags, "@desktop and not @web");
 });
 
-test("focused XCOM machine Settings profile selects only its requirement", () => {
+test("focused XCOM machine Settings profile stays status-independent after promotion", () => {
   const selected = selectedScenarios("xcom2MachineSettingsTauriHarness");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-MACHINE-SETTINGS-001"]);
   assert.equal(selected[0].uri, "features/xcom2/machine-settings-runtime.feature");
-  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
+  assert.equal(
+    cucumberProfiles.xcom2MachineSettingsTauriHarness.tags,
+    "@REQ-XCOM2-MACHINE-SETTINGS-001",
+  );
 });
 
 test("focused XCOM machine Settings command declares only deterministic harness evidence", async () => {
@@ -243,30 +247,28 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("XCOM machine Settings stays parked then dynamically joins the implemented harness", () => {
-  const [parked] = selectedScenarios("xcom2MachineSettingsTauriHarness");
-  const currentHarness = selectedScenarios("implementedDesktopTauriHarness");
-  assert.deepEqual(currentHarness.flatMap(requirementIds), ["@REQ-REFACTORKIT-JAVA-IMPORT-001"]);
+test("promoted XCOM Settings joins the exact declared routes and leaves only TS requirements parked", () => {
+  const declared = selectedScenarios("declaredDiscovery");
+  const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
+  const web = selectedScenarios("implementedWeb");
+  const harness = selectedScenarios("implementedDesktopTauriHarness");
+  const nativeGui = selectedScenarios("implementedDesktopTauriWebdriver");
 
-  const before = evaluateDeclaredStoryRouting([parked]);
-  assert.deepEqual(before.failures, []);
-  assert.deepEqual(before.expectedWeb, []);
-  assert.deepEqual(before.expectedDesktopTauriHarness, []);
-  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
-
-  const promoted = {
-    ...parked,
-    tags: new Set(
-      [...parked.tags, "@implemented-not-e2e-validated"].filter(
-        (tag) => tag !== "@not-implemented",
-      ),
-    ),
-  };
-  const after = evaluateDeclaredStoryRouting([promoted]);
-  assert.deepEqual(after.failures, []);
-  assert.deepEqual(after.expectedWeb, []);
-  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
-  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
+  assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
+  assert.deepEqual(harness.flatMap(requirementIds).sort(), [
+    "@REQ-REFACTORKIT-JAVA-IMPORT-001",
+    "@REQ-XCOM2-MACHINE-SETTINGS-001",
+  ]);
+  assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), [
+    "@REQ-DESKTOP-FILE-OPEN-001",
+    "@REQ-LAYOUT-DESKTOP-001",
+    "@REQ-REFACTORKIT-JAVA-IMPORT-002",
+  ]);
+  assert.deepEqual(parked.flatMap(requirementIds).sort(), [
+    "@REQ-REFACTORKIT-TS-001",
+    "@REQ-REFACTORKIT-TS-002",
+  ]);
+  assert.ok(parked.every(({ tags }) => !tags.has("@REQ-XCOM2-MACHINE-SETTINGS-001")));
 });
 
 test("promoted desktop layout routes only to native GUI evidence", () => {
