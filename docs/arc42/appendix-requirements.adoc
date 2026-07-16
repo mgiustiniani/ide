@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-15 from every configured `features/**/*.feature` file through Java-import promotion HEAD `54c28f3`. The feature sources declare `REQ-WEB-001`, `REQ-LAYOUT-WEB-001`, and `REQ-DESKTOP-FILE-OPEN-001` as `@implemented-and-validated`; `REQ-LAYOUT-DESKTOP-001` and `REQ-REFACTORKIT-JAVA-IMPORT-001` as `@implemented-not-e2e-validated`; and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two TypeScript/JavaScript RefactorKit requirements remain parked outside the active roadmap under the frozen architecture policy; the Java import declaration remains bounded to deterministic harness evidence.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-16 from every configured `features/**/*.feature` file through native-profile reconciliation HEAD `6c540e1`. The feature sources declare `REQ-WEB-001`, `REQ-LAYOUT-WEB-001`, `REQ-DESKTOP-FILE-OPEN-001`, and `REQ-REFACTORKIT-JAVA-IMPORT-002` as `@implemented-and-validated`; `REQ-LAYOUT-DESKTOP-001` and `REQ-REFACTORKIT-JAVA-IMPORT-001` as `@implemented-not-e2e-validated`; and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two TypeScript/JavaScript RefactorKit requirements remain parked outside the active roadmap under the frozen option-A architecture policy; Java import `-001` remains bounded to deterministic harness evidence, while `-002` is separately bounded to a deterministic sandbox-daemon Linux X11 release/no-bundle native integration.
 ====
 
 == Governance
@@ -27,6 +27,12 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |1
 |`REQ-REFACTORKIT-JAVA-IMPORT-001`
 |`@implemented-not-e2e-validated`
+
+|link:../../features/refactorkit/native-java-clipboard-import.feature[`features/refactorkit/native-java-clipboard-import.feature`]
+|Trustworthy deterministic native Java clipboard import
+|1
+|`REQ-REFACTORKIT-JAVA-IMPORT-002`
+|`@implemented-and-validated`
 
 |link:../../features/refactorkit/typescript-compiler-diagnostics.feature[`features/refactorkit/typescript-compiler-diagnostics.feature`]
 |Trustworthy RefactorKit TypeScript/JavaScript compiler diagnostics in existing desktop problem surfaces
@@ -59,7 +65,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains six feature files, seven scenarios, and seven repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
+NOTE: The configured inventory contains seven feature files, eight scenarios, and eight repository-unique stable requirement IDs. The status values above are copied from Gherkin, not inferred from validation.
 
 == Requirement Catalogue
 
@@ -97,7 +103,7 @@ NOTE: The configured inventory contains six feature files, seven scenarios, and 
 |Deterministic `desktop/tauri-harness` execution under jsdom with evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`. It imports the real desktop `App`, opens the actual FileTree context menu, renders the production review dialog, and exercises the production RefactorKit Import controller and typed Tauri adapters through a fake in-process Tauri invoke boundary. The story loader replaces Monaco with a read-only textarea.
 
 |Dated deterministic Story evidence
-|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement and canonical desktop-harness selection passed this scenario: 1 scenario and 22/22 steps. The promoted canonical aggregate therefore routes two web scenarios, two desktop-harness scenarios, and one native GUI scenario.
+|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement and canonical desktop-harness selection passed this scenario: 1 scenario and 22/22 steps. After the separate native Java-import promotion, the canonical aggregate routes two web scenarios, two desktop-harness scenarios, and two native GUI scenarios.
 
 |Capability and clipboard evidence
 |The production composition accepted API `0.2`; `java.importExternalClass` with `targetDirectory`, preview, apply, discard, and rollback; `refactor.apply`; `refactor.discard`; and `patch.rollback` before exactly one `read_clipboard_text` invocation. The accepted capability event precedes that one read, which precedes preview. Rollback capability is required provider authority, but the current import UI exposes no rollback action.
@@ -128,6 +134,73 @@ NOTE: The configured inventory contains six feature files, seven scenarios, and 
 
 |Packaging status
 |`synapse-ide-desktop` packaging remains postponed until the full-build milestone and must use repository-only runtime dependencies. The harness produces no package evidence.
+|===
+
+=== REQ-REFACTORKIT-JAVA-IMPORT-002
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-REFACTORKIT-JAVA-IMPORT-002]]`REQ-REFACTORKIT-JAVA-IMPORT-002`
+
+|Classification
+|Functional requirement (`@functional-requirement`). The scenario also carries `@security` and `@resilience`; those qualifiers do not silently add the absent `@non-functional-requirement` classification.
+
+|Actor / stakeholder
+|A Java developer using one authorized Maven-like desktop workspace, selected existing package directory, and sandbox-owned clipboard fixture.
+
+|Capability
+|Cancel one reviewed clipboard-class plan, then review and apply a distinct fresh plan through the actual native desktop File Explorer while the deterministic fixture daemon remains the sole project-content writer.
+
+|Scenario
+|_Cancel and then apply one clipboard class through the isolated native desktop integration_
+
+|Feature path
+|link:../../features/refactorkit/native-java-clipboard-import.feature[`features/refactorkit/native-java-clipboard-import.feature`], scenario beginning at line 11
+
+|Tags
+|`@desktop`, `@native-gui`, `@REQ-REFACTORKIT-JAVA-IMPORT-002`, `@functional-requirement`, `@security`, `@resilience`, `@implemented-and-validated`
+
+|Declared status
+|`@implemented-and-validated` — copied exactly from the feature source after promotion commit `bec4d83` and native-profile reconciliation `6c540e1`. It is separate from the independent run below.
+
+|Validation mode
+|Focused real Linux X11 native GUI/E2E through `desktop/tauri-webdriver`. The runner freshly executes `pnpm --filter @ide/desktop tauri build --no-bundle --ci`, directly launches the resulting production release executable under isolated D-Bus/Xvfb, drives the real Tauri WebKit document through WebKitWebDriver/WebdriverIO, and reports `packagedApplication: false`. The RefactorKit peer is a scenario-owned executable deterministic API-0.2 fixture daemon, not a developer-installed or released provider.
+
+|Dated independent native evidence
+|On 2026-07-16 at repository revision `5146221`, the focused route passed 1 scenario/36 Cucumber markers. A later implemented native aggregate passed this scenario together with native file opening: 2 scenarios and 52/52 steps against one fresh release/no-bundle executable. The canonical declared aggregate therefore routes 2 web, 2 deterministic desktop-harness, and 2 native GUI scenarios.
+
+|Actual native UI and clipboard boundary
+|The real WebKit document exposed the actual File Explorer, expanded `src/main/java/example/imports`, opened its directory context menu, chose the production **Paste Java Class from Clipboard** action, rendered the actual review dialog, refreshed the actual tree/tab, and displayed the exact fixture in real Monaco rather than the Story textarea mock. A GTK-owned Linux X11 OS clipboard supplied the 147-byte fixture through the production native clipboard command. This path-to-preview evidence does not capture raw IPC and does not establish the number of underlying native clipboard reads.
+
+|Two exact-hash previews
+|Exactly one daemon preview followed each of the two actual context-menu actions, with no duplicate preview. Both carried target `src/main/java/example/imports`, length 147, and exact fixture SHA-256 `cd88da64bbe8a43098c0453ade76d6e1114ba9753165e4d794a6a6cb0addb088`. The first returned `native-java-import-plan-001`; the second returned the distinct `native-java-import-plan-002`.
+
+|First review and correlated discard
+|The first actual dialog bound `native-java-import-plan-001` to the selected target, one primary create for `src/main/java/example/imports/ClipboardImportProof.java`, clipboard provenance with no URL, unknown license under warn policy, and high risk. Cancel emitted exactly one discard correlated to that first plan; no Apply or daemon project-content write occurred, and the target remained absent.
+
+|Distinct-plan Apply authority
+|The second actual dialog showed the distinct fresh plan and kept Apply disabled until acknowledgement of unknown-license/high-risk evidence. One daemon-observed `refactor.apply` targeted only that second plan. Its `params` object was exactly `{"planId":"native-java-import-plan-002"}` with no clipboard source, code, patch, target, target directory, target package, or source-kind field. This is exact fixture-daemon protocol evidence; it does not claim raw IPC capture.
+
+|Recorded mutation and authoritative result
+|The deterministic daemon recorded exactly one `create`, marked the one target primary, and reported transaction `native-java-import-transaction-001`. A canonical hash-bearing workspace-tree snapshot changed from exactly 8 entries before Apply to exactly 9 afterward, with only `src/main/java/example/imports/ClipboardImportProof.java` added. The actual File Explorer showed that path, the selected tab was exactly `ClipboardImportProof.java`, and real Monaco matched the exact logical clipboard fixture.
+
+|Source-free transcript and absent fixture metadata
+|The retained eight-event transcript proves capability/open, first preview, correlated discard, second preview, and Apply/one target by IDs, lengths, hashes, and paths without containing clipboard source text. Its SHA-256 in the observed run was `ec06a6593f776be5ed28113ba1f42fa86ca13ad475ad686ca8c801d4bb58fdd6`. The scenario workspace contained no `.refactorkit` directory or `workspace.lock`. This fixture result supplies no provider-metadata or real-provider no-write evidence.
+
+|Configured confinement and cleanup
+|Scenario HOME, configured XDG roots, IDE home, temp roots, workspace, daemon, transcript, clipboard, and evidence paths remained within the scenario root; the application, deterministic daemon, GTK clipboard owner, and driver carried the sandbox marker. Window close, application exit, daemon exit, clipboard-owner release/exit, driver cleanup, environment restoration, and the runner's post-run no-survivor check passed. These checks cover configured roots and owned/marked processes only, not arbitrary global filesystem/process behavior or syscall-level confinement.
+
+|Strict evidence limits
+|The evidence does not cover a real, globally installed, immutable, or packaged RefactorKit provider; provider metadata or advertised-provider no-write behavior; raw IPC or clipboard-read cardinality; syscall-level or global process/filesystem confinement; an application/provider package or installer; Wayland or another operating system; user-facing rollback; or the cancellation and stale workspace/selection/request/plan matrix of `REQ-REFACTORKIT-JAVA-IMPORT-001`. No claim transfers across those boundaries.
+
+|Separate TypeScript option-A policy
+|This deterministic Java fixture neither authorizes `.refactorkit/workspace.lock` nor changes `REQ-REFACTORKIT-TS-001` or `REQ-REFACTORKIT-TS-002`. Diagnostics option A remains selected, and symbol navigation still permits no metadata-write exception after its separate immutable-provider failure.
+
+|Packaging status
+|`synapse-ide-desktop` packaging remains postponed until the full-build milestone and must use repository-only runtime dependencies. A direct release/no-bundle ELF is not package, installer, CachyOS, or Synapse evidence.
 |===
 
 === REQ-REFACTORKIT-TS-001
@@ -240,7 +313,7 @@ NOTE: The configured inventory contains six feature files, seven scenarios, and 
 |Evidence supports at most partial behavior. The declared status remains `@not-implemented`; neither implemented status is claimed. The documentation does not accept, permit, ignore, or normalize the lock write.
 
 |Desktop aggregate routing evidence
-|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`; later runner reconciliation added a separate Linux `desktop/tauri-webdriver` route for `@implemented-and-validated @desktop @native-gui`. The aggregate now selects the unrelated layout and Java-import harness scenarios plus the native file-open scenario, but still excludes this symbol-navigation scenario because its declaration remains `@not-implemented`. Focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement, and no selected desktop route supplies this requirement's missing real-provider no-write proof.
+|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`; later runner reconciliation added a separate Linux `desktop/tauri-webdriver` route for `@implemented-and-validated @desktop @native-gui`. The aggregate now selects the unrelated layout and Java-import `-001` harness scenarios plus native file opening and deterministic-fixture Java import `-002`, but still excludes this symbol-navigation scenario because its declaration remains `@not-implemented`. Focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement, and no selected desktop route supplies this requirement's missing immutable-provider no-write proof.
 
 |Packaged GUI/E2E evidence absence
 |No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
@@ -432,10 +505,10 @@ NOTE: The configured inventory contains six feature files, seven scenarios, and 
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` is separately declared `@implemented-not-e2e-validated` and passed its deterministic jsdom/Tauri-harness Story 22/22 with the fake-backend, mocked-Monaco, non-native limits above. `REQ-DESKTOP-FILE-OPEN-001` is separately declared `@implemented-and-validated` and passed its real Linux X11/Xvfb release/no-bundle native GUI Story 16/16 after production fix `9b4af2a`. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies with no metadata exception.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` is separately declared `@implemented-not-e2e-validated` and passed its deterministic jsdom/Tauri-harness Story 22/22 with the fake-backend, mocked-Monaco, non-native limits above. `REQ-DESKTOP-FILE-OPEN-001` is declared `@implemented-and-validated` and passed its real Linux X11/Xvfb release/no-bundle native GUI Story 16/16 after production fix `9b4af2a`. Deterministic-fixture `REQ-REFACTORKIT-JAVA-IMPORT-002` is also declared `@implemented-and-validated` and independently passed its focused native 1-scenario/36-marker route under the strict fixture/provider/confinement limits above. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies with no metadata exception.
 
-The canonical migration aggregate now passes with two declared web scenarios, two deterministic desktop-harness scenarios, and one native GUI scenario. The native route freshly builds before running and remains non-packaged evidence; the Java-import harness adds no native, live-provider, native-filesystem, or package evidence. This closes the Java-import declaration/harness routing mismatch, not the release packaging gap: no CachyOS/Synapse package was built or tested, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The confirmed layout evidence, frozen IntelliSense/JDT LS inventory, and both TypeScript/JavaScript RefactorKit wait-for-upstream policies remain unchanged.
+The canonical migration aggregate now passes with two declared web scenarios, two deterministic desktop-harness scenarios, and two native GUI scenarios. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 2 native scenarios/52 steps. Native Java import proves only the deterministic sandbox fixture boundary and does not transfer real/global/immutable/packaged-provider, provider-metadata/no-write, raw-IPC/read-cardinality, broader-confinement, broader-OS, rollback-UI, or `-001` stale-matrix evidence. This closes the native Java-import declaration/routing slice, not the release packaging gap: no CachyOS/Synapse package was built or tested, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The confirmed layout evidence, frozen IntelliSense/JDT LS inventory, and both TypeScript/JavaScript RefactorKit wait-for-upstream policies remain unchanged.
 
 == Reconciliation Checks
 
-The 2026-07-15 reconciliation checked all six configured feature paths, seven scenarios, stable IDs, classifications, effective declared statuses, aggregate routing (2 web, 2 harness, 1 native), target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate also passed, including the two deterministic harness scenarios and a fresh native release/no-bundle build plus Linux X11/Xvfb WebKitWebDriver run.
+The 2026-07-16 reconciliation through `6c540e1` checked all seven configured feature paths, eight scenarios, stable IDs, classifications, effective declared statuses, aggregate routing (2 web, 2 harness, 2 native), target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate passed, including both deterministic harness scenarios and a fresh native release/no-bundle build plus the two-scenario Linux X11/Xvfb WebKitWebDriver run. C4 validation and links, global Prettier, strict lint, and the docs-only diff also passed; V8, Story, Spec, and Rust evidence remain separate rather than being combined. An unauthorized repository-root `.refactorkit/workspace.lock` encountered during evidence work was removed and remained absent through this gate. That repository-hygiene observation is not immutable-provider no-write evidence and does not change the separate `REQ-REFACTORKIT-TS-002` failure.
