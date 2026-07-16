@@ -278,7 +278,7 @@ This subsection records an approved target architecture decision before implemen
 - **Authority boundary:** Configuration activation creates no manual prompt or persistence record because it grants no tool, process, external, or mutation authority. External roots, weak-evidence manual confirmation, Build, Problems, Logs, language support, and actions remain separate concerns.
 - **Refresh and revocation:** Configuration refresh occurs only through explicit **Workspace Refresh**, with no watch or poll. Refresh synchronously revokes prior configured state, increments the feature activation generation, jointly correlates configuration and scan results, and rejects stale or late results. Removing the file revokes the configuration basis; Option A recognition may independently remain.
 - **Platform boundary:** Browser behavior is unchanged.
-- **Requirements lifecycle:** This exact activation-only decision replaces the broad proposed FR-X2CFG-001 v1 schema in `docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md`, which must be reconciled later. It does not accept that proposal's machine/tool configuration fields or expand this decision beyond recognition-only activation.
+- **Requirements lifecycle:** The specialist FR-X2CFG-001 catalogue entry in `docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md` has been reconciled to this exact activation-only v1 schema with only `version`, `target`, and `moduleRoots`; `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` remains `@not-implemented`, and that reconciliation is not implementation or validation evidence. It does not accept that proposal's machine/tool configuration fields or expand this decision beyond recognition-only activation.
 
 #### Implementation and evidence
 
