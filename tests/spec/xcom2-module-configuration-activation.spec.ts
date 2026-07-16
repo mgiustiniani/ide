@@ -241,6 +241,20 @@ describe("@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001 configured project acti
     expect(result.diagnostic).toEqual({ code: "configuration-invalid-module-roots" });
   });
 
+  it("rejects a forged ready root containing a lone high UTF-16 surrogate atomically", () => {
+    const forged = {
+      ...readCorrelation,
+      kind: "ready",
+      configuration: configuration(["\uD800"]),
+    } satisfies Xcom2ModuleConfigurationReadResult;
+
+    const result = accepted(forged);
+
+    expect(result.state).toBe("inactive");
+    expect(result.decisions).toEqual([]);
+    expect(result.diagnostic).toEqual({ code: "configuration-invalid-module-roots" });
+  });
+
   it.each([
     ["no roots", []],
     ["more than 64 roots", Array.from({ length: 65 }, (_, index) => `mods/root-${index}`)],
