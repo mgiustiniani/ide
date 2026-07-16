@@ -13,6 +13,7 @@ import { TauriClipboardAdapter } from "./clipboard-tauri";
 import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
 import { TauriLanguageSessionAdapter } from "./language-session-tauri";
 import { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
+import { TauriXcom2ModuleScannerAdapter } from "./xcom2-module-scanner-tauri";
 import { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
 import { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
 
@@ -32,6 +33,7 @@ export {
   TauriLanguageSessionAdapter as TauriDocumentSyncAdapter,
 } from "./language-session-tauri";
 export { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
+export { TauriXcom2ModuleScannerAdapter } from "./xcom2-module-scanner-tauri";
 export { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
 export type { Xcom2SetupMonitorPollOptions } from "./xcom2-setup-monitor-tauri";
 export { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
@@ -53,6 +55,7 @@ export function createTauriAdapters(): {
   languageSessionAdapter: TauriLanguageSessionAdapter;
   documentSyncAdapter: TauriLanguageSessionAdapter;
   javaIntelligenceAdapter: TauriJavaIntelligenceAdapter;
+  xcom2ModuleScannerAdapter: TauriXcom2ModuleScannerAdapter;
   xcom2SetupMonitorAdapter: TauriXcom2SetupMonitorAdapter;
   xcom2SetupAdapter: TauriXcom2SetupAdapter;
 } {
@@ -68,6 +71,7 @@ export function createTauriAdapters(): {
     languageSessionAdapter,
     documentSyncAdapter: languageSessionAdapter,
     javaIntelligenceAdapter: new TauriJavaIntelligenceAdapter(),
+    xcom2ModuleScannerAdapter: new TauriXcom2ModuleScannerAdapter(),
     xcom2SetupMonitorAdapter: new TauriXcom2SetupMonitorAdapter(),
     xcom2SetupAdapter: new TauriXcom2SetupAdapter(),
   };
