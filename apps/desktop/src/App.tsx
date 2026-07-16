@@ -277,7 +277,7 @@ export function App(): JSX.Element {
     transactions: xcom2SetupAdapter,
     events: xcom2SetupEventSources,
     currentWorkspaceId: workspace.currentWorkspaceId,
-    isHistoryVisible: settings.isOpen,
+    isSettingsOpen: settings.isOpen,
     deferWorkspaceActivation: true,
   });
   const {
@@ -380,7 +380,6 @@ export function App(): JSX.Element {
     loadWorkspaceMetadata,
     refreshJavaLanguage: javaLanguage.refresh,
     refreshRefactorKitStatus: refactorKitStatus.refresh,
-    refreshXcom2Setup: handleRefreshXcom2Setup,
   });
 
   useLayoutEffect(() => {

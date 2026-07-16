@@ -1532,6 +1532,9 @@ vi.mock("@ide/ui", () => ({
             </ol>
           </div>
         ) : null}
+        <button type="button" onClick={() => onClose?.()}>
+          Close settings
+        </button>
       </div>
     ) : null;
   },
@@ -1900,7 +1903,7 @@ describe("App", () => {
       expect(testHarness.aiAgentAdapter.getSessionMessages).toHaveBeenCalledOnce();
       expect(testHarness.refactorKitAdapter.getStatus).toHaveBeenCalledOnce();
       expect(testHarness.refactorKitAdapter.getCapabilities).toHaveBeenCalledOnce();
-      expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).toHaveBeenCalledOnce();
+      expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).not.toHaveBeenCalled();
     });
 
     expect(lifecycle.slice(0, 3)).toEqual([
@@ -1917,7 +1920,6 @@ describe("App", () => {
       "ai.session",
       "refactorkit.status",
       "refactorkit.capabilities",
-      "xcom.load",
     ]) {
       expect(lifecycle.indexOf(activation), activation).toBeGreaterThan(registryIndex);
     }
@@ -2440,9 +2442,10 @@ describe("App", () => {
       "true",
     );
     expect(screen.queryByRole("tab", { name: "XCOM 2" })).toBeNull();
-    await waitFor(() =>
-      expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).toHaveBeenCalled(),
-    );
+    expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).not.toHaveBeenCalled();
+    expect(testHarness.xcom2SetupAdapter.listTransactions).not.toHaveBeenCalled();
+    expect(testHarness.xcom2SetupMonitorAdapter.subscribe).not.toHaveBeenCalled();
+    expect(testHarness.xcom2SetupAdapter.subscribe).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("tab", { name: "XCOM 2" }));
@@ -2455,8 +2458,68 @@ describe("App", () => {
     });
     expect(screen.getByText("Built-in · Experimental")).toBeDefined();
     expect(screen.getByText(/Currently non-removable/)).toBeDefined();
-    expect(testHarness.xcom2SetupMonitorAdapter.refresh).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupAdapter.listTransactions).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupMonitorAdapter.refresh).not.toHaveBeenCalled();
     expect(testHarness.xcom2SetupMonitorAdapter.subscribe).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupAdapter.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels both XCOM Settings lifecycles on close and creates one fresh lifecycle on reopen", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() =>
+      expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() =>
+      expect(testHarness.xcom2SetupAdapter.listTransactions).toHaveBeenCalledTimes(1),
+    );
+    expect(testHarness.xcom2SetupMonitorAdapter.subscribe).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupAdapter.subscribe).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupListeners.size).toBe(1);
+    expect(testHarness.xcom2TransactionListeners.size).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    expect(testHarness.xcom2SetupListeners.size).toBe(0);
+    expect(testHarness.xcom2TransactionListeners.size).toBe(0);
+    const closedHistoryReads = testHarness.xcom2SetupAdapter.listTransactions.mock.calls.length;
+    act(() => {
+      for (let interval = 1; interval <= 5; interval += 1) {
+        testHarness.emitXcom2SetupEvent({
+          type: "snapshot",
+          cause: "poll",
+          sequence: interval,
+          snapshot: { ...testHarness.xcom2SetupSnapshot, generation: interval + 1 },
+        });
+        testHarness.emitXcom2TransactionEvent({
+          transactionId: "tx-closed",
+          sequence: interval,
+          occurredAt: "2026-07-16T00:00:00.000Z",
+          kind: "operation-progress",
+          state: "applying",
+          terminal: false,
+        });
+      }
+    });
+    expect(testHarness.xcom2SetupAdapter.listTransactions).toHaveBeenCalledTimes(
+      closedHistoryReads,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() =>
+      expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(testHarness.xcom2SetupAdapter.listTransactions).toHaveBeenCalledTimes(2),
+    );
+    expect(testHarness.xcom2SetupMonitorAdapter.subscribe).toHaveBeenCalledTimes(2);
+    expect(testHarness.xcom2SetupAdapter.subscribe).toHaveBeenCalledTimes(2);
+    expect(testHarness.xcom2SetupListeners.size).toBe(1);
+    expect(testHarness.xcom2TransactionListeners.size).toBe(1);
+    expect(testHarness.xcom2SetupMonitorAdapter.refresh).not.toHaveBeenCalled();
   });
 
   it("creates a dry-run waiting plan from Settings", async () => {
@@ -2471,7 +2534,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByTestId("Xcom2SetupPanel").dataset.planState).toBe("waiting-for-download");
     });
-    expect(testHarness.xcom2SetupMonitorAdapter.refresh).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupMonitorAdapter.refresh).not.toHaveBeenCalled();
   });
 
   it("applies live XCOM 2 events and refreshes through Settings", async () => {
@@ -2503,7 +2566,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh now" }));
     await waitFor(() =>
-      expect(testHarness.xcom2SetupMonitorAdapter.refresh).toHaveBeenCalledTimes(2),
+      expect(testHarness.xcom2SetupMonitorAdapter.refresh).toHaveBeenCalledTimes(1),
     );
     expect(testHarness.aiAgentAdapter.sendPrompt).not.toHaveBeenCalled();
   });
@@ -2544,7 +2607,7 @@ describe("App", () => {
     });
     expect(screen.getByTestId("Xcom2SetupPanel").dataset.workspace).toBe("workspace-two");
     expect(screen.queryByRole("tab", { name: "XCOM 2", hidden: true })).toBeDefined();
-    expect(testHarness.xcom2SetupMonitorAdapter.subscribe).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2SetupMonitorAdapter.subscribe).toHaveBeenCalledTimes(2);
   });
 
   it("shows missing Steam data and monitor errors honestly in Settings", async () => {

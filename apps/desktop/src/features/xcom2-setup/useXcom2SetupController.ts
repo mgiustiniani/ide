@@ -12,7 +12,7 @@ import type {
 } from "@ide/contracts";
 import { canApplyXcom2SetupTransaction, createXcom2SetupPlan } from "@ide/web-core";
 import type { Xcom2SetupMonitorPort, Xcom2SetupPort } from "@ide/web-core/ports";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const INITIAL_WORKSPACE_GENERATION = 1;
 const TRANSACTION_HISTORY_LIMIT = 32;
@@ -31,6 +31,15 @@ type Xcom2SetupTransactionCommands = Pick<
 >;
 
 type TransactionAction = () => Promise<Xcom2SetupResult<Xcom2SetupTransactionDetail>>;
+
+interface Xcom2SettingsLifecycle {
+  readonly identity: symbol;
+  readonly workspaceGeneration: number;
+  readonly workspaceId: string;
+  unsubscribeMonitor: Xcom2SetupMonitorUnsubscribe;
+  unsubscribeTransactions: Xcom2SetupUnsubscribe;
+  initialLoad: Promise<void>;
+}
 
 export interface Xcom2SetupEventSources {
   subscribeMonitor(listener: Xcom2SetupMonitorListener): Xcom2SetupMonitorUnsubscribe;
@@ -57,7 +66,7 @@ export interface UseXcom2SetupControllerDependencies {
   transactions: Xcom2SetupTransactionCommands;
   events: Xcom2SetupEventSources;
   currentWorkspaceId: string | null;
-  isHistoryVisible: boolean;
+  isSettingsOpen: boolean;
   /** Desktop composition delegates the first workspace-scoped load to its workspace owner. */
   deferWorkspaceActivation?: boolean;
 }
@@ -106,25 +115,23 @@ export function useXcom2SetupController(
   const snapshotRef = useRef<Xcom2SetupMonitorSnapshot | null>(null);
   const transactionRef = useRef<Xcom2SetupTransactionDetail | null>(null);
   const switchingWorkspaceRef = useRef(dependencies.deferWorkspaceActivation ?? false);
+  const settingsOpenRef = useRef(dependencies.isSettingsOpen);
+  const lifecycleRef = useRef<Xcom2SettingsLifecycle | null>(null);
 
   currentWorkspaceIdRef.current = dependencies.currentWorkspaceId;
+  settingsOpenRef.current = dependencies.isSettingsOpen;
 
   const [snapshot, setSnapshot] = useState<Xcom2SetupMonitorSnapshot | null>(null);
   const [plan, setPlan] = useState<Xcom2SetupPlan | null>(null);
-  const [isLoading, setIsLoading] = useState(dependencies.deferWorkspaceActivation ?? false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [transaction, setTransaction] = useState<Xcom2SetupTransactionDetail | null>(null);
   const [transactions, setTransactions] = useState<readonly Xcom2SetupTransactionSummary[]>([]);
-  const [isTransactionLoading, setIsTransactionLoading] = useState(
-    dependencies.deferWorkspaceActivation ?? false,
-  );
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const [transactionError, setTransactionError] = useState<string | null>(null);
   const [transactionProgressEvent, setTransactionProgressEvent] =
     useState<Xcom2SetupTransactionEvent | null>(null);
-  const [workspaceSubscriptionsEnabled, setWorkspaceSubscriptionsEnabled] = useState(
-    !(dependencies.deferWorkspaceActivation ?? false),
-  );
 
   const applyTransaction = useCallback(
     (
@@ -322,9 +329,19 @@ export function useXcom2SetupController(
 
   const runTransactionAction = useCallback(
     async (action: TransactionAction, transactionId?: string): Promise<void> => {
+      const lifecycle = lifecycleRef.current;
       const workspaceGeneration = workspaceGenerationRef.current;
       const expectedWorkspaceId = workspaceIdRef.current ?? currentWorkspaceIdRef.current ?? null;
-      if (!expectedWorkspaceId || switchingWorkspaceRef.current) return;
+      if (
+        !lifecycle ||
+        !settingsOpenRef.current ||
+        !expectedWorkspaceId ||
+        switchingWorkspaceRef.current ||
+        lifecycle.workspaceGeneration !== workspaceGeneration ||
+        lifecycle.workspaceId !== expectedWorkspaceId
+      ) {
+        return;
+      }
 
       const requestId = transactionRequestRef.current + 1;
       transactionRequestRef.current = requestId;
@@ -481,16 +498,135 @@ export function useXcom2SetupController(
     [dependencies.transactions, runTransactionAction],
   );
 
-  const refreshHistory = useCallback((): Promise<void> => loadTransactions(), [loadTransactions]);
+  const refreshHistory = useCallback((): Promise<void> => {
+    const lifecycle = lifecycleRef.current;
+    if (!lifecycle || !settingsOpenRef.current || switchingWorkspaceRef.current) {
+      return Promise.resolve();
+    }
+    return loadTransactions(lifecycle.workspaceGeneration, lifecycle.workspaceId);
+  }, [loadTransactions]);
 
   const refresh = useCallback(async (): Promise<void> => {
+    const lifecycle = lifecycleRef.current;
+    if (!lifecycle || !settingsOpenRef.current || switchingWorkspaceRef.current) return;
+
     // Monitor evidence and native journals are independent sources of truth.
-    await Promise.all([loadSnapshot("refresh"), loadTransactions()]);
+    await Promise.all([
+      loadSnapshot("refresh", lifecycle.workspaceGeneration, lifecycle.workspaceId),
+      loadTransactions(lifecycle.workspaceGeneration, lifecycle.workspaceId),
+    ]);
   }, [loadSnapshot, loadTransactions]);
+
+  const isCurrentLifecycle = useCallback((lifecycle: Xcom2SettingsLifecycle): boolean => {
+    return (
+      lifecycleRef.current?.identity === lifecycle.identity &&
+      settingsOpenRef.current &&
+      !switchingWorkspaceRef.current &&
+      workspaceGenerationRef.current === lifecycle.workspaceGeneration &&
+      workspaceIdRef.current === lifecycle.workspaceId
+    );
+  }, []);
+
+  const stopLifecycle = useCallback((): void => {
+    const lifecycle = lifecycleRef.current;
+    if (!lifecycle) return;
+
+    // Revoke authority before either adapter can synchronously deliver another event.
+    lifecycleRef.current = null;
+    setupRequestRef.current += 1;
+    transactionRequestRef.current += 1;
+    lifecycle.unsubscribeMonitor();
+    lifecycle.unsubscribeTransactions();
+    setIsLoading(false);
+    setIsTransactionLoading(false);
+  }, []);
+
+  const startLifecycle = useCallback(
+    (workspaceGeneration: number, workspaceId: string): Promise<void> => {
+      const active = lifecycleRef.current;
+      if (
+        active &&
+        isCurrentLifecycle(active) &&
+        active.workspaceGeneration === workspaceGeneration &&
+        active.workspaceId === workspaceId
+      ) {
+        return active.initialLoad;
+      }
+      if (
+        !settingsOpenRef.current ||
+        switchingWorkspaceRef.current ||
+        workspaceGenerationRef.current !== workspaceGeneration ||
+        workspaceIdRef.current !== workspaceId
+      ) {
+        return Promise.resolve();
+      }
+
+      stopLifecycle();
+      const lifecycle: Xcom2SettingsLifecycle = {
+        identity: Symbol("xcom2-settings-lifecycle"),
+        workspaceGeneration,
+        workspaceId,
+        unsubscribeMonitor: () => undefined,
+        unsubscribeTransactions: () => undefined,
+        initialLoad: Promise.resolve(),
+      };
+      // Publish the identity before subscribing or loading. Collaborator and
+      // layout-effect activation can now converge on this exact lifecycle.
+      lifecycleRef.current = lifecycle;
+      eventSequenceRef.current = -1;
+      transactionEventSequencesRef.current.clear();
+
+      lifecycle.unsubscribeMonitor = dependencies.events.subscribeMonitor((event) => {
+        if (!isCurrentLifecycle(lifecycle) || event.sequence <= eventSequenceRef.current) return;
+        if (event.snapshot.workspaceId !== lifecycle.workspaceId) return;
+
+        if (applySnapshot(event.snapshot, lifecycle.workspaceGeneration, lifecycle.workspaceId)) {
+          eventSequenceRef.current = event.sequence;
+          // A newer live event wins over an in-flight snapshot or refresh request.
+          setupRequestRef.current += 1;
+          setIsLoading(false);
+        }
+      });
+      lifecycle.unsubscribeTransactions = dependencies.events.subscribeTransactions((event) => {
+        if (!isCurrentLifecycle(lifecycle)) return;
+        const current = transactionRef.current;
+        const previousSequence =
+          transactionEventSequencesRef.current.get(event.transactionId) ?? -1;
+        if (
+          !current ||
+          event.transactionId !== current.transactionId ||
+          current.workspaceId !== lifecycle.workspaceId ||
+          event.sequence <= previousSequence
+        ) {
+          return;
+        }
+
+        transactionEventSequencesRef.current.set(event.transactionId, event.sequence);
+        setTransactionProgressEvent(event);
+        // Events are notifications only; native detail and history are re-read.
+        void loadTransactions(lifecycle.workspaceGeneration, lifecycle.workspaceId);
+      });
+
+      lifecycle.initialLoad = Promise.all([
+        loadSnapshot("snapshot", workspaceGeneration, workspaceId),
+        loadTransactions(workspaceGeneration, workspaceId),
+      ]).then(() => undefined);
+      return lifecycle.initialLoad;
+    },
+    [
+      applySnapshot,
+      dependencies.events,
+      isCurrentLifecycle,
+      loadSnapshot,
+      loadTransactions,
+      stopLifecycle,
+    ],
+  );
 
   const beginWorkspaceSwitch = useCallback(
     (workspaceGeneration: number): Xcom2SetupWorkspaceSwitchToken => {
       const previousWorkspaceId = workspaceIdRef.current;
+      stopLifecycle();
       workspaceGenerationRef.current = workspaceGeneration;
       setupRequestRef.current += 1;
       transactionRequestRef.current += 1;
@@ -504,43 +640,37 @@ export function useXcom2SetupController(
       setPlan(null);
       setError(null);
       setIsStale(false);
-      setIsLoading(true);
+      setIsLoading(settingsOpenRef.current);
       setTransaction(null);
       setTransactions([]);
       setTransactionError(null);
       setTransactionProgressEvent(null);
-      setIsTransactionLoading(true);
+      setIsTransactionLoading(settingsOpenRef.current);
       return { generation: workspaceGeneration, previousWorkspaceId };
     },
-    [],
+    [stopLifecycle],
   );
 
   const activateWorkspace = useCallback((workspace: WorkspaceInfo): void => {
     workspaceIdRef.current = workspace.id;
     switchingWorkspaceRef.current = false;
-    setWorkspaceSubscriptionsEnabled(true);
   }, []);
 
   const loadWorkspace = useCallback(
-    async (token: Xcom2SetupWorkspaceSwitchToken, workspaceId: string): Promise<void> => {
-      await Promise.all([
-        loadSnapshot("snapshot", token.generation, workspaceId),
-        loadTransactions(token.generation, workspaceId),
-      ]);
-    },
-    [loadSnapshot, loadTransactions],
+    (token: Xcom2SetupWorkspaceSwitchToken, workspaceId: string): Promise<void> =>
+      startLifecycle(token.generation, workspaceId),
+    [startLifecycle],
   );
 
   const restoreWorkspace = useCallback(
     (token: Xcom2SetupWorkspaceSwitchToken): void => {
       workspaceIdRef.current = token.previousWorkspaceId;
       switchingWorkspaceRef.current = false;
-      void loadSnapshot("snapshot", token.generation, token.previousWorkspaceId);
       if (token.previousWorkspaceId) {
-        void loadTransactions(token.generation, token.previousWorkspaceId);
+        void startLifecycle(token.generation, token.previousWorkspaceId);
       }
     },
-    [loadSnapshot, loadTransactions],
+    [startLifecycle],
   );
 
   const settleFailedWorkspaceActivation = useCallback(
@@ -553,85 +683,20 @@ export function useXcom2SetupController(
     [],
   );
 
-  useEffect(() => {
-    if (!workspaceSubscriptionsEnabled) return;
-
-    const unsubscribe = dependencies.events.subscribeMonitor((event) => {
-      const workspaceGeneration = workspaceGenerationRef.current;
-      const expectedWorkspaceId = workspaceIdRef.current;
-      if (
-        switchingWorkspaceRef.current ||
-        event.sequence <= eventSequenceRef.current ||
-        (expectedWorkspaceId !== null && event.snapshot.workspaceId !== expectedWorkspaceId)
-      ) {
-        return;
-      }
-
-      if (applySnapshot(event.snapshot, workspaceGeneration, expectedWorkspaceId)) {
-        eventSequenceRef.current = event.sequence;
-        // A newer live event wins over an in-flight snapshot or refresh request.
-        setupRequestRef.current += 1;
-        setIsLoading(false);
-      }
-    });
-    if (!dependencies.deferWorkspaceActivation) void loadSnapshot();
-
-    return () => {
-      setupRequestRef.current += 1;
-      unsubscribe();
-    };
-  }, [
-    applySnapshot,
-    dependencies.deferWorkspaceActivation,
-    dependencies.events,
-    loadSnapshot,
-    workspaceSubscriptionsEnabled,
-  ]);
-
-  useEffect(() => {
-    if (!workspaceSubscriptionsEnabled) return;
-
-    const unsubscribe = dependencies.events.subscribeTransactions((event) => {
-      const current = transactionRef.current;
-      const workspaceGeneration = workspaceGenerationRef.current;
-      const expectedWorkspaceId = workspaceIdRef.current;
-      const previousSequence = transactionEventSequencesRef.current.get(event.transactionId) ?? -1;
-      if (
-        switchingWorkspaceRef.current ||
-        !current ||
-        !expectedWorkspaceId ||
-        event.transactionId !== current.transactionId ||
-        current.workspaceId !== expectedWorkspaceId ||
-        event.sequence <= previousSequence
-      ) {
-        return;
-      }
-
-      transactionEventSequencesRef.current.set(event.transactionId, event.sequence);
-      setTransactionProgressEvent(event);
-      // Events are notifications only; native detail and history are re-read.
-      void loadTransactions(workspaceGeneration, expectedWorkspaceId);
-    });
-
-    return () => {
-      transactionRequestRef.current += 1;
-      unsubscribe();
-    };
-  }, [dependencies.events, loadTransactions, workspaceSubscriptionsEnabled]);
-
-  useEffect(() => {
-    if (
-      !dependencies.isHistoryVisible ||
-      !dependencies.currentWorkspaceId ||
-      switchingWorkspaceRef.current
-    ) {
+  useLayoutEffect(() => {
+    if (!dependencies.isSettingsOpen) {
+      stopLifecycle();
       return;
     }
-    void loadTransactions(
-      workspaceGenerationRef.current,
-      workspaceIdRef.current ?? dependencies.currentWorkspaceId,
-    );
-  }, [dependencies.currentWorkspaceId, dependencies.isHistoryVisible, loadTransactions]);
+    if (switchingWorkspaceRef.current) return;
+
+    const workspaceId = workspaceIdRef.current ?? dependencies.currentWorkspaceId;
+    if (!workspaceId) return;
+    workspaceIdRef.current = workspaceId;
+    void startLifecycle(workspaceGenerationRef.current, workspaceId);
+  }, [dependencies.currentWorkspaceId, dependencies.isSettingsOpen, startLifecycle, stopLifecycle]);
+
+  useLayoutEffect(() => () => stopLifecycle(), [stopLifecycle]);
 
   const workspaceCollaborator = useMemo<Xcom2SetupWorkspaceCollaborator>(
     () => ({

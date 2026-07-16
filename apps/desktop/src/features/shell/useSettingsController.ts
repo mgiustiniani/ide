@@ -15,7 +15,6 @@ export interface UseSettingsOpenCoordinatorDependencies {
   loadWorkspaceMetadata: () => Promise<unknown>;
   refreshJavaLanguage: () => Promise<unknown>;
   refreshRefactorKitStatus: () => Promise<unknown>;
-  refreshXcom2Setup: () => Promise<unknown>;
 }
 
 /** Opens Settings and refreshes each independently owned settings section. */
@@ -26,7 +25,6 @@ export function useSettingsOpenCoordinator({
   loadWorkspaceMetadata,
   refreshJavaLanguage,
   refreshRefactorKitStatus,
-  refreshXcom2Setup,
 }: UseSettingsOpenCoordinatorDependencies) {
   return useCallback((): void => {
     open();
@@ -35,7 +33,6 @@ export function useSettingsOpenCoordinator({
     void loadWorkspaceMetadata();
     void refreshJavaLanguage();
     void refreshRefactorKitStatus();
-    void refreshXcom2Setup();
   }, [
     loadAiAgentCommands,
     loadAiAgentConfiguration,
@@ -43,6 +40,5 @@ export function useSettingsOpenCoordinator({
     open,
     refreshJavaLanguage,
     refreshRefactorKitStatus,
-    refreshXcom2Setup,
   ]);
 }

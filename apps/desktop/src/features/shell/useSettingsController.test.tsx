@@ -17,14 +17,13 @@ describe("useSettingsController", () => {
 });
 
 describe("useSettingsOpenCoordinator", () => {
-  it("opens settings and requests a refresh from every independently owned section", () => {
+  it("opens settings without duplicating the XCOM lifecycle owned by its controller", () => {
     const open = vi.fn();
     const loadAiAgentConfiguration = vi.fn(async () => undefined);
     const loadAiAgentCommands = vi.fn(async () => undefined);
     const loadWorkspaceMetadata = vi.fn(async () => undefined);
     const refreshJavaLanguage = vi.fn(async () => undefined);
     const refreshRefactorKitStatus = vi.fn(async () => undefined);
-    const refreshXcom2Setup = vi.fn(async () => undefined);
     const { result } = renderHook(() =>
       useSettingsOpenCoordinator({
         open,
@@ -33,7 +32,6 @@ describe("useSettingsOpenCoordinator", () => {
         loadWorkspaceMetadata,
         refreshJavaLanguage,
         refreshRefactorKitStatus,
-        refreshXcom2Setup,
       }),
     );
 
@@ -45,6 +43,5 @@ describe("useSettingsOpenCoordinator", () => {
     expect(loadWorkspaceMetadata).toHaveBeenCalledOnce();
     expect(refreshJavaLanguage).toHaveBeenCalledOnce();
     expect(refreshRefactorKitStatus).toHaveBeenCalledOnce();
-    expect(refreshXcom2Setup).toHaveBeenCalledOnce();
   });
 });

@@ -241,7 +241,7 @@ function createHarness() {
       recover,
     },
     events: { subscribeMonitor, subscribeTransactions },
-  } satisfies Omit<UseXcom2SetupControllerDependencies, "currentWorkspaceId" | "isHistoryVisible">;
+  } satisfies Omit<UseXcom2SetupControllerDependencies, "currentWorkspaceId" | "isSettingsOpen">;
 
   return {
     dependencies,
@@ -281,16 +281,16 @@ function createHarness() {
 function renderController(
   harness: ReturnType<typeof createHarness>,
   currentWorkspaceId: string | null = "workspace-one",
-  isHistoryVisible = false,
+  isSettingsOpen = true,
 ) {
   return renderHook(
-    (props: { currentWorkspaceId: string | null; isHistoryVisible: boolean }) =>
+    (props: { currentWorkspaceId: string | null; isSettingsOpen: boolean }) =>
       useXcom2SetupController({
         ...harness.dependencies,
         currentWorkspaceId: props.currentWorkspaceId,
-        isHistoryVisible: props.isHistoryVisible,
+        isSettingsOpen: props.isSettingsOpen,
       }),
-    { initialProps: { currentWorkspaceId, isHistoryVisible } },
+    { initialProps: { currentWorkspaceId, isSettingsOpen } },
   );
 }
 
@@ -309,6 +309,136 @@ afterEach(() => {
 });
 
 describe("useXcom2SetupController", () => {
+  it("owns cold, switch, open, manual, close, five-poll, and reopen I/O in one Settings lifecycle", async () => {
+    const harness = createHarness();
+    const controller = renderController(harness, "workspace-one", false);
+
+    let coldToken!: ReturnType<
+      typeof controller.result.current.workspaceCollaborator.beginWorkspaceSwitch
+    >;
+    act(() => {
+      coldToken = controller.result.current.workspaceCollaborator.beginWorkspaceSwitch(1);
+      controller.result.current.workspaceCollaborator.activateWorkspace(workspace("workspace-one"));
+    });
+    await act(() =>
+      controller.result.current.workspaceCollaborator.loadWorkspace(coldToken, "workspace-one"),
+    );
+
+    let switchedToken!: ReturnType<
+      typeof controller.result.current.workspaceCollaborator.beginWorkspaceSwitch
+    >;
+    act(() => {
+      switchedToken = controller.result.current.workspaceCollaborator.beginWorkspaceSwitch(2);
+      controller.result.current.workspaceCollaborator.activateWorkspace(workspace("workspace-two"));
+    });
+    await act(() =>
+      controller.result.current.workspaceCollaborator.loadWorkspace(switchedToken, "workspace-two"),
+    );
+    controller.rerender({ currentWorkspaceId: "workspace-two", isSettingsOpen: false });
+
+    expect(harness.mocks.getSnapshot).not.toHaveBeenCalled();
+    expect(harness.mocks.refresh).not.toHaveBeenCalled();
+    expect(harness.mocks.listTransactions).not.toHaveBeenCalled();
+    expect(harness.mocks.subscribeMonitor).not.toHaveBeenCalled();
+    expect(harness.mocks.subscribeTransactions).not.toHaveBeenCalled();
+
+    harness.setMonitorSnapshot(snapshot("workspace-two", 1));
+    controller.rerender({ currentWorkspaceId: "workspace-two", isSettingsOpen: true });
+    await waitFor(() => expect(controller.result.current.isLoading).toBe(false));
+    await waitFor(() => expect(controller.result.current.isTransactionLoading).toBe(false));
+
+    expect(harness.mocks.subscribeMonitor).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.subscribeTransactions).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.refresh).not.toHaveBeenCalled();
+    expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(1);
+    expect(harness.listenerCounts()).toEqual({ monitor: 1, transactions: 1 });
+
+    await act(() => controller.result.current.refresh());
+    expect(harness.mocks.refresh).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(2);
+    expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.subscribeMonitor).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.subscribeTransactions).toHaveBeenCalledTimes(1);
+
+    controller.rerender({ currentWorkspaceId: "workspace-two", isSettingsOpen: false });
+    expect(harness.listenerCounts()).toEqual({ monitor: 0, transactions: 0 });
+    const closedReads = harness.mocks.listTransactions.mock.calls.length;
+    await act(() =>
+      Promise.all([
+        controller.result.current.refresh(),
+        controller.result.current.refreshHistory(),
+        controller.result.current.prepare(),
+        controller.result.current.cancel("tx-closed"),
+      ]),
+    );
+    expect(harness.mocks.prepare).not.toHaveBeenCalled();
+    expect(harness.mocks.cancel).not.toHaveBeenCalled();
+    act(() => {
+      for (let interval = 1; interval <= 5; interval += 1) {
+        harness.emitMonitor(snapshot("workspace-two", interval + 1), interval);
+        harness.emitTransaction(progressEvent("tx-closed", interval));
+      }
+    });
+    expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(closedReads);
+    expect(harness.mocks.refresh).toHaveBeenCalledTimes(1);
+
+    controller.rerender({ currentWorkspaceId: "workspace-two", isSettingsOpen: true });
+    await waitFor(() => expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(3));
+    expect(harness.mocks.subscribeMonitor).toHaveBeenCalledTimes(2);
+    expect(harness.mocks.subscribeTransactions).toHaveBeenCalledTimes(2);
+    expect(harness.listenerCounts()).toEqual({ monitor: 1, transactions: 1 });
+
+    let failedSwitchToken!: ReturnType<
+      typeof controller.result.current.workspaceCollaborator.beginWorkspaceSwitch
+    >;
+    act(() => {
+      failedSwitchToken = controller.result.current.workspaceCollaborator.beginWorkspaceSwitch(3);
+      controller.result.current.workspaceCollaborator.restoreWorkspace(failedSwitchToken);
+    });
+    await waitFor(() => expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(4));
+    expect(harness.mocks.subscribeMonitor).toHaveBeenCalledTimes(3);
+    expect(harness.mocks.subscribeTransactions).toHaveBeenCalledTimes(3);
+    expect(harness.listenerCounts()).toEqual({ monitor: 1, transactions: 1 });
+  });
+
+  it("publishes lifecycle identity before collaborator activation and rejects closed late completions", async () => {
+    const harness = createHarness();
+    const lateSnapshot = deferred<Xcom2SetupMonitorSnapshot>();
+    const lateHistory = deferred<Xcom2SetupResult<Xcom2SetupTransactionList>>();
+    harness.mocks.getSnapshot.mockImplementationOnce(() => lateSnapshot.promise);
+    harness.mocks.listTransactions.mockImplementationOnce(() => lateHistory.promise);
+    const controller = renderController(harness, "workspace-one", false);
+
+    controller.rerender({ currentWorkspaceId: "workspace-one", isSettingsOpen: true });
+    await waitFor(() => expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(1));
+    const token = { generation: 1, previousWorkspaceId: "workspace-one" };
+    let collaboratorLoad!: Promise<void>;
+    act(() => {
+      collaboratorLoad = controller.result.current.workspaceCollaborator.loadWorkspace(
+        token,
+        "workspace-one",
+      );
+    });
+    expect(harness.mocks.subscribeMonitor).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.subscribeTransactions).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(harness.mocks.listTransactions).toHaveBeenCalledTimes(1);
+
+    controller.rerender({ currentWorkspaceId: "workspace-one", isSettingsOpen: false });
+    expect(harness.listenerCounts()).toEqual({ monitor: 0, transactions: 0 });
+    lateSnapshot.resolve(snapshot("workspace-one", 99));
+    lateHistory.resolve(ok({ transactions: [transaction("tx-late")] }));
+    await act(async () => collaboratorLoad);
+
+    expect(controller.result.current.snapshot).toBeNull();
+    expect(controller.result.current.transaction).toBeNull();
+    expect(controller.result.current.transactions).toEqual([]);
+    expect(harness.mocks.getTransaction).not.toHaveBeenCalled();
+  });
+
   it("refreshes monitor evidence, creates only a dry-run plan, and marks retained evidence stale on a safe refresh failure", async () => {
     const harness = createHarness();
     const controller = renderController(harness);
@@ -815,8 +945,8 @@ describe("useXcom2SetupController", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const controller = renderController(harness);
     await waitForInitialSnapshot(controller);
+    await waitFor(() => expect(controller.result.current.isTransactionLoading).toBe(false));
 
-    await loadHistory(controller);
     expect(controller.result.current.transactions).toEqual([]);
     expect(controller.result.current.transactionError).toBe(unavailableMessage);
 
