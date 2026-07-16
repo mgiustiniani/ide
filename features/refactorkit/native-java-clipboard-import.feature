@@ -4,9 +4,10 @@ Business Need: Trustworthy deterministic native Java clipboard import
 
   This requirement is bounded to a deterministic sandbox-owned RefactorKit fixture and a fresh Linux X11 release/no-bundle Tauri executable.
   It makes no claim about a real, global, immutable, or packaged RefactorKit provider; provider metadata or provider no-write behavior; an application package or installer; Wayland or another operating system; user-facing rollback; or the cancellation and stale-generation matrix of REQ-REFACTORKIT-JAVA-IMPORT-001.
-  Complete evidence could justify @implemented-and-validated only for this deterministic native integration boundary.
+  It also makes no claim about raw IPC capture, syscall-level confinement, or global process or filesystem confinement.
+  The @implemented-and-validated status is limited to this deterministic sandbox-daemon, Linux X11, release/no-bundle native integration boundary, independently observed as 36/36 PASS at revision 5146221.
 
-  @REQ-REFACTORKIT-JAVA-IMPORT-002 @desktop @native-gui @functional-requirement @security @resilience @not-implemented
+  @REQ-REFACTORKIT-JAVA-IMPORT-002 @desktop @native-gui @functional-requirement @security @resilience @implemented-and-validated
   Scenario: Cancel and then apply one clipboard class through the isolated native desktop integration
     Given one scenario sandbox contains the authorized Maven-like workspace and isolated HOME and XDG state
     And the workspace contains the existing package directory "src/main/java/example/imports"
