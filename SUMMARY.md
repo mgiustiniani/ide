@@ -10,6 +10,8 @@ A **Tauri 2.x** desktop application and **standalone webapp** featuring a three-
 
 Built with a **ports-and-adapters (hexagonal) architecture** to share UI and logic between desktop and web runtimes. The webapp builds and runs independently with no Tauri dependency.
 
+**Layout status:** `REQ-LAYOUT-WEB-001` and `REQ-LAYOUT-DESKTOP-001` are both `@implemented-and-validated`. Navigation remains full-height beside an editor-side bottom host. When the whole sidebar is collapsed, its expand control remains in the activity rail; the bottom-panel toggle remains in the status bar in either state. Desktop shell wiring changes visibility without clearing retained dimensions.
+
 **Workspace navigation:** the desktop left sidebar places File Explorer above Workspace Explorer in an accordion. Each section expands and collapses independently. Workspace Explorer lists all registered workspaces and handles switching, refresh, loading, and errors; the duplicate header workspace select has been removed.
 
 **Java project presentation:** package-only namespace chains are compacted only below recognized Java source roots. Compact rows preserve the deepest real node and path, production `src` and test folders are distinguished, and `pom.xml` has a dedicated Maven icon. Ordinary folders and unrecognized hierarchies are not compacted.
@@ -72,7 +74,7 @@ Cold start authorizes the current root before registry promotion and all depende
 
 The Rust Java Language boundary is a 123-line Tauri facade over application, contract, path-policy, protocol, semantic, toolchain, and support modules. The RefactorKit daemon boundary is a 63-line Tauri facade over application, capability-policy, contract, path-policy, and transport modules. These facades preserve the inbound command boundary while keeping process ownership, policy, and orchestration modular.
 
-This is partial DDD-roadmap delivery, not full completion. Native file opening is separately complete: its Linux X11/Xvfb Tauri WebKitWebDriver Story passed 1 scenario and 16/16 steps against a freshly built release/no-bundle executable. Bounded deterministic-fixture native Java import is also promoted under its separate requirement and limits above. The canonical implemented aggregate routes **2 web, 2 deterministic desktop harness, and 2 native GUI** scenarios. The native results are direct repository-build evidence, not package evidence; `synapse-ide-desktop` packaging remains postponed until the full-build milestone. Detailed slice status remains centralized in [ARC42](ARC42.md#ddd-roadmap-status).
+This is partial DDD-roadmap delivery, not full completion. Native file opening is separately complete: its Linux X11/Xvfb Tauri WebKitWebDriver Story passed 1 scenario and 16/16 steps against a freshly built release/no-bundle executable. Bounded deterministic-fixture native Java import is also promoted under its separate requirement and limits above. Promoted desktop layout retains its earlier deterministic 9/9 harness history and has independent 1-scenario/9-step native evidence at `146f10a`: Linux X11 release/no-bundle WebView DOM at an asserted 1440×900 viewport, two exact +10 keyboard resizes, seven settled states, collapse/re-expand of both panels, full-height navigation, editor-side bottom topology, application-header/status stability within ±1 px, separator ARIA/focus behavior, and cleanup. The canonical implemented aggregate routes **2 web, 1 deterministic desktop harness, and 3 native GUI** scenarios. Layout and file-open support use distinct per-scenario native environment leases, including isolated `IDE_HOME` and workspace roots, to prevent `.ide` state cross-contamination. These native results are direct repository-build evidence, not OS decoration, package/installer, Wayland, other-OS/DPI, drag-resize, restart-persistence, optional-right-sidebar, screen-reader, or reproducible-binary evidence; `synapse-ide-desktop` packaging remains postponed until the full-build milestone. Detailed slice status remains centralized in [ARC42](ARC42.md#ddd-roadmap-status).
 
 ### C4 Architecture Diagrams
 
@@ -156,9 +158,9 @@ ide/
 
 ## Test Status
 
-The dated evidence ledger is centralized in [ARC42 section 10](ARC42.md#section-10-quality-requirements). At quality-tooling roadmap HEAD `645a79c`, `pnpm test:coverage` passes **859/859 frontend tests across 67 files**. V8 measures owned production TS/TSX in contracts, web-core, UI, browser/Tauri adapters, web, and desktop at **85.94% statements/lines (19,611/22,817), 82.14% branches (4,540/5,527), and 86.59% functions (904/1,044)**, excluding declarations, tests, dependencies, build output, and generated code. No coverage thresholds are configured. The 120-case Spec suite, Story profiles, real-browser execution, native GUI/WebDriver, and Rust suites remain separate evidence rather than being included in a combined coverage claim.
+The dated evidence ledger is centralized in [ARC42 section 10](ARC42.md#section-10-quality-requirements). At documentation reconciliation HEAD `ea40b4e`, `pnpm test:coverage` passes **864/864 frontend tests across 67 files**. V8 measures owned production TS/TSX in contracts, web-core, UI, browser/Tauri adapters, web, and desktop at **85.97% statements/lines (19,647/22,853), 82.17% branches (4,550/5,537), and 86.59% functions (904/1,044)**, excluding declarations, tests, dependencies, build output, and generated code. No coverage thresholds are configured. The 120-case Spec suite, Story profiles, real-browser execution, native GUI/WebDriver, and Rust suites remain separate evidence rather than being included in a combined coverage claim.
 
-The generic `pnpm test:e2e` route now passes **2 Playwright Chromium web scenarios/16 steps**, followed by **2 Linux Tauri-WebDriver native scenarios/52 steps** against one freshly built release/no-bundle executable. The native route covers file opening and bounded deterministic-fixture Java import. It intentionally excludes the deterministic `desktop/tauri-harness`, while the broader canonical declared Story aggregate is **2 web, 2 harness, and 2 native GUI scenarios**. The older Java-import Story remains separately bounded to 1 scenario and 22/22 harness steps over jsdom, fake Tauri effects, and mocked Monaco.
+The generic `pnpm test:e2e` route now passes **2 Playwright Chromium web scenarios/16 steps**, followed by **3 Linux Tauri-WebDriver native scenarios/61 steps** against one freshly built release/no-bundle executable. The native route covers promoted layout, file opening, and bounded deterministic-fixture Java import. It excludes the deterministic `desktop/tauri-harness`, while the broader canonical declared Story aggregate is **2 web, 1 harness, and 3 native GUI scenarios**. The Java-import `-001` Story remains separately bounded to 1 scenario and 22/22 harness steps over jsdom, fake Tauri effects, and mocked Monaco.
 
 ESLint 9 performs substantive JavaScript and TypeScript analysis through `@eslint/js` and `typescript-eslint`, and `pnpm lint:strict` passes with zero warnings. The React 18 compatibility scope enables the canonical `react-hooks/rules-of-hooks` and `react-hooks/exhaustive-deps` rules only; React Compiler-specific rules require a separate adoption decision. The repository-wide Prettier gate passes with zero failures after isolated AST-equivalent formatting batches across root/configuration and every application/package area.
 
@@ -236,7 +238,7 @@ Earlier time-specific monitor samples captured download/staging behavior before 
 ### Test
 
 ```bash
-# Run the 859-test frontend suite and owned TS/TSX V8 baseline
+# Run the 864-test frontend suite and owned TS/TSX V8 baseline
 pnpm test:coverage
 
 # Run implemented real E2E routes only (web Playwright, then native Tauri WebDriver)

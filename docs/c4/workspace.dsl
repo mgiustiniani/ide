@@ -9,8 +9,8 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 browserAdapters = component "Browser Adapters" "CURRENT/AS-BUILT: browser-safe port implementations. Native RefactorKit is unavailable, and the XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; the normal web shell starts no XCOM monitor or hidden polling." "TypeScript" "Current"
             }
 
-            desktopApp = container "Desktop App" "Desktop IDE variant hosted in a Tauri WebView with managed Java tooling and XCOM machine controls." "React, Vite, Tauri WebView" {
-                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes current controllers and parked Symbol Navigation support, derives props, and renders the shell without owning feature orchestration." "React, Monaco, Zustand" "Current"
+            desktopApp = container "Desktop App" "Desktop IDE variant hosted in a Tauri WebView with a resizable panel shell, persistent visibility controls, managed Java tooling, and XCOM machine controls." "React, Vite, Tauri WebView" {
+                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes controllers and parked Symbol Navigation support, derives props, and renders the controlled panel shell without owning feature orchestration." "React, Monaco, Zustand" "Current"
                 workspaceController = component "Workspace Controller" "CURRENT/AS-BUILT: application-layer owner of registry metadata, the native-authorized active root, and WorkspaceGeneration: a positive boundary that increases monotonically for each user-initiated workspace-switch attempt and fails closed on exhaustion. Cold start authorizes and promotes the root before dependent reads; switching invalidates stale work and coordinates editor, Java, RefactorKit import/status, AI Agent, XCOM setup, file-tree, and terminal collaborators." "TypeScript, React" "Current"
                 desktopEditorController = component "Desktop Editor Controller" "CURRENT/AS-BUILT: coordinates guarded file open/create, tab activation/close, persisted-session restore after workspace authorization, workspace reset, and presentation-safe diagnostics. It exposes a document as ready only when the requested tab and buffer agree and rejects create/open completion after a workspace generation change." "TypeScript, React" "Current"
                 settingsController = component "Settings Controller" "CURRENT/AS-BUILT: owns Settings visibility and an open coordinator that asks independently owned AI, workspace, Java, RefactorKit, and XCOM controllers to refresh; it does not absorb their state or policy." "TypeScript, React" "Current"
@@ -18,7 +18,7 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
                 fileExplorerController = component "File Explorer Controller" "CURRENT/AS-BUILT: coordinates folder expansion and empty-editor file creation through existing file-tree and editor boundaries, using the selected directory or authorized workspace root." "TypeScript, React" "Current"
                 documentNavigationController = component "Document Navigation Controller" "CURRENT/AS-BUILT: owns document-preview visibility and diagnostic navigation requests; navigation opens through the Desktop Editor Controller before issuing a bounded reveal request." "TypeScript, React" "Current"
                 editorCommandController = component "Editor Command Controller" "CURRENT/AS-BUILT: coordinates buffer changes, save, tab activation/close, and Java document flush/save/close ordering across the editor and Java Language Controller." "TypeScript, React" "Current"
-                desktopShellController = component "Desktop Shell Controller" "CURRENT/AS-BUILT: owns panel resize/toggle commands, active bottom-tab state, AI command loading on activation, and the guarded Problems visibility/severity policy." "TypeScript, React" "Current"
+                desktopShellController = component "Desktop Shell Controller" "Routes sidebar and bottom-panel resize/toggle requests to layout state, preserving dimensions; owns bottom-tab state and guarded Problems policy." "TypeScript, React" "Current"
                 aiAgentController = component "AI Agent Controller" "CURRENT/AS-BUILT: owns configuration and status, workspace-keyed commands/session messages/activity traces, prompt submission, and stale-request suppression. Workspace changes save and restore isolated UI state and invalidate command/session/trace loads; only an explicit trimmed prompt crosses the injected port." "TypeScript, React" "Current"
                 refactorKitStatusController = component "RefactorKit Status Controller" "CURRENT/AS-BUILT: provider-neutral, diagnostic-only status and capability discovery. It coordinates independent normalized outcomes and rejects stale workspace/request generations; it grants no mutation authority and is activated only after workspace authorization in desktop composition." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Java Clipboard Import UI" "Directory-tree action plus preview, conditional acknowledgement, exact-plan Apply, and Cancel. It exposes no rollback action." "React" "Current"
@@ -91,7 +91,7 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         externalProviders = softwareSystem "Additional Provider Runtimes — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: separately approved build-tool, framework, remote-provider, or announced RefactorKit search runtimes are not current and have no schedule." "External,Frozen"
 
         developer -> webUi "Uses the browser IDE"
-        developer -> desktopUi "Uses the desktop IDE"
+        developer -> desktopUi "Uses the editor and persistent shell controls"
         webUi -> webBottomPanel "Hosts the core Terminal contribution"
         desktopUi -> workspaceController "Delegates authorized workspace activation, metadata refresh, and switching"
         desktopUi -> desktopSidebar "Hosts File Explorer above Workspace Explorer"
@@ -111,7 +111,7 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         desktopUi -> fileExplorerController "Composes folder expansion and file creation"
         desktopUi -> documentNavigationController "Composes preview visibility and diagnostic navigation"
         desktopUi -> editorCommandController "Composes edit, save, activation, and close ordering"
-        desktopUi -> desktopShellController "Composes layout and bottom-tool contribution policy"
+        desktopUi -> desktopShellController "Routes panel resize/visibility requests and bottom-tool policy"
         desktopUi -> refactorKitSymbolNavigationSupport "Wires saved-snapshot search support outside active capability"
         desktopEditorController -> tauriAdapters "Uses injected editor and file-tree ports within the authorized workspace"
         desktopEditorController -> javaLanguageController "Supplies only a ready active document and workspace-safe editor lifecycle signals"

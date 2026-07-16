@@ -39,16 +39,29 @@ Cold start first establishes the native-authorized root, then promotes that auth
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
 
-| Current extracted C3 component     | Stable structural responsibility                                                                                                                                       |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Settings Controller**            | Owns Settings visibility and coordinates refresh requests to independently owned AI, workspace, Java, RefactorKit, and XCOM controllers without absorbing their state. |
-| **Terminal Controller**            | Owns workspace-independent terminal connection/session lifecycle, command and input coordination, output clearing, and workspace-reset presentation cleanup.           |
-| **File Explorer Controller**       | Coordinates folder expansion and empty-editor file creation through the file-tree and Desktop Editor boundaries.                                                       |
-| **Document Navigation Controller** | Owns document-preview visibility and diagnostic navigation; it opens the target through the Desktop Editor Controller before issuing a reveal request.                 |
-| **Editor Command Controller**      | Coordinates buffer changes, save, activation, and close ordering across editor persistence and Java document synchronization.                                          |
-| **Desktop Shell Controller**       | Owns panel layout commands, active bottom-tab state, AI command loading on activation, and guarded Problems visibility/severity policy.                                |
+| Current extracted C3 component     | Stable structural responsibility                                                                                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Settings Controller**            | Owns Settings visibility and coordinates refresh requests to independently owned AI, workspace, Java, RefactorKit, and XCOM controllers without absorbing their state.                                                         |
+| **Terminal Controller**            | Owns workspace-independent terminal connection/session lifecycle, command and input coordination, output clearing, and workspace-reset presentation cleanup.                                                                   |
+| **File Explorer Controller**       | Coordinates folder expansion and empty-editor file creation through the file-tree and Desktop Editor boundaries.                                                                                                               |
+| **Document Navigation Controller** | Owns document-preview visibility and diagnostic navigation; it opens the target through the Desktop Editor Controller before issuing a reveal request.                                                                         |
+| **Editor Command Controller**      | Coordinates buffer changes, save, activation, and close ordering across editor persistence and Java document synchronization.                                                                                                  |
+| **Desktop Shell Controller**       | Routes left-sidebar and bottom-panel resize/visibility requests to layout state without resetting dimensions; owns active bottom-tab state, AI command loading on activation, and guarded Problems visibility/severity policy. |
 
 The Workspace Controller coordinates lifecycle ordering; normal feature interactions remain direct at the most specific C3 boundary. In particular, editor readiness feeds the Java Language Controller, the RefactorKit Import Controller opens only a backend-reported result through the Desktop Editor Controller, and the extracted command/navigation controllers reuse those boundaries rather than bypassing them.
+
+## Controlled Desktop Panel Visibility
+
+```text
+Collapsed left sidebar ──activity-rail Expand control──> Desktop Shell Controller
+Status bar ──persistent bottom-panel toggle────────────> Desktop Shell Controller
+                                                            │
+                                                            ▼
+                                                    Panel layout state
+                                            (visibility changes retain sizes)
+```
+
+The shared `PanelLayout` renders host-controlled visibility controls. When the left sidebar is collapsed, its recovery control remains in the activity rail; the bottom-panel toggle remains in the status bar whether the panel is expanded or collapsed. `App.tsx` wires both callbacks to the Desktop Shell Controller, which routes them to panel layout state. Visibility changes do not overwrite the retained runtime width or height, so expansion restores the prior dimension. These shell controls remain separate from the left-sidebar accordion and from bottom tool-window content and contribution policy.
 
 ## Desktop Left Sidebar Accordion
 

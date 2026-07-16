@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-16 from every configured `features/**/*.feature` file through native-profile reconciliation HEAD `6c540e1`. The feature sources declare `REQ-WEB-001`, `REQ-LAYOUT-WEB-001`, `REQ-DESKTOP-FILE-OPEN-001`, and `REQ-REFACTORKIT-JAVA-IMPORT-002` as `@implemented-and-validated`; `REQ-LAYOUT-DESKTOP-001` and `REQ-REFACTORKIT-JAVA-IMPORT-001` as `@implemented-not-e2e-validated`; and both `REQ-REFACTORKIT-TS-001` and `REQ-REFACTORKIT-TS-002` as `@not-implemented`. The dated target-specific results below are separate observed evidence. The two TypeScript/JavaScript RefactorKit requirements remain parked outside the active roadmap under the frozen option-A architecture policy; Java import `-001` remains bounded to deterministic harness evidence, while `-002` is separately bounded to a deterministic sandbox-daemon Linux X11 release/no-bundle native integration.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was reconciled on 2026-07-16 from every configured `features/**/*.feature` file at exact HEAD `ea40b4e`. The feature sources declare `REQ-WEB-001`, both layout requirements, `REQ-DESKTOP-FILE-OPEN-001`, and `REQ-REFACTORKIT-JAVA-IMPORT-002` as `@implemented-and-validated`; `REQ-REFACTORKIT-JAVA-IMPORT-001` as `@implemented-not-e2e-validated`; and both TypeScript/JavaScript RefactorKit requirements as `@not-implemented`. Dated target-specific results remain separate observed evidence. The RefactorKit option-A/package policies are unchanged.
 ====
 
 == Governance
@@ -56,7 +56,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |Predictable application content geometry during panel changes
 |2
 |`REQ-LAYOUT-WEB-001`, `REQ-LAYOUT-DESKTOP-001`
-|Web: `@implemented-and-validated`; desktop: `@implemented-not-e2e-validated`
+|Web and desktop: `@implemented-and-validated`
 
 |link:../../features/workspace/native-desktop-file-opening.feature[`features/workspace/native-desktop-file-opening.feature`]
 |Trustworthy native desktop opening of an existing authorized workspace file
@@ -103,7 +103,7 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |Deterministic `desktop/tauri-harness` execution under jsdom with evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`. It imports the real desktop `App`, opens the actual FileTree context menu, renders the production review dialog, and exercises the production RefactorKit Import controller and typed Tauri adapters through a fake in-process Tauri invoke boundary. The story loader replaces Monaco with a read-only textarea.
 
 |Dated deterministic Story evidence
-|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement and canonical desktop-harness selection passed this scenario: 1 scenario and 22/22 steps. After the separate native Java-import promotion, the canonical aggregate routes two web scenarios, two desktop-harness scenarios, and two native GUI scenarios.
+|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement and canonical desktop-harness selection passed this scenario: 1 scenario and 22/22 steps. After native layout promotion, the canonical aggregate routes two web scenarios, this sole desktop-harness scenario, and three native GUI scenarios.
 
 |Capability and clipboard evidence
 |The production composition accepted API `0.2`; `java.importExternalClass` with `targetDirectory`, preview, apply, discard, and rollback; `refactor.apply`; `refactor.discard`; and `patch.rollback` before exactly one `read_clipboard_text` invocation. The accepted capability event precedes that one read, which precedes preview. Rollback capability is required provider authority, but the current import UI exposes no rollback action.
@@ -170,7 +170,7 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |Focused real Linux X11 native GUI/E2E through `desktop/tauri-webdriver`. The runner freshly executes `pnpm --filter @ide/desktop tauri build --no-bundle --ci`, directly launches the resulting production release executable under isolated D-Bus/Xvfb, drives the real Tauri WebKit document through WebKitWebDriver/WebdriverIO, and reports `packagedApplication: false`. The RefactorKit peer is a scenario-owned executable deterministic API-0.2 fixture daemon, not a developer-installed or released provider.
 
 |Dated independent native evidence
-|On 2026-07-16 at repository revision `5146221`, the focused route passed 1 scenario/36 Cucumber markers. A later implemented native aggregate passed this scenario together with native file opening: 2 scenarios and 52/52 steps against one fresh release/no-bundle executable. The canonical declared aggregate therefore routes 2 web, 2 deterministic desktop-harness, and 2 native GUI scenarios.
+|On 2026-07-16 at repository revision `5146221`, the focused route passed 1 scenario/36 Cucumber markers. The current implemented native aggregate passes this scenario with native file opening and promoted layout: 3 scenarios and 61/61 steps against one fresh release/no-bundle executable. The canonical declared aggregate therefore routes 2 web, 1 deterministic desktop-harness, and 3 native GUI scenarios.
 
 |Actual native UI and clipboard boundary
 |The real WebKit document exposed the actual File Explorer, expanded `src/main/java/example/imports`, opened its directory context menu, chose the production **Paste Java Class from Clipboard** action, rendered the actual review dialog, refreshed the actual tree/tab, and displayed the exact fixture in real Monaco rather than the Story textarea mock. A GTK-owned Linux X11 OS clipboard supplied the 147-byte fixture through the production native clipboard command. This path-to-preview evidence does not capture raw IPC and does not establish the number of underlying native clipboard reads.
@@ -313,7 +313,7 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |Evidence supports at most partial behavior. The declared status remains `@not-implemented`; neither implemented status is claimed. The documentation does not accept, permit, ignore, or normalize the lock write.
 
 |Desktop aggregate routing evidence
-|Commit `81025e9` added deterministic `desktop/tauri-harness` aggregate execution for scenarios declared `@implemented-not-e2e-validated @desktop`; later runner reconciliation added a separate Linux `desktop/tauri-webdriver` route for `@implemented-and-validated @desktop @native-gui`. The aggregate now selects the unrelated layout and Java-import `-001` harness scenarios plus native file opening and deterministic-fixture Java import `-002`, but still excludes this symbol-navigation scenario because its declaration remains `@not-implemented`. Focused 18/18 GREEN is therefore not aggregate regression evidence for this requirement, and no selected desktop route supplies this requirement's missing immutable-provider no-write proof.
+|Commit `81025e9` added deterministic `desktop/tauri-harness` routing for scenarios declared `@implemented-not-e2e-validated @desktop`; the Linux `desktop/tauri-webdriver` route selects `@implemented-and-validated @desktop @native-gui`. After layout promotion, the harness selects only Java import `-001`, while native routing selects layout, file opening, and deterministic-fixture Java import `-002`. This symbol-navigation scenario remains excluded because its declaration is `@not-implemented`; focused 18/18 GREEN is not aggregate regression evidence and no selected route supplies its missing immutable-provider no-write proof.
 
 |Packaged GUI/E2E evidence absence
 |No packaged Tauri WebView with the immutable daemon has completed the scenario. No packaged generic Search interaction has established exact definition reveal and a byte-identical workspace. Deterministic Tauri-invoke GREEN is not a packaged GUI/E2E claim.
@@ -457,7 +457,7 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |The current frontend gate includes real Playwright Chromium layout checks at widths 1280, 700, and 480. At 1280 the optional right sidebar retained requested 420- and 320-pixel widths when room existed. At 700 and 480 both editor and right sidebar retained positive width, the right edge stayed within the editor row, and editor-row, workspace, and document horizontal overflow remained bounded.
 
 |Desktop evidence / absence
-|The real web run is not desktop evidence. Desktop evidence is recorded under `REQ-LAYOUT-DESKTOP-001` and remains explicitly non-native and non-E2E.
+|The real web run is not desktop evidence. Desktop evidence is recorded separately under `REQ-LAYOUT-DESKTOP-001` within its Linux X11 release/no-bundle WebView DOM boundary.
 |===
 
 === REQ-LAYOUT-DESKTOP-001
@@ -476,7 +476,7 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |A person working in the desktop IDE.
 
 |Capability
-|Preserve the same shared PanelLayout geometry and accessibility contract for desktop composition: full-height navigation, editor-column-only bottom tools, separate stable top-level chrome/status geometry, bounded editor/right-sidebar geometry, and keyboard-resizable accessible panel boundaries.
+|Preserve shared PanelLayout geometry and accessibility through keyboard resizing and collapse/re-expansion: full-height navigation, editor-column-only bottom tools, separate stable application header/status geometry, retained dimensions, and persistent recovery controls.
 
 |Scenario
 |_Preserve full-height navigation and editor-side bottom tools in a desktop workspace_
@@ -485,30 +485,45 @@ NOTE: The configured inventory contains seven feature files, eight scenarios, an
 |link:../../features/workspace/application-content-layout.feature[`features/workspace/application-content-layout.feature`], scenario beginning at line 17
 
 |Tags
-|`@desktop`, `@REQ-LAYOUT-DESKTOP-001`, `@functional-requirement`, `@non-functional-requirement`, `@accessibility`, `@implemented-not-e2e-validated`
+|`@desktop`, `@native-gui`, `@REQ-LAYOUT-DESKTOP-001`, `@functional-requirement`, `@non-functional-requirement`, `@accessibility`, `@implemented-and-validated`
 
 |Declared status
-|`@implemented-not-e2e-validated` — copied exactly from the feature source after status commit `d8092c4`.
+|`@implemented-and-validated` — copied exactly from the feature source after promotion commit `039573d`. It is recorded separately from the runs below.
 
-|Validation mode
-|Deterministic `desktop/tauri-harness` execution of the real shared `@ide/ui` PanelLayout contract in headless Chromium at a 1280 x 720 viewport, with explicit evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`.
+|Deterministic harness history
+|Before native promotion, the focused deterministic `desktop/tauri-harness` passed 1 scenario and 9/9 steps at 1280×720 with evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`. It exercised the shared PanelLayout geometry and accessibility contract, including desktop top-level chrome outside application content. That non-native result remains supporting history, not native or package evidence, and layout is no longer selected by the implemented harness aggregate.
 
-|Observed target-specific evidence
-|On 2026-07-15, the deterministic desktop harness passed 1 scenario and 9/9 steps. It exercised and measured the same expanded, keyboard-resized, and collapsed geometry and accessibility assertions as the web Story, including desktop top-level chrome outside the shared shell. This is deterministic desktop composition evidence only.
+|Independent native validation mode
+|At exact revision `146f10a`, an independent tracked-read-only gate freshly executed the production Tauri release/no-bundle build, directly launched its ELF under Linux X11/Xvfb, and drove the real WebKit document through Tauri WebDriver/WebdriverIO. The WebView DOM viewport was asserted exactly 1440×900. Evidence metadata was `nativeGui: true`, `e2e: true`, `artifactKind: release-no-bundle`, and `packagedApplication: false`.
 
-|Responsive and right-sidebar evidence
-|Shared UI evidence in the current frontend gate covers widths 1280, 700, and 480. It keeps the right sidebar inside the editor row, preserves requested 420- and 320-pixel widths at 1280 when room exists, and bounds both editor/right-sidebar widths and horizontal overflow at 700 and 480. These shared UI checks support the implementation but do not upgrade the desktop validation mode.
+|Dated native result
+|On 2026-07-16, the focused route passed 1 scenario and 9/9 reported steps. The left-sidebar separator changed exactly 320→330 and the bottom separator exactly 300→310 through keyboard input. Seven independently settled snapshots covered initial expansion, both resized states, sidebar collapse/re-expansion, and bottom-panel collapse/re-expansion.
 
-|Native GUI / E2E / packaged-app evidence absence
-|No native Tauri WebView/GUI, desktop E2E, or packaged application run completed this scenario. The harness is not native GUI evidence, not E2E evidence, and not packaged-app evidence; therefore the requirement is not declared `@implemented-and-validated`.
+|Geometry and topology evidence
+|Every applicable settled state kept the activity rail and visible sidebar at full application-content height. The bottom shell began after navigation and occupied only editor-side width. The application header and status bar stayed outside application content and retained their positions/extents within ±1 px across all seven states.
+
+|Persistent controls, ARIA, and focus evidence
+|Collapsing the whole sidebar left a visible accessible `Expand sidebar` control in the activity rail; collapsing the bottom panel left its visible accessible expand control in the status bar. Re-expansion restored the keyboard-resized dimensions. Both separators received focus and retained role, accessible label, orientation, minimum/current-value, tab-index, and exact +10 `aria-valuenow` behavior. Toggle `aria-expanded` values matched each state.
+
+|Production fixes and desktop-shell wiring
+|Commit `29b4ef4` added controlled persistent visibility controls to shared PanelLayout. Commit `84b0de8` wired sidebar and bottom visibility callbacks through the Desktop Shell Controller to current panel actions, retaining dimensions rather than replacing them. These fixes make both collapsed states recoverable through production desktop composition.
+
+|Exit, cleanup, and current scenario isolation
+|The focused run closed the native window, observed release-process exit, deleted the WebDriver session, and left no owned application/driver/Xvfb survivors. At HEAD `ea40b4e`, native layout and file-open support additionally acquire distinct contained per-scenario environment leases for HOME/XDG/IDE/temp/workspace/evidence paths, including unique `IDE_HOME`; lease records reject root/workspace reuse, restore runner variables, and remove each child root. This prevents `.ide` state cross-contamination between those scenarios. It is current harness isolation, not a retroactive claim about the earlier independent run or a global host audit.
+
+|Responsive shared-UI history
+|Shared UI evidence separately covers widths 1280, 700, and 480, keeping the optional right sidebar inside the editor row and bounding overflow. That browser/shared-UI history does not broaden the focused native scenario, which intentionally excluded the optional right sidebar.
+
+|Strict evidence exclusions
+|The native result proves WebView DOM geometry and interaction only at the observed Linux X11 release/no-bundle 1440×900 boundary. It explicitly proves no OS-window decoration, package/installer, Wayland, other operating system or DPI combination, drag resizing, restart persistence, optional right-sidebar, screen-reader behavior, or reproducible-binary property. A fresh direct ELF build is not package evidence and one recorded executable digest is not reproducibility evidence.
 |===
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` is declared `@implemented-and-validated` and passed its real Playwright Chromium Story 9/9; `REQ-LAYOUT-DESKTOP-001` is declared `@implemented-not-e2e-validated` and passed its deterministic `desktop/tauri-harness` Story 9/9 with no native GUI, E2E, or packaged-app claim. `REQ-WEB-001` remains independently passing in its explicit web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` is separately declared `@implemented-not-e2e-validated` and passed its deterministic jsdom/Tauri-harness Story 22/22 with the fake-backend, mocked-Monaco, non-native limits above. `REQ-DESKTOP-FILE-OPEN-001` is declared `@implemented-and-validated` and passed its real Linux X11/Xvfb release/no-bundle native GUI Story 16/16 after production fix `9b4af2a`. Deterministic-fixture `REQ-REFACTORKIT-JAVA-IMPORT-002` is also declared `@implemented-and-validated` and independently passed its focused native 1-scenario/36-marker route under the strict fixture/provider/confinement limits above. The RefactorKit diagnostics requirement retains supporting metadata/readiness evidence and a meaningful RED, while symbol navigation retains deterministic 18/18 evidence plus a real-provider no-write failure; both remain declared `@not-implemented` and parked under their frozen option-A policies with no metadata exception.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` remains real-Playwright Chromium GREEN, and `REQ-LAYOUT-DESKTOP-001` is now declared `@implemented-and-validated` after independent Linux X11 release/no-bundle WebView DOM 1440×900 native GREEN. Its earlier deterministic 9/9 harness result remains bounded history; production persistent controls and desktop-shell wiring close both collapsed-state recovery gaps. `REQ-WEB-001` remains independently passing in web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` remains the sole `@implemented-not-e2e-validated` jsdom/Tauri-harness scenario. Native file opening and deterministic-fixture Java import `-002` remain separately validated under their own limits. Both TypeScript/JavaScript RefactorKit requirements remain `@not-implemented` and parked under unchanged option-A policies.
 
-The canonical migration aggregate now passes with two declared web scenarios, two deterministic desktop-harness scenarios, and two native GUI scenarios. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 2 native scenarios/52 steps. Native Java import proves only the deterministic sandbox fixture boundary and does not transfer real/global/immutable/packaged-provider, provider-metadata/no-write, raw-IPC/read-cardinality, broader-confinement, broader-OS, rollback-UI, or `-001` stale-matrix evidence. This closes the native Java-import declaration/routing slice, not the release packaging gap: no CachyOS/Synapse package was built or tested, and `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. The confirmed layout evidence, frozen IntelliSense/JDT LS inventory, and both TypeScript/JavaScript RefactorKit wait-for-upstream policies remain unchanged.
+The canonical migration aggregate now passes with two declared web scenarios, one deterministic desktop-harness scenario, and three native GUI scenarios. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 3 native scenarios/61 steps. Layout evidence excludes OS decoration, package/installer, Wayland, other OS/DPI, drag, restart, optional right sidebar, screen-reader behavior, and reproducible binaries. Native Java import retains its deterministic sandbox-fixture boundary and does not transfer broader provider, metadata/no-write, confinement, OS, rollback, or package claims. No requirement is promoted from legacy code, supporting tests, upstream code, historical prose, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
 
 == Reconciliation Checks
 
-The 2026-07-16 reconciliation through `6c540e1` checked all seven configured feature paths, eight scenarios, stable IDs, classifications, effective declared statuses, aggregate routing (2 web, 2 harness, 2 native), target-specific observed evidence fields, relative link targets, and AsciiDoc table delimiters. `pnpm validate:bdd:docs` is the governing strict documentation check and passed. The canonical `pnpm validate:bdd:migration` gate passed, including both deterministic harness scenarios and a fresh native release/no-bundle build plus the two-scenario Linux X11/Xvfb WebKitWebDriver run. C4 validation and links, global Prettier, strict lint, and the docs-only diff also passed; V8, Story, Spec, and Rust evidence remain separate rather than being combined. An unauthorized repository-root `.refactorkit/workspace.lock` encountered during evidence work was removed and remained absent through this gate. That repository-hygiene observation is not immutable-provider no-write evidence and does not change the separate `REQ-REFACTORKIT-TS-002` failure.
+The 2026-07-16 reconciliation at `ea40b4e` checked all seven configured feature paths, eight scenarios, stable IDs, classifications, effective declared statuses, aggregate routing (2 web, 1 harness, 3 native), target-specific observed evidence, relative links, and AsciiDoc delimiters. `pnpm validate:bdd:docs`, canonical `pnpm validate:bdd:migration`, C4/Structurizr and links, global Prettier, strict lint, and the docs-only diff passed. The canonical gate included the sole deterministic harness scenario plus a fresh release/no-bundle build and three-scenario Linux X11/Xvfb WebKitWebDriver run. V8, Story, Spec, native, and Rust evidence remain separate. The earlier repository-root `.refactorkit/workspace.lock` hygiene observation remains distinct from immutable-provider no-write evidence and does not change `REQ-REFACTORKIT-TS-002`.
