@@ -34,7 +34,7 @@ import {
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const cucumberEntry = path.join(repositoryRoot, "node_modules/@cucumber/cucumber/bin/cucumber.js");
 
-function selectedScenarioCount(profile, config = "cucumber.js") {
+function selectedScenarios(profile, config = "cucumber.js") {
   const result = spawnSync(
     process.execPath,
     [
@@ -62,13 +62,28 @@ function selectedScenarioCount(profile, config = "cucumber.js") {
     result.error?.message ?? result.stderr ?? `Cucumber profile discovery failed: ${profile}`,
   );
 
+  const scenariosByPickleId = new Map();
   const selectedPickleIds = new Set();
   for (const line of result.stdout.split("\n")) {
     if (!line.trim()) continue;
-    const testCase = JSON.parse(line).testCase;
-    if (testCase) selectedPickleIds.add(testCase.pickleId);
+    const envelope = JSON.parse(line);
+    if (envelope.pickle) {
+      scenariosByPickleId.set(envelope.pickle.id, {
+        name: envelope.pickle.name,
+        tags: envelope.pickle.tags.map(({ name }) => name),
+      });
+    }
+    if (envelope.testCase) selectedPickleIds.add(envelope.testCase.pickleId);
   }
-  return selectedPickleIds.size;
+  return [...selectedPickleIds].map((pickleId) => {
+    const scenario = scenariosByPickleId.get(pickleId);
+    assert.ok(scenario, `${profile} selected unknown Cucumber pickle ${pickleId}`);
+    return scenario;
+  });
+}
+
+function selectedScenarioCount(profile, config = "cucumber.js") {
+  return selectedScenarios(profile, config).length;
 }
 
 async function executable(directory, name) {
@@ -666,9 +681,9 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
   assert.equal(Object.isFrozen(runtime), true);
 });
 
-test("native runner profiles select promoted and focused pre-promotion scenarios", () => {
+test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 2);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 3);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
@@ -681,7 +696,7 @@ test("native runner profiles select promoted and focused pre-promotion scenarios
   assert.equal(layoutSelection.includesNativeJavaImport, false);
   assert.equal(layoutSelection.scenarios.length, 1);
   assert.ok(layoutSelection.scenarios[0].tags.includes("@REQ-LAYOUT-DESKTOP-001"));
-  assert.ok(layoutSelection.scenarios[0].tags.includes("@implemented-not-e2e-validated"));
+  assert.ok(layoutSelection.scenarios[0].tags.includes("@implemented-and-validated"));
 
   const selection = discoverNativeDesktopSelection("refactorKitJavaImportNativeGui");
   assert.equal(selection.hasScenarios, true);
@@ -691,19 +706,22 @@ test("native runner profiles select promoted and focused pre-promotion scenarios
   assert.ok(selection.scenarios[0].tags.includes("@implemented-and-validated"));
 });
 
-test("implemented native discovery selects exactly both promoted requirements", () => {
+test("implemented desktop discovery selects the exact harness and native requirements", () => {
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 2);
+  assert.equal(selection.scenarios.length, 3);
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
-    ["@REQ-DESKTOP-FILE-OPEN-001", "@REQ-REFACTORKIT-JAVA-IMPORT-002"],
+    ["@REQ-DESKTOP-FILE-OPEN-001", "@REQ-LAYOUT-DESKTOP-001", "@REQ-REFACTORKIT-JAVA-IMPORT-002"],
   );
   assert.ok(selection.scenarios.every(({ tags }) => tags.includes("@implemented-and-validated")));
-  assert.equal(
-    selection.scenarios.some(({ tags }) => tags.includes("@REQ-LAYOUT-DESKTOP-001")),
-    false,
+
+  assert.deepEqual(
+    selectedScenarios("implementedDesktopTauriHarness")
+      .flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-")))
+      .sort(),
+    ["@REQ-REFACTORKIT-JAVA-IMPORT-001"],
   );
 });
 

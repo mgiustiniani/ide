@@ -149,32 +149,19 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("desktop layout remains on the harness until promotion then joins native selection", () => {
-  const beforePromotion = scenario("desktop layout", [
-    "@REQ-LAYOUT-DESKTOP-001",
-    "@implemented-not-e2e-validated",
-    "@desktop",
-    "@native-gui",
-  ]);
-  const afterPromotion = scenario("desktop layout", [
+test("promoted desktop layout routes only to native GUI evidence", () => {
+  const desktopLayout = scenario("desktop layout", [
     "@REQ-LAYOUT-DESKTOP-001",
     "@implemented-and-validated",
     "@desktop",
     "@native-gui",
   ]);
 
-  const before = evaluateDeclaredStoryRouting([beforePromotion]);
-  assert.deepEqual(before.failures, []);
-  assert.deepEqual(before.expectedDesktopTauriHarness.map(scenarioKey), [
-    scenarioKey(beforePromotion),
-  ]);
-  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
-
-  const after = evaluateDeclaredStoryRouting([afterPromotion]);
-  assert.deepEqual(after.failures, []);
-  assert.deepEqual(after.expectedDesktopTauriHarness, []);
-  assert.deepEqual(after.expectedDesktopTauriWebdriver.map(scenarioKey), [
-    scenarioKey(afterPromotion),
+  const result = evaluateDeclaredStoryRouting([desktopLayout]);
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(result.expectedDesktopTauriHarness, []);
+  assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [
+    scenarioKey(desktopLayout),
   ]);
 });
 
