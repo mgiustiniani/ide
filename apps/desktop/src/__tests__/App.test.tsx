@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 
 const testHarness = vi.hoisted(() => {
@@ -300,6 +300,7 @@ const testHarness = vi.hoisted(() => {
     harness.externalJavaApplyResult = null;
     harness.latestPanelLayoutProps = null;
     harness.latestSemanticSymbolSearchProps = null;
+    harness.latestXcom2ProjectRecognitionPanelProps = null;
     harness.refactorKitResult = {
       stdout: "RefactorKit scan complete",
       stderr: "",
@@ -712,6 +713,7 @@ vi.mock("@ide/ui", () => ({
   PanelLayout: ({
     leftSidebar,
     searchActivityContent,
+    activityContributions = [],
     activeActivity = "explorer",
     onActivityChange,
     onToggleLeftSidebar,
@@ -720,8 +722,26 @@ vi.mock("@ide/ui", () => ({
     rightSidebarContent,
     bottomContent,
   }: any) => {
+    const contribution = activityContributions.find(
+      (candidate: any) => candidate.id === activeActivity,
+    );
+    const selectedActivity =
+      activeActivity === "search" || contribution ? activeActivity : "explorer";
+    const selectableActivities = [
+      "explorer",
+      ...(searchActivityContent === undefined ? [] : ["search"]),
+      ...activityContributions.map((candidate: any) => candidate.id),
+    ];
+    const selectAdjacentActivity = (event: any, activity: string) => {
+      const currentIndex = selectableActivities.indexOf(activity);
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        onActivityChange?.(selectableActivities[(currentIndex + 1) % selectableActivities.length]);
+      }
+    };
     testHarness.latestPanelLayoutProps = {
       activeActivity,
+      activityContributions,
       hasSearchActivityContent: searchActivityContent !== undefined,
       onActivityChange,
       onToggleLeftSidebar,
@@ -733,22 +753,41 @@ vi.mock("@ide/ui", () => ({
           <button
             type="button"
             role="tab"
-            aria-selected={activeActivity === "explorer"}
+            aria-selected={selectedActivity === "explorer"}
             onClick={() => onActivityChange?.("explorer")}
+            onKeyDown={(event) => selectAdjacentActivity(event, "explorer")}
           >
             Explorer
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={activeActivity === "search"}
+            aria-selected={selectedActivity === "search"}
             disabled={searchActivityContent === undefined || !onActivityChange}
             onClick={() => onActivityChange?.("search")}
+            onKeyDown={(event) => selectAdjacentActivity(event, "search")}
           >
             Search
           </button>
+          {activityContributions.map((candidate: any) => (
+            <button
+              key={candidate.id}
+              type="button"
+              role="tab"
+              aria-selected={selectedActivity === candidate.id}
+              title={candidate.title}
+              onClick={() => onActivityChange?.(candidate.id)}
+              onKeyDown={(event) => selectAdjacentActivity(event, candidate.id)}
+            >
+              {candidate.label}
+            </button>
+          ))}
         </div>
-        {activeActivity === "search" ? searchActivityContent : leftSidebar}
+        {selectedActivity === "search"
+          ? searchActivityContent
+          : contribution
+            ? contribution.content
+            : leftSidebar}
         {mainContent}
         {rightSidebarContent ? <div data-testid="RightSidebar">{rightSidebarContent}</div> : null}
         {bottomContent}
@@ -769,6 +808,22 @@ vi.mock("@ide/ui", () => ({
       >
         Semantic symbol search
       </div>
+    );
+  },
+  Xcom2ProjectRecognitionPanel: (props: any) => {
+    testHarness.latestXcom2ProjectRecognitionPanelProps = props;
+    return (
+      <section
+        data-testid="Xcom2ProjectRecognitionPanel"
+        data-workspace={props.snapshot.workspaceId}
+        data-active-count={String(props.activeDecisions.length)}
+        aria-label="XCOM 2 Project"
+      >
+        <h2>XCOM 2 Project</h2>
+        {props.activeDecisions.map((decision: any) => (
+          <div key={decision.moduleRoot}>{decision.moduleRoot}</div>
+        ))}
+      </section>
     );
   },
   LeftSidebar: ({ children, workspaceContent, isVisible, onToggle }: any) => {
@@ -1319,6 +1374,8 @@ vi.mock("@ide/ui", () => ({
     isOpen,
     aiAgentSettings,
     aiAgentStatus,
+    workspaceInfo,
+    workspaceRegistry,
     xcom2SetupSnapshot,
     xcom2SetupPlan,
     isXcom2SetupLoading,
@@ -1336,6 +1393,7 @@ vi.mock("@ide/ui", () => ({
     isJavaRefactorKitChecking,
     javaRefactorKitError,
     onRefreshStatus,
+    onSwitchWorkspace,
     onRefreshXcom2Setup,
     onPlanXcom2Setup,
     onPrepareXcom2Setup,
@@ -1553,6 +1611,17 @@ vi.mock("@ide/ui", () => ({
             </ol>
           </div>
         ) : null}
+        {(workspaceRegistry?.workspaces ?? [])
+          .filter((workspace: any) => workspace.id !== workspaceInfo?.id)
+          .map((workspace: any) => (
+            <button
+              key={workspace.id}
+              type="button"
+              onClick={() => onSwitchWorkspace?.(workspace.id)}
+            >
+              Switch to {workspace.name} in Settings
+            </button>
+          ))}
         <button type="button" onClick={() => onClose?.()}>
           Close settings
         </button>
@@ -2453,6 +2522,170 @@ describe("App", () => {
       );
       expect(screen.getByTestId("Terminal")).toBeDefined();
     });
+  });
+
+  it.each([
+    ["generic workspace", [], null],
+    [
+      "weak convention evidence",
+      [
+        {
+          evidenceKind: "x2proj",
+          moduleRoot: "MyMod",
+          relativePath: "MyMod/MyMod.x2proj",
+        },
+      ],
+      null,
+    ],
+    ["scanner error", [], new Error("private native scanner detail")],
+  ])("keeps %s contribution-free", async (_label, observations, scanError) => {
+    testHarness.xcom2ModuleScanObservations = observations;
+    testHarness.xcom2ModuleScanError = scanError;
+    const consoleError = scanError
+      ? vi.spyOn(console, "error").mockImplementation(() => undefined)
+      : null;
+    const { App } = await import("../App");
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => {
+      expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    });
+    expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
+    consoleError?.mockRestore();
+  });
+
+  it("composes one immutable active project contribution without automatically opening it", async () => {
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const { App } = await import("../App");
+
+    render(<App />);
+
+    const xcomActivity = await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    expect(xcomActivity.getAttribute("aria-selected")).toBe("false");
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
+
+    const contributions = testHarness.latestPanelLayoutProps.activityContributions;
+    expect(contributions).toHaveLength(1);
+    expect(Object.isFrozen(contributions)).toBe(true);
+    expect(Object.isFrozen(contributions[0])).toBe(true);
+    expect(contributions[0]).toMatchObject({
+      id: "xcom2-project",
+      label: "XCOM 2 Project",
+      title: "XCOM 2 Project",
+    });
+    expect(xcomActivity.title).toBe("XCOM 2 Project");
+
+    const searchActivity = screen.getByRole("tab", { name: "Search" });
+    searchActivity.focus();
+    fireEvent.keyDown(searchActivity, { key: "ArrowRight" });
+
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("xcom2-project");
+    expect(xcomActivity.getAttribute("aria-selected")).toBe("true");
+    const recognitionPanel = screen.getByTestId("Xcom2ProjectRecognitionPanel");
+    expect(recognitionPanel.getAttribute("aria-label")).toBe("XCOM 2 Project");
+    expect(recognitionPanel.dataset).toMatchObject({
+      workspace: "workspace-one",
+      activeCount: "1",
+    });
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.snapshot).toBe(
+      contributions[0].content.props.snapshot,
+    );
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeDecisions).toBe(
+      contributions[0].content.props.activeDecisions,
+    );
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.snapshot).toMatchObject({
+      workspaceId: "workspace-one",
+      state: "active",
+      confidence: "high",
+    });
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeDecisions).toEqual([
+      {
+        moduleRoot: "MyMod",
+        state: "active",
+        confidence: "high",
+        reasons: [
+          { evidenceKind: "x2proj", relativePath: "MyMod/MyMod.x2proj" },
+          { evidenceKind: "xcommod", relativePath: "MyMod/MyMod.xcommod" },
+        ],
+      },
+    ]);
+
+    const bottomTabList = screen.getByRole("tablist", { name: "Bottom panel tabs" });
+    expect(
+      within(bottomTabList)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["Terminal", "AI Agent"]);
+    for (const label of ["XCOM 2 Project", "Build", "Problems", "Logs", "Language"]) {
+      expect(within(bottomTabList).queryByRole("tab", { name: label })).toBeNull();
+    }
+  });
+
+  it("revokes a selected project contribution at switch start and does not reselect it", async () => {
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const switchResult = createDeferred<any>();
+    testHarness.workspaceAdapter.switchWorkspace.mockReturnValueOnce(switchResult.promise);
+    const { App } = await import("../App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "XCOM 2 Project" }));
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("xcom2-project");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Switch to Workspace Two in Settings" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+      expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    });
+    expect(screen.queryByText("Workspace: Workspace Two")).toBeNull();
+    expect(screen.getByText("Workspace: loading…").getAttribute("title")).toBe("/workspace/one");
+    expect(testHarness.workspaceAdapter.switchWorkspace).toHaveBeenCalledWith("workspace-two");
+
+    const nextWorkspace = testHarness.workspaceRegistry.workspaces[1];
+    testHarness.workspaceInfo = nextWorkspace;
+    testHarness.workspaceRegistry = {
+      ...testHarness.workspaceRegistry,
+      currentWorkspaceId: nextWorkspace.id,
+    };
+    switchResult.resolve(nextWorkspace);
+
+    const restoredActivity = await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    await screen.findByText("Workspace: Workspace Two");
+    expect(restoredActivity.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
   });
 
   it("runs one workspace-generation module scan independently of machine Settings", async () => {

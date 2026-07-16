@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { BottomPanelTab, PanelLayoutActivity } from "@ide/ui";
+import type { BottomPanelTab, PanelLayoutActivity, PanelLayoutActivityContribution } from "@ide/ui";
 
 // ── Store creation ──────────────────────────────────────────────────────
 import { createFileTreeStore } from "@ide/web-core/state";
@@ -66,6 +66,7 @@ import { Icon } from "@ide/ui";
 import { ProblemsPanel } from "@ide/ui";
 import { ExternalJavaImportPreviewDialog } from "@ide/ui";
 import { SemanticSymbolSearchPanel } from "@ide/ui";
+import { Xcom2ProjectRecognitionPanel } from "@ide/ui";
 
 // ── Store hooks ──────────────────────────────────────────────────────────
 // Zustand stores are created once and exposed as singletons for the app.
@@ -76,6 +77,10 @@ const fileTreeStore = createFileTreeStore();
 const editorStore = createEditorStore();
 const terminalStore = createTerminalStore();
 const panelStore = createPanelStore();
+
+const NO_ACTIVITY_CONTRIBUTIONS = Object.freeze(
+  [] as readonly Readonly<PanelLayoutActivityContribution>[],
+);
 
 // Create singleton adapters.
 const {
@@ -417,6 +422,33 @@ export function App(): JSX.Element {
 
   // ── Derived values ──────────────────────────────────────────────────
 
+  const xcom2ProjectActivityContributions = useMemo<
+    readonly Readonly<PanelLayoutActivityContribution>[]
+  >(() => {
+    if (!xcom2ModuleActivation.snapshot || xcom2ModuleActivation.activeModules.length === 0) {
+      return NO_ACTIVITY_CONTRIBUTIONS;
+    }
+
+    const contribution = Object.freeze({
+      id: "xcom2-project",
+      label: "XCOM 2 Project",
+      title: "XCOM 2 Project",
+      content: (
+        <Xcom2ProjectRecognitionPanel
+          snapshot={xcom2ModuleActivation.snapshot}
+          activeDecisions={xcom2ModuleActivation.activeModules}
+        />
+      ),
+    } satisfies PanelLayoutActivityContribution);
+    return Object.freeze([contribution]);
+  }, [xcom2ModuleActivation.activeModules, xcom2ModuleActivation.snapshot]);
+
+  useLayoutEffect(() => {
+    if (activeActivity === "xcom2-project" && xcom2ProjectActivityContributions.length === 0) {
+      setActiveActivity("explorer");
+    }
+  }, [activeActivity, xcom2ProjectActivityContributions]);
+
   /** Bottom panel tabs configuration. */
   const bottomTabs: BottomPanelTab[] = [
     {
@@ -502,6 +534,7 @@ export function App(): JSX.Element {
       <div className="min-h-0 flex-1">
         <PanelLayout
           layout={panelState.layout}
+          activityContributions={xcom2ProjectActivityContributions}
           activeActivity={activeActivity}
           onActivityChange={setActiveActivity}
           searchActivityContent={
