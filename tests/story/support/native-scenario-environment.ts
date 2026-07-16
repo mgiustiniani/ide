@@ -20,7 +20,12 @@ const ENVIRONMENT_VARIABLES = [
 const LEASE_EVIDENCE_FILE = "native-scenario-environment-leases.jsonl";
 
 type EnvironmentVariable = (typeof ENVIRONMENT_VARIABLES)[number];
-type Requirement = "REQ-LAYOUT-DESKTOP-001" | "REQ-DESKTOP-FILE-OPEN-001";
+type Requirement =
+  "REQ-LAYOUT-DESKTOP-001" | "REQ-DESKTOP-FILE-OPEN-001" | "REQ-XCOM2-MODULE-ACTIVATION-001";
+
+interface NativeScenarioEnvironmentOptions {
+  readonly workspaceName?: string;
+}
 
 interface RecordedLeaseEvent {
   readonly event: "acquired" | "environment-restored" | "released";
@@ -132,7 +137,10 @@ export class NativeScenarioEnvironmentLease {
     };
   }
 
-  static async acquire(requirement: Requirement): Promise<NativeScenarioEnvironmentLease> {
+  static async acquire(
+    requirement: Requirement,
+    options: NativeScenarioEnvironmentOptions = {},
+  ): Promise<NativeScenarioEnvironmentLease> {
     assert.equal(
       activeLeaseRoot,
       undefined,
@@ -166,6 +174,11 @@ export class NativeScenarioEnvironmentLease {
 
     const prefix = `${requirement.toLowerCase()}-`;
     const root = await mkdtemp(path.join(canonicalScenarioRoot, prefix));
+    const workspaceName = options.workspaceName;
+    if (workspaceName !== undefined) {
+      assert.match(workspaceName, /^[a-z0-9][a-z0-9-]*$/u);
+      assert.equal(path.basename(workspaceName), workspaceName);
+    }
     const paths: NativeScenarioEnvironmentPaths = {
       root,
       home: path.join(root, "home"),
@@ -175,7 +188,10 @@ export class NativeScenarioEnvironmentLease {
       xdgState: path.join(root, "xdg/state"),
       xdgRuntime: path.join(root, "xdg/runtime"),
       ideHome: path.join(root, "ide-home"),
-      workspace: path.join(root, "workspace"),
+      workspace:
+        workspaceName === undefined
+          ? path.join(root, "workspace")
+          : path.join(root, "workspaces", workspaceName),
       temporary: path.join(root, "tmp"),
       evidence: path.join(root, "evidence"),
     };

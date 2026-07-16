@@ -7,6 +7,7 @@ import {
 import { NativeApplicationContentLayoutSession } from "./native-application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
 import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
+import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activation.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
@@ -33,6 +34,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeDesktopEvidenceAttached = false;
   #nativeRefactorKitJavaImportSession?: NativeRefactorKitJavaImportSession;
   #nativeRefactorKitJavaImportEvidenceAttached = false;
+  #nativeXcom2ModuleActivationSession?: NativeXcom2ModuleActivationSession;
+  #nativeXcom2ModuleActivationEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
@@ -249,6 +252,45 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeDesktopEvidenceAttached = true;
   }
 
+  createNativeXcom2ModuleActivationSession(): NativeXcom2ModuleActivationSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native XCOM module activation Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-webdriver" ||
+      this.targetEvidence.nativeGui !== true ||
+      this.targetEvidence.e2e !== true ||
+      this.targetEvidence.packagedApplication !== false ||
+      this.targetEvidence.artifactKind !== "release-no-bundle"
+    ) {
+      throw new TypeError(
+        "The native XCOM module activation Story requires explicit release/no-bundle tauri-webdriver evidence",
+      );
+    }
+    if (this.#nativeXcom2ModuleActivationSession) {
+      throw new Error("The native XCOM module activation Story session has already been created");
+    }
+    const session = new NativeXcom2ModuleActivationSession();
+    this.#nativeXcom2ModuleActivationSession = session;
+    return session;
+  }
+
+  nativeXcom2ModuleActivationSession(): NativeXcom2ModuleActivationSession {
+    if (!this.#nativeXcom2ModuleActivationSession) {
+      throw new Error("The native XCOM module activation Story session has not been created");
+    }
+    return this.#nativeXcom2ModuleActivationSession;
+  }
+
+  async attachNativeXcom2ModuleActivationEvidence(): Promise<void> {
+    if (this.#nativeXcom2ModuleActivationEvidenceAttached) return;
+    const session = this.nativeXcom2ModuleActivationSession();
+    await this.attach(JSON.stringify(session.evidence()), "application/json");
+    this.#nativeXcom2ModuleActivationEvidenceAttached = true;
+  }
+
   createNativeRefactorKitJavaImportSession(): NativeRefactorKitJavaImportSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -285,6 +327,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const nativeApplicationContentLayoutSession = this.#nativeApplicationContentLayoutSession;
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
     const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
+    const nativeXcom2ModuleActivationSession = this.#nativeXcom2ModuleActivationSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
@@ -293,6 +336,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeApplicationContentLayoutSession = undefined;
     this.#nativeDesktopFileOpenSession = undefined;
     this.#nativeRefactorKitJavaImportSession = undefined;
+    this.#nativeXcom2ModuleActivationSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
@@ -338,6 +382,24 @@ export class StoryWorld extends World<StoryWorldParameters> {
           }
         } finally {
           await nativeRefactorKitJavaImportSession.dispose();
+        }
+      }
+      if (nativeXcom2ModuleActivationSession) {
+        try {
+          if (!this.#nativeXcom2ModuleActivationEvidenceAttached) {
+            await this.attach(
+              JSON.stringify(nativeXcom2ModuleActivationSession.evidence()),
+              "application/json",
+            );
+          }
+        } finally {
+          await nativeXcom2ModuleActivationSession.dispose();
+          await this.attach(
+            JSON.stringify(nativeXcom2ModuleActivationSession.evidence()),
+            "application/json",
+          );
+          const diagnostics = nativeXcom2ModuleActivationSession.redactedDiagnostics();
+          if (diagnostics) await this.attach(diagnostics, "text/plain");
         }
       }
       await app?.dispose();
