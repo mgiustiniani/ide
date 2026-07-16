@@ -21,18 +21,17 @@ export interface StoryWorldParameters {
 }
 
 /**
- * Per-scenario seam for a future target-specific driver.
+ * Per-scenario lifecycle seam for the selected Story target.
  *
- * The scaffold deliberately exposes no driver capability. A later Story slice
- * can replace this placeholder with an owned adapter without putting browser or
- * desktop state in the Cucumber World.
+ * Real Playwright, Tauri harness, and tauri-webdriver sessions remain owned by
+ * their Story support classes rather than placing driver state in the World.
  */
 export interface TargetProfileSeam {
   readonly profile: TargetProfile;
   dispose(): Promise<void>;
 }
 
-class TargetProfilePlaceholder implements TargetProfileSeam {
+class TargetProfileLifecycle implements TargetProfileSeam {
   readonly profile: TargetProfile;
   #disposed = false;
 
@@ -78,5 +77,5 @@ export function resolveTargetProfile(parameters: StoryWorldParameters): TargetPr
 }
 
 export function createTargetProfileSeam(profile: TargetProfile): TargetProfileSeam {
-  return new TargetProfilePlaceholder(profile);
+  return new TargetProfileLifecycle(profile);
 }

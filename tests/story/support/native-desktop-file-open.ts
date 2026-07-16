@@ -7,6 +7,11 @@ import path from "node:path";
 
 import { remote } from "webdriverio";
 
+import {
+  NativeScenarioEnvironmentLease,
+  type NativeScenarioEnvironmentEvidence,
+} from "./native-scenario-environment.js";
+
 export const NATIVE_OPEN_PROOF_FILE = "native-open-proof.ts";
 export const NATIVE_OPEN_PROOF_CONTENT =
   'export const nativeOpenProof = "REQ-DESKTOP-FILE-OPEN-001";';
@@ -15,20 +20,6 @@ const DRIVER_START_TIMEOUT_MS = 10_000;
 const SESSION_START_TIMEOUT_MS = 20_000;
 const PROCESS_EXIT_TIMEOUT_MS = 5_000;
 const DIAGNOSTIC_LIMIT = 16 * 1024;
-const STATE_PATH_VARIABLES = [
-  "HOME",
-  "XDG_CONFIG_HOME",
-  "XDG_CACHE_HOME",
-  "XDG_DATA_HOME",
-  "XDG_STATE_HOME",
-  "XDG_RUNTIME_DIR",
-  "IDE_HOME",
-  "IDE_WORKSPACE_ROOT",
-  "TMPDIR",
-  "TEMP",
-  "TMP",
-  "IDE_STORY_NATIVE_GUI_ARTIFACT_PATH",
-] as const;
 
 interface DriverExit {
   readonly code: number | null;
@@ -52,6 +43,7 @@ interface NativeEvidence {
   windowClosed?: boolean;
   executableExited?: boolean;
   sandboxConfined?: boolean;
+  scenarioEnvironment?: Readonly<NativeScenarioEnvironmentEvidence>;
 }
 
 function isContained(root: string, candidate: string): boolean {
@@ -163,8 +155,6 @@ async function findExecutableDescendant(
 
 export class NativeDesktopFileOpenSession {
   readonly #sandbox = requiredAbsoluteEnvironment("IDE_STORY_NATIVE_GUI_SANDBOX_PATH");
-  readonly #workspace = requiredAbsoluteEnvironment("IDE_WORKSPACE_ROOT");
-  readonly #artifactPath = requiredAbsoluteEnvironment("IDE_STORY_NATIVE_GUI_ARTIFACT_PATH");
   readonly #tauriDriverPath = requiredAbsoluteEnvironment("IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH");
   readonly #webKitWebDriverPath = requiredAbsoluteEnvironment(
     "IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH",
@@ -176,6 +166,7 @@ export class NativeDesktopFileOpenSession {
     nativeGui: true,
     e2e: true,
   };
+  #lease?: NativeScenarioEnvironmentLease;
   #fixtureName?: string;
   #fixtureContent?: string;
   #driver?: ChildProcess;
@@ -192,20 +183,12 @@ export class NativeDesktopFileOpenSession {
       "desktop/tauri-webdriver",
       "native GUI target must come from the owned runner",
     );
-    assert.ok(isContained(this.#sandbox, this.#workspace), "workspace must be sandboxed");
-    assert.ok(isContained(this.#sandbox, this.#artifactPath), "diagnostics must be sandboxed");
-
-    const canonicalSandbox = await realpath(this.#sandbox);
-    for (const variable of STATE_PATH_VARIABLES) {
-      const value = requiredAbsoluteEnvironment(variable);
-      assert.ok(isContained(this.#sandbox, value), `${variable} must remain in the sandbox`);
-      assert.ok(
-        isContained(canonicalSandbox, await realpath(value)),
-        `${variable} must not escape through a symbolic link`,
-      );
-    }
+    assert.equal(this.#lease, undefined, "native file-open scenario environment already allocated");
+    this.#lease = await NativeScenarioEnvironmentLease.acquire("REQ-DESKTOP-FILE-OPEN-001");
+    assert.equal(this.#lease.runnerSandbox, this.#sandbox);
+    await this.#lease.assertConfiguredPathsConfined();
     assert.deepEqual(
-      await readdir(this.#workspace),
+      await readdir(this.workspace()),
       [],
       "the authorized workspace must start empty",
     );
@@ -215,8 +198,8 @@ export class NativeDesktopFileOpenSession {
     assert.equal(fileName, NATIVE_OPEN_PROOF_FILE);
     assert.match(fileName, /^[A-Za-z0-9._-]+$/, "fixture must be a root basename");
     assert.equal(this.#fixtureName, undefined, "native file-open fixture already exists");
-    const fixturePath = path.join(this.#workspace, fileName);
-    assert.ok(isContained(this.#workspace, fixturePath));
+    const fixturePath = path.join(this.workspace(), fileName);
+    assert.ok(isContained(this.workspace(), fixturePath));
     await writeFile(fixturePath, "", { encoding: "utf8", flag: "wx" });
     this.#fixtureName = fileName;
     this.#evidence.fixture = fileName;
@@ -333,7 +316,7 @@ export class NativeDesktopFileOpenSession {
     );
     const selectedSourcePath = await item.getAttribute("data-path");
     if (selectedSourcePath === null) throw new Error("selected file item has no data-path");
-    const selectedPath = path.resolve(this.#workspace, selectedSourcePath);
+    const selectedPath = path.resolve(this.workspace(), selectedSourcePath);
     assert.equal(selectedPath, this.fixturePath());
     this.#evidence.selectedPath = selectedPath;
     this.#evidence.selectedPathSource = selectedSourcePath;
@@ -470,24 +453,30 @@ export class NativeDesktopFileOpenSession {
   }
 
   async assertExecutableExited(): Promise<void> {
-    assert.equal(this.#evidence.windowClosed, true, "native window has not been closed");
-    const processId = this.#applicationProcessId;
-    assert.ok(processId, "release executable process was not observed");
-    const deadline = Date.now() + PROCESS_EXIT_TIMEOUT_MS;
-    while (await processExists(processId)) {
-      if (Date.now() >= deadline) {
-        assert.fail(`release executable process ${processId} did not exit after its window closed`);
+    try {
+      assert.equal(this.#evidence.windowClosed, true, "native window has not been closed");
+      const processId = this.#applicationProcessId;
+      assert.ok(processId, "release executable process was not observed");
+      const deadline = Date.now() + PROCESS_EXIT_TIMEOUT_MS;
+      while (await processExists(processId)) {
+        if (Date.now() >= deadline) {
+          assert.fail(
+            `release executable process ${processId} did not exit after its window closed`,
+          );
+        }
+        await wait(50);
       }
-      await wait(50);
+      this.#evidence.executableExited = true;
+    } finally {
+      await this.#lease?.restoreEnvironment();
     }
-    this.#evidence.executableExited = true;
   }
 
   async assertSandboxConfinement(): Promise<void> {
     await this.assertExecutableExited();
-    assert.deepEqual(await readdir(this.#workspace), [".ide", this.requiredFixtureName()]);
+    assert.deepEqual(await readdir(this.workspace()), [".ide", this.requiredFixtureName()]);
     assert.equal(await readFile(this.fixturePath(), "utf8"), this.#fixtureContent);
-    const workspaceStateDirectory = path.join(this.#workspace, ".ide");
+    const workspaceStateDirectory = path.join(this.workspace(), ".ide");
     assert.ok(isContained(this.#sandbox, await realpath(workspaceStateDirectory)));
     assert.deepEqual(await readdir(workspaceStateDirectory), ["workspace.json"]);
     const workspaceMetadataValue: unknown = JSON.parse(
@@ -506,20 +495,20 @@ export class NativeDesktopFileOpenSession {
       "updatedAt",
     ]);
     assert.match(String(workspaceMetadata.id), /^ws-[0-9a-f]{16}$/);
-    assert.equal(workspaceMetadata.path, this.#workspace);
-    assert.equal(workspaceMetadata.name, path.basename(this.#workspace));
+    assert.equal(workspaceMetadata.path, this.workspace());
+    assert.equal(workspaceMetadata.name, path.basename(this.workspace()));
     assert.match(String(workspaceMetadata.createdAt), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     assert.equal(workspaceMetadata.updatedAt, workspaceMetadata.createdAt);
     const application = await stat(this.#applicationPath);
     assert.equal(application.isFile(), true);
-    for (const variable of STATE_PATH_VARIABLES) {
-      assert.ok(isContained(this.#sandbox, requiredAbsoluteEnvironment(variable)), variable);
-    }
+    const lease = this.lease();
+    await lease.assertConfiguredPathsConfined();
+    assert.equal(lease.evidence().environmentRestored, true);
     this.#evidence.sandboxConfined = true;
   }
 
   evidence(): Readonly<NativeEvidence> {
-    return { ...this.#evidence };
+    return { ...this.#evidence, scenarioEnvironment: this.#lease?.evidence() };
   }
 
   redactedDiagnostics(): string {
@@ -533,42 +522,47 @@ export class NativeDesktopFileOpenSession {
   }
 
   async dispose(): Promise<void> {
-    const browser = this.#browser;
-    this.#browser = undefined;
-    if (browser && !this.#sessionDeleted) {
-      try {
-        await bounded(browser.deleteSession(), 2_000, "WebdriverIO session cleanup");
-        this.#sessionDeleted = true;
-      } catch {
-        // Cleanup continues with the owned driver process.
-      }
-    }
-
-    const driver = this.#driver;
-    const driverExit = this.#driverExit;
-    this.#driver = undefined;
-    this.#driverExit = undefined;
-    if (!driver || !driverExit) return;
-    if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
-    await Promise.race([driverExit.catch(() => undefined), wait(2_000)]);
-    if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
-    await Promise.race([driverExit.catch(() => undefined), wait(1_000)]);
-
-    const applicationProcessId = this.#applicationProcessId;
-    if (applicationProcessId && (await processExists(applicationProcessId))) {
-      try {
-        process.kill(applicationProcessId, "SIGTERM");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-      await wait(250);
-      if (await processExists(applicationProcessId)) {
+    try {
+      const browser = this.#browser;
+      this.#browser = undefined;
+      if (browser && !this.#sessionDeleted) {
         try {
-          process.kill(applicationProcessId, "SIGKILL");
+          await bounded(browser.deleteSession(), 2_000, "WebdriverIO session cleanup");
+          this.#sessionDeleted = true;
+        } catch {
+          // Cleanup continues with the owned driver process.
+        }
+      }
+
+      const driver = this.#driver;
+      const driverExit = this.#driverExit;
+      this.#driver = undefined;
+      this.#driverExit = undefined;
+      if (driver && driverExit) {
+        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
+        await Promise.race([driverExit.catch(() => undefined), wait(2_000)]);
+        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
+        await Promise.race([driverExit.catch(() => undefined), wait(1_000)]);
+      }
+
+      const applicationProcessId = this.#applicationProcessId;
+      if (applicationProcessId && (await processExists(applicationProcessId))) {
+        try {
+          process.kill(applicationProcessId, "SIGTERM");
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
         }
+        await wait(250);
+        if (await processExists(applicationProcessId)) {
+          try {
+            process.kill(applicationProcessId, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+        }
       }
+    } finally {
+      await this.#lease?.dispose();
     }
   }
 
@@ -577,13 +571,22 @@ export class NativeDesktopFileOpenSession {
     return this.#browser;
   }
 
+  private lease(): NativeScenarioEnvironmentLease {
+    if (!this.#lease) throw new Error("native file-open scenario environment is unavailable");
+    return this.#lease;
+  }
+
+  private workspace(): string {
+    return this.lease().paths.workspace;
+  }
+
   private requiredFixtureName(): string {
     if (!this.#fixtureName) throw new Error("native desktop fixture has not been declared");
     return this.#fixtureName;
   }
 
   private fixturePath(): string {
-    return path.join(this.#workspace, this.requiredFixtureName());
+    return path.join(this.workspace(), this.requiredFixtureName());
   }
 
   private fileItem(fileName: string): ReturnType<Awaited<ReturnType<typeof remote>>["$"]> {

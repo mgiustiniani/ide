@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
-import { access, readFile, readlink, realpath } from "node:fs/promises";
+import { access, readFile, readlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 
@@ -17,6 +17,10 @@ import {
   type SeparatorSemantics,
 } from "./application-content-layout.js";
 import { captureApplicationLayoutFromDocument } from "./layout-dom-capture.js";
+import {
+  NativeScenarioEnvironmentLease,
+  type NativeScenarioEnvironmentEvidence,
+} from "./native-scenario-environment.js";
 
 const DESKTOP_HEADER_SELECTOR = "#root > div > header";
 const DRIVER_START_TIMEOUT_MS = 10_000;
@@ -25,20 +29,6 @@ const PROCESS_EXIT_TIMEOUT_MS = 5_000;
 const PANEL_TRANSITION_MS = 250;
 const SETTLED_SAMPLE_MS = 75;
 const DIAGNOSTIC_LIMIT = 16 * 1024;
-const STATE_PATH_VARIABLES = [
-  "HOME",
-  "XDG_CONFIG_HOME",
-  "XDG_CACHE_HOME",
-  "XDG_DATA_HOME",
-  "XDG_STATE_HOME",
-  "XDG_RUNTIME_DIR",
-  "IDE_HOME",
-  "IDE_WORKSPACE_ROOT",
-  "TMPDIR",
-  "TEMP",
-  "TMP",
-  "IDE_STORY_NATIVE_GUI_ARTIFACT_PATH",
-] as const;
 
 type Browser = Awaited<ReturnType<typeof remote>>;
 type DriverExit = { readonly code: number | null; readonly signal: NodeJS.Signals | null };
@@ -57,6 +47,7 @@ interface NativeLayoutEvidence {
   windowClosed?: boolean;
   executableExited?: boolean;
   sandboxPathsConfined?: boolean;
+  scenarioEnvironment?: Readonly<NativeScenarioEnvironmentEvidence>;
 }
 
 function requiredAbsoluteEnvironment(name: string): string {
@@ -73,14 +64,6 @@ function requiredPositiveIntegerEnvironment(name: string): number {
     throw new Error(`Native layout Story requires positive integer ${name}`);
   }
   return value;
-}
-
-function isContained(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return (
-    relative === "" ||
-    (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
-  );
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -196,6 +179,7 @@ export class NativeApplicationContentLayoutSession implements ApplicationContent
     e2e: true,
     packagedApplication: false,
   };
+  #lease?: NativeScenarioEnvironmentLease;
   #driver?: ChildProcess;
   #driverExit?: Promise<DriverExit>;
   #driverDiagnostic = "";
@@ -209,6 +193,8 @@ export class NativeApplicationContentLayoutSession implements ApplicationContent
     assert.equal(this.#desiredWidth, 1440, "clarified native layout viewport width");
     assert.equal(this.#desiredHeight, 900, "clarified native layout viewport height");
     assert.equal(this.#driver, undefined, "native layout session already launched");
+    assert.equal(this.#lease, undefined, "native layout scenario environment already allocated");
+    this.#lease = await NativeScenarioEnvironmentLease.acquire("REQ-LAYOUT-DESKTOP-001");
     await this.#assertSandboxPathsConfined();
     await Promise.all([
       access(this.#tauriDriverPath, fsConstants.X_OK),
@@ -363,7 +349,11 @@ export class NativeApplicationContentLayoutSession implements ApplicationContent
   }
 
   evidence(): Readonly<Record<string, unknown>> {
-    return { ...this.#nativeEvidence, ...this.#geometry.evidence() };
+    return {
+      ...this.#nativeEvidence,
+      scenarioEnvironment: this.#lease?.evidence(),
+      ...this.#geometry.evidence(),
+    };
   }
 
   redactedDiagnostics(): string {
@@ -378,43 +368,47 @@ export class NativeApplicationContentLayoutSession implements ApplicationContent
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
-    const browser = this.#browser;
-    this.#browser = undefined;
-    if (browser && !this.#sessionDeleted) {
-      try {
-        await bounded(browser.deleteSession(), 2_000, "native layout WebDriver cleanup");
-        this.#sessionDeleted = true;
-      } catch {
-        // Continue with process-owned cleanup.
-      }
-    }
-
-    const driver = this.#driver;
-    const driverExit = this.#driverExit;
-    this.#driver = undefined;
-    this.#driverExit = undefined;
-    if (driver && driverExit) {
-      if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
-      await Promise.race([driverExit.catch(() => undefined), wait(2_000)]);
-      if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
-      await Promise.race([driverExit.catch(() => undefined), wait(1_000)]);
-    }
-
-    const applicationProcessId = this.#applicationProcessId;
-    if (applicationProcessId && (await processExists(applicationProcessId))) {
-      try {
-        process.kill(applicationProcessId, "SIGTERM");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-      await wait(250);
-      if (await processExists(applicationProcessId)) {
+    try {
+      const browser = this.#browser;
+      this.#browser = undefined;
+      if (browser && !this.#sessionDeleted) {
         try {
-          process.kill(applicationProcessId, "SIGKILL");
+          await bounded(browser.deleteSession(), 2_000, "native layout WebDriver cleanup");
+          this.#sessionDeleted = true;
+        } catch {
+          // Continue with process-owned cleanup.
+        }
+      }
+
+      const driver = this.#driver;
+      const driverExit = this.#driverExit;
+      this.#driver = undefined;
+      this.#driverExit = undefined;
+      if (driver && driverExit) {
+        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
+        await Promise.race([driverExit.catch(() => undefined), wait(2_000)]);
+        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
+        await Promise.race([driverExit.catch(() => undefined), wait(1_000)]);
+      }
+
+      const applicationProcessId = this.#applicationProcessId;
+      if (applicationProcessId && (await processExists(applicationProcessId))) {
+        try {
+          process.kill(applicationProcessId, "SIGTERM");
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
         }
+        await wait(250);
+        if (await processExists(applicationProcessId)) {
+          try {
+            process.kill(applicationProcessId, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+        }
       }
+    } finally {
+      await this.#lease?.dispose();
     }
   }
 
@@ -534,39 +528,42 @@ export class NativeApplicationContentLayoutSession implements ApplicationContent
   }
 
   async #closeWindowAndAssertExit(): Promise<void> {
-    const browser = this.browser();
-    assert.ok((await bounded(browser.getWindowHandles(), 2_000, "window handle query")).length > 0);
     try {
-      await bounded(browser.closeWindow(), 5_000, "native layout window close");
-    } catch (error) {
-      assert.equal(
-        error instanceof Error ? error.message : String(error),
-        "All window handles were removed, causing WebdriverIO to close the session.",
+      const browser = this.browser();
+      assert.ok(
+        (await bounded(browser.getWindowHandles(), 2_000, "window handle query")).length > 0,
       );
-    }
-    this.#nativeEvidence.windowClosed = true;
-    const processId = this.#applicationProcessId;
-    assert.ok(processId, "release executable process was not observed");
-    const deadline = Date.now() + PROCESS_EXIT_TIMEOUT_MS;
-    while (await processExists(processId)) {
-      if (Date.now() >= deadline) {
-        assert.fail(`release executable process ${processId} did not exit after its window closed`);
+      try {
+        await bounded(browser.closeWindow(), 5_000, "native layout window close");
+      } catch (error) {
+        assert.equal(
+          error instanceof Error ? error.message : String(error),
+          "All window handles were removed, causing WebdriverIO to close the session.",
+        );
       }
-      await wait(50);
+      this.#nativeEvidence.windowClosed = true;
+      const processId = this.#applicationProcessId;
+      assert.ok(processId, "release executable process was not observed");
+      const deadline = Date.now() + PROCESS_EXIT_TIMEOUT_MS;
+      while (await processExists(processId)) {
+        if (Date.now() >= deadline) {
+          assert.fail(
+            `release executable process ${processId} did not exit after its window closed`,
+          );
+        }
+        await wait(50);
+      }
+      this.#nativeEvidence.executableExited = true;
+    } finally {
+      await this.#lease?.restoreEnvironment();
     }
-    this.#nativeEvidence.executableExited = true;
   }
 
   async #assertSandboxPathsConfined(): Promise<void> {
-    const canonicalSandbox = await realpath(this.#sandbox);
-    for (const variable of STATE_PATH_VARIABLES) {
-      const configuredPath = requiredAbsoluteEnvironment(variable);
-      assert.ok(isContained(this.#sandbox, configuredPath), `${variable} escaped the sandbox`);
-      assert.ok(
-        isContained(canonicalSandbox, await realpath(configuredPath)),
-        `${variable} escaped through a symbolic link`,
-      );
-    }
+    const lease = this.#lease;
+    assert.ok(lease, "native layout scenario environment is unavailable");
+    assert.equal(lease.runnerSandbox, this.#sandbox);
+    await lease.assertConfiguredPathsConfined();
     this.#nativeEvidence.sandboxPathsConfined = true;
   }
 
