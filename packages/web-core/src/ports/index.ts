@@ -12,5 +12,6 @@ export type { RefactorKitPort } from "./refactorkit-port";
 export type { LanguageSessionPort } from "./language-session-port";
 export type { DocumentSyncPort } from "./document-sync-port";
 export type { JavaIntelligencePort } from "./java-intelligence-port";
+export type { Xcom2ModuleScannerPort } from "./xcom2-module-scanner-port";
 export type { Xcom2SetupMonitorPort } from "./xcom2-setup-monitor-port";
 export type { Xcom2SetupPort, Xcom2SetupSubscription } from "./xcom2-setup-port";
