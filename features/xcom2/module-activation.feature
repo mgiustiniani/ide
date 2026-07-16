@@ -2,15 +2,15 @@ Business Need: Conservative XCOM 2 module activation
   To avoid presenting project tooling for unrelated or ambiguous workspaces
   Desktop users need an XCOM project contribution to follow only credible, workspace-authorized module evidence.
 
-  This first Story covers recognition only and keeps XCOM machine setup evidence independent of project activation.
+  This first Story covers recognition only, retains ADR 0007 Option A, and keeps XCOM machine setup evidence independent of project activation.
   Traceability: FR-X2PRJ-001, FR-X2UI-001, FR-X2ARCH-007, NFR-X2SEC-001, the non-XCOM workspace subset of AT-X2-001, AT-X2-015, and the stale-switch subset of AT-X2-017.
 
-  Eventual native evidence is bounded to the actual sandbox filesystem and the production Linux X11 Tauri WebKit DOM at an asserted 1440x900 viewport.
+  Native validation evidence is bounded to the actual sandbox filesystem and the production Linux X11 Tauri release/no-bundle WebKit DOM at an asserted 1440x900 viewport.
   Recognition uses exact-case Linux paths and accepts only regular, non-symlink evidence within the current authorized workspace root.
   It makes no application package, Wayland, other operating-system, or DPI-behavior claim.
   It also makes no claim about proprietary project compatibility, content parsing, external roots, explicit configuration or manual confirmation, machine setup correctness, or build or language capability.
 
-  @REQ-XCOM2-MODULE-ACTIVATION-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-MODULE-ACTIVATION-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-and-validated
   Scenario: Contribute recognition only while credible XCOM module evidence is current
     Given one scenario sandbox owns all desktop user state and an actual workspace registry with exactly these authorized workspaces:
       | workspace            | initial role                         |
