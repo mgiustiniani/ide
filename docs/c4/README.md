@@ -6,6 +6,12 @@
 structurizr validate -workspace docs/c4/workspace.dsl
 ```
 
+## XCOM 2 project recognition boundary
+
+The desktop architecture includes one recognition-only XCOM 2 project slice. After workspace authorization, a generation-correlated controller requests one dedicated read-only Rust metadata/name scan through a strict Tauri adapter. A pure evaluator activates recognition only when one canonical module root has at least two distinct exact evidence kinds. The accessible **XCOM 2 Project** activity displays active roots, ordered evidence, completeness, and scan issues.
+
+Workspace transitions revoke the activity synchronously, and late results are discarded unless workspace and scan correlation still match. Machine setup remains independently Settings-owned and cannot activate project recognition. The slice has no explicit configuration, manual confirmation, external-root grant, content parsing, Build, Problems, Logs, language support, actions, or bottom contribution; those concerns are not part of the current recognition path.
+
 The repository does not own a Structurizr container or image invocation. It therefore does not pin an image tag or digest. The version above is the validated CLI compatibility boundary; installation and acquisition of that CLI remain external to this repository.
 
 ## Self-contained rendering
@@ -21,3 +27,15 @@ A future remote theme must not be added. If a theme becomes necessary, vendor th
 First-time acquisition of Structurizr CLI or a chosen execution image can require network access. Once Structurizr CLI 2026.06.28 is available locally, validation and export of this workspace require no network access: the DSL has no remote include or theme dependency. Image selection and supply-chain verification remain the responsibility of the execution environment because this repository invokes no image.
 
 Views use deterministic `autoLayout lr`; there is no curated `workspace.json` layout in this repository. Exports are derived review artifacts and should be generated outside the working tree unless a separate change explicitly adopts them.
+
+For a direct offline export audit, write each derived format to a temporary directory and remove it after inspection:
+
+```bash
+review_dir="$(mktemp -d)"
+structurizr export -workspace docs/c4/workspace.dsl -format static -output "$review_dir/static"
+structurizr export -workspace docs/c4/workspace.dsl -format mermaid -output "$review_dir/mermaid"
+structurizr export -workspace docs/c4/workspace.dsl -format json -output "$review_dir/json"
+rm -rf "$review_dir"
+```
+
+Image rendering is not part of this routine audit.

@@ -1,6 +1,6 @@
 # Container Diagram (C2)
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with a locally bundled Java Monarch/basic language contribution. Desktop JDT LS document sync, provider-neutral diagnostics with a conditional project-scoped Problems contribution, completion, hover, signature help, and cancellation cross typed, guarded application/Tauri/Rust boundaries. This does not imply Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 recognition crosses a dedicated read-only scanner boundary and produces only a workspace-scoped activity. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence.
 
 ```text
 Web App ──> Web Browser
@@ -21,6 +21,8 @@ Desktop App ──typed Tauri boundary──> Rust Backend
   ├─ dynamic BottomPanel: core Terminal + AI Agent
   │    ├─ project Problems while ready Java context or projected items exist
   │    └─ status bar retains the bottom-panel visibility toggle
+  ├─ dynamic activity rail: `XCOM 2 Project` only after active recognition
+  │    └─ recognition evidence only; no bottom or project-tool contribution
   ├─ Settings / Java: JDK + JDT LS lifecycle/status,
   │                   RefactorKit availability/version/path
   └─ Settings / XCOM: machine health + separate dry run
@@ -39,17 +41,21 @@ Desktop App ──provider-neutral Tauri calls──> Rust Backend ──LSP/std
   └─ didOpen/didChange/didSave/didClose + completion/hover/signature/cancel
      workspace/session/path/URI/version/request/cancel guards drop stale work
 
+Desktop App ──strict scanner adapter──> Rust Backend ──read-only metadata──> authorized workspace
+  └─ one request per workspace generation; exact correlation rejects stale results
+     two distinct exact evidence kinds at one module root activate recognition
+
 Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
                  Steam evidence + installed game/SDK + rollback state
 ```
 
 ## Runtime Containers
 
-| Container        | Technology                    | Current responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                                                                                                                                                                                  |
-| **Desktop App**  | React + Vite in Tauri WebView | Hosts the Monaco-only editor, local Java syntax contribution, and controlled panel shell. Its composition root wires panel resize and visibility requests to layout state: the collapsed sidebar retains an activity-rail recovery control, the status bar retains the bottom-panel toggle, and visibility changes preserve runtime dimensions. Java diagnostics, Problems visibility, completion, hover, and signature help do not imply module activation. |
-| **Rust Backend** | Rust + Tauri commands         | Exposes thin Tauri facades over modular Java Language and RefactorKit application services. Java contract/path, protocol/semantic/toolchain/support concerns and RefactorKit required-method/metadata, contract/path, and NDJSON transport concerns remain separated. It manages JDT LS and one canonical-workspace/generation-scoped RefactorKit daemon for capability discovery, Java import, discard, and provider-authoritative rollback.                |
+| Container        | Technology                    | Current responsibility                                                                                                                                                                                                                                                                        |
+| ---------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                   |
+| **Desktop App**  | React + Vite in Tauri WebView | Hosts the editor and controlled shell. It also owns one-shot XCOM recognition orchestration, pure evaluation, synchronous activity revocation, and stale-result suppression. An active decision contributes only the accessible `XCOM 2 Project` activity. Machine Settings remains separate. |
+| **Rust Backend** | Rust + Tauri commands         | Exposes bounded native services, including the dedicated XCOM metadata/name scanner. That scanner reads only the current authorized root, does not follow symlinks or parse content, and returns canonical observations and scan limitations through the strict adapter boundary.             |
 
 JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
@@ -73,13 +79,13 @@ Rust opens the canonical workspace and scopes one NDJSON daemon to its generatio
 
 ## Internal Package Boundaries
 
-| Package                     | Current role                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`@ide/contracts`**        | Provider-neutral lifecycle, diagnostic events, document identity/version, completion, hover, signature-help, cancellation, RefactorKit status/import, and XCOM contracts; no JDT LS/LSP/Monaco wire types leak through.                                                                                                                                                    |
-| **`@ide/web-core`**         | Defines language/document/Java intelligence ports and coordinates bounded application flows without provider coupling. Panel layout state changes visibility without resetting dimensions. Its clipboard import coordinator probes capability before clipboard access, guards exact-plan Apply, and invalidates retained plans.                                            |
-| **`@ide/browser-adapters`** | Native JDT LS, RefactorKit, and clipboard integrations remain honestly unavailable in browser mode without deliberate simulation.                                                                                                                                                                                                                                          |
-| **`@ide/tauri-adapters`**   | Implements typed lifecycle/document sync plus Java completion/hover/signature/cancel normalization and separate RefactorKit/clipboard ports, including non-UI rollback contracts; malformed and mismatched payloads fail closed. Its distinct XCOM monitor and transaction adapters poll only for the single open-Settings lifecycle; final unsubscribe clears each timer. |
-| **`@ide/ui`**               | Supplies the controlled panel shell, including the collapsed-sidebar recovery control and persistent status-bar bottom toggle, plus the Monaco editor, guarded Java providers, safe edit mapping, untrusted Markdown rendering, and clipboard import presentation without a rollback action.                                                                               |
+| Package                     | Current role                                                                                                                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@ide/contracts`**        | Defines provider-neutral language, RefactorKit, XCOM setup, and XCOM recognition snapshots and correlation. Native paths and implementation wire types do not leak through.                                           |
+| **`@ide/web-core`**         | Defines the XCOM scanner port and pure recognition evaluator alongside other bounded application policy. The evaluator groups canonical roots and requires two distinct evidence kinds.                               |
+| **`@ide/browser-adapters`** | Keeps native integrations unavailable in browser mode without deliberate simulation; the web shell starts no project recognition scan.                                                                                |
+| **`@ide/tauri-adapters`**   | Implements strict XCOM scanner request/response validation, exact correlation, bounded arrays, canonical relative paths, enums, and deterministic ordering. Machine monitor and transaction adapters remain separate. |
+| **`@ide/ui`**               | Supplies the controlled shell and read-only accessible XCOM project recognition panel. The panel exposes evidence and limitations but no actions or bottom contribution.                                              |
 
 ## Global Settings versus Project Contributions
 
@@ -92,7 +98,7 @@ Rust opens the canonical workspace and scopes one NDJSON daemon to its generatio
 | **XCOM machine runtime**       | Transaction authority stays correlated to the current workspace/generation, but only open Settings owns one monitor and one transaction adapter lifecycle. Close invalidates requests, unsubscribes both, and clears both timers; reopen owns one fresh lifecycle of each. | Closed Settings performs no XCOM monitor, history, detail, poll, or subscription work across cold start or workspace switching.                                                                          |
 | **XCOM concrete SDK setup**    | Stable native Prepare audits vanilla AppID 602410 and emits exactly 15 reversible operations. Apply needs exact-digest external approval for one transaction; Restore preserves conflicts and returns the captured baseline.                                               | Remains current and separate from target project tooling and optional provisioning.                                                                                                                      |
 | **XCOM optional provisioning** | No Protontricks, Steam shortcut, compatibility-prefix, package-manager, or interactive action is executable.                                                                                                                                                               | Separately design and authorize any such capability; never include it implicitly in SDK Apply.                                                                                                           |
-| **XCOM project tooling**       | No scanner, project/module detection, activation, activity entry, bottom tab, or contextual contribution.                                                                                                                                                                  | Evidence-based or explicit activation and all project/module contributions remain FUTURE/TARGET.                                                                                                         |
+| **XCOM project recognition**   | Dedicated authorized-root scanner, strict Tauri adapter, pure two-distinct-kind evaluator, one-shot correlated controller, and dynamic accessible `XCOM 2 Project` activity. Synchronous revocation and stale-result suppression remove old recognition.                   | Explicit configuration, manual confirmation, external roots, content parsing, Build, Problems, Logs, language support, actions, and bottom contributions remain FUTURE/TARGET.                           |
 
 Transaction rollback storage is IDE-owned local state. Each backup is limited to 16 MiB; retention is bounded to 64 removable transactions and 256 events. Export payloads omit paths and content.
 

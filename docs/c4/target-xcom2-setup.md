@@ -1,29 +1,73 @@
-# Current WOTC SDK Setup and FUTURE/TARGET XCOM 2 Activation
+# XCOM 2 Recognition, Machine Setup, and Future Project Tooling
 
-> **MIXED CURRENT/TARGET BOUNDARY.** Repeatable concrete WOTC SDK native setup is **CURRENT/AS-BUILT**. XCOM project activation, language/build contributions, Protontricks, Steam shortcut and compatibility-prefix work, package-manager actions, and interactive provisioning remain **FUTURE/TARGET** and non-executable. See [System Context](system-context.md), [Containers](containers.md), and [Components](components.md).
+> **MIXED CURRENT/TARGET BOUNDARY.** Workspace-local recognition and repeatable WOTC SDK setup are **CURRENT/AS-BUILT**. Explicit configuration, manual confirmation, external-root grants, contextual Build/Problems/Logs/language tooling, and optional provisioning remain **FUTURE/TARGET**. See [System Context](system-context.md), [Containers](containers.md), and [Components](components.md).
 
-This roadmap is independent of the [current Java boundary and frozen unscheduled inventory](target-java-intelligence.md) and makes no IntelliJ-parity claim.
+This architecture is independent of the [current Java boundary and frozen inventory](target-java-intelligence.md) and makes no IntelliJ-parity claim.
 
 ## Architectural Separation
 
-| Responsibility                         | Scope                                    | Status and behavior                                                                                                                                               |
-| -------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Machine runtime lifecycle              | Settings visibility + workspace identity | **CURRENT:** open Settings exclusively owns one monitor and one transaction adapter lifecycle; transaction authority remains workspace-correlated.                |
-| Machine health and descriptive dry run | Desktop Settings                         | **CURRENT:** conservative monitor plus pure export-safe, non-executable dry run.                                                                                  |
-| Concrete WOTC SDK transaction          | Desktop Settings + Rust backend          | **CURRENT:** stable Prepare, exact-digest one-transaction approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                            |
-| Optional provisioning                  | External Steam/prefix/package tooling    | **TARGET/NON-EXECUTABLE:** Protontricks, Steam shortcut, compatibility prefix, package-manager, and interactive work are excluded from current Prepare and Apply. |
-| Project/module activation and tooling  | Opened project/module                    | **TARGET:** evidence-based or explicit activation gates contextual Problems, Build, Tests, Logs, and XCOM tools.                                                  |
+| Responsibility                         | Scope                                              | Boundary                                                                                                                                       |
+| -------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace recognition                  | Current authorized desktop workspace               | **CURRENT:** one read-only metadata/name scan per workspace generation, pure evidence evaluation, and an accessible recognition-only activity. |
+| Machine runtime lifecycle              | Settings visibility + workspace correlation        | **CURRENT:** open Settings exclusively owns monitor and transaction adapter lifecycles. Machine evidence cannot activate project recognition.  |
+| Concrete WOTC SDK transaction          | Desktop Settings + Rust backend                    | **CURRENT:** stable Prepare, exact-digest approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                         |
+| Configured activation and confirmation | Project configuration and separately granted roots | **TARGET:** explicit configuration, persistence, manual confirmation, and external-root authority are outside recognition-only scope.          |
+| Contextual project tools               | Separately authorized module                       | **TARGET:** Build, Problems, Logs, language support, actions, and XCOM tools require their own activation and tool authority.                  |
+| Optional provisioning                  | External Steam/prefix/package tooling              | **TARGET:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain separate from SDK Apply.          |
 
-A generic workspace remains generic: no XCOM scanner, activity entry, bottom tab, Problems/Build/Tests/Logs/XCOM contribution, language contribution, project/module state, or activation. With Settings closed, cold start and workspace switching perform no XCOM monitor snapshot/refresh, transaction history/detail, poll, or subscription work. Machine setup remains in Settings and does not require XCOM project activation.
+A generic or one-kind workspace receives no XCOM project contribution. An active recognition decision adds only **XCOM 2 Project** to the desktop activity rail; it never adds a bottom tab or project action. The browser starts no project scan. Machine Settings remains independently available and cannot provide project evidence.
 
-## AS-BUILT Concrete Native Setup
+## Current Workspace Recognition
 
-Prepare validates a vanilla WOTC SDK installation identified by Steam AppID `602410` and produces exactly 15 reversible operations:
+```text
+Authorized workspace generation
+  └─ XCOM Module Recognition Controller
+       ├─ synchronously revoke the old recognition snapshot
+       └─ issue one correlated request; never poll
+                    │
+                    ▼
+XCOM Module Scanner Tauri Adapter
+  ├─ exact DTO, enum, limits, and array validation
+  ├─ exact workspace + scan correlation
+  └─ canonical workspace-relative paths and deterministic ordering
+                    │ strict invoke
+                    ▼
+Rust XCOM Module Filesystem Evidence Scanner
+  ├─ current authorized root only
+  ├─ bounded traversal of regular, non-symlink entries
+  ├─ metadata and exact case-sensitive names only
+  └─ no content parsing, writes, symlink following, or external roots
+                    │ immutable observations + completeness/issues
+                    ▼
+Pure XCOM Module Recognition Evaluator
+  └─ independently group each canonical module root
+       ├─ no kind → inactive
+       ├─ one distinct kind → needs-confirmation, no contribution
+       └─ at least two distinct kinds → active recognition
+                    │ exact current correlation only
+                    ▼
+Accessible `XCOM 2 Project` activity
+  └─ roots + state + confidence + ordered evidence + completeness/issues
+```
 
-1. two Day0 INI removals;
-2. one bounded SourceControl/GameAssetDatabase INI patch;
-3. eleven exact DLC_3 TLE quarantines; and
-4. one allowlisted CookedPCConsole symlink to the installed WOTC game.
+The scanner is dedicated to recognition and does not consume or extend FileTree DTOs. It recognizes exact regular-file or regular-directory conventions for `*.x2proj`, `*.XComMod`, the `.scripts/build.ps1` and `.scripts/X2ModBuildCommon` pair, `Config/XComEngine.ini`, and `Src/<package>/Classes/*.uc`. A directory, repository, workspace, or filename containing `xcom` is not evidence by itself.
+
+The evaluator performs no platform access. It counts distinct evidence kinds at each exact inferred module root rather than matching files, preserves independent nested roots, and emits deterministic ordered reasons. Scan limitations remain visible; unvisited or unreadable regions never become evidence of absence.
+
+The controller accepts a scanner or evaluator result only while workspace ID, workspace generation, scan ID, and scan generation all match the active request. A workspace transition clears the activity synchronously before native root activation. Late results, including results from overlapping switches, cannot recreate stale recognition. A failed transition may restore only the prior workspace's correlated snapshot.
+
+The recognition panel is read-only. It displays recognized roots, state, confidence, ordered evidence, completeness, and scan issues. It has no Build, Problems, Logs, language support, actions, or bottom contribution.
+
+## Current Machine Settings and SDK Transaction
+
+Machine setup is not a recognition input. Open Settings owns its monitor and transaction adapter lifecycles; closed Settings performs no monitor/history/detail reads, polling, or subscriptions. Workspace authorization and recognition do not start or extend those lifecycles.
+
+Prepare validates a vanilla WOTC SDK installation identified by Steam AppID `602410` and produces a stable allowlisted set of reversible operations:
+
+1. Day0 INI removals;
+2. a bounded SourceControl/GameAssetDatabase INI patch;
+3. exact DLC_3 TLE quarantines; and
+4. an allowlisted CookedPCConsole symlink to the installed WOTC game.
 
 No absolute installation paths or proprietary file contents belong in C4 artifacts or exported transaction records.
 
@@ -34,72 +78,32 @@ Read-only machine evidence
   └─ exact operation preconditions
                     │
                     ▼
-Stable Prepare
-  └─ exactly 15 reviewed, reversible operations + 64-character digest
-                    │ exact match, one transaction only
+Stable Prepare ──reviewed digest──> External SDK write approval
+                    │ exact match; one transaction only
                     ▼
-External SDK write approval ──> Apply
-                    │
-                    ▼
-Durable journal and content-addressed backups
-  ├─ original bytes + hashes + modes
-  ├─ original directory inventory
-  └─ original symlink absence
+Apply ──> durable journal and content-addressed backups
+          ├─ original bytes + hashes + modes
+          ├─ original directory inventory
+          └─ original symlink absence
 ```
 
-Apply is unavailable without an external SDK write grant matching the reviewed digest exactly and scoped to that single transaction. The engine does not broaden that grant to other paths, operations, or future transactions.
+Apply is unavailable without an external SDK write grant matching the reviewed digest and scoped to that transaction. **Restore Vanilla SDK** restores the captured baseline. Conflicts never overwrite externally changed content, and recovery or rollback resolves a transaction before **Prepare Again** creates a fresh audit.
 
-**Restore Vanilla SDK** restores the captured exact baseline. Conflicts never overwrite externally changed content. Recovery or rollback must resolve the transaction before **Prepare Again** creates a fresh audit and digest. This keeps repeated prepare/apply/restore cycles explicit and reversible.
+## Future Recognition Extensions and Project Tools
 
-## Target Activation Decision
+The current recognition-only path does not implement:
 
-This entire activation path is FUTURE/TARGET: no current scanner, evaluator, project/module state, activity entry, bottom contribution, or contextual tool is created by workspace loading or machine Settings.
+- `.ide/xcom2.json` or another explicit project configuration;
+- manual confirmation or confirmation persistence;
+- separately granted external roots;
+- content parsing or proprietary compatibility checks;
+- Build, Problems, Logs, language support, project actions, or bottom contributions; or
+- a generic plugin runtime or arbitrary execution authority.
 
-The future activation evaluator returns a structured decision rather than a name-based boolean:
+Future configured activation or confirmation must preserve current root authority, exact correlation, deterministic evidence, and synchronous deactivation. External roots require an explicit grant model rather than reusing SDK write approval. Contextual tools require separate bounded adapters, approved tool identities, cancellation/timeouts, normalized results, and provenance.
 
-```text
-XcomActivationDecision
-  ├─ state: active | inactive | needs-confirmation
-  ├─ confidence: explicit | high | medium | low | none
-  ├─ reasons: ordered evidence and rejection explanations
-  └─ matchedModules: project/module roots to which contributions apply
-```
+Optional Steam shortcut, compatibility-prefix, package-manager, Protontricks, and interactive provisioning work remains independently designed and authorized. It must not be included implicitly in project recognition, Prepare, or Apply.
 
-Candidate evidence includes explicit configuration, `*.x2proj`, `*.XComMod`, `.scripts/build.ps1` together with `X2ModBuildCommon`, `Config/XComEngine.ini`, and credible `Src/<package>/Classes/*.uc` layouts. Names containing `xcom` are never evidence. Ambiguity yields inactive or needs-confirmation, not automatic activation.
+## Browser Boundary
 
-Only activated modules may receive contextual Problems, Build, Tests, Logs, XCOM tools, and language contributions. Closing, removing, or invalidating a module removes them.
-
-## Current and Future Component Boundaries
-
-### Current Settings-owned lifecycle
-
-Machine setup transaction authority is correlated to the current workspace and generation, but workspace authorization/loading does not own or independently start XCOM runtime work. Open Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle, each with its own subscription and poll timer. Close revokes request authority, unsubscribes both, and clears both timers; reopen creates one fresh lifecycle of each. A workspace switch restarts them only if Settings remains open.
-
-### Current transaction engine
-
-The native engine owns stable plan validation, allowlisted operations, durable write-ahead journals, content-addressed backups, exact approval, freshness and authorization gates, cancellation, reverse rollback, conflict reporting, and recovery. The concrete operation builder is constrained to the 15-operation vanilla SDK plan above.
-
-IDE-owned rollback state remains bounded to 16 MiB per backup, 64 retained removable transactions, and 256 events. Exports omit paths and content.
-
-### Future project tool bridges
-
-Language and build adapters remain future. They require activated module roots, approved tool identities, bounded direct invocation, cancellation/timeouts, normalized diagnostics/results, and provenance. They grant no arbitrary execution.
-
-### Future optional provisioning
-
-Protontricks, Steam shortcut creation, compatibility-prefix setup, package-manager actions, and any interactive work are placeholders only. They are not operation types in the current plan, are not covered by SDK approval, and must not be invoked by Prepare or Apply.
-
-### Browser boundary
-
-The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no hidden polling, transaction activity, or simulated native state.
-
-## Target Capability Boundaries
-
-FUTURE/TARGET capabilities remain subject to these architectural constraints:
-
-- project activation uses bounded explicit/evidence-based decisions, fails closed on ambiguous or false-positive signals, and scopes contribution creation/removal to module lifetime;
-- language/build bridges use separately approved bounded tools with cancellation, diagnostics, and provenance;
-- any optional provisioning is independently designed, reviewed, and authorized rather than being smuggled into SDK Apply; and
-- browser behavior remains honest unless a separately approved architecture is implemented.
-
-The fixed first-party feature is not a general plugin runtime. Current setup approval grants no extension loading or arbitrary command authority.
+The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no machine polling, transaction activity, simulated native state, or project recognition scan.

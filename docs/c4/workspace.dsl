@@ -1,78 +1,83 @@
-workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java semantics and diagnostics, conditional desktop Problems contribution, desktop workspace navigation, repeatable WOTC SDK setup, target XCOM tooling, and a frozen unscheduled Java design inventory" {
+workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace navigation, WOTC SDK setup, XCOM project recognition, and bounded future architecture" {
     model {
         developer = person "Developer" "Browses, edits, and analyzes source code."
 
         ide = softwareSystem "IDE Application" "Web-first IDE available as a browser SPA and a Tauri desktop application." {
-            webApp = container "Web App" "Browser IDE variant. It reports native Java and XCOM setup capabilities honestly: the setup adapter is explicitly unavailable unless simulation is deliberately enabled, with no hidden polling or simulated native state by default." "React, Vite" {
+            webApp = container "Web App" "Browser IDE variant with honest native capability limits. It starts no XCOM machine polling or project recognition scan." "React, Vite" {
                 webUi = component "IDE-native UI and State" "CURRENT: browser file tree, editor, terminal, panels, stores, and explicit native capability limitations; no global Java or XCOM technology tabs." "React, Monaco, Zustand" "Current"
-                webBottomPanel = component "Web Bottom Tool-window Host" "CURRENT/AS-BUILT: dynamic accessible host whose only contributed tool is core Terminal. It accepts icon, title, scope, badge/count, disabled state, and keyboard metadata; no Java/XCOM polling is started." "React" "Current"
-                browserAdapters = component "Browser Adapters" "CURRENT/AS-BUILT: browser-safe port implementations. Native RefactorKit is unavailable, and the XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; the normal web shell starts no XCOM monitor or hidden polling." "TypeScript" "Current"
+                webBottomPanel = component "Web Bottom Tool-window Host" "Hosts core Terminal in an accessible dynamic browser panel with contribution metadata and keyboard navigation; starts no Java/XCOM polling." "React" "Current"
+                browserAdapters = component "Browser Adapters" "Provides browser-safe ports; native RefactorKit and XCOM setup stay unavailable without deliberate simulation, and startup performs no XCOM work." "TypeScript" "Current"
             }
 
-            desktopApp = container "Desktop App" "Desktop IDE variant hosted in a Tauri WebView with a resizable panel shell, persistent visibility controls, managed Java tooling, and XCOM machine controls." "React, Vite, Tauri WebView" {
+            desktopApp = container "Desktop App" "Tauri WebView IDE with panel controls, managed Java tooling, XCOM machine settings, and workspace-scoped project recognition." "React, Vite, Tauri WebView" {
                 desktopUi = component "Desktop Composition Root and IDE UI State" "Composes controllers and parked Symbol Navigation support, derives props, and renders the controlled panel shell without owning feature orchestration." "React, Monaco, Zustand" "Current"
-                workspaceController = component "Workspace Controller" "CURRENT/AS-BUILT: owns registry, authorized root, and monotonic WorkspaceGeneration. It coordinates XCOM workspace identity, not XCOM runtime lifetime." "TypeScript, React" "Current"
-                desktopEditorController = component "Desktop Editor Controller" "CURRENT/AS-BUILT: coordinates guarded file open/create, tab activation/close, persisted-session restore after workspace authorization, workspace reset, and presentation-safe diagnostics. It exposes a document as ready only when the requested tab and buffer agree and rejects create/open completion after a workspace generation change." "TypeScript, React" "Current"
+                workspaceController = component "Workspace Controller" "Owns registry, authorized-root transitions, and monotonic WorkspaceGeneration; coordinates recognition revocation/start and setup correlation." "TypeScript, React" "Current"
+                desktopEditorController = component "Desktop Editor Controller" "Coordinates guarded file open/create, tab lifecycle, authorized restore/reset, and readiness; rejects completions from stale workspace generations." "TypeScript, React" "Current"
                 settingsController = component "Settings Controller" "CURRENT/AS-BUILT: owns Settings visibility. Its open state gates the separate XCOM lifecycle; the open coordinator refreshes other Settings sections." "TypeScript, React" "Current"
-                terminalController = component "Terminal Controller" "CURRENT/AS-BUILT: owns the workspace-independent terminal connection/session lifecycle, command and input coordination, output clearing, and workspace-reset presentation cleanup." "TypeScript, React" "Current"
-                fileExplorerController = component "File Explorer Controller" "CURRENT/AS-BUILT: coordinates folder expansion and empty-editor file creation through existing file-tree and editor boundaries, using the selected directory or authorized workspace root." "TypeScript, React" "Current"
-                documentNavigationController = component "Document Navigation Controller" "CURRENT/AS-BUILT: owns document-preview visibility and diagnostic navigation requests; navigation opens through the Desktop Editor Controller before issuing a bounded reveal request." "TypeScript, React" "Current"
-                editorCommandController = component "Editor Command Controller" "CURRENT/AS-BUILT: coordinates buffer changes, save, tab activation/close, and Java document flush/save/close ordering across the editor and Java Language Controller." "TypeScript, React" "Current"
+                terminalController = component "Terminal Controller" "Owns workspace-independent terminal connection and session lifecycle, command/input coordination, output clearing, and reset presentation." "TypeScript, React" "Current"
+                fileExplorerController = component "File Explorer Controller" "Coordinates folder expansion and empty-editor file creation through file-tree and editor boundaries within the authorized workspace." "TypeScript, React" "Current"
+                documentNavigationController = component "Document Navigation Controller" "Owns document-preview visibility and diagnostic navigation; opens through the Desktop Editor Controller before bounded reveal requests." "TypeScript, React" "Current"
+                editorCommandController = component "Editor Command Controller" "Coordinates buffer changes, saves, tab activation/close, and Java document flush/save/close ordering." "TypeScript, React" "Current"
                 desktopShellController = component "Desktop Shell Controller" "Routes sidebar and bottom-panel resize/toggle requests to layout state, preserving dimensions; owns bottom-tab state and guarded Problems policy." "TypeScript, React" "Current"
-                aiAgentController = component "AI Agent Controller" "CURRENT/AS-BUILT: owns configuration and status, workspace-keyed commands/session messages/activity traces, prompt submission, and stale-request suppression. Workspace changes save and restore isolated UI state and invalidate command/session/trace loads; only an explicit trimmed prompt crosses the injected port." "TypeScript, React" "Current"
-                refactorKitStatusController = component "RefactorKit Status Controller" "CURRENT/AS-BUILT: provider-neutral, diagnostic-only status and capability discovery. It coordinates independent normalized outcomes and rejects stale workspace/request generations; it grants no mutation authority and is activated only after workspace authorization in desktop composition." "TypeScript, React" "Current"
+                aiAgentController = component "AI Agent Controller" "Owns configuration, workspace-keyed commands, sessions, activity and explicit prompts; saves isolated UI state and suppresses stale requests." "TypeScript, React" "Current"
+                refactorKitStatusController = component "RefactorKit Status Controller" "Discovers provider-neutral diagnostic status and capabilities after authorization; normalizes independent outcomes and rejects stale generations." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Java Clipboard Import UI" "Directory-tree action plus preview, conditional acknowledgement, exact-plan Apply, and Cancel. It exposes no rollback action." "React" "Current"
                 refactorKitImportController = component "RefactorKit Import Controller" "Probes capability before clipboard access, guards selection and plan identity, discards invalid work, and opens backend-authoritative results." "TypeScript, React" "Current"
                 refactorKitSymbolNavigationSupport = component "RefactorKit Symbol Navigation Support" "Composed TypeScript/JavaScript saved-snapshot search and definition support. Workspace-write policy keeps it outside active IDE capability." "TypeScript, React" "Frozen"
                 tauriRefactorKitAdapter = component "RefactorKit and Clipboard Tauri Adapters" "Typed capability, preview, exact-plan Apply, discard, backend rollback, and clipboard ports. Rollback has no current UI action." "TypeScript, Tauri API" "Current"
-                desktopSidebar = component "Desktop Left Sidebar Accordion" "CURRENT/AS-BUILT: File Explorer appears above Workspace Explorer as independently collapsible sections. Workspace Explorer lists registered workspaces and exposes switching, refresh, loading, and error states; the duplicate header workspace select is removed." "React" "Current"
-                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "CURRENT/AS-BUILT: dynamic accessible contribution host for core Terminal and AI Agent plus the conditional project-scoped Problems contribution supplied by desktop composition. Problems remains present while there is a ready Java context or projected problem items; tab metadata supports icon, title, scope, badge, disabled state, and keyboard operation." "React" "Current"
-                languageContracts = component "Provider-neutral Language Contracts" "CURRENT/AS-BUILT: normalized lifecycle, versioned document sync, diagnostic events, completion, hover, signature-help, cancellation, capability, result, and event contracts. Provider-specific JDT LS, LSP, and Monaco wire types stay behind adapters." "TypeScript" "Current"
-                languageLifecyclePanel = component "Global Java Tooling Settings" "CURRENT/AS-BUILT: Settings owns global JDK/JDT LS lifecycle and status plus RefactorKit availability, version, path, and capability discovery. It exposes no project scan, query, result, navigation, or refactoring actions; reported capabilities do not imply project activation or editor integration." "React" "Current"
+                desktopSidebar = component "Desktop Left Sidebar Accordion" "Shows File Explorer above Workspace Explorer as independent sections; lists registered workspaces with switch, refresh, loading, and error states." "React" "Current"
+                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "Hosts core Terminal and AI Agent plus guarded project Problems; exposes accessible contribution metadata and keyboard behavior." "React" "Current"
+                languageContracts = component "Provider-neutral Language Contracts" "Defines normalized lifecycle, document sync, diagnostics, semantics, cancellation, capabilities, results, and events behind provider-neutral types." "TypeScript" "Current"
+                languageLifecyclePanel = component "Global Java Tooling Settings" "Manages global JDK/JDT LS lifecycle and RefactorKit discovery without project scan, navigation, refactoring, or activation actions." "React" "Current"
                 tauriAdapters = component "Tauri Adapters" "Typed desktop adapters for workspace, editor, terminal, AI, Java, RefactorKit, and XCOM native boundaries." "TypeScript, Tauri API" "Current"
-                tauriLanguageAdapter = component "Tauri Language Session and Document Adapter" "CURRENT/AS-BUILT: implements LanguageSessionPort and DocumentSyncPort; validates workspace/session/path/URI/version identity, normalizes lifecycle data, polls bounded generation-tagged events, and sends versioned didOpen/didChange/didSave/didClose notifications." "TypeScript, Tauri API" "Current"
-                tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "CURRENT/AS-BUILT: implements provider-neutral completion, hover, signature-help, and cancellation calls; validates request/result identity and suppresses malformed or stale native payloads." "TypeScript, Tauri API" "Current"
-                javaLanguageController = component "Java Language Controller" "CURRENT/AS-BUILT: owns workspace-scoped language session lifecycle, versioned Java document synchronization, provider-neutral diagnostic events, active-editor diagnostics, ProblemItem projection, and provider-neutral completion, hover, signature-help, and cancellation. It binds only an editor-ready Java document, serializes optimistic didChange flushes before semantics, and rejects stale workspace, generation, session, path, URI, version, request, or cancellation identity." "TypeScript, React" "Current"
-                javaMonacoSemantics = component "Guarded Monaco Java Providers" "CURRENT/AS-BUILT: registers completion, hover, and signature help only for the exact synchronized Java model. Callbacks recheck model/context identity and cancellation. Completion applies only its primary edit; additional/workspace edits and commands are suppressed. Markdown is untrusted and HTML is disabled." "React, Monaco" "Current"
-                xcomFeatureContracts = component "Fixed XCOM 2 Feature Descriptor and Contracts" "CURRENT/AS-BUILT: fixed first-party experimental identity plus monitor, non-executable dry-run, transaction, approval, rollback, recovery, and export-safe contracts. This is not a plugin runtime or arbitrary execution grant." "TypeScript" "Current"
-                xcomMonitorPanel = component "XCOM 2 Machine Settings Monitor" "CURRENT/AS-BUILT: Settings-only machine evidence surface. Closed Settings owns no runtime; open Settings receives one monitor lifecycle and explicit refresh." "React" "Current"
-                xcomDryRunPlanner = component "Pure XCOM 2 Setup Planner" "CURRENT/AS-BUILT: export-safe descriptive helper whose steps remain non-executable and cannot apply changes. It is separate from the native transaction engine and grants no mutation authority." "TypeScript" "Current"
-                tauriXcomMonitorAdapter = component "Tauri XCOM 2 Monitor Adapter" "CURRENT/AS-BUILT: validates fixed product identity and redaction. Its Settings-owned subscription polls bounded events; final unsubscribe clears its timer." "TypeScript, Tauri API" "Current"
-                tauriXcomTransactionAdapter = component "Tauri XCOM 2 Transaction Adapter" "CURRENT/AS-BUILT: validates workspace and generation identity for bounded transaction history, detail, actions, event polling, and stale-result rejection." "TypeScript, Tauri API" "Current"
-                xcomSetupPresentation = component "XCOM 2 Transaction Settings UI" "CURRENT/AS-BUILT: Settings shows transaction history, state, operations, full 64-character digest, exact approval, rollback, and recovery controls. Export payloads omit paths and content." "React" "Current"
-                xcomSetupController = component "XCOM Setup Controller" "CURRENT/AS-BUILT: owns exactly one monitor and transaction adapter lifecycle while Settings is open. Transaction authority remains workspace-correlated." "TypeScript, React" "Current"
-                xcomProductionSetup = component "Concrete WOTC SDK Setup" "CURRENT/AS-BUILT: stable native Prepare audits vanilla AppID 602410 and emits exactly 15 reversible operations: two Day0 INI removals, one SourceControl/GameAssetDatabase INI patch, eleven exact DLC_3 TLE quarantines, and one allowlisted CookedPCConsole symlink to the installed game. Apply requires exact-digest one-transaction external approval; Restore Vanilla SDK and Prepare Again are explicit flows." "TypeScript, React" "Current"
+                tauriLanguageAdapter = component "Tauri Language Session and Document Adapter" "Implements language session and document sync ports with identity validation, bounded event polling, and versioned document notifications." "TypeScript, Tauri API" "Current"
+                tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "Implements completion, hover, signature-help, and cancellation calls; rejects malformed, mismatched, or stale native payloads." "TypeScript, Tauri API" "Current"
+                javaLanguageController = component "Java Language Controller" "Owns Java sessions, versioned document sync, diagnostics, Problems projection, semantics, and cancellation with comprehensive identity guards." "TypeScript, React" "Current"
+                javaMonacoSemantics = component "Guarded Monaco Java Providers" "Registers guarded Java semantics for the exact synchronized model; limits completion edits and renders untrusted Markdown without HTML." "React, Monaco" "Current"
+                xcomFeatureContracts = component "Fixed XCOM 2 Feature Descriptor and Contracts" "Defines first-party machine setup and workspace recognition data without creating a plugin runtime or execution grant." "TypeScript" "Current"
+                xcomMonitorPanel = component "XCOM 2 Machine Settings Monitor" "Shows machine evidence only while Settings owns the monitor lifecycle; it never activates a project." "React" "Current"
+                xcomDryRunPlanner = component "Pure XCOM 2 Setup Planner" "Returns export-safe descriptive steps without execution or mutation authority." "TypeScript" "Current"
+                tauriXcomMonitorAdapter = component "Tauri XCOM 2 Monitor Adapter" "Validates product identity and redaction; its Settings-owned subscription polls bounded events and clears its timer on unsubscribe." "TypeScript, Tauri API" "Current"
+                tauriXcomTransactionAdapter = component "Tauri XCOM 2 Transaction Adapter" "Validates workspace and generation identity for bounded transaction reads, actions, events, and stale-result rejection." "TypeScript, Tauri API" "Current"
+                xcomSetupPresentation = component "XCOM 2 Transaction Settings UI" "Shows transaction state, reviewed operations and digest, exact approval, rollback, and recovery; exports omit paths and content." "React" "Current"
+                xcomSetupController = component "XCOM Setup Controller" "Owns monitor and transaction adapter lifecycles only while Settings is open; transaction authority stays workspace-correlated." "TypeScript, React" "Current"
+                xcomProductionSetup = component "Concrete WOTC SDK Setup" "Builds reviewed reversible vanilla SDK changes; exact-digest external approval gates Apply, and restore or recovery preserves the baseline." "TypeScript, React" "Current"
+                xcomModuleActivationController = component "XCOM Module Recognition Controller" "Runs one scan per authorized workspace generation, revokes synchronously, and rejects results with stale correlation." "TypeScript, React" "Current"
+                tauriXcomModuleScannerAdapter = component "XCOM Module Scanner Tauri Adapter" "Enforces exact request, response, correlation, bounds, enum, ordering, and workspace-relative path contracts." "TypeScript, Tauri API" "Current"
+                xcomActivationEvaluator = component "Pure XCOM Module Recognition Evaluator" "Groups exact observations by module root; two distinct evidence kinds activate recognition with deterministic reasons." "TypeScript" "Current"
+                xcomProjectRecognitionPanel = component "XCOM 2 Project Recognition Activity" "Accessible dynamic activity showing active module roots, ordered evidence, completeness, and issues without project actions." "React" "Current"
 
-                xcomActivationEvaluator = component "XCOM Module Activation Evaluator — FUTURE/TARGET" "TARGET: activates bounded module roots from explicit configuration or conservative combinations of *.x2proj, *.XComMod, .scripts/build.ps1 plus X2ModBuildCommon, Config/XComEngine.ini, and Src/<package>/Classes/*.uc; returns state, confidence, and reasons. Names containing xcom are never evidence." "TypeScript" "Target"
-                xcomContributionCoordinator = component "Contextual XCOM Contribution Coordinator — FUTURE/TARGET" "TARGET: only evidence- or explicitly activated modules receive contextual Problems, Build, Tests, Logs, and XCOM tool contributions; no global XCOM tool-window tab." "TypeScript, React" "Target"
-                xcomOptionalProvisioning = component "Optional Steam and Prefix Provisioning — FUTURE/TARGET" "TARGET/NON-EXECUTABLE: possible Protontricks, Steam shortcut, compatibility prefix, package-manager, and interactive setup work. None participates in current Prepare or Apply." "TypeScript" "Target"
-                xcomLanguageBuildAdapters = component "XCOM 2 Language and Build Adapters — FUTURE/TARGET" "TARGET: contextual adapters available only to activated modules, with bounded approved tool interactions and no arbitrary execution." "TypeScript" "Target"
+                xcomActivationExtensions = component "Configured XCOM Activation and Confirmation" "Adds explicit configuration, manual confirmation, persistence, and separately granted external roots." "TypeScript, React" "Target"
+                xcomContributionCoordinator = component "Contextual XCOM Contribution Coordinator" "Scopes Problems, Build, Tests, Logs, and XCOM tools to modules authorized beyond recognition-only mode." "TypeScript, React" "Target"
+                xcomOptionalProvisioning = component "Optional Steam and Prefix Provisioning" "Describes separately authorized Steam, compatibility-prefix, package-manager, and interactive setup work." "TypeScript" "Target"
+                xcomLanguageBuildAdapters = component "XCOM 2 Language and Build Adapters" "Provides bounded project language and build interactions only after their own activation and authorization policy." "TypeScript" "Target"
 
-                javaActivationEvaluator = component "Java Module Activation Evaluator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: a bounded evidence-based or explicit Java module decision could return roots, state, confidence, and reasons. No evaluator, activation, or schedule exists." "TypeScript" "Frozen"
-                javaContributionCoordinator = component "Contextual Java Contribution Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: contextual Problems lifecycle, Build, Tests, Logs, and Java tools were once considered for activated modules. The current guarded diagnostic projection and conditional Problems tab remain independent; no coordinator or schedule exists." "TypeScript, React" "Frozen"
-                javaAdvancedPresentation = component "Broader Java Monaco Workflows — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: definition/references, symbols/hierarchy, code actions, formatting, rename, and broader IntelliSense expansion are not current and have no active milestone." "React, Monaco" "Frozen"
-                javaAdvancedCoordinator = component "Broader Java Intelligence Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: navigation, controlled workspace mutation, formatting, rename previews, hierarchy, and contribution lifetime remain unimplemented and unscheduled. Any reconsideration must preserve current synchronization, cancellation, and stale guards." "TypeScript" "Frozen"
+                javaActivationEvaluator = component "Java Module Activation Evaluator — UNSCHEDULED TODO / FROZEN INVENTORY" "Models a bounded Java module decision with roots, state, confidence, and reasons from explicit or evidence-based inputs." "TypeScript" "Frozen"
+                javaContributionCoordinator = component "Contextual Java Contribution Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "Scopes Problems, Build, Tests, Logs, and Java tools to a bounded Java module lifecycle, separate from guarded diagnostic projection." "TypeScript, React" "Frozen"
+                javaAdvancedPresentation = component "Broader Java Monaco Workflows — UNSCHEDULED TODO / FROZEN INVENTORY" "Groups Monaco definition, references, symbols, hierarchy, code actions, formatting, rename, and broader IntelliSense workflows." "React, Monaco" "Frozen"
+                javaAdvancedCoordinator = component "Broader Java Intelligence Coordinator — UNSCHEDULED TODO / FROZEN INVENTORY" "Coordinates navigation, reviewed workspace mutation, formatting, rename previews, hierarchy, and contribution lifetime with stale guards." "TypeScript" "Frozen"
                 refactoringPort = component "General Java Refactoring Port — UNSCHEDULED TODO / FROZEN INVENTORY" "General refactoring remains frozen inventory and separate from the managed Java import transaction." "TypeScript" "Frozen"
-                externalProviderAdapters = component "Additional Provider Adapters — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: additional build-tool, framework, remote-provider, RefactorKit search, or semantic adapters are not current. Any search integration requires released strict typed bounded versioned machine-readable JSON or an equivalent daemon DTO with structured errors, truncation, authorized locations, request/result correlation, and real acceptance evidence; human stdout is never an IDE protocol." "TypeScript" "Frozen"
+                externalProviderAdapters = component "Additional Provider Adapters — UNSCHEDULED TODO / FROZEN INVENTORY" "Adapts bounded build, framework, remote, search, or semantic providers through strict typed machine-readable contracts; human stdout is not a protocol." "TypeScript" "Frozen"
             }
 
-            rustBackend = container "Rust Backend" "Native workspace authorization, managed language services, fixed RefactorKit commands, and bounded XCOM transaction services used by the desktop app." "Rust, Tauri" {
+            rustBackend = container "Rust Backend" "Native workspace authorization, managed language services, RefactorKit commands, XCOM transactions, and read-only recognition scanning." "Rust, Tauri" {
                 workspaceCommands = component "Workspace and Command Handlers" "CURRENT: authorized file operations and bounded one-shot command execution." "Rust" "Current"
                 refactorKitHandlers = component "RefactorKit Status Handlers" "Bounded diagnostic status only; managed capability and import commands use the separate daemon facade." "Rust" "Current"
                 refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
-                refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "CURRENT/AS-BUILT: normalizes the advertised API and exact required Java-import method features, plus optional language-kernel, runtime-limit, and safety metadata as retained evidence. Provider version and top-level safety booleans are diagnostic evidence, not blanket authorization; missing or incomplete required import methods fail closed." "Rust" "Current"
-                refactorKitBoundaryPolicy = component "RefactorKit Contract and Path Policy" "CURRENT/AS-BUILT: defines bounded status/capability and Java-import request/approval DTOs, response normalization, identity guards, canonical-workspace checks, and authorized import result paths. It does not make general search, navigation, diagnostics, or refactoring an IDE capability." "Rust" "Current"
+                refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "Requires the advertised API and exact Java-import methods; retains other provider metadata as evidence and fails closed on incomplete methods." "Rust" "Current"
+                refactorKitBoundaryPolicy = component "RefactorKit Contract and Path Policy" "Defines bounded RefactorKit DTOs, normalization, identity guards, canonical-workspace policy, and authorized import result paths." "Rust" "Current"
                 refactorKitTransport = component "RefactorKit NDJSON Transport" "CURRENT/AS-BUILT: owns the fixed-argv daemon process, capped NDJSON request/response transport, timeouts, and fail-closed process termination." "Rust, NDJSON" "Current"
-                clipboardHandler = component "Explicit Clipboard Read Handler" "CURRENT: reads clipboard text only after the IDE coordinator has received a supported RefactorKit capability result. It has no background, editor-paste, raw-copy, or Pi path." "Rust" "Current"
-                javaLanguageFacade = component "Java Language Tauri Facade" "CURRENT/AS-BUILT: thin inbound Tauri command surface that re-exports bounded contract types and delegates lifecycle, event polling, document synchronization, semantics, and cancellation to the application module." "Rust, Tauri" "Current"
-                javaLanguageBoundaryPolicy = component "Java Language Contract and Path Policy" "CURRENT/AS-BUILT: defines lifecycle/document/semantic DTOs and validates authorized workspace, path, URI, generation, version, request, and cancellation identity." "Rust" "Current"
-                javaLifecycleOrchestrator = component "Java Language Application Service" "CURRENT/AS-BUILT: application module owning session lifecycle, process state, event queues, document state, request correlation, cancellation, and orchestration across contract, path, protocol, semantic, toolchain, and support modules." "Rust" "Current"
-                xcomSteamMonitor = component "Native XCOM 2 Steam Monitor" "CURRENT/AS-BUILT: machine-level bounded read-only discovery and VDF parsing for required product identities; derives conservative status/progress, redacts paths, and queues bounded events. It does not mutate or activate projects." "Rust, Tauri" "Current"
-                xcomSetupWorkflow = component "Rollbackable XCOM Setup Transaction Engine" "CURRENT/AS-BUILT: one durable transaction journals Steam build, manifest, and root fingerprint plus original bytes, hashes, modes, directory inventory, and symlink absence in content-addressed backups. Exact-digest external approval gates Apply. Restore Vanilla SDK reverses to the exact baseline, conflicts never overwrite, rollback precedes Prepare Again, and exports omit paths/content." "Rust" "Current"
-                xcomProductionOperations = component "Concrete WOTC SDK Operations" "CURRENT/AS-BUILT: builds exactly 15 allowlisted reversible operations for vanilla AppID 602410: two INI removals, one bounded INI patch, eleven exact quarantines, and one game-target symlink." "Rust" "Current"
-                xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge — FUTURE/TARGET" "TARGET: authorized, bounded, cancellable integration with separately approved tools." "Rust" "Target"
-                javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "CURRENT/AS-BUILT: protocol and semantic modules encode bounded LSP sync/diagnostic/completion/hover/signature/cancel traffic and normalize events and responses; toolchain and support modules discover fixed-argv JDK/JDT LS installations and provide shared fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
-                javaAdvancedBridge = component "Broader Java Semantic Bridge — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: definition/references, symbols/hierarchy, code actions, formatting, and rename transport are unimplemented and unscheduled." "Rust, JSON-RPC/LSP" "Frozen"
+                clipboardHandler = component "Explicit Clipboard Read Handler" "Reads clipboard text only after capability approval; exposes no background, editor-paste, raw-copy, or Pi path." "Rust" "Current"
+                javaLanguageFacade = component "Java Language Tauri Facade" "Exposes bounded Tauri commands and delegates lifecycle, events, document sync, semantics, and cancellation to the application service." "Rust, Tauri" "Current"
+                javaLanguageBoundaryPolicy = component "Java Language Contract and Path Policy" "Defines language DTOs and validates workspace, path, URI, generation, version, request, and cancellation identity." "Rust" "Current"
+                javaLifecycleOrchestrator = component "Java Language Application Service" "Owns Java session lifecycle, process and document state, event queues, correlation, cancellation, and language-module orchestration." "Rust" "Current"
+                xcomSteamMonitor = component "Native XCOM 2 Steam Monitor" "Reads bounded Steam metadata, derives conservative machine status, redacts paths, and queues bounded events without project activation." "Rust, Tauri" "Current"
+                xcomSetupWorkflow = component "Rollbackable XCOM Setup Transaction Engine" "Journals an approved SDK transaction with content-addressed backups; restore is conflict-safe and exports omit paths and content." "Rust" "Current"
+                xcomProductionOperations = component "Concrete WOTC SDK Operations" "Builds the allowlisted reversible vanilla SDK operation set and verifies its exact preconditions." "Rust" "Current"
+                xcomModuleEvidenceScanner = component "XCOM Module Filesystem Evidence Scanner" "Reads only authorized-root entry metadata and exact names; it does not parse content, follow symlinks, write, or accept external roots." "Rust" "Current"
+                xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
+                javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
+                javaAdvancedBridge = component "Broader Java Semantic Bridge — UNSCHEDULED TODO / FROZEN INVENTORY" "Transports definition, references, symbols, hierarchy, code actions, formatting, and rename over bounded LSP requests." "Rust, JSON-RPC/LSP" "Frozen"
                 refactorPreviewEngine = component "RefactorKit Daemon Application Service" "Owns one workspace-generation daemon for capability, project-content-safe preview, exact-plan Apply, discard, and backend rollback." "Rust" "Current"
                 externalRuntimeAdapters = component "Additional Runtime Adapters — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: additional provider-specific integrations are not current and have no active milestone." "Rust" "Frozen"
             }
@@ -80,33 +85,34 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
 
         browser = softwareSystem "Web Browser" "Runs the web SPA and provides localStorage." "External"
         filesystem = softwareSystem "OS File System" "Stores authorized workspaces, service data, RefactorKit metadata, and bounded XCOM transaction state." "External"
-        osClipboard = softwareSystem "OS Clipboard" "Provides text only for an explicit directory-tree Paste Java Class request after the advertised API and exact required import/apply/discard/rollback method features pass. Provider metadata is retained evidence rather than blanket authorization; incomplete providers remain unavailable before clipboard read." "External"
+        osClipboard = softwareSystem "OS Clipboard" "Provides text for an explicit directory-tree Java import only after the advertised API and exact required methods pass." "External"
         osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands." "External"
         jdk = softwareSystem "Full Java JDK" "CURRENT external, non-bundled JDK installation capability-probed through java and javac; licensing is determined by the user's chosen distribution." "External"
         jdtLs = softwareSystem "Eclipse JDT LS" "CURRENT external, non-bundled EPL-2.0 language server. A pinned snapshot can be installed on demand only after checksum verification." "External"
         refactorKit = softwareSystem "RefactorKit Engine" "Discovers capability and owns Java-import preview, Apply, discard, rollback, and provider metadata. The import UI exposes no rollback action." "External"
         steamMetadata = softwareSystem "Local Steam Installation Metadata" "CURRENT external desktop-only Steam library and appmanifest evidence. Access is bounded, read-only, allowlisted by AppID, and exported with redacted provenance." "External"
-        xcomToolchain = softwareSystem "Installed WOTC Game and Vanilla SDK" "CURRENT external installation identified through allowlisted Steam AppID 602410 metadata. Setup records fingerprints without exposing proprietary paths/content and may create only the allowlisted game-target symlink after exact external approval." "External"
-        xcomApproval = softwareSystem "External SDK Write Approval" "CURRENT external least-privilege authority granting one transaction only when the reviewed 64-character digest matches exactly." "External"
-        xcomFutureProvisioning = softwareSystem "Optional Steam and Prefix Provisioning — FUTURE/TARGET" "TARGET/NON-EXECUTABLE: Protontricks, Steam shortcuts, compatibility prefixes, package-manager actions, and interactive setup; excluded from current Prepare and Apply." "External,Target"
-        externalProviders = softwareSystem "Additional Provider Runtimes — UNSCHEDULED TODO / FROZEN INVENTORY" "FROZEN HISTORICAL INVENTORY, not target architecture or a commitment: separately approved build-tool, framework, remote-provider, or announced RefactorKit search runtimes are not current and have no schedule." "External,Frozen"
+        xcomToolchain = softwareSystem "Installed WOTC Game and Vanilla SDK" "Allowlisted external installation whose setup fingerprint and approved changes exclude proprietary paths and content." "External"
+        xcomApproval = softwareSystem "External SDK Write Approval" "Least-privilege authority granting one transaction only when its reviewed digest matches exactly." "External"
+        xcomFutureProvisioning = softwareSystem "Optional Steam and Prefix Provisioning" "Separately authorized Steam, compatibility-prefix, package-manager, and interactive setup services." "External,Target"
+        externalProviders = softwareSystem "Additional Provider Runtimes — UNSCHEDULED TODO / FROZEN INVENTORY" "Separately approved build, framework, remote, search, or semantic provider runtimes behind bounded protocols." "External,Frozen"
 
         developer -> webUi "Uses the browser IDE"
         developer -> desktopUi "Uses the editor and persistent shell controls"
         webUi -> webBottomPanel "Hosts the core Terminal contribution"
         desktopUi -> workspaceController "Delegates authorized workspace activation, metadata refresh, and switching"
         desktopUi -> desktopSidebar "Hosts File Explorer above Workspace Explorer"
-        developer -> desktopSidebar "Collapses either section, switches registered workspaces, refreshes metadata, and sees errors"
+        developer -> desktopSidebar "Collapses sections, switches workspaces, refreshes metadata, and sees errors"
         desktopSidebar -> workspaceController "Requests registry refresh and exact workspace switching"
-        workspaceController -> tauriAdapters "Authorizes the active root before cold-start registry promotion or dependent native reads" "Workspace port"
-        workspaceController -> desktopEditorController "Restores persisted editor state after authorization and resets it before workspace transitions"
-        workspaceController -> javaLanguageController "Detaches stale sessions, then attaches and loads the authorized workspace at the shared generation"
-        workspaceController -> refactorKitImportController "Invalidates selections and pending import transactions before workspace transitions"
+        workspaceController -> tauriAdapters "Authorizes the root before registry promotion and dependent native reads" "Workspace port"
+        workspaceController -> desktopEditorController "Restores editor state after authorization and resets it before transitions"
+        workspaceController -> javaLanguageController "Replaces stale sessions with the authorized workspace generation"
+        workspaceController -> refactorKitImportController "Invalidates selections and import plans before workspace transitions"
         workspaceController -> refactorKitStatusController "Starts capability discovery after workspace authorization"
         workspaceController -> refactorKitSymbolNavigationSupport "Invalidates transient semantic sessions during workspace changes"
         workspaceController -> aiAgentController "Switches workspace-keyed UI state and loads commands after authorization"
+        workspaceController -> xcomModuleActivationController "Revokes recognition synchronously; starts one scan after authorization"
         workspaceController -> xcomSetupController "Passes workspace correlation; closed Settings starts no XCOM work"
-        desktopUi -> desktopEditorController "Composes the application controller for guarded file open/create, tab lifecycle, restore, and presentation readiness"
+        desktopUi -> desktopEditorController "Composes guarded file, tab, restore, and readiness coordination"
         desktopUi -> settingsController "Composes Settings visibility and independent refresh coordination"
         desktopUi -> terminalController "Composes workspace-independent terminal lifecycle and commands"
         desktopUi -> fileExplorerController "Composes folder expansion and file creation"
@@ -114,9 +120,11 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         desktopUi -> editorCommandController "Composes edit, save, activation, and close ordering"
         desktopUi -> desktopShellController "Routes panel resize/visibility requests and bottom-tool policy"
         desktopUi -> refactorKitSymbolNavigationSupport "Wires saved-snapshot search support outside active capability"
+        desktopUi -> xcomModuleActivationController "Composes workspace-scoped project recognition"
+        desktopUi -> xcomProjectRecognitionPanel "Contributes the activity only for active recognition decisions"
         desktopEditorController -> tauriAdapters "Uses injected editor and file-tree ports within the authorized workspace"
-        desktopEditorController -> javaLanguageController "Supplies only a ready active document and workspace-safe editor lifecycle signals"
-        desktopShellController -> desktopBottomPanel "Hosts core Terminal and AI Agent plus a project-scoped Problems tab while a ready Java context or projected problem items exist"
+        desktopEditorController -> javaLanguageController "Supplies a ready document and workspace-safe lifecycle signals"
+        desktopShellController -> desktopBottomPanel "Hosts core tools and guarded project Problems"
         desktopShellController -> aiAgentController "Loads commands when the AI Agent bottom tab is activated"
         fileExplorerController -> desktopEditorController "Creates files through the guarded editor boundary"
         documentNavigationController -> desktopEditorController "Opens diagnostic targets before requesting an editor reveal"
@@ -125,8 +133,8 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         terminalController -> tauriAdapters "Uses the injected terminal session and command ports"
         settingsController -> languageLifecyclePanel "Opens Settings and requests independently owned tooling refreshes"
         settingsController -> xcomSetupController "Open owns one monitor and transaction lifecycle; close cancels both"
-        javaLanguageController -> desktopShellController "Supplies provider-neutral projected ProblemItems and ready-context state; does not activate a module"
-        desktopBottomPanel -> aiAgentController "Renders workspace-keyed commands, messages, activity, status, and explicit prompt controls"
+        javaLanguageController -> desktopShellController "Supplies projected problems and ready-context state"
+        desktopBottomPanel -> aiAgentController "Renders workspace-keyed AI state and explicit prompts"
         aiAgentController -> tauriAdapters "Uses the injected AI Agent port and suppresses stale workspace-scoped results"
         developer -> javaClipboardPasteSurface "Reviews, acknowledges when required, applies, or cancels an import plan"
         javaClipboardPasteSurface -> refactorKitImportController "Starts preview, exact-plan Apply, and cancellation"
@@ -142,18 +150,18 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         workspaceCommands -> filesystem "Reads and writes authorized workspace paths"
         workspaceCommands -> osPrograms "Starts bounded one-shot commands" "Direct argv"
         languageLifecyclePanel -> refactorKitStatusController "Renders provider-neutral diagnostic status and capability discovery only"
-        refactorKitStatusController -> tauriRefactorKitAdapter "Requests normalized status and capabilities without preview, apply, discard, rollback, or write authority"
+        refactorKitStatusController -> tauriRefactorKitAdapter "Requests diagnostic status and capabilities"
         tauriAdapters -> refactorKitHandlers "Invokes bounded RefactorKit status handlers" "Tauri invoke"
         refactorKitDaemonFacade -> refactorPreviewEngine "Delegates capability discovery and managed Java-import use cases"
         refactorKitDaemonFacade -> refactorKitBoundaryPolicy "Re-exports bounded status/capability and Java-import request/approval contracts"
-        refactorPreviewEngine -> refactorKitCapabilityPolicy "Requires the advertised API and exact Java-import method features; retains language-kernel and safety metadata as evidence without treating version or top-level safety booleans as blanket authorization"
+        refactorPreviewEngine -> refactorKitCapabilityPolicy "Requires the API and exact import methods; retains other metadata as evidence"
         refactorPreviewEngine -> refactorKitBoundaryPolicy "Validates workspace, identity, plans, transactions, and result paths"
         refactorPreviewEngine -> refactorKitTransport "Uses the managed daemon session and fail-closed NDJSON transport"
         tauriRefactorKitAdapter -> clipboardHandler "Invokes explicit clipboard read" "Tauri invoke"
-        clipboardHandler -> osClipboard "Reads text once after the advertised API and exact required Java-import method features pass"
+        clipboardHandler -> osClipboard "Reads text once after the required Java-import methods pass"
         languageLifecyclePanel -> javaLanguageController "Starts, stops, restarts, refreshes, and renders workspace-scoped language status"
-        javaLanguageController -> languageContracts "Uses provider-neutral lifecycle, sync, diagnostics, semantics, capability, and cancellation contracts"
-        javaLanguageController -> tauriLanguageAdapter "Coordinates lifecycle, subscriptions, and serialized versioned document synchronization" "Tauri adapter"
+        javaLanguageController -> languageContracts "Uses provider-neutral language contracts"
+        javaLanguageController -> tauriLanguageAdapter "Coordinates lifecycle and serialized document synchronization" "Tauri adapter"
         tauriLanguageAdapter -> languageContracts "Implements lifecycle and versioned document synchronization contracts"
         tauriLanguageAdapter -> javaLanguageFacade "Invokes lifecycle, document, and event commands" "Tauri invoke"
         javaLanguageFacade -> javaLifecycleOrchestrator "Delegates inbound commands to the application service"
@@ -163,8 +171,15 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         javaLifecycleOrchestrator -> filesystem "Uses authorized workspace and isolated service data"
         javaLifecycleOrchestrator -> jdk "Capability-probes and launches the resolved java executable" "Direct fixed argv"
         javaLifecycleOrchestrator -> jdtLs "Manages one external process for the active workspace" "LSP over stdio"
-        developer -> xcomMonitorPanel "Uses desktop Settings to inspect machine health, refresh, and request a descriptive dry run"
-        xcomMonitorPanel -> xcomSetupController "Renders controller-owned monitor evidence, loading, freshness, and planning state"
+        developer -> xcomProjectRecognitionPanel "Opens the accessible XCOM 2 Project activity and reviews recognition evidence"
+        xcomModuleActivationController -> xcomFeatureContracts "Uses immutable recognition snapshots and correlation"
+        xcomModuleActivationController -> tauriXcomModuleScannerAdapter "Requests one generation-correlated metadata scan" "Tauri adapter"
+        tauriXcomModuleScannerAdapter -> xcomModuleEvidenceScanner "Invokes the strict scanner command" "Tauri invoke"
+        xcomModuleEvidenceScanner -> filesystem "Reads bounded metadata and exact names below the authorized root" "Read-only filesystem metadata"
+        xcomModuleActivationController -> xcomActivationEvaluator "Evaluates the exact current scan snapshot"
+        xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes only active decisions and recognition limitations"
+        developer -> xcomMonitorPanel "Inspects machine health and requests a descriptive dry run"
+        xcomMonitorPanel -> xcomSetupController "Renders monitor evidence and setup planning state"
         xcomSetupController -> xcomFeatureContracts "Uses generation-bound monitor evidence and export-safe records"
         xcomSetupController -> xcomDryRunPlanner "Requests a pure descriptive non-executable plan"
         xcomDryRunPlanner -> xcomFeatureContracts "Reads snapshot evidence and returns an export-safe plan"
@@ -173,21 +188,21 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         tauriXcomMonitorAdapter -> xcomFeatureContracts "Implements the read-only monitor port"
         tauriXcomMonitorAdapter -> xcomSteamMonitor "Invokes snapshot commands and polls bounded events" "Tauri invoke"
         xcomSteamMonitor -> steamMetadata "Reads allowlisted metadata without mutation" "Bounded filesystem reads"
-        developer -> xcomSetupPresentation "Reviews transaction history and uses approval, rollback, and recovery controls in Settings"
-        xcomSetupPresentation -> xcomSetupController "Reviews operations and full digest, then submits exact approval or recovery intent"
-        xcomSetupController -> xcomProductionSetup "Presents concrete Prepare, exact approval, Apply, Restore Vanilla SDK, and Prepare Again flows"
+        developer -> xcomSetupPresentation "Reviews transactions and uses approval, rollback, and recovery controls"
+        xcomSetupPresentation -> xcomSetupController "Submits exact approval or recovery intent after review"
+        xcomSetupController -> xcomProductionSetup "Presents Prepare, Apply, restore, and recovery flows"
         xcomProductionSetup -> xcomProductionOperations "Requests the stable 15-operation native plan and execution" "Tauri commands/events"
         tauriXcomTransactionAdapter -> xcomSetupWorkflow "Invokes transaction commands and polls bounded events" "Tauri invoke"
         xcomProductionOperations -> xcomSetupWorkflow "Uses one journaled reversible transaction"
-        xcomSetupWorkflow -> filesystem "Persists bounded journals/backups and applies only allowlisted authorized primitives" "Bounded atomic filesystem operations"
+        xcomSetupWorkflow -> filesystem "Persists journals and backups; applies allowlisted primitives" "Bounded atomic filesystem operations"
         xcomProductionOperations -> xcomToolchain "Audits vanilla installation and targets only the allowlisted installed game link" "Bounded filesystem operations"
         xcomSetupWorkflow -> xcomApproval "Requires an exact-digest grant scoped to one transaction" "External approval"
 
-        xcomOptionalProvisioning -> xcomFutureProvisioning "Describes excluded future work without execution authority"
-        developer -> xcomContributionCoordinator "Uses contextual Problems, Build, Tests, Logs, and XCOM tools only for an activated module"
-        xcomActivationEvaluator -> filesystem "Reads bounded module evidence such as project descriptors, build markers, config, and UnrealScript sources"
-        xcomContributionCoordinator -> xcomActivationEvaluator "Uses activation state, confidence, reasons, and matched module roots"
-        xcomContributionCoordinator -> xcomLanguageBuildAdapters "Enables XCOM Build, Problems, Logs, and language contributions for active modules only"
+        xcomOptionalProvisioning -> xcomFutureProvisioning "Describes separately authorized provisioning"
+        developer -> xcomContributionCoordinator "Uses contextual tools only after additional project authorization"
+        xcomContributionCoordinator -> xcomActivationExtensions "Uses configured activation or manual confirmation"
+        xcomContributionCoordinator -> xcomActivationEvaluator "Can retain convention recognition as one activation input"
+        xcomContributionCoordinator -> xcomLanguageBuildAdapters "Enables Build, Problems, Logs, and language tools for authorized modules"
         xcomLanguageBuildAdapters -> xcomLanguageBuildBridge "Uses an authorized native boundary"
         xcomLanguageBuildBridge -> xcomToolchain "Uses separately approved bounded protocols"
 
@@ -196,19 +211,19 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
         javaMonacoSemantics -> javaLanguageController "Requests guarded semantics and cancellation"
         javaLanguageController -> tauriJavaIntelligenceAdapter "Flushes didChange before completion, hover, or signature help" "Tauri adapter"
         tauriJavaIntelligenceAdapter -> javaLanguageFacade "Invokes correlated semantic and cancellation commands" "Tauri invoke"
-        javaSemanticBridge -> jdtLs "Synchronizes documents and requests completion, hover, signature help, or cancellation" "LSP over stdio"
+        javaSemanticBridge -> jdtLs "Synchronizes documents and requests guarded Java semantics" "LSP over stdio"
 
-        developer -> javaContributionCoordinator "Reviews a frozen historical concept for contextual Java tools; no current interaction or commitment"
-        javaActivationEvaluator -> filesystem "Historical concept only: bounded module evidence was considered; no active reader exists"
+        developer -> javaContributionCoordinator "Reviews historical contextual Java tool concepts"
+        javaActivationEvaluator -> filesystem "Models bounded module evidence input"
         javaContributionCoordinator -> javaActivationEvaluator "Historical concept only: no activation decision or coordinator exists"
         javaContributionCoordinator -> javaAdvancedPresentation "Historical concept only: no contextual Java contribution is scheduled"
         developer -> javaAdvancedPresentation "Reviews frozen unscheduled inventory; no broader Java workflow is current"
         javaAdvancedPresentation -> javaAdvancedCoordinator "Historical concept only: no gesture or result flow exists"
-        javaAdvancedCoordinator -> javaLanguageController "Any reconsideration would preserve current synchronization, cancellation, and stale guards; no integration exists"
+        javaAdvancedCoordinator -> javaLanguageController "Preserves synchronization, cancellation, and stale guards"
         javaAdvancedCoordinator -> refactoringPort "Historical concept only: no general Java refactoring integration exists"
         javaAdvancedCoordinator -> externalProviderAdapters "Historical concept only: no additional provider integration exists"
         javaAdvancedCoordinator -> javaAdvancedBridge "Historical concept only: no broader native semantic or mutation transport exists"
-        javaAdvancedBridge -> jdtLs "Historical concept only: definition/references, symbols/hierarchy, code actions, formatting, and rename are unscheduled" "No active protocol"
+        javaAdvancedBridge -> jdtLs "Models broader Java semantic requests" "No active protocol"
         refactoringPort -> refactorPreviewEngine "General refactoring is separate from the managed import flow" "No active invocation"
         refactorKitTransport -> refactorKit "Uses one generation-scoped daemon for import and backend rollback" "Fixed bin/refactorkit-daemon NDJSON"
         refactorKit -> filesystem "Maintains metadata and applies exact approved import or backend rollback" "Transactional filesystem operations"
@@ -219,14 +234,14 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
     views {
         systemContext ide "CurrentSystemContext" {
             title "CURRENT / AS-BUILT — IDE System Context"
-            description "Desktop uses Monaco and guarded JDT LS diagnostics, Problems, semantics, synchronization, and cancellation without Java module activation."
+            description "Desktop combines guarded Java editing, machine-scoped XCOM setup, and workspace-scoped recognition over bounded external systems."
             include developer ide browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
 
         container ide "CurrentContainers" {
             title "CURRENT / AS-BUILT — IDE Containers"
-            description "Desktop and Rust host guarded JDT LS behavior; RefactorKit separately owns imported-project-content writes."
+            description "Desktop and Rust host guarded Java behavior, XCOM machine setup, and read-only project recognition; RefactorKit owns import writes."
             include developer webApp desktopApp rustBackend browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
@@ -240,43 +255,73 @@ workspace "IDE Architecture" "Current Monaco-only editing, guarded JDT LS Java s
 
         component desktopApp "CurrentDesktopComponents" {
             title "CURRENT / AS-BUILT — Desktop Components"
-            description "Composition wires current controllers and parked Symbol Navigation support. Java import stays capability-gated with no rollback UI; open Settings owns both XCOM adapter lifecycles."
-            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup rustBackend
+            description "Composition wires guarded controllers, Settings-owned machine setup, and one-shot XCOM project recognition with synchronous revocation."
+            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomProjectRecognitionPanel rustBackend
             autoLayout lr
         }
 
         component rustBackend "CurrentRustComponents" {
             title "CURRENT / AS-BUILT — Rust Backend Components"
-            description "Tauri facades delegate Java and RefactorKit services. Import supports preview, exact-plan Apply, discard, and non-UI backend rollback."
-            include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            description "Native services include guarded Java, RefactorKit transactions, XCOM machine setup, and authorized-root metadata scanning."
+            include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleEvidenceScanner filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            autoLayout lr
+        }
+
+        component desktopApp "Xcom2RecognitionDesktopComponents" {
+            title "XCOM 2 Project Recognition — Desktop Components"
+            description "A one-shot controller, strict adapter, pure evaluator, and accessible activity enforce recognition-only workspace scope."
+            include developer desktopUi desktopSidebar workspaceController xcomFeatureContracts xcomModuleActivationController tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomProjectRecognitionPanel rustBackend
+            autoLayout lr
+        }
+
+        component rustBackend "Xcom2RecognitionRustComponents" {
+            title "XCOM 2 Project Recognition — Rust Components"
+            description "The dedicated scanner reads bounded authorized-root metadata and names without content access, symlink traversal, writes, or external roots."
+            include desktopApp xcomModuleEvidenceScanner filesystem
             autoLayout lr
         }
 
         systemContext ide "TargetXcom2Context" {
-            title "FUTURE/TARGET — XCOM 2 Activation and Optional Provisioning Context"
-            description "Target evidence-based project activation and explicitly non-executable optional Steam/prefix/package provisioning. Concrete repeatable native WOTC SDK setup is already current."
+            title "XCOM 2 Project Evolution and Optional Provisioning Context"
+            description "Workspace-local recognition stays separate from external-root grants, contextual tools, and optional provisioning."
             include developer ide filesystem steamMetadata xcomToolchain xcomFutureProvisioning
             autoLayout lr
         }
 
         container ide "TargetXcom2Containers" {
-            title "FUTURE/TARGET — XCOM 2 Activated Project and Optional Provisioning Runtime"
-            description "Target project activation and non-executable optional provisioning remain separate from the current concrete SDK transaction."
+            title "XCOM 2 Project Evolution and Optional Provisioning Runtime"
+            description "Project recognition, configured activation, contextual tools, provisioning, and machine setup retain distinct authority."
             include developer desktopApp rustBackend filesystem steamMetadata xcomToolchain xcomFutureProvisioning
             autoLayout lr
         }
 
         component desktopApp "TargetXcom2DesktopComponents" {
-            title "FUTURE/TARGET — XCOM 2 Activation, Contextual Contributions, and Settings"
-            description "Current Settings setup remains separate. XCOM scanning, activation, project/module tooling, and activity/bottom contributions are not current; shown elements are target."
-            include developer xcomFeatureContracts xcomSetupPresentation xcomSetupController tauriXcomTransactionAdapter xcomProductionSetup xcomOptionalProvisioning xcomActivationEvaluator xcomContributionCoordinator xcomLanguageBuildAdapters filesystem rustBackend
+            title "XCOM 2 Recognition Extensions, Contextual Tools, and Settings"
+            description "Recognition-only activity and machine Settings stay separate from configured activation, external roots, and contextual tools."
+            include developer xcomFeatureContracts xcomSetupPresentation xcomSetupController tauriXcomTransactionAdapter xcomProductionSetup xcomModuleActivationController xcomActivationEvaluator xcomProjectRecognitionPanel xcomActivationExtensions xcomOptionalProvisioning xcomContributionCoordinator xcomLanguageBuildAdapters filesystem rustBackend
             autoLayout lr
         }
 
         component rustBackend "TargetXcom2RustComponents" {
-            title "FUTURE/TARGET — XCOM 2 Optional Provisioning and Tool Bridges"
-            description "Current concrete SDK operations and durable transaction infrastructure are shown with future project tool bridges; optional Steam/prefix/package work remains non-executable."
+            title "XCOM 2 Optional Provisioning and Tool Bridges"
+            description "Concrete SDK transactions remain separate from project language, build, and external provisioning bridges."
             include desktopApp xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomLanguageBuildBridge filesystem steamMetadata xcomToolchain
+            autoLayout lr
+        }
+
+        dynamic desktopApp "Xcom2ModuleRecognitionRuntime" {
+            title "XCOM 2 Workspace Recognition"
+            description "A workspace generation gets one adapter request; only its current correlated result can create the recognition-only activity."
+            developer -> desktopSidebar "Selects an authorized workspace"
+            desktopSidebar -> workspaceController "Requests the workspace switch"
+            workspaceController -> xcomModuleActivationController "Revokes old recognition before the root transition"
+            xcomModuleActivationController -> tauriXcomModuleScannerAdapter "Requests one correlated scan"
+            tauriXcomModuleScannerAdapter -> xcomModuleEvidenceScanner "Invokes the strict scanner command"
+            xcomModuleEvidenceScanner -> filesystem "Reads bounded metadata and exact names"
+            xcomModuleActivationController -> xcomActivationEvaluator "Evaluates only the exact current result"
+            xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes active recognition evidence"
+            desktopUi -> xcomProjectRecognitionPanel "Contributes the accessible activity"
+            developer -> xcomProjectRecognitionPanel "Reviews recognition evidence"
             autoLayout lr
         }
 

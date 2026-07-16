@@ -1,10 +1,10 @@
 # XCOM 2 WOTC Modding Plugin — Product and Software Requirements
 
-**Evidence status:** **IMPLEMENTATION-INFORMED — late-reconciled through `fba4d86` on 2026-07-16.** ARC42 remains the mutable integrated status ledger; this specialist catalogue separates the current machine-Settings boundary from future project/module work.
+**Evidence status:** **IMPLEMENTATION-INFORMED — late-reconciled through `5cdc9c0` on 2026-07-16.** ARC42 remains the mutable integrated status ledger; this specialist catalogue separates current machine Settings and recognition-only project activation from future project tooling.
 
-**Status:** Partially implemented; Settings-owned monitor/transaction runtime and concrete repeatable WOTC SDK transaction AS-BUILT, external interactive setup and project tooling FUTURE/TARGET
+**Status:** Partially implemented; Settings-owned monitor/transaction runtime, concrete repeatable WOTC SDK transaction, and first recognition-only project slice AS-BUILT; external interactive setup and contextual project tooling FUTURE/TARGET
 
-**Implemented increment:** `REQ-XCOM2-MACHINE-SETTINGS-001` (`@implemented-not-e2e-validated`), first-party Steam monitor, separate non-executable dry run, concrete 15-operation Prepare/Apply/Restore Vanilla SDK transaction, exact-digest one-transaction approval, and Settings transaction controls; no live Apply, scanner, module activation, or project contribution
+**Implemented increment:** `REQ-XCOM2-MACHINE-SETTINGS-001` (`@implemented-not-e2e-validated`) plus `REQ-XCOM2-MODULE-ACTIVATION-001` (`@implemented-and-validated`): first-party Steam monitor; separate non-executable dry run; concrete 15-operation Prepare/Apply/Restore Vanilla SDK transaction; exact-digest one-transaction approval; Settings transaction controls; and bounded read-only workspace recognition with a dynamic accessible `XCOM 2 Project` activity. No live Apply, explicit project configuration, manual confirmation, external-root recognition, Build, Problems, Logs, or language capability
 **Target runtime:** Tauri desktop on Linux first; honest degraded web mode  
 **Primary goal:** replace Visual Studio Code—not Unreal Editor—as the daily development environment for XCOM 2: War of the Chosen mods.
 
@@ -44,7 +44,7 @@ Status labels in this specification are normative: **AS-BUILT** means implemente
 | FR-X2ENV-001 / 004 Steam health and gate                 | **PARTIAL / AS-BUILT Settings monitor**         | Desktop Settings reads only bounded allowlisted manifests for AppIDs `268500`, `602410`, and optional `299990`; derives conservative progress/staging/install/completeness/stability/blockers; exports redacted provenance. Broader tool/readiness checks remain target work.                       |
 | FR-X2ENV-005–012 setup workflow                          | **PARTIAL / concrete SDK transaction AS-BUILT** | Dry run remains separate/non-executable. Prepare audits vanilla SDK AppID `602410` and produces the fixed 15 reversible operations; exact-digest Apply approval, exact-baseline Restore Vanilla SDK, conflicts, recovery, and Prepare Again exist. External interactive steps remain FUTURE/TARGET. |
 | FR-X2UI-000 / FR-X2ARCH-007 machine runtime boundary     | **AS-BUILT Settings lifecycle**                 | Closed Settings performs no monitor/history/detail/poll/subscription work. Open Settings owns one monitor and one transaction adapter lifecycle under workspace/generation authority; close invalidates and cancels both. `REQ-XCOM2-MACHINE-SETTINGS-001` is harness-only.                         |
-| FR-X2UI-001 / 002 project contributions                  | **ABSENT / FUTURE/TARGET**                      | `REQ-XCOM2-MODULE-ACTIVATION-001` has no configured Gherkin scenario or current implementation. No scanner, project/module state, activity entry, bottom tab, or contextual contribution exists.                                                                                                    |
+| FR-X2UI-001 / 002 project contributions                  | **PARTIAL / recognition AS-BUILT**              | `REQ-XCOM2-MODULE-ACTIVATION-001` is current only for bounded Option A recognition: one read-only scan per workspace generation, pure two-kind evaluation, and the accessible `XCOM 2 Project` evidence activity. Bottom tabs, actions, language, Build, Problems, and Logs remain FUTURE/TARGET.   |
 | FR-X2UI-005 browser boundary                             | **AS-BUILT unavailable**                        | Browser setup reports unavailable without simulation and starts no XCOM adapter, polling, transaction, or subscription work.                                                                                                                                                                        |
 | FR-X2ARCH-004 external-root authorization                | **PARTIAL / narrow transaction grant AS-BUILT** | The full digest grants one reviewed external-SDK transaction only. No general reusable external-root grant exists; Proton/prefix/package-manager/interactive read/write/execute authorization remains FUTURE/TARGET.                                                                                |
 | `FR-X2LANG-*`, `FR-X2BUILD-*`, `FR-X2HL-*`, `FR-X2RUN-*` | **FUTURE/TARGET**                               | No XCOM-specific language, build/cook, Highlander, launch, or log workflow is implemented by this increment.                                                                                                                                                                                        |
@@ -56,7 +56,7 @@ Architecture traceability: [ADR 0007](../ADR.md#adr-0007--machine-settings-and-e
 
 An intentionally ignored native test, `live_steam_snapshot_probe`, performs a read-only live integration probe and must be run explicitly on a suitably configured machine. One validation run observed game download/staging at **13.63%/14.58%**, WOTC SDK at **51.46%/50.68%**, optional vanilla SDK installed, aggregate state `staging`, and both plan/apply flags false. A later two-sample, five-second probe reported `materialChanged=false` and `canApplySetup=false`.
 
-Synthetic fixtures prove repeated apply→rollback cycles restore exact original `FileState` and SHA-256 values for atomic patch, quarantine, generated file, generated directory, and symlink operations. They also prove reverse rollback order, restart recovery, conflict refusal, and conflict-safe retry. At implementation baseline `fba4d86`, the full Vitest suite passed 867/867 tests across 67 files with V8 coverage of 86.02% statements/lines, 82.15% branches, and 86.42% functions. The declared deterministic desktop-harness route passed 2 scenarios/49 steps; its XCOM scenario contributed 27/27 steps. A live ignored Prepare audit produced exactly 15 operations, executable, with no blockers. Native GUI, real IPC, live Steam/filesystem execution for the XCOM Story, package/bundle/installer behavior, and live Apply remain unproven.
+Synthetic fixtures prove repeated apply→rollback cycles restore exact original `FileState` and SHA-256 values for atomic patch, quarantine, generated file, generated directory, and symlink operations. They also prove reverse rollback order, restart recovery, conflict refusal, and conflict-safe retry. At implementation baseline `5cdc9c0`, the full Vitest suite passed 1021/1021 tests with V8 coverage of 86.37% statements/lines, 82.66% branches, and 86.74% functions. The Spec suite reports 132 cases, and Rust defaults report 181 passed plus 8 ignored. The deterministic desktop-harness route passed 2 scenarios/49 steps; its XCOM Settings scenario contributed 27/27 steps. The focused XCOM recognition native route passed 1 scenario/26 reported steps (25 authored plus cleanup), and the current native aggregate reports 4 scenarios/87 reported steps. A live ignored Prepare audit produced exactly 15 operations, executable, with no blockers. Live Apply, package/bundle/installer behavior, and machine-correctness evidence from the recognition Story remain unproven.
 
 ```bash
 cd apps/desktop/src-tauri
@@ -73,7 +73,21 @@ cargo test --locked live_steam_snapshot_probe -- --ignored --nocapture
 - close synchronously revokes request authority, unsubscribes both adapters, and clears their timers, so five further configured poll intervals change no native-call transcript; and
 - open workspace switching, failed restoration, late events, and stale async responses remain workspace/generation/lifecycle guarded.
 
-Machine setup transaction authority remains correlated to the current workspace/generation, but workspace authorization/loading does not own or start this runtime. Settings creates no scanner, module state, activity entry, bottom tab, or contextual contribution. Future `REQ-XCOM2-MODULE-ACTIVATION-001` remains target-only and absent from configured feature roots. This evidence makes no native Tauri GUI, real IPC, live Steam, real filesystem, package, bundle, or installer claim.
+Machine setup transaction authority remains correlated to the current workspace/generation, but workspace authorization/loading does not own or start this runtime. Settings creates no project evidence, activity entry, bottom tab, or contextual contribution. Separate `REQ-XCOM2-MODULE-ACTIVATION-001` is current and native-validated only for recognition; Settings evidence cannot activate it. The Settings evidence makes no native Tauri GUI, real IPC, live Steam, real filesystem, package, bundle, or installer claim.
+
+### 2.4 Current recognition-only executable boundary
+
+`REQ-XCOM2-MODULE-ACTIVATION-001` is declared `@implemented-and-validated` for ADR 0007 Option A only:
+
+- one generation-correlated controller request crosses the strict Tauri adapter into a dedicated read-only Rust metadata/name scanner over exactly the current authorized Linux workspace;
+- exact-case regular entries may count, while symlinks are neither traversed nor evidence; `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, and `.vite` are excluded;
+- fixed depth 8 and 20,000 encountered-entry limits produce explicit partial completeness/issues rather than an unbounded scan;
+- the five ordered kinds are `x2proj`, `xcommod`, `x2mbc-script-pair`, `engine-config`, and `unrealscript-layout`; a pure evaluator requires two distinct kinds under one inferred module root;
+- workspace, directory, and file names alone, duplicate evidence of one kind, and one-kind workspaces never contribute UI;
+- an active result contributes only the keyboard-accessible **XCOM 2 Project** recognition activity and panel; a committed switch removes them synchronously, and workspace/scan generation correlation suppresses stale restoration; and
+- machine Settings monitoring, Steam/game/SDK state, completed setup, and transaction state are independent and cannot activate recognition.
+
+On 2026-07-16 against promotion baseline `903cb1a`, the focused native route passed 1 scenario/26 reported steps (25 authored plus cleanup) against an actual scenario-owned sandbox filesystem and the production Linux X11 release/no-bundle Tauri WebKit DOM at 1440×900. This does not prove a package, Wayland or another OS/DPI, proprietary project compatibility, content parsing, external roots, `.ide/xcom2.json`, explicit configuration, manual confirmation/persistence, machine correctness, Build, Problems, Logs, language support, project actions, or bottom contributions.
 
 ## 3. Existing IDE constraints
 
@@ -220,7 +234,7 @@ Dependency paths inside the workspace shall be relative whenever possible. Machi
 
 ### FR-X2PRJ-001 Detection
 
-The plugin shall recognize a WOTC mod when one or more of these are present:
+**PARTIAL / AS-BUILT Option A recognition:** the plugin recognizes convention evidence from:
 
 - `*.x2proj`;
 - `*.XComMod`;
@@ -228,7 +242,9 @@ The plugin shall recognize a WOTC mod when one or more of these are present:
 - `Config/XComEngine.ini`;
 - `Src/<ScriptPackage>/Classes/*.uc`.
 
-Detection shall return a module-scoped activation decision with `active`, `inactive`, or `needs-confirmation`, confidence, ordered reasons, and matched module roots. Explicit configuration may activate a module. Weak evidence shall require corroboration or confirmation; ambiguous or partial layouts remain inactive or require confirmation. A directory, repository, project, or workspace name containing `xcom` is never evidence and shall not activate the feature. Inactive modules contribute no XCOM activity entry, bottom tab, build/log/language service, or polling.
+The dedicated scanner considers exact-case regular metadata/names only within the current authorized Linux workspace. It neither follows nor accepts symlinks, excludes the fixed heavy directories `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, and `.vite`, and applies fixed depth-8 and 20,000-encounter bounds. Detection returns module-scoped `active`, `inactive`, or `needs-confirmation` state, confidence, ordered reasons, completeness/issues, and matched module roots. The pure evaluator requires at least two distinct kinds under one root for `active`; one kind is `needs-confirmation` and contributes nothing. A directory, repository, project, workspace, or ordinary file name containing `xcom` is never evidence and shall not activate the feature. Inactive and needs-confirmation modules contribute no XCOM activity entry, bottom tab, build/log/language service, action, or polling.
+
+**FUTURE/TARGET:** explicit configuration may eventually activate a module, and manual confirmation may eventually resolve weak or partial layouts. Neither exists in the first slice.
 
 ### FR-X2PRJ-002 Project model
 
@@ -613,7 +629,9 @@ The browser setup adapter explicitly reports unavailable without simulation. Nor
 
 ### FR-X2UI-001 Conditional project activity entry
 
-**FUTURE/TARGET (`REQ-XCOM2-MODULE-ACTIVATION-001`, not present in configured Gherkin):** a dedicated XCOM 2 activity entry may open an XCOM 2 project panel only when at least one project/module is explicitly configured or evidence-activated under FR-X2PRJ-001. Generic workspaces shall not show the entry. No current scanner, project/module state, activity entry, or contribution exists. Any future contribution shall follow module activation/deactivation and shall not overload or gate the independent Java panel.
+**PARTIAL / AS-BUILT (`REQ-XCOM2-MODULE-ACTIVATION-001`):** the dedicated accessible **XCOM 2 Project** activity entry opens a recognition-only evidence panel only when Option A's pure evaluator observes at least two distinct exact evidence kinds under one inferred module root. Generic, name-only, duplicate-kind, one-kind, `needs-confirmation`, and `inactive` workspaces show no entry. The contribution follows generation-correlated activation and synchronous deactivation and remains independent of the Java panel and machine Settings.
+
+**FUTURE/TARGET:** `.ide/xcom2.json`, explicit configuration, manual confirmation/persistence, external roots, project actions, and broader project panels remain unimplemented.
 
 ### FR-X2UI-002 Conditional project bottom tabs
 
@@ -661,7 +679,7 @@ The web application may eventually provide syntax highlighting, fixture project 
 
 ### FR-X2ARCH-001 Contracts
 
-**PARTIAL / AS-BUILT:** `packages/contracts/src/xcom2-setup.ts` defines the provider-neutral dry-run, transaction, operation, approval, event, rollback, recovery, and export-safe types. The dry-run cannot carry executable operations; native code owns operation construction. Project, environment expansion, build, language, and runtime contracts remain FUTURE/TARGET.
+**PARTIAL / AS-BUILT:** `packages/contracts/src/xcom2-setup.ts` defines the provider-neutral dry-run, transaction, operation, approval, event, rollback, recovery, and export-safe types. The dry-run cannot carry executable operations; native code owns operation construction. Recognition contracts and the pure activation decision are also AS-BUILT. Explicit project configuration, confirmation, external roots, environment expansion, build, language, and runtime contracts remain FUTURE/TARGET.
 
 No contract shall expose raw Tauri, Rust, Protontricks, Distrobox, native paths, or backup content.
 
@@ -669,17 +687,19 @@ No contract shall expose raw Tauri, Rust, Protontricks, Distrobox, native paths,
 
 **PARTIAL / AS-BUILT:** the focused `Xcom2SetupPort` supports `prepare`, `approve`, `apply`, `getTransaction`, `listTransactions`, `cancel`, `rollback`, `recover`, and `subscribe` with structured requests/results. Native implementations alone discover targets and construct allowlisted operations; callers provide no paths or raw filesystem instructions. The setup monitor port remains separate from this transaction port.
 
-Project, build, language, and runtime ports remain FUTURE/TARGET. All request/response types shall remain structured and workspace/generation scoped.
+The dedicated `Xcom2ModuleScannerPort` is AS-BUILT for one bounded read-only scan request/result. Explicit project configuration, confirmation, external roots, build, language, and runtime ports remain FUTURE/TARGET. All request/response types shall remain structured and workspace/generation scoped.
 
 ### FR-X2ARCH-003 Adapters
 
-**AS-BUILT for setup transactions:**
+**AS-BUILT for setup transactions and project recognition:**
 
-- the Tauri adapter maps typed setup operations to fixed Rust commands and validates native responses;
-- the browser adapter rejects mutation requests, reports reads unavailable, emits no simulated progress, and starts no polling/native work;
+- the setup Tauri adapter maps typed setup operations to fixed Rust commands and validates native responses;
+- the recognition Tauri adapter accepts only the fixed correlation/limit request and strictly validates response identity, enums, canonical workspace-relative paths, ordering, and duplicates;
+- the dedicated Rust recognition command owns workspace authority and reads metadata/names only;
+- browser composition creates no recognition scanner and setup reports unavailable without simulation;
 - UI consumes props/callbacks only; app shells own composition.
 
-Future project/build/language/runtime adapters must preserve the same boundaries.
+Future configuration/confirmation/external-root/project-tool/build/language/runtime adapters must preserve the same boundaries.
 
 ### FR-X2ARCH-004 External-root authorization
 
@@ -720,7 +740,9 @@ This descriptor is not permission to execute arbitrary third-party code. Its Set
 
 ### FR-X2ARCH-007 Activation boundary
 
-Project/module activation remains FUTURE/TARGET under `REQ-XCOM2-MODULE-ACTIVATION-001`, which has no configured Gherkin scenario or implementation. A future bounded service shall remain separate from machine Settings monitoring, consume only authorized project paths and explicit configuration, emit module roots plus state/confidence/reasons, and drive contribution lifetime. Healthy Steam/game/SDK evidence or completed machine setup shall never activate a project. Deactivation or evidence invalidation shall remove contextual contributions. AS-BUILT, no scanner/project/module contribution exists, generic workspace opening starts no XCOM work while Settings is closed, and the web shell never instantiates an XCOM monitor.
+Project/module activation is **PARTIAL / AS-BUILT** under `REQ-XCOM2-MODULE-ACTIVATION-001` for recognition only. The bounded service remains separate from machine Settings monitoring. One authorized-workspace generation triggers one dedicated read-only metadata/name scan; the strict adapter and pure evaluator emit module roots plus state/confidence/reasons/completeness/issues, and only an `active` result drives the accessible recognition activity. Healthy Steam/game/SDK evidence or completed machine setup never activates a project. A committed switch removes the contribution synchronously, and mismatched workspace/scan correlation rejects stale results. Generic, name-only, and one-kind workspaces contribute nothing. The browser starts no recognition scan or XCOM monitor.
+
+Explicit configuration/manual confirmation, persistence, external roots, content parsing, Build, Problems, Logs, language support, actions, and bottom contributions remain FUTURE/TARGET.
 
 ## 16. Security and safety requirements
 
@@ -814,33 +836,33 @@ A user-approved bundle should include effective configuration with redaction, to
 
 ## 19. Acceptance test matrix
 
-| ID        | Scenario                                      | Expected result                                                                                                                                                                                                       |
-| --------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AT-X2-001 | Open/switch non-XCOM workspace                | With Settings closed, no XCOM snapshot/refresh, history/detail, polling, subscription, activity, bottom tab, scanner, or module work starts; manual machine setup remains available only by opening desktop Settings. |
-| AT-X2-002 | Open EMPT fixture                             | Detects mod ID, packages, X2MBC and build profiles.                                                                                                                                                                   |
-| AT-X2-003 | SDK path missing                              | Environment reports failure with remediation; build disabled.                                                                                                                                                         |
-| AT-X2-004 | SDK update in progress                        | Mutating setup blocked/warned and index marked provisional.                                                                                                                                                           |
-| AT-X2-005 | Distrobox mode                                | Fixed discovery/launch runs only in authorized container.                                                                                                                                                             |
-| AT-X2-006 | UnrealScript definition                       | Navigates from local use to SDK or Highlander declaration with provenance.                                                                                                                                            |
-| AT-X2-007 | Duplicate class fixture                       | Reports both source roots and does not silently choose one.                                                                                                                                                           |
-| AT-X2-008 | Build success fixture                         | Streams output, exits success and records provenance/output path.                                                                                                                                                     |
-| AT-X2-009 | Build compile error                           | Populates Problems and opens exact source line on click.                                                                                                                                                              |
-| AT-X2-010 | Cancel build                                  | Kills process tree and reports cancelled within 5 seconds.                                                                                                                                                            |
-| AT-X2-011 | Missing build prefix                          | Build disabled with copied-prefix remediation.                                                                                                                                                                        |
-| AT-X2-012 | Highlander submodule                          | Detects source root and exact commit; `IncludeSrc` validated.                                                                                                                                                         |
-| AT-X2-013 | Highlander direct API use, runtime mod absent | Displays hard-dependency warning before test launch.                                                                                                                                                                  |
-| AT-X2-014 | Hook-only config fixture                      | Does not falsely claim compile-time Highlander is mandatory.                                                                                                                                                          |
-| AT-X2-015 | External path escape                          | Symlink/traversal outside granted root rejected.                                                                                                                                                                      |
-| AT-X2-016 | Web build                                     | Builds independently with no XCOM surface, adapter startup, subscription, or hidden polling.                                                                                                                          |
-| AT-X2-017 | Workspace switch during indexing/build event  | Stale generation event ignored.                                                                                                                                                                                       |
-| AT-X2-018 | Steam SDK files changed                       | Index/build provenance invalidated and health recheck requested.                                                                                                                                                      |
-| AT-X2-019 | Setup plan on incomplete download             | No mutation; state is `waiting-for-download` with Steam evidence.                                                                                                                                                     |
-| AT-X2-020 | Setup plan dry run                            | Complete ordered description; no filesystem/process mutation.                                                                                                                                                         |
-| AT-X2-021 | Repeat concrete setup                         | Prepare yields the exact reviewed set; Apply→Restore→Prepare Again introduces no duplicates or drift.                                                                                                                 |
-| AT-X2-022 | Interrupt setup after an atomic fix           | Restart recovers checkpoint and resumes without duplicating the change.                                                                                                                                               |
-| AT-X2-023 | Interactive Proton installer required         | Step is FUTURE/TARGET, excluded, and non-executable.                                                                                                                                                                  |
-| AT-X2-024 | Restore Vanilla SDK                           | Exact captured bytes, hashes, modes, inventory, and symlink absence are restored.                                                                                                                                     |
-| AT-X2-025 | Restore encounters external edit              | Automatic overwrite is blocked; conflict and recovery choices are displayed.                                                                                                                                          |
+| ID        | Scenario                                      | Expected result                                                                                                                                                                                                                                                                                            |
+| --------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AT-X2-001 | Open/switch non-XCOM workspace                | One bounded recognition scan may run for the authorized workspace generation, but it yields no activity or bottom contribution. With Settings closed, no machine snapshot/refresh, history/detail, polling, or subscription work starts; machine setup remains available only by opening desktop Settings. |
+| AT-X2-002 | Open EMPT fixture                             | Detects mod ID, packages, X2MBC and build profiles.                                                                                                                                                                                                                                                        |
+| AT-X2-003 | SDK path missing                              | Environment reports failure with remediation; build disabled.                                                                                                                                                                                                                                              |
+| AT-X2-004 | SDK update in progress                        | Mutating setup blocked/warned and index marked provisional.                                                                                                                                                                                                                                                |
+| AT-X2-005 | Distrobox mode                                | Fixed discovery/launch runs only in authorized container.                                                                                                                                                                                                                                                  |
+| AT-X2-006 | UnrealScript definition                       | Navigates from local use to SDK or Highlander declaration with provenance.                                                                                                                                                                                                                                 |
+| AT-X2-007 | Duplicate class fixture                       | Reports both source roots and does not silently choose one.                                                                                                                                                                                                                                                |
+| AT-X2-008 | Build success fixture                         | Streams output, exits success and records provenance/output path.                                                                                                                                                                                                                                          |
+| AT-X2-009 | Build compile error                           | Populates Problems and opens exact source line on click.                                                                                                                                                                                                                                                   |
+| AT-X2-010 | Cancel build                                  | Kills process tree and reports cancelled within 5 seconds.                                                                                                                                                                                                                                                 |
+| AT-X2-011 | Missing build prefix                          | Build disabled with copied-prefix remediation.                                                                                                                                                                                                                                                             |
+| AT-X2-012 | Highlander submodule                          | Detects source root and exact commit; `IncludeSrc` validated.                                                                                                                                                                                                                                              |
+| AT-X2-013 | Highlander direct API use, runtime mod absent | Displays hard-dependency warning before test launch.                                                                                                                                                                                                                                                       |
+| AT-X2-014 | Hook-only config fixture                      | Does not falsely claim compile-time Highlander is mandatory.                                                                                                                                                                                                                                               |
+| AT-X2-015 | External path escape                          | Recognition neither traverses nor accepts symlinks; setup transaction paths remain canonically contained by their separate reviewed authority.                                                                                                                                                             |
+| AT-X2-016 | Web build                                     | Builds independently with no XCOM surface, adapter startup, subscription, or hidden polling.                                                                                                                                                                                                               |
+| AT-X2-017 | Workspace switch during scan/index/build      | Current recognition removes its activity synchronously at commit and ignores stale scan generations; future index/build flows retain the same requirement.                                                                                                                                                 |
+| AT-X2-018 | Steam SDK files changed                       | Index/build provenance invalidated and health recheck requested.                                                                                                                                                                                                                                           |
+| AT-X2-019 | Setup plan on incomplete download             | No mutation; state is `waiting-for-download` with Steam evidence.                                                                                                                                                                                                                                          |
+| AT-X2-020 | Setup plan dry run                            | Complete ordered description; no filesystem/process mutation.                                                                                                                                                                                                                                              |
+| AT-X2-021 | Repeat concrete setup                         | Prepare yields the exact reviewed set; Apply→Restore→Prepare Again introduces no duplicates or drift.                                                                                                                                                                                                      |
+| AT-X2-022 | Interrupt setup after an atomic fix           | Restart recovers checkpoint and resumes without duplicating the change.                                                                                                                                                                                                                                    |
+| AT-X2-023 | Interactive Proton installer required         | Step is FUTURE/TARGET, excluded, and non-executable.                                                                                                                                                                                                                                                       |
+| AT-X2-024 | Restore Vanilla SDK                           | Exact captured bytes, hashes, modes, inventory, and symlink absence are restored.                                                                                                                                                                                                                          |
+| AT-X2-025 | Restore encounters external edit              | Automatic overwrite is blocked; conflict and recovery choices are displayed.                                                                                                                                                                                                                               |
 
 ## 20. Delivery phases
 
@@ -857,9 +879,9 @@ Exit criterion: contracts and fixtures compile; no process execution.
 
 ### Phase 1 — Project, environment and operational setup
 
-**Status:** Partial. `REQ-XCOM2-MACHINE-SETTINGS-001` is `@implemented-not-e2e-validated`: Settings owns one bounded monitor/transaction lifecycle only while open, with synchronous close cancellation and guarded switch/restore/stale behavior. Monitor, separate non-executable dry run, browser-unavailable adapter, concrete 15-operation SDK Prepare, exact-digest one-transaction Apply approval, machine journals/backups, Restore Vanilla SDK, conflicts/recovery, and Prepare Again are AS-BUILT. The live Prepare audit passed with no blockers; no live Apply has occurred. `REQ-XCOM2-MODULE-ACTIVATION-001`, project scanning/contributions, complete health/tool discovery, general external-root grants, Proton/shortcut/prefix/package-manager work, and user-interaction checkpoints remain FUTURE/TARGET.
+**Status:** Partial. `REQ-XCOM2-MACHINE-SETTINGS-001` is `@implemented-not-e2e-validated`: Settings owns one bounded monitor/transaction lifecycle only while open, with synchronous close cancellation and guarded switch/restore/stale behavior. Monitor, separate non-executable dry run, browser-unavailable adapter, concrete 15-operation SDK Prepare, exact-digest one-transaction Apply approval, machine journals/backups, Restore Vanilla SDK, conflicts/recovery, and Prepare Again are AS-BUILT. The live Prepare audit passed with no blockers; no live Apply has occurred. `REQ-XCOM2-MODULE-ACTIVATION-001` is `@implemented-and-validated` only for Option A recognition: bounded scanning, pure two-kind evaluation, and the dynamic accessible evidence activity. `.ide/xcom2.json`, explicit configuration, manual confirmation, external roots, contextual project tools, complete health/tool discovery, general external-root grants, Proton/shortcut/prefix/package-manager work, and user-interaction checkpoints remain FUTURE/TARGET.
 
-- detection/project model;
+- recognition-only detection is current; full configured project model remains future;
 - `.ide/xcom2.json`;
 - complete health panel and SDK/game/tool/Distrobox discovery;
 - production operation builder and least-privilege external grants;
