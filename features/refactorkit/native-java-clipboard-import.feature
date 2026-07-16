@@ -31,7 +31,7 @@ Business Need: Trustworthy deterministic native Java clipboard import
     When a freshly built production release/no-bundle Tauri executable is launched directly on Linux X11 with the scenario HOME, XDG, workspace, daemon, and clipboard state
     And the developer expands the actual File Explorer to "src/main/java/example/imports"
     And opens that directory's actual context menu and chooses "Paste Java Class from Clipboard"
-    Then the production native clipboard command reads the exact fixture once from the Linux X11 clipboard owner for the first preview
+    Then the first actual directory context-menu action produces exactly one corresponding native preview carrying the exact fixture from the sandbox-owned Linux X11 clipboard owner through the production native clipboard command, with no duplicate preview
     And the deterministic daemon accepts that exact fixture and selected directory for the first preview
     And the actual review dialog binds the first plan to all of this evidence:
       | evidence               | reviewed value                                                  |
@@ -45,27 +45,19 @@ Business Need: Trustworthy deterministic native Java clipboard import
     And no Apply request or project-content write occurs for that plan
     And "src/main/java/example/imports/ClipboardImportProof.java" remains absent
     When the developer repeats the actual directory context-menu action
-    Then the production native clipboard command reads the exact fixture once from the Linux X11 clipboard owner for the second preview
+    Then the repeated actual directory context-menu action produces exactly one corresponding native preview carrying the exact fixture from the sandbox-owned Linux X11 clipboard owner through the production native clipboard command, with no duplicate preview
     And the daemon returns a distinct fresh plan for the same exact fixture and selected directory
     And the actual review dialog requires acknowledgement of the fresh plan's unknown-license and high-risk evidence before Apply is enabled
     When the developer gives that acknowledgement and chooses "Apply Import"
-    Then the production Apply command sends only these fresh plan authority fields:
-      | field                       |
-      | planId                      |
-      | workspaceId                 |
-      | workspaceGeneration         |
-      | selectionGeneration         |
-      | requestId                   |
-      | approval.approvalId         |
-      | approval.approvedPlanId     |
-      | approval.approvedAt         |
-    And it sends no clipboard source, code, patch, target directory, or target package
-    And the deterministic daemon reports and exclusively writes exactly one changed and primary target, "src/main/java/example/imports/ClipboardImportProof.java"
+    Then the production native path applies only the distinct fresh reviewed plan
+    And the deterministic daemon receives only that exact planId, with no clipboard source, code, patch, target directory, or target package
+    And after Apply the deterministic fixture daemon records exactly one target creation and reports it as the primary project file, "src/main/java/example/imports/ClipboardImportProof.java"
+    And the exact workspace tree gains only that one reported primary project file
     Then the refreshed actual File Explorer shows "src/main/java/example/imports/ClipboardImportProof.java"
     And the selected editor tab is exactly "ClipboardImportProof.java"
     And real Monaco shows the exact logical clipboard fixture
     And the source-free retained daemon transcript proves exact preview, correlated discard, fresh-plan Apply, and the one reported target without containing clipboard source text
     When the native window is closed and scenario cleanup releases the X11 clipboard owner
     Then the application, deterministic daemon, and clipboard-owner processes exit cleanly
-    And all HOME, XDG, workspace, daemon, transcript, and clipboard-owner effects remain confined to the scenario sandbox
+    And the configured HOME, XDG, workspace, daemon, transcript, and clipboard paths and sandbox-marked process artifacts remain confined to the scenario sandbox
     And the workspace contains no ".refactorkit/workspace.lock"
