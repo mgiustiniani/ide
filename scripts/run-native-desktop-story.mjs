@@ -41,6 +41,7 @@ const supportedProfiles = new Set([
   "refactorKitJavaImportNativeGui",
   "desktopLayoutNativeGui",
   "xcom2ModuleActivationNativeGui",
+  "xcom2ModuleConfigurationActivationNativeGui",
 ]);
 
 const executablePrerequisites = [

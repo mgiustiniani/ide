@@ -102,6 +102,9 @@ try {
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
   const xcom2ModuleActivationNativeGui = discover("xcom2ModuleActivationNativeGui");
+  const xcom2ModuleConfigurationActivationNativeGui = discover(
+    "xcom2ModuleConfigurationActivationNativeGui",
+  );
   const routing = evaluateDeclaredStoryRouting(declared);
   const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
   const failures = [...routing.failures];
@@ -144,6 +147,11 @@ try {
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopLayoutNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("xcom2ModuleActivationNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters(
+    "xcom2ModuleConfigurationActivationNativeGui",
+    desktopTauriWebdriverEvidence,
+    failures,
+  );
   assertWorldParameters("desktop", desktopTauri, failures);
 
   compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
@@ -182,6 +190,12 @@ try {
     "xcom2ModuleActivationNativeGui",
     xcom2ModuleActivationNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MODULE-ACTIVATION-001")),
+    failures,
+  );
+  compareProfileSelection(
+    "xcom2ModuleConfigurationActivationNativeGui",
+    xcom2ModuleConfigurationActivationNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001")),
     failures,
   );
 
