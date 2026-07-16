@@ -22,6 +22,18 @@ function DesktopPanelLayoutContractHarness(): JSX.Element {
     sizes: { ...DEFAULT_PANEL_LAYOUT.sizes },
     minSizes: { ...DEFAULT_PANEL_LAYOUT.minSizes },
   }));
+  const toggleVisibility = (panel: "leftSidebar" | "bottomPanel"): void => {
+    setLayout((current) => ({
+      ...current,
+      visibility: {
+        ...current.visibility,
+        [panel]: {
+          ...current.visibility[panel],
+          visible: !current.visibility[panel].visible,
+        },
+      },
+    }));
+  };
 
   return (
     <div
@@ -67,21 +79,12 @@ function DesktopPanelLayoutContractHarness(): JSX.Element {
               sizes: { ...current.sizes, bottomPanelHeight: height },
             }));
           }}
+          onToggleLeftSidebar={() => toggleVisibility("leftSidebar")}
+          onToggleBottomPanel={() => toggleVisibility("bottomPanel")}
           leftSidebar={
             <LeftSidebar
               isVisible={layout.visibility.leftSidebar.visible}
-              onToggle={() => {
-                setLayout((current) => ({
-                  ...current,
-                  visibility: {
-                    ...current.visibility,
-                    leftSidebar: {
-                      ...current.visibility.leftSidebar,
-                      visible: !current.visibility.leftSidebar.visible,
-                    },
-                  },
-                }));
-              }}
+              onToggle={() => toggleVisibility("leftSidebar")}
             >
               <div>Desktop workspace files</div>
             </LeftSidebar>

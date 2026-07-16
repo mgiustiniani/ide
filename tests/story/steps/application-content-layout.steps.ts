@@ -14,7 +14,7 @@ Given<StoryWorld>(
   "a person has opened a workspace in the desktop IDE",
   { timeout: 30_000 },
   async function () {
-    await this.openDesktopApplicationContentLayoutHarness();
+    await this.openDesktopApplicationContentLayout();
   },
 );
 
@@ -32,6 +32,16 @@ When<StoryWorld>(
     const session = this.applicationContentLayoutSession();
     await session.exercisePanelChanges();
     await this.attach(JSON.stringify(session.evidence()), "application/json");
+  },
+);
+
+When<StoryWorld>(
+  "the person keyboard-resizes both the left-sidebar separator and the bottom-panel separator, then collapses and re-expands the left sidebar and the bottom panel in turn",
+  { timeout: 30_000 },
+  async function () {
+    const session = this.applicationContentLayoutSession();
+    await session.exerciseDesktopPanelChanges();
+    await this.attachApplicationContentLayoutEvidence();
   },
 );
 

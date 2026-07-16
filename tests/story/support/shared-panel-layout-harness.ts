@@ -84,7 +84,11 @@ export class SharedPanelLayoutHarness {
     if (!this.#page || !this.#evidence) {
       throw new Error("The shared PanelLayout desktop harness has not completed navigation");
     }
-    return new ApplicationContentLayoutSession(this.#page, this.#evidence);
+    return new ApplicationContentLayoutSession(
+      this.#page,
+      this.#evidence,
+      "[data-story-top-level-chrome]",
+    );
   }
 
   evidence(): DesktopPanelLayoutHarnessEvidence {
