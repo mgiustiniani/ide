@@ -220,6 +220,9 @@ const testHarness = vi.hoisted(() => {
     harness.xcom2SetupError = null;
     harness.xcom2ModuleScanObservations = [];
     harness.xcom2ModuleScanError = null;
+    harness.xcom2ModuleConfiguration = null;
+    harness.xcom2ModuleConfigurationStopCode = null;
+    harness.xcom2ModuleConfigurationError = null;
     harness.xcom2Transaction = null;
     harness.xcom2Transactions = [];
     harness.xcom2TransactionError = null;
@@ -640,6 +643,27 @@ vi.mock("@ide/tauri-adapters", () => {
   };
   testHarness.xcom2ModuleScannerAdapter = xcom2ModuleScannerAdapter;
 
+  const xcom2ModuleConfigurationAdapter = {
+    read: vi.fn((request: any) => {
+      if (testHarness.xcom2ModuleConfigurationError) {
+        return Promise.reject(testHarness.xcom2ModuleConfigurationError);
+      }
+      if (testHarness.xcom2ModuleConfigurationStopCode) {
+        return Promise.resolve({
+          ...request,
+          kind: "stopped",
+          code: testHarness.xcom2ModuleConfigurationStopCode,
+        });
+      }
+      return Promise.resolve(
+        testHarness.xcom2ModuleConfiguration
+          ? { ...request, kind: "ready", configuration: testHarness.xcom2ModuleConfiguration }
+          : { ...request, kind: "absent" },
+      );
+    }),
+  };
+  testHarness.xcom2ModuleConfigurationAdapter = xcom2ModuleConfigurationAdapter;
+
   const xcom2SetupMonitorAdapter = {
     getSnapshot: vi.fn(() =>
       testHarness.xcom2SetupError
@@ -698,6 +722,7 @@ vi.mock("@ide/tauri-adapters", () => {
       languageSessionAdapter,
       documentSyncAdapter: languageSessionAdapter,
       javaIntelligenceAdapter,
+      xcom2ModuleConfigurationAdapter,
       xcom2ModuleScannerAdapter,
       xcom2SetupAdapter,
       xcom2SetupMonitorAdapter,
@@ -1393,6 +1418,7 @@ vi.mock("@ide/ui", () => ({
     isJavaRefactorKitChecking,
     javaRefactorKitError,
     onRefreshStatus,
+    onRefreshWorkspace,
     onSwitchWorkspace,
     onRefreshXcom2Setup,
     onPlanXcom2Setup,
@@ -1611,6 +1637,9 @@ vi.mock("@ide/ui", () => ({
             </ol>
           </div>
         ) : null}
+        <button type="button" onClick={() => onRefreshWorkspace?.()}>
+          Refresh workspace
+        </button>
         {(workspaceRegistry?.workspaces ?? [])
           .filter((workspace: any) => workspace.id !== workspaceInfo?.id)
           .map((workspace: any) => (
@@ -2560,6 +2589,24 @@ describe("App", () => {
     consoleError?.mockRestore();
   });
 
+  it("keeps configured-only project activation out of the legacy recognition composition", async () => {
+    testHarness.xcom2ModuleConfiguration = {
+      version: 1,
+      target: "wotc",
+      moduleRoots: ["ConfiguredMod"],
+    };
+    const { App } = await import("../App");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+    });
+    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+  });
+
   it("composes one immutable active project contribution without automatically opening it", async () => {
     testHarness.xcom2ModuleScanObservations = [
       {
@@ -2688,7 +2735,7 @@ describe("App", () => {
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
   });
 
-  it("runs one workspace-generation module scan independently of machine Settings", async () => {
+  it("runs activation only for initial load, switch, and explicit workspace refresh", async () => {
     testHarness.xcom2ModuleScanObservations = [
       {
         evidenceKind: "x2proj",
@@ -2705,9 +2752,10 @@ describe("App", () => {
     const { App } = await import("../App");
     render(<App />);
 
-    await waitFor(() =>
-      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1),
-    );
+    await waitFor(() => {
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+    });
     const initialRequest = testHarness.xcom2ModuleScannerAdapter.scan.mock.calls[0][0];
     expect(initialRequest).toEqual({
       workspaceId: "workspace-one",
@@ -2721,16 +2769,29 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "Settings" })).toBeDefined());
     expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => {
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(2);
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(2);
+    });
+    expect(testHarness.xcom2ModuleConfigurationAdapter.read.mock.calls[1][0]).toEqual({
+      workspaceId: "workspace-one",
+      workspaceGeneration: 1,
+      activationGeneration: 2,
+      configurationReadId: "xcom2-configuration-read:2",
+    });
 
     fireEvent.click(screen.getByRole("option", { name: /Workspace Two/ }));
     await waitFor(() =>
-      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(2),
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(3),
     );
-    expect(testHarness.xcom2ModuleScannerAdapter.scan.mock.calls[1][0]).toEqual({
+    expect(testHarness.xcom2ModuleScannerAdapter.scan.mock.calls[2][0]).toEqual({
       workspaceId: "workspace-two",
       workspaceGeneration: 2,
-      scanId: "xcom2-module-scan:2",
-      scanGeneration: 2,
+      scanId: "xcom2-module-scan:3",
+      scanGeneration: 3,
       limits: XCOM2_MODULE_SCAN_LIMITS,
     });
     expect(screen.queryByRole("tab", { name: "XCOM 2 Modules" })).toBeNull();

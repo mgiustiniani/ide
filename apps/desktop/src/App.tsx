@@ -94,6 +94,7 @@ const {
   languageSessionAdapter,
   documentSyncAdapter,
   javaIntelligenceAdapter,
+  xcom2ModuleConfigurationAdapter,
   xcom2ModuleScannerAdapter,
   xcom2SetupAdapter,
   xcom2SetupMonitorAdapter,
@@ -185,6 +186,7 @@ export function App(): JSX.Element {
   });
   const xcom2ModuleActivation = useXcom2ModuleActivationController({
     scanner: xcom2ModuleScannerAdapter,
+    configuration: xcom2ModuleConfigurationAdapter,
   });
   const workspace = useWorkspaceController({
     workspace: workspaceAdapter,
@@ -197,6 +199,7 @@ export function App(): JSX.Element {
     switchingWorkspaceId,
     error: workspaceError,
     refresh: loadWorkspaceMetadata,
+    refreshWorkspace: handleRefreshWorkspace,
     switchWorkspace: handleSwitchWorkspace,
   } = workspace;
 
@@ -755,7 +758,7 @@ export function App(): JSX.Element {
         xcom2SetupTransactionProgressEvent={xcom2SetupTransactionProgressEvent}
         onClose={settings.close}
         onRefreshStatus={handleRefreshAiAgentStatus}
-        onRefreshWorkspace={loadWorkspaceMetadata}
+        onRefreshWorkspace={handleRefreshWorkspace}
         onSwitchWorkspace={handleSwitchWorkspace}
         onStartJavaLanguageService={javaLanguage.start}
         onStopJavaLanguageService={javaLanguage.stop}

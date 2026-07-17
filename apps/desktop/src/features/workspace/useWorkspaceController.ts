@@ -76,7 +76,10 @@ export interface WorkspaceController {
   error: string | null;
   generation: WorkspaceGeneration;
   currentWorkspaceId: string | null;
+  /** Metadata-only refresh used by passive coordinators such as Settings open. */
   refresh(): Promise<void>;
+  /** Explicit user refresh of metadata, file tree, and project activation. */
+  refreshWorkspace(): Promise<void>;
   switchWorkspace(workspaceId: string): Promise<void>;
   getGeneration(): WorkspaceGeneration;
   getContext(): WorkspaceContextSnapshot;
@@ -130,6 +133,8 @@ export function useWorkspaceController(
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
   const workspaceRegistryRef = useRef<WorkspaceRegistry | null>(null);
   const metadataRequestRef = useRef(0);
+  const fullRefreshRequestRef = useRef(0);
+  const activeFullRefreshRef = useRef<number | null>(null);
   const initialActivationRef = useRef(0);
   const initialActivationStartedRef = useRef(false);
   const fileTreeLoadQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -210,10 +215,66 @@ export function useWorkspaceController(
     } finally {
       if (metadataRequestRef.current === requestId) {
         metadataLoadingRef.current = false;
-        setLoading(false);
+        if (activeFullRefreshRef.current === null) setLoading(false);
       }
     }
   }, [dependencies.workspace, setLoading]);
+
+  const refreshWorkspace = useCallback(async (): Promise<void> => {
+    const collaborators = dependencies.collaboratorsRef.current;
+    const activeWorkspace = workspaceInfoRef.current;
+    if (!dependencies.workspace || !collaborators || !activeWorkspace) {
+      const message = !dependencies.workspace
+        ? "Workspace adapter unavailable"
+        : !collaborators
+          ? "Workspace collaborators unavailable"
+          : "Current workspace unavailable";
+      setError(message);
+      throw new Error(message);
+    }
+
+    const requestId = fullRefreshRequestRef.current + 1;
+    fullRefreshRequestRef.current = requestId;
+    activeFullRefreshRef.current = requestId;
+    const workspaceGeneration = generationRef.current;
+    setLoading(true);
+    setError(null);
+
+    // The project contribution is revoked synchronously before metadata or filesystem I/O.
+    const projectActivation = collaborators.xcom2ModuleActivation.refreshWorkspace(
+      workspaceGeneration,
+      activeWorkspace.id,
+    );
+
+    try {
+      await Promise.all([
+        refresh(),
+        loadFileTree(collaborators.shell.loadFileTree),
+        projectActivation,
+      ]);
+    } catch (refreshError) {
+      if (
+        fullRefreshRequestRef.current !== requestId ||
+        generationRef.current !== workspaceGeneration
+      ) {
+        return;
+      }
+      setError(getErrorMessage(refreshError));
+      console.error("[Workspace] Failed explicit workspace refresh", {
+        errorType: getErrorType(refreshError),
+      });
+      throw refreshError;
+    } finally {
+      if (
+        activeFullRefreshRef.current === requestId &&
+        fullRefreshRequestRef.current === requestId &&
+        generationRef.current === workspaceGeneration
+      ) {
+        activeFullRefreshRef.current = null;
+        setLoading(false);
+      }
+    }
+  }, [dependencies.collaboratorsRef, dependencies.workspace, loadFileTree, refresh, setLoading]);
 
   const getGeneration = useCallback((): WorkspaceGeneration => generationRef.current, []);
 
@@ -352,8 +413,10 @@ export function useWorkspaceController(
         throw new Error(message);
       }
 
-      // A user transition owns all subsequent completion; an older cold start becomes stale.
+      // A user transition owns all subsequent completion; older cold starts and refreshes are stale.
       initialActivationRef.current += 1;
+      fullRefreshRequestRef.current += 1;
+      activeFullRefreshRef.current = null;
       const oldWorkspace = workspaceInfoRef.current;
       const workspaceGeneration = nextGeneration(generationRef.current);
       generationRef.current = workspaceGeneration;
@@ -444,6 +507,7 @@ export function useWorkspaceController(
     generation,
     currentWorkspaceId: workspaceInfo?.id ?? workspaceRegistry?.currentWorkspaceId ?? null,
     refresh,
+    refreshWorkspace,
     switchWorkspace,
     getGeneration,
     getContext,

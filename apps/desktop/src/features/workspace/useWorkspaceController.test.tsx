@@ -110,6 +110,9 @@ function createHarness(
       loadWorkspace: vi.fn(async (token, workspaceId) => {
         order.push(`xcom2-module.load:${workspaceId}:${token.generation}`);
       }),
+      refreshWorkspace: vi.fn(async (generation, workspaceId) => {
+        order.push(`xcom2-module.refresh:${workspaceId}:${generation}`);
+      }),
       restoreWorkspace: vi.fn((token) => {
         order.push(`xcom2-module.restore:${token.previousWorkspaceId}:${token.generation}`);
       }),
@@ -334,6 +337,63 @@ describe("useWorkspaceController", () => {
     expect(harness.collaborators.java.attach).not.toHaveBeenCalledWith(workspaceOne, 1);
     expect(harness.controller.result.current.isLoading).toBe(false);
     expect(harness.controller.result.current.getContext().isSwitching).toBe(false);
+  });
+
+  it("keeps metadata-only refresh independent from explicit project activation", async () => {
+    const harness = createHarness();
+    await waitForInitialRefresh(harness);
+    const projectRefreshes = vi.mocked(harness.collaborators.xcom2ModuleActivation.refreshWorkspace)
+      .mock.calls.length;
+    const fileTreeLoads = vi.mocked(harness.collaborators.shell.loadFileTree).mock.calls.length;
+
+    await act(() => harness.controller.result.current.refresh());
+
+    expect(harness.collaborators.xcom2ModuleActivation.refreshWorkspace).toHaveBeenCalledTimes(
+      projectRefreshes,
+    );
+    expect(harness.collaborators.shell.loadFileTree).toHaveBeenCalledTimes(fileTreeLoads);
+    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(2);
+    expect(harness.workspaceMocks.listWorkspaces).toHaveBeenCalledTimes(2);
+  });
+
+  it("revokes project activation synchronously and performs each full-refresh read exactly once", async () => {
+    const harness = createHarness();
+    await waitForInitialRefresh(harness);
+    harness.order.length = 0;
+    const activationGate = deferred<void>();
+    vi.mocked(harness.collaborators.xcom2ModuleActivation.refreshWorkspace).mockImplementationOnce(
+      (generation, workspaceId) => {
+        harness.order.push(`xcom2-module.refresh:${workspaceId}:${generation}`);
+        return activationGate.promise;
+      },
+    );
+    const ensureCalls = harness.workspaceMocks.ensureCurrentWorkspace.mock.calls.length;
+    const listCalls = harness.workspaceMocks.listWorkspaces.mock.calls.length;
+    const treeCalls = vi.mocked(harness.collaborators.shell.loadFileTree).mock.calls.length;
+    const generation = harness.controller.result.current.generation;
+
+    let fullRefresh!: Promise<void>;
+    act(() => {
+      fullRefresh = harness.controller.result.current.refreshWorkspace();
+    });
+
+    expect(harness.order[0]).toBe(`xcom2-module.refresh:${workspaceOne.id}:${generation}`);
+    expect(harness.collaborators.xcom2ModuleActivation.refreshWorkspace).toHaveBeenCalledWith(
+      generation,
+      workspaceOne.id,
+    );
+    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(ensureCalls + 1);
+    expect(harness.workspaceMocks.listWorkspaces).toHaveBeenCalledTimes(listCalls + 1);
+    expect(harness.controller.result.current.isLoading).toBe(true);
+
+    await act(async () => Promise.resolve());
+    expect(harness.collaborators.shell.loadFileTree).toHaveBeenCalledTimes(treeCalls + 1);
+    expect(harness.controller.result.current.isLoading).toBe(true);
+    activationGate.resolve();
+    await act(async () => fullRefresh);
+
+    expect(harness.controller.result.current.generation).toBe(generation);
+    expect(harness.controller.result.current.isLoading).toBe(false);
   });
 
   it("keeps the fulfilled half of partial registry refreshes without erasing prior metadata", async () => {
