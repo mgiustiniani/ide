@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was late-reconciled on 2026-07-17 from every configured `features/**/*.feature` file at exact repository baseline `34d5a5e`. The feature sources declare `REQ-WEB-001`, both layout requirements, `REQ-DESKTOP-FILE-OPEN-001`, `REQ-REFACTORKIT-JAVA-IMPORT-002`, `REQ-XCOM2-MODULE-ACTIVATION-001`, and `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` as `@implemented-and-validated`; `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` as `@implemented-not-e2e-validated`; and both TypeScript/JavaScript RefactorKit requirements as `@not-implemented`. Dated target-specific results remain separate observed evidence. Convention-based and configured XCOM activation are current only for bounded recognition: activation-only `.ide/xcom2.json` v1 is project-owned/read-only and grants no contextual tooling authority. The RefactorKit option-A freeze and packaging postponement are unchanged.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was late-reconciled on 2026-07-17 from every configured `features/**/*.feature` file at exact repository baseline `bc52045`. The feature sources declare `REQ-WEB-001`, both layout requirements, `REQ-DESKTOP-FILE-OPEN-001`, `REQ-REFACTORKIT-JAVA-IMPORT-002`, `REQ-XCOM2-MODULE-ACTIVATION-001`, and `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` as `@implemented-and-validated`; `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` as `@implemented-not-e2e-validated`; and both TypeScript/JavaScript RefactorKit requirements plus `REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001` as `@not-implemented`. Dated target-specific results remain separate observed evidence. Convention-based and configured XCOM activation are current only for bounded recognition: activation-only `.ide/xcom2.json` v1 is project-owned/read-only and grants no contextual tooling authority. The approved diagnostic UX and its focused native boundary remain planned without implementation, progress, validation, or aggregate-routing claims. The RefactorKit option-A freeze and packaging postponement are unchanged.
 ====
 
 == Governance
@@ -39,6 +39,12 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |1
 |`REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001`
 |`@implemented-and-validated`
+
+|link:../../features/xcom2/module-configuration-diagnostics.feature[`features/xcom2/module-configuration-diagnostics.feature`]
+|Safe XCOM 2 project configuration diagnostics across explicit refresh
+|1
+|`REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001`
+|`@not-implemented`
 
 |link:../../features/refactorkit/java-clipboard-import.feature[`features/refactorkit/java-clipboard-import.feature`]
 |Controlled desktop import of one external Java class from the clipboard
@@ -83,7 +89,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains ten feature files, eleven scenarios, and eleven repository-unique stable requirement IDs: seven validated, two harness-only, and two not implemented. The status values above are copied from Gherkin, not inferred from observed evidence.
+NOTE: The configured inventory contains eleven feature files, twelve scenarios, and twelve repository-unique stable requirement IDs: seven validated, two harness-only, and three not implemented. The status values above are copied from Gherkin, not inferred from observed evidence.
 
 == Requirement Catalogue
 
@@ -241,6 +247,52 @@ NOTE: The configured inventory contains ten feature files, eleven scenarios, and
 
 |Evidence limits
 |The run proves only the bounded activation fixture and environment. It proves no package/installer, Git synchronization, configuration watcher, proprietary-content compatibility, external-root support, machine/tool correctness, Build/Problems/Logs/language/actions/bottom contributions, Wayland/other OS, or other DPI behavior. Browser composition remains unchanged and was not exercised by this native Story.
+|===
+
+=== REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001]]`REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`); the scenario also carries `@security`, `@resilience`, and `@accessibility`.
+
+|Source traceability
+|`FR-X2CFG-001`, `FR-X2PRJ-001`, `FR-X2UI-001`, `FR-X2UI-005`, `FR-X2ARCH-001`, `FR-X2ARCH-002`, `FR-X2ARCH-003`, `FR-X2ARCH-007`, `NFR-X2SEC-001`, `NFR-X2SEC-004`, `NFR-X2REL-002`, `AT-X2-001`, `AT-X2-017`, `AT-X2-026`, and `AT-X2-027`.
+
+|Actor / stakeholder
+|A desktop user correcting invalid project intent in one authorized workspace without exposing project data or losing independently credible recognition.
+
+|Capability
+|Show one actionable, presentation-safe project-configuration warning only under explicit workspace-refresh authority; disclose no project content, secret, absolute path, parser/provider/native detail, or raw cause; grant no configured or tool authority; and preserve an independently recognized Option A contribution.
+
+|Scenario
+|_Explain invalid project configuration across explicit refresh without suppressing recognized activation_
+
+|Feature path and exact declaration
+|link:../../features/xcom2/module-configuration-diagnostics.feature[`features/xcom2/module-configuration-diagnostics.feature`], status-tag declaration at line 14 and scenario beginning at line 15.
+
+|Tags
+|`@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001`, `@desktop`, `@native-gui`, `@functional-requirement`, `@non-functional-requirement`, `@security`, `@resilience`, `@accessibility`, `@not-implemented`
+
+|Declared status
+|`@not-implemented` — copied exactly from line 14 of the feature source at repository baseline `bc52045`. ADR approval, the feature declaration, focused-route scaffolding, and documentation reconciliation are not implementation, progress, validation, or promotion evidence.
+
+|Planned focused native boundary
+|`pnpm test:story:req-xcom2-module-configuration-diagnostics-001:native` is the planned focused route. The Story targets one scenario-owned sandbox filesystem and a freshly built production Linux X11 Tauri release/no-bundle WebKit DOM at an asserted 1440×900 viewport. It excludes package/installer, Git synchronization, watcher/poll, proprietary-content compatibility, module-content parsing, external roots, machine correctness, process or mutation authority, contextual XCOM tools, Wayland, other operating systems, and other DPI behavior. Browser behavior remains unchanged and outside this Story.
+
+|Approved safe diagnostic target
+|link:../../ADR.md#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions[ADR 0007] places one amber, non-color-only, atomic accessible `role="alert"` in **Settings > Workspace > Current workspace**, titled exactly **XCOM 2 project configuration needs attention**. It shows the fixed `.ide/xcom2.json` label, approved human summary and remediation, and stable typed code only as a secondary support identifier. It offers no edit, open, or write action and never renders configuration bytes, submitted roots, absolute paths, internals, secrets, raw causes, or content canaries.
+
+|Refresh and independent-recognition target
+|Only explicit **Workspace Refresh** may reevaluate the diagnostic. Refresh synchronously revokes the old diagnostic and configured decision, shows **Checking XCOM 2 project configuration…**, and accepts only the exactly correlated current result. A valid result clears the warning; an invalid result grants no configured authority. Strong Option A recognition may remain active independently and mirror the same complete safe warning without gaining Build, Problems, Logs, language, action, process, external-root, mutation, or bottom-contribution authority.
+
+|Current routing and evidence
+|The implemented aggregate remains two web scenarios, two deterministic desktop-harness scenarios/49 steps, and five native GUI scenarios/124 reported steps. This `@not-implemented` Story is excluded. No implementation, focused native pass, native aggregate inclusion, browser change, package evidence, or other validation is claimed.
 |===
 
 === REQ-REFACTORKIT-JAVA-IMPORT-001
@@ -694,10 +746,10 @@ NOTE: The configured inventory contains ten feature files, eleven scenarios, and
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` remains real-Playwright Chromium GREEN, and `REQ-LAYOUT-DESKTOP-001` remains independently Linux X11 release/no-bundle WebView DOM 1440×900 native GREEN. Its earlier deterministic 9/9 harness result remains bounded history. `REQ-WEB-001` remains independently passing in web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` are the two `@implemented-not-e2e-validated` desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, convention XCOM activation, and activation-only configured XCOM activation remain separately validated under their own limits. Both TypeScript/JavaScript RefactorKit requirements remain `@not-implemented` under their unchanged option-A policies.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` remains real-Playwright Chromium GREEN, and `REQ-LAYOUT-DESKTOP-001` remains independently Linux X11 release/no-bundle WebView DOM 1440×900 native GREEN. Its earlier deterministic 9/9 harness result remains bounded history. `REQ-WEB-001` remains independently passing in web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` are the two `@implemented-not-e2e-validated` desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, convention XCOM activation, and activation-only configured XCOM activation remain separately validated under their own limits. Both TypeScript/JavaScript RefactorKit requirements remain `@not-implemented` under their unchanged option-A policies; the XCOM configuration-diagnostic Story is separately `@not-implemented` under ADR 0007's approved safe diagnostic target.
 
-The canonical migration aggregate is two declared web scenarios, two deterministic desktop-harness scenarios/49 steps, and five native GUI scenarios/124 reported steps. The configured inventory is seven `@implemented-and-validated`, two `@implemented-not-e2e-validated`, and two `@not-implemented`. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 5 native scenarios/124 reported steps. XCOM machine Settings remains harness-only. Convention and configured activation use actual sandbox filesystems and native Linux X11 release/no-bundle WebKit, but add no machine-correctness, package, external-root, manual-confirmation/persistence, build, or language claim. The configured Story additionally proves the project-owned read-only 63-byte activation fixture, explicit-refresh lifecycle, and configured/recognition-confidence separation only. Layout and Java import retain their separate evidence boundaries. No requirement is promoted from legacy code, supporting tests, route scaffolding, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
+The canonical migration aggregate remains two declared web scenarios, two deterministic desktop-harness scenarios/49 steps, and five native GUI scenarios/124 reported steps. The configured inventory is seven `@implemented-and-validated`, two `@implemented-not-e2e-validated`, and three `@not-implemented`. The new diagnostic Story is native-GUI-tagged but excluded from implemented routing by its status. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` continues to report 2 web scenarios/16 steps plus 5 native scenarios/124 reported steps. XCOM machine Settings remains harness-only. Convention and configured activation use actual sandbox filesystems and native Linux X11 release/no-bundle WebKit, but add no machine-correctness, package, external-root, manual-confirmation/persistence, build, or language claim. The configured Story additionally proves the project-owned read-only 63-byte activation fixture, explicit-refresh lifecycle, and configured/recognition-confidence separation only. The planned diagnostic boundary changes none of those claims. Layout and Java import retain their separate evidence boundaries. No requirement is promoted from legacy code, supporting tests, route scaffolding, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
 
 == Reconciliation Checks
 
-The 2026-07-17 late reconciliation at repository baseline `34d5a5e` checked all ten configured feature paths, eleven scenarios, stable IDs, classifications, exact effective declared statuses, implemented aggregate routing (2 web, 2 harness, 5 native), the focused configured-activation native result, target-specific observed evidence, relative links, and AsciiDoc delimiters. The focused convention route remains 1 scenario/26 reported steps; the configured route passed 1 scenario/37 reported steps; and the broader native route reports 5 scenarios/124 reported steps. The XCOM machine Settings harness remains 27/27 steps and the combined harness route remains 2 scenarios/49 steps. The full Vitest baseline is 1156/1156 with 86.52% statements/lines, 82.91% branches, and 87.19% functions; the Spec suite has 154 cases and the Rust default suite reports 204 passed plus 8 ignored. V8, Story, Spec, native, and Rust evidence remain separate. The RefactorKit option-A freeze, the earlier `.refactorkit/workspace.lock` no-write finding, and packaging postponement remain unchanged.
+The 2026-07-17 late reconciliation at repository baseline `bc52045` checked all eleven configured feature paths, twelve scenarios, stable IDs, classifications, exact effective declared statuses, unchanged implemented aggregate routing (2 web, 2 harness, 5 native), the planned diagnostic native boundary, target-specific observed evidence, relative links, and AsciiDoc delimiters. No diagnostic implementation, progress, or validation evidence is claimed. The focused convention route remains 1 scenario/26 reported steps; the configured route passed 1 scenario/37 reported steps; and the broader native route reports 5 scenarios/124 reported steps. The XCOM machine Settings harness remains 27/27 steps and the combined harness route remains 2 scenarios/49 steps. The full Vitest baseline remains the separately observed 1156/1156 at `34d5a5e`, with 86.52% statements/lines, 82.91% branches, and 87.19% functions; the Spec suite remains 154 cases and the Rust default suite remains 204 passed plus 8 ignored at that evidence baseline. V8, Story, Spec, native, and Rust evidence remain separate. The RefactorKit option-A freeze, the earlier `.refactorkit/workspace.lock` no-write finding, and packaging postponement remain unchanged.
