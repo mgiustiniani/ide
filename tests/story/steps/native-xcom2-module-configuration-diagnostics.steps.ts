@@ -274,7 +274,7 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "after application launch the only workspace filesystem mutations are the scenario owner's two exact external configuration replacements and exact external creation of those two descriptor files",
+  "after application launch the only changes to the project configuration and Option A evidence paths are the scenario owner's two exact external configuration replacements and exact external creation of those two descriptor files",
   async function () {
     await session(this).assertOwnerOnlyMutationAccounting();
   },

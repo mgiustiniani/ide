@@ -43,10 +43,12 @@ const VALID_CONFIGURATION =
   '{"version":1,"target":"wotc","moduleRoots":["mods/IntentOnly"]}' as const;
 const UNSUPPORTED_CONFIGURATION =
   '{"version":1,"target":"xcom2","moduleRoots":["mods/IntentOnly"]}' as const;
-const DESCRIPTORS = Object.freeze([
+const DESCRIPTORS = [
   "mods/IntentOnly/IntentOnly.x2proj",
   "mods/IntentOnly/IntentOnly.XComMod",
-]);
+] as const;
+const PROJECT_INPUT_PATHS = [CONFIGURATION_PATH, ...DESCRIPTORS] as const;
+const WORKSPACE_METADATA_PATH = ".ide/workspace.json" as const;
 const BASE_ACTIVITY_NAMES = Object.freeze(["Explorer", "Search", "Docs", "Settings"]);
 const ACTIVE_ACTIVITY_NAMES = Object.freeze([
   "Explorer",
@@ -92,6 +94,15 @@ type FileFingerprint = {
   readonly size: string;
   readonly modifiedNanoseconds: string;
   readonly sha256: string;
+};
+type ProjectInputPath = (typeof PROJECT_INPUT_PATHS)[number];
+type ProjectInputSnapshotEntry = {
+  readonly relativePath: ProjectInputPath;
+  readonly fingerprint: FileFingerprint | null;
+};
+type OwnerMutation = {
+  readonly operation: "external-create" | "external-replace-unsupported" | "external-replace-valid";
+  readonly relativePath: ProjectInputPath;
 };
 type WarningSnapshot = {
   readonly count: number;
@@ -189,7 +200,13 @@ interface NativeXcom2ConfigurationDiagnosticsEvidence {
   warningNonColorSemanticsMatched?: boolean;
   prohibitedDisclosureScanMatched?: boolean;
   noWatchRetentionMilliseconds: number[];
-  ownerMutations: string[];
+  readonly projectInputPaths: readonly ProjectInputPath[];
+  ownerMutations: OwnerMutation[];
+  applicationOwnedWorkspaceMetadata?: {
+    readonly relativePath: typeof WORKSPACE_METADATA_PATH;
+    readonly changedDuringLaunch: boolean;
+    readonly excludedFromProjectInputMutationClaim: true;
+  };
   refreshesInvoked: number;
   firstRefreshTransitionMatched?: boolean;
   configuredActivityMatched?: boolean;
@@ -205,7 +222,7 @@ interface NativeXcom2ConfigurationDiagnosticsEvidence {
   configuredAuthorityRevoked?: boolean;
   recognizedRecognitionOnlyExclusionsMatched?: boolean;
   staleStabilityMilliseconds?: number;
-  exactFinalTreeMatched?: boolean;
+  exactProjectInputFingerprintsMatched?: boolean;
   ownerOnlyMutationAccountingMatched?: boolean;
   applicationProjectWritesExcluded?: boolean;
   responsive?: boolean;
@@ -392,6 +409,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       ],
     },
     noWatchRetentionMilliseconds: [],
+    projectInputPaths: PROJECT_INPUT_PATHS,
     ownerMutations: [],
     refreshesInvoked: 0,
   };
@@ -407,7 +425,9 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
   #malformedFingerprint?: FileFingerprint;
   #validFingerprint?: FileFingerprint;
   #unsupportedFingerprint?: FileFingerprint;
-  #lastVerifiedTree?: TreeEntry[];
+  readonly #descriptorFingerprints = new Map<(typeof DESCRIPTORS)[number], FileFingerprint>();
+  #preLaunchWorkspaceMarkerFingerprint?: FileFingerprint;
+  #lastVerifiedProjectInputs?: ProjectInputSnapshotEntry[];
   #invalidWarning?: WarningSnapshot;
   #unsupportedWarning?: WarningSnapshot;
   #configuredRecognition?: RecognitionSnapshot;
@@ -597,7 +617,10 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     assert.equal(this.#desiredHeight, 900);
     assert.equal(this.#driver, undefined, "diagnostic XCOM session already launched");
     await this.assertFingerprint(this.#malformedFingerprint, Buffer.from(MALFORMED_CONFIGURATION));
-    this.#lastVerifiedTree = await this.workspaceTree();
+    this.#lastVerifiedProjectInputs = await this.projectInputSnapshot();
+    this.#preLaunchWorkspaceMarkerFingerprint = await this.observedFileFingerprint(
+      this.workspacePath(WORKSPACE_METADATA_PATH),
+    );
     await Promise.all([
       access(this.#tauriDriverPath, fsConstants.X_OK),
       access(this.#webKitWebDriverPath, fsConstants.X_OK),
@@ -654,7 +677,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       this.#applicationProcessId = await this.waitForApplicationProcess();
       this.#evidence.applicationProcessObserved = true;
       await this.browser().setWindowSize(this.#desiredWidth, this.#desiredHeight);
-      await this.assertTreeUnchanged();
+      await this.assertProjectInputsUnchanged();
     } catch (error) {
       await this.dispose();
       throw new Error(`${String(error)}\n${this.redactedDiagnostics()}`);
@@ -702,10 +725,20 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       },
     );
     await this.assertFingerprint(this.#malformedFingerprint, Buffer.from(MALFORMED_CONFIGURATION));
-    const readyTree = await this.waitForWorkspaceTreeToSettle();
-    assert.ok(this.#lastVerifiedTree, "launch workspace tree baseline is unavailable");
-    this.assertOnlyExpectedTreeChanges(this.#lastVerifiedTree, readyTree, [".ide/workspace.json"]);
-    this.#lastVerifiedTree = readyTree;
+    await this.assertProjectInputsUnchanged();
+    const readyMarkerFingerprint = await this.waitForWorkspaceMarkerToSettle();
+    assert.ok(
+      this.#preLaunchWorkspaceMarkerFingerprint,
+      "pre-launch workspace marker fingerprint is unavailable",
+    );
+    this.#evidence.applicationOwnedWorkspaceMetadata = {
+      relativePath: WORKSPACE_METADATA_PATH,
+      changedDuringLaunch: !isDeepStrictEqual(
+        readyMarkerFingerprint,
+        this.#preLaunchWorkspaceMarkerFingerprint,
+      ),
+      excludedFromProjectInputMutationClaim: true,
+    };
     this.#evidence.workspaceReady = true;
   }
 
@@ -715,7 +748,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     assert.deepEqual(snapshot.activityNames, BASE_ACTIVITY_NAMES);
     assert.deepEqual(snapshot.bottomNames, BASE_BOTTOM_TOOL_NAMES);
     assert.equal(snapshot.recognition.shown, false);
-    await this.assertTreeUnchanged();
+    await this.assertProjectInputsUnchanged();
     this.#evidence.initialNegativeContributionObserved = true;
   }
 
@@ -822,8 +855,8 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       await this.assertFingerprint(this.#validFingerprint, Buffer.from(VALID_CONFIGURATION));
       assert.deepEqual(await this.recognitionSnapshot(), this.#configuredRecognition);
     }
-    await this.assertTreeUnchanged();
-    const before = this.#lastVerifiedTree!;
+    await this.assertProjectInputsUnchanged();
+    const before = this.#lastVerifiedProjectInputs!;
     const bytes = Buffer.from(contents, "utf8");
     const temporaryPath = path.join(
       this.lease().paths.temporary,
@@ -840,10 +873,13 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     );
     if (kind === "valid") this.#validFingerprint = fingerprint;
     else this.#unsupportedFingerprint = fingerprint;
-    const after = await this.workspaceTree();
-    this.assertOnlyExpectedTreeChanges(before, after, [CONFIGURATION_PATH]);
-    this.#lastVerifiedTree = after;
-    this.#evidence.ownerMutations.push(`external-replace-${kind}`);
+    const after = await this.projectInputSnapshot();
+    this.assertOnlyExpectedProjectInputChanges(before, after, [CONFIGURATION_PATH]);
+    this.#lastVerifiedProjectInputs = after;
+    this.#evidence.ownerMutations.push({
+      operation: kind === "valid" ? "external-replace-valid" : "external-replace-unsupported",
+      relativePath: CONFIGURATION_PATH,
+    });
   }
 
   async assertInvalidWarningRetainedForOneSecond(): Promise<void> {
@@ -853,7 +889,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     while (Date.now() < deadline) {
       assert.deepEqual(await this.workspaceWarningSnapshot(), expected);
       await this.assertFingerprint(this.#validFingerprint, Buffer.from(VALID_CONFIGURATION));
-      await this.assertTreeUnchanged();
+      await this.assertProjectInputsUnchanged();
       const ui = await this.uiSnapshot();
       assert.deepEqual(ui.activityNames, BASE_ACTIVITY_NAMES);
       assert.deepEqual(ui.bottomNames, BASE_BOTTOM_TOOL_NAMES);
@@ -992,7 +1028,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     assert.ok(result.snapshots.length > 1);
     this.#refreshSnapshots = result.snapshots;
     this.#evidence.refreshesInvoked += 1;
-    await this.assertTreeUnchanged();
+    await this.assertProjectInputsUnchanged();
   }
 
   assertFirstRefreshTransition(checkingText: string): void {
@@ -1035,7 +1071,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     assert.equal(snapshot.workspaceWarning.count, 0);
     assert.equal(snapshot.recognition.warnings.length, 0);
     await this.assertFingerprint(this.#validFingerprint, Buffer.from(VALID_CONFIGURATION));
-    await this.assertTreeUnchanged();
+    await this.assertProjectInputsUnchanged();
   }
 
   async assertExactlyOneActivityWithin(seconds: number, activityName: string): Promise<void> {
@@ -1158,18 +1194,25 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       })),
     );
     for (const relativePath of DESCRIPTORS) {
-      await this.assertTreeUnchanged();
-      const before = this.#lastVerifiedTree!;
+      await this.assertProjectInputsUnchanged();
+      const before = this.#lastVerifiedProjectInputs!;
       const candidate = this.workspacePath(relativePath);
       await writeFile(candidate, Buffer.alloc(0), { flag: "wx" });
       const metadata = await lstat(candidate);
       assert.equal(metadata.isFile(), true);
       assert.equal(metadata.isSymbolicLink(), false);
       assert.equal(metadata.size, 0);
-      const after = await this.workspaceTree();
-      this.assertOnlyExpectedTreeChanges(before, after, [relativePath]);
-      this.#lastVerifiedTree = after;
-      this.#evidence.ownerMutations.push(`external-create-${relativePath}`);
+      this.#descriptorFingerprints.set(
+        relativePath,
+        await this.fileFingerprint(candidate, 0, sha256("")),
+      );
+      const after = await this.projectInputSnapshot();
+      this.assertOnlyExpectedProjectInputChanges(before, after, [relativePath]);
+      this.#lastVerifiedProjectInputs = after;
+      this.#evidence.ownerMutations.push({
+        operation: "external-create",
+        relativePath,
+      });
     }
   }
 
@@ -1188,7 +1231,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
         Buffer.from(UNSUPPORTED_CONFIGURATION),
       );
       await this.assertDescriptorFilesExact();
-      await this.assertTreeUnchanged();
+      await this.assertProjectInputsUnchanged();
       await wait(Math.min(50, Math.max(1, deadline - Date.now())));
     }
     this.#retentionPhase = "configured";
@@ -1335,7 +1378,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
         Buffer.from(UNSUPPORTED_CONFIGURATION),
       );
       await this.assertDescriptorFilesExact();
-      await this.assertTreeUnchanged();
+      await this.assertProjectInputsUnchanged();
       await wait(Math.min(50, Math.max(1, deadline - Date.now())));
     }
     this.#evidence.staleStabilityMilliseconds = 5_000;
@@ -1370,24 +1413,25 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
   }
 
   async assertOwnerOnlyMutationAccounting(): Promise<void> {
+    assert.deepEqual(this.#evidence.projectInputPaths, PROJECT_INPUT_PATHS);
     assert.deepEqual(this.#evidence.ownerMutations, [
-      "external-replace-valid",
-      "external-replace-unsupported",
-      `external-create-${DESCRIPTORS[0]}`,
-      `external-create-${DESCRIPTORS[1]}`,
+      { operation: "external-replace-valid", relativePath: CONFIGURATION_PATH },
+      { operation: "external-replace-unsupported", relativePath: CONFIGURATION_PATH },
+      { operation: "external-create", relativePath: DESCRIPTORS[0] },
+      { operation: "external-create", relativePath: DESCRIPTORS[1] },
     ]);
-    await this.assertTreeUnchanged();
-    const tree = await this.workspaceTree();
-    assert.deepEqual(
-      tree.map(({ relativePath, kind, size, sha256: digest }) => ({
-        relativePath,
-        kind,
-        ...(size === undefined ? {} : { size }),
-        ...(digest === undefined ? {} : { sha256: digest }),
-      })),
-      await this.expectedFinalTreeProjection(),
+    assert.deepEqual(this.#evidence.applicationOwnedWorkspaceMetadata, {
+      relativePath: WORKSPACE_METADATA_PATH,
+      changedDuringLaunch: true,
+      excludedFromProjectInputMutationClaim: true,
+    });
+    await this.assertProjectInputsUnchanged();
+    await this.assertFingerprint(
+      this.#unsupportedFingerprint,
+      Buffer.from(UNSUPPORTED_CONFIGURATION),
     );
-    this.#evidence.exactFinalTreeMatched = true;
+    await this.assertDescriptorFilesExact();
+    this.#evidence.exactProjectInputFingerprintsMatched = true;
     this.#evidence.ownerOnlyMutationAccountingMatched = true;
   }
 
@@ -1398,7 +1442,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       Buffer.from(UNSUPPORTED_CONFIGURATION),
     );
     await this.assertDescriptorFilesExact();
-    await this.assertTreeUnchanged();
+    await this.assertProjectInputsUnchanged();
     this.#evidence.applicationProjectWritesExcluded = true;
   }
 
@@ -1410,7 +1454,8 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
         claimsExcluded: [...this.#evidence.boundary.claimsExcluded],
       },
       noWatchRetentionMilliseconds: [...this.#evidence.noWatchRetentionMilliseconds],
-      ownerMutations: [...this.#evidence.ownerMutations],
+      projectInputPaths: [...this.#evidence.projectInputPaths],
+      ownerMutations: this.#evidence.ownerMutations.map((mutation) => ({ ...mutation })),
       scenarioEnvironment: this.#lease
         ? boundedLeaseEvidence(this.#lease.evidence())
         : this.#evidence.scenarioEnvironment,
@@ -1576,22 +1621,37 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     return result.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "en"));
   }
 
-  private async assertTreeUnchanged(): Promise<void> {
-    assert.ok(this.#lastVerifiedTree, "post-launch workspace tree baseline is unavailable");
-    const current = await this.workspaceTree();
-    const projectEntries = (tree: readonly TreeEntry[]): readonly TreeEntry[] =>
-      tree.filter(({ relativePath }) => relativePath !== ".ide/workspace.json");
-    assert.deepEqual(projectEntries(current), projectEntries(this.#lastVerifiedTree));
-    this.#lastVerifiedTree = current;
+  private async projectInputSnapshot(): Promise<ProjectInputSnapshotEntry[]> {
+    const snapshot: ProjectInputSnapshotEntry[] = [];
+    for (const relativePath of PROJECT_INPUT_PATHS) {
+      try {
+        snapshot.push({
+          relativePath,
+          fingerprint: await this.observedFileFingerprint(this.workspacePath(relativePath)),
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        snapshot.push({ relativePath, fingerprint: null });
+      }
+    }
+    return snapshot;
   }
 
-  private async waitForWorkspaceTreeToSettle(): Promise<TreeEntry[]> {
+  private async assertProjectInputsUnchanged(): Promise<void> {
+    assert.ok(this.#lastVerifiedProjectInputs, "post-launch project-input baseline is unavailable");
+    const current = await this.projectInputSnapshot();
+    assert.deepEqual(current, this.#lastVerifiedProjectInputs);
+    this.#lastVerifiedProjectInputs = current;
+  }
+
+  private async waitForWorkspaceMarkerToSettle(): Promise<FileFingerprint> {
+    const markerPath = this.workspacePath(WORKSPACE_METADATA_PATH);
     const deadline = Date.now() + 5_000;
-    let candidate = await this.workspaceTree();
+    let candidate = await this.observedFileFingerprint(markerPath);
     let stableSince = Date.now();
     while (Date.now() < deadline) {
       await wait(50);
-      const next = await this.workspaceTree();
+      const next = await this.observedFileFingerprint(markerPath);
       if (!isDeepStrictEqual(next, candidate)) {
         candidate = next;
         stableSince = Date.now();
@@ -1599,77 +1659,21 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
       }
       if (Date.now() - stableSince >= 250) return candidate;
     }
-    throw new Error("workspace startup metadata did not settle within 5000ms");
+    throw new Error("application-owned workspace metadata did not settle within 5000ms");
   }
 
-  private assertOnlyExpectedTreeChanges(
-    before: readonly TreeEntry[],
-    after: readonly TreeEntry[],
-    expectedPaths: readonly string[],
+  private assertOnlyExpectedProjectInputChanges(
+    before: readonly ProjectInputSnapshotEntry[],
+    after: readonly ProjectInputSnapshotEntry[],
+    expectedPaths: readonly ProjectInputPath[],
   ): void {
-    const beforeByPath = new Map(before.map((entry) => [entry.relativePath, entry]));
-    const afterByPath = new Map(after.map((entry) => [entry.relativePath, entry]));
-    const changed = [...new Set([...beforeByPath.keys(), ...afterByPath.keys()])]
-      .filter((relativePath) => {
-        const left = beforeByPath.get(relativePath);
-        const right = afterByPath.get(relativePath);
-        try {
-          assert.deepEqual(left, right);
-          return false;
-        } catch {
-          return true;
-        }
-      })
-      .sort();
+    const beforeByPath = new Map(before.map((entry) => [entry.relativePath, entry.fingerprint]));
+    const afterByPath = new Map(after.map((entry) => [entry.relativePath, entry.fingerprint]));
+    const changed = PROJECT_INPUT_PATHS.filter(
+      (relativePath) =>
+        !isDeepStrictEqual(beforeByPath.get(relativePath), afterByPath.get(relativePath)),
+    ).sort();
     assert.deepEqual(changed, [...expectedPaths].sort());
-  }
-
-  private async expectedFinalTreeProjection(): Promise<
-    Array<{
-      relativePath: string;
-      kind: "directory" | "regular-file";
-      size?: number;
-      sha256?: string;
-    }>
-  > {
-    const markerBytes = await readFile(this.workspacePath(".ide/workspace.json"));
-    const expected: Array<{
-      relativePath: string;
-      kind: "directory" | "regular-file";
-      size?: number;
-      sha256?: string;
-    }> = [
-      { relativePath: ".ide", kind: "directory" },
-      {
-        relativePath: ".ide/workspace.json",
-        kind: "regular-file",
-        size: markerBytes.byteLength,
-        sha256: sha256(markerBytes),
-      },
-      {
-        relativePath: CONFIGURATION_PATH,
-        kind: "regular-file",
-        size: Buffer.byteLength(UNSUPPORTED_CONFIGURATION),
-        sha256: sha256(UNSUPPORTED_CONFIGURATION),
-      },
-      { relativePath: "mods", kind: "directory" },
-      { relativePath: MODULE_ROOT, kind: "directory" },
-      {
-        relativePath: DESCRIPTORS[1]!,
-        kind: "regular-file",
-        size: 0,
-        sha256: sha256(""),
-      },
-      {
-        relativePath: DESCRIPTORS[0]!,
-        kind: "regular-file",
-        size: 0,
-        sha256: sha256(""),
-      },
-    ];
-    return expected.sort((left, right) =>
-      left.relativePath.localeCompare(right.relativePath, "en"),
-    );
   }
 
   private async workspaceContainsBytes(needle: Buffer): Promise<boolean> {
@@ -1690,25 +1694,30 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     }
   }
 
-  private async fileFingerprint(
-    filePath: string,
-    expectedSize: number,
-    expectedSha256: string,
-  ): Promise<FileFingerprint> {
+  private async observedFileFingerprint(filePath: string): Promise<FileFingerprint> {
     const metadata = await lstat(filePath, { bigint: true });
     assert.equal(metadata.isFile(), true);
     assert.equal(metadata.isSymbolicLink(), false);
     const bytes = await readFile(filePath);
-    assert.equal(bytes.byteLength, expectedSize);
-    assert.equal(sha256(bytes), expectedSha256);
     return {
       device: metadata.dev.toString(),
       inode: metadata.ino.toString(),
       mode: Number(metadata.mode),
       size: metadata.size.toString(),
       modifiedNanoseconds: metadata.mtimeNs.toString(),
-      sha256: expectedSha256,
+      sha256: sha256(bytes),
     };
+  }
+
+  private async fileFingerprint(
+    filePath: string,
+    expectedSize: number,
+    expectedSha256: string,
+  ): Promise<FileFingerprint> {
+    const fingerprint = await this.observedFileFingerprint(filePath);
+    assert.equal(fingerprint.size, String(expectedSize));
+    assert.equal(fingerprint.sha256, expectedSha256);
+    return fingerprint;
   }
 
   private async assertFingerprint(
@@ -1730,10 +1739,9 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
   private async assertDescriptorFilesExact(): Promise<void> {
     for (const relativePath of DESCRIPTORS) {
       const candidate = this.workspacePath(relativePath);
-      const metadata = await lstat(candidate);
-      assert.equal(metadata.isFile(), true);
-      assert.equal(metadata.isSymbolicLink(), false);
-      assert.equal(metadata.size, 0);
+      const expectedFingerprint = this.#descriptorFingerprints.get(relativePath);
+      assert.ok(expectedFingerprint, `expected ${relativePath} fingerprint is unavailable`);
+      assert.deepEqual(await this.fileFingerprint(candidate, 0, sha256("")), expectedFingerprint);
       assert.deepEqual(await readFile(candidate), Buffer.alloc(0));
       assert.ok(isContained(await realpath(this.workspaceRoot()), await realpath(candidate)));
     }
