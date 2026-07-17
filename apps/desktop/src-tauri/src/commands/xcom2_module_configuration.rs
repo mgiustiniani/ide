@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, Metadata};
 use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(unix))]
+use std::path::PathBuf;
 
 use serde::de::{IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
@@ -526,6 +528,18 @@ fn parse_configuration(
     bytes: &[u8],
     canonical_root: &Path,
 ) -> Result<Xcom2ModuleConfiguration, Xcom2ModuleConfigurationStopCode> {
+    parse_configuration_with_directory_validator(bytes, |root| {
+        existing_contained_directory(canonical_root, root)
+    })
+}
+
+fn parse_configuration_with_directory_validator<F>(
+    bytes: &[u8],
+    mut existing_directory: F,
+) -> Result<Xcom2ModuleConfiguration, Xcom2ModuleConfigurationStopCode>
+where
+    F: FnMut(&str) -> bool,
+{
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let root = serde::de::Deserializer::deserialize_any(&mut deserializer, RootJsonVisitor)
         .map_err(|_| Xcom2ModuleConfigurationStopCode::ConfigurationInvalidJson)?;
@@ -581,7 +595,7 @@ fn parse_configuration(
         };
         if !portable_module_root(root)
             || !unique.insert(root.to_string())
-            || !existing_contained_directory(canonical_root, root)
+            || !existing_directory(root)
         {
             return Err(Xcom2ModuleConfigurationStopCode::ConfigurationInvalidModuleRoots);
         }
@@ -601,8 +615,9 @@ fn portable_module_root(root: &str) -> bool {
         || root.len() > MAXIMUM_MODULE_ROOT_BYTES
         || root.starts_with('/')
         || root.contains('\\')
-        || root.chars().any(|character| character.is_control())
+        || root.chars().any(is_c0_or_c1_control)
         || has_windows_drive_prefix(root)
+        || has_file_uri_prefix(root)
     {
         return false;
     }
@@ -613,11 +628,139 @@ fn portable_module_root(root: &str) -> bool {
         .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
+fn is_c0_or_c1_control(character: char) -> bool {
+    matches!(character, '\u{0000}'..='\u{001f}' | '\u{007f}'..='\u{009f}')
+}
+
 fn has_windows_drive_prefix(root: &str) -> bool {
     let bytes = root.as_bytes();
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+fn has_file_uri_prefix(root: &str) -> bool {
+    root.get(.."file:/".len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file:/"))
+}
+
+#[cfg(unix)]
+fn existing_contained_directory(canonical_root: &Path, root: &str) -> bool {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let root_file = match File::open(canonical_root) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let root_metadata = match root_file.metadata() {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => metadata,
+        _ => return false,
+    };
+    if !path_matches_open_file(canonical_root, &root_metadata, true) {
+        return false;
+    }
+    if root == "." {
+        return true;
+    }
+
+    let components = root.split('/').collect::<Vec<_>>();
+    let mut directories = Vec::with_capacity(components.len() + 1);
+    directories.push(root_file);
+    for component in &components {
+        let parent = directories.last().expect("root directory is present");
+        if !directory_has_exact_entry(parent.as_raw_fd(), component) {
+            return false;
+        }
+        let fd = match openat_read_only(
+            parent.as_raw_fd(),
+            component,
+            libc::O_DIRECTORY | libc::O_NOFOLLOW,
+        ) {
+            Ok(fd) => fd,
+            Err(_) => return false,
+        };
+        // SAFETY: openat returned a new owned file descriptor, transferred exactly once.
+        let directory = unsafe { File::from_raw_fd(fd) };
+        match directory.metadata() {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            _ => return false,
+        }
+        directories.push(directory);
+    }
+
+    if !path_matches_open_file(canonical_root, &root_metadata, true) {
+        return false;
+    }
+    for (index, component) in components.iter().enumerate() {
+        let parent = &directories[index];
+        if !directory_has_exact_entry(parent.as_raw_fd(), component) {
+            return false;
+        }
+        let verification_fd = match openat_read_only(
+            parent.as_raw_fd(),
+            component,
+            libc::O_DIRECTORY | libc::O_NOFOLLOW,
+        ) {
+            Ok(fd) => fd,
+            Err(_) => return false,
+        };
+        // SAFETY: openat returned a new owned file descriptor, transferred exactly once.
+        let verification = unsafe { File::from_raw_fd(verification_fd) };
+        let Ok(expected_metadata) = directories[index + 1].metadata() else {
+            return false;
+        };
+        let Ok(verification_metadata) = verification.metadata() else {
+            return false;
+        };
+        if !verification_metadata.is_dir()
+            || verification_metadata.file_type().is_symlink()
+            || !stable_metadata_equal(&expected_metadata, &verification_metadata)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(unix)]
+fn directory_has_exact_entry(directory_fd: std::os::fd::RawFd, expected: &str) -> bool {
+    use std::ffi::CStr;
+
+    // SAFETY: fcntl duplicates the borrowed directory descriptor without taking ownership of it.
+    let duplicate = unsafe { libc::fcntl(directory_fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if duplicate < 0 {
+        return false;
+    }
+    // SAFETY: duplicate is a newly owned directory descriptor. fdopendir takes ownership on
+    // success; close handles the failure path where ownership was not transferred.
+    let directory = unsafe { libc::fdopendir(duplicate) };
+    if directory.is_null() {
+        // SAFETY: fdopendir failed, so duplicate remains owned by this function.
+        unsafe { libc::close(duplicate) };
+        return false;
+    }
+
+    // SAFETY: directory is a valid stream. Its duplicate shares the parent descriptor's directory
+    // offset, so every exact-name scan must rewind before reading.
+    unsafe { libc::rewinddir(directory) };
+    let mut found = false;
+    loop {
+        // SAFETY: directory remains valid until the matching closedir below.
+        let entry = unsafe { libc::readdir(directory) };
+        if entry.is_null() {
+            break;
+        }
+        // SAFETY: readdir returns a dirent whose d_name is NUL-terminated for this call.
+        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) };
+        if name.to_bytes() == expected.as_bytes() {
+            found = true;
+            break;
+        }
+    }
+    // SAFETY: fdopendir succeeded and transferred duplicate into directory exactly once.
+    unsafe { libc::closedir(directory) };
+    found
+}
+
+#[cfg(not(unix))]
 fn existing_contained_directory(canonical_root: &Path, root: &str) -> bool {
     if root == "." {
         return fs::symlink_metadata(canonical_root)
@@ -655,6 +798,7 @@ fn existing_contained_directory(canonical_root: &Path, root: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -681,6 +825,37 @@ mod tests {
 
         fn directory(&self, relative: &str) {
             fs::create_dir_all(self.0.join(relative)).expect("create test directory");
+        }
+
+        #[cfg(unix)]
+        fn directory_segmented(&self, relative: &str) {
+            use std::ffi::CString;
+            use std::os::fd::{AsRawFd, FromRawFd};
+
+            let mut parent = File::open(&self.0).expect("open test workspace");
+            for component in relative.split('/') {
+                let component = CString::new(component).expect("valid test path component");
+                // SAFETY: parent is an open directory, component is NUL-terminated, and the mode
+                // is supplied because mkdirat creates a directory.
+                let result =
+                    unsafe { libc::mkdirat(parent.as_raw_fd(), component.as_ptr(), 0o700) };
+                if result < 0 {
+                    let error = io::Error::last_os_error();
+                    assert_eq!(
+                        error.kind(),
+                        io::ErrorKind::AlreadyExists,
+                        "create segmented test directory: {error}"
+                    );
+                }
+                let fd = openat_read_only(
+                    parent.as_raw_fd(),
+                    component.to_str().expect("UTF-8 test component"),
+                    libc::O_DIRECTORY | libc::O_NOFOLLOW,
+                )
+                .expect("open segmented test directory");
+                // SAFETY: openat returned a new owned descriptor, transferred exactly once.
+                parent = unsafe { File::from_raw_fd(fd) };
+            }
         }
 
         fn write_configuration(&self, bytes: impl AsRef<[u8]>) {
@@ -991,6 +1166,69 @@ mod tests {
                 Xcom2ModuleConfigurationStopCode::ConfigurationInvalidModuleRoots
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_contained_file_uri_like_root_is_rejected_before_authorization() {
+        let workspace = TestWorkspace::new("file-uri-root");
+        workspace.directory("file:/path");
+        workspace.write_configuration(valid_json(&["file:/path".to_string()]));
+
+        assert_eq!(
+            code(&read(&workspace)),
+            Xcom2ModuleConfigurationStopCode::ConfigurationInvalidModuleRoots
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn c0_and_c1_controls_are_rejected_even_when_the_directories_exist() {
+        let workspace = TestWorkspace::new("control-roots");
+        for root in ["mods/c0\nroot", "mods/c1\u{009f}root"] {
+            workspace.directory(root);
+            workspace.write_configuration(valid_json(&[root.to_string()]));
+            assert_eq!(
+                code(&read(&workspace)),
+                Xcom2ModuleConfigurationStopCode::ConfigurationInvalidModuleRoots,
+                "control-bearing root must be rejected: {root:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exact_four_kib_utf8_root_is_accepted_when_built_by_bounded_components() {
+        let workspace = TestWorkspace::new("exact-root-bytes");
+        let root = std::iter::repeat_n("界".repeat(80), 17)
+            .collect::<Vec<_>>()
+            .join("/");
+        assert_eq!(root.len(), MAXIMUM_MODULE_ROOT_BYTES);
+        assert!(root.split('/').all(|component| component.len() == 240));
+        workspace.directory_segmented(&root);
+        workspace.write_configuration(valid_json(std::slice::from_ref(&root)));
+
+        assert_eq!(configuration(read(&workspace)).module_roots, vec![root]);
+    }
+
+    #[test]
+    fn above_four_kib_utf8_root_is_rejected_without_filesystem_access() {
+        let root = format!("{}/x", "a".repeat(MAXIMUM_MODULE_ROOT_BYTES));
+        assert_eq!(root.len(), MAXIMUM_MODULE_ROOT_BYTES + 2);
+
+        let result = parse_configuration_with_directory_validator(&valid_json(&[root]), |_| {
+            panic!("over-limit root reached the filesystem validator")
+        });
+        assert_eq!(
+            result,
+            Err(Xcom2ModuleConfigurationStopCode::ConfigurationInvalidModuleRoots)
+        );
+    }
+
+    #[test]
+    fn dot_and_normal_unicode_roots_remain_portable() {
+        assert!(portable_module_root("."));
+        assert!(portable_module_root("Mods/日本語/β"));
     }
 
     #[test]
