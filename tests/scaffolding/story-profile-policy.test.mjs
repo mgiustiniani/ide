@@ -156,6 +156,19 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   );
 
   assert.deepEqual(
+    cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.worldParameters,
+    nativeGuiEvidence,
+  );
+  assert.equal(
+    cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.tags,
+    "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.tags,
+    /implemented|partial|not-implemented/,
+  );
+
+  assert.deepEqual(
     cucumberProfiles.xcom2ModuleActivationNativeGui.worldParameters,
     nativeGuiEvidence,
   );
@@ -237,6 +250,22 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
+test("focused missing-Steam XCOM machine Settings profile is native-only and status-independent before promotion", () => {
+  const selected = selectedScenarios("xcom2MachineSettingsMissingSteamNativeGui");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001"]);
+  assert.equal(selected[0].uri, "features/xcom2/machine-settings-missing-steam.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@desktop"));
+  assert.ok(selected[0].tags.has("@native-gui"));
+  assert.equal(selected[0].tags.has("@web"), false);
+  assert.equal(
+    cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.tags,
+    "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 and @desktop and @native-gui and not @web",
+  );
+});
+
 test("focused XCOM module activation profile stays status-independent after promotion", () => {
   const selected = selectedScenarios("xcom2ModuleActivationNativeGui");
 
@@ -290,6 +319,10 @@ test("focused native package commands make no harness or package claim", async (
       "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
     ],
     [
+      "test:story:req-xcom2-machine-settings-missing-steam-001:native",
+      "node scripts/run-native-desktop-story.mjs --profile xcom2MachineSettingsMissingSteamNativeGui",
+    ],
+    [
       "test:story:req-xcom2-module-activation-001:native",
       "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleActivationNativeGui",
     ],
@@ -339,7 +372,7 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("declared routes and parked inventory stay exact after XCOM module configuration diagnostics promotion", () => {
+test("declared routes stay exact while missing-Steam machine Settings remains parked", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -364,6 +397,7 @@ test("declared routes and parked inventory stay exact after XCOM module configur
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
   ]);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 2);

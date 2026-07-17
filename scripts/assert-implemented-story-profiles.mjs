@@ -101,6 +101,9 @@ try {
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
+  const xcom2MachineSettingsMissingSteamNativeGui = discover(
+    "xcom2MachineSettingsMissingSteamNativeGui",
+  );
   const xcom2ModuleActivationNativeGui = discover("xcom2ModuleActivationNativeGui");
   const xcom2ModuleConfigurationActivationNativeGui = discover(
     "xcom2ModuleConfigurationActivationNativeGui",
@@ -149,6 +152,11 @@ try {
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopLayoutNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters(
+    "xcom2MachineSettingsMissingSteamNativeGui",
+    desktopTauriWebdriverEvidence,
+    failures,
+  );
   assertWorldParameters("xcom2ModuleActivationNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters(
     "xcom2ModuleConfigurationActivationNativeGui",
@@ -192,6 +200,12 @@ try {
     "desktopLayoutNativeGui",
     desktopLayoutNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-LAYOUT-DESKTOP-001")),
+    failures,
+  );
+  compareProfileSelection(
+    "xcom2MachineSettingsMissingSteamNativeGui",
+    xcom2MachineSettingsMissingSteamNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001")),
     failures,
   );
   compareProfileSelection(

@@ -29,6 +29,7 @@
     "test:story:desktop:tauri-webdriver": "node scripts/run-native-desktop-story.mjs --profile desktopTauriWebdriver",
     "test:story:req-layout-desktop-001:native": "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
     "test:story:req-xcom2-machine-settings-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2MachineSettingsTauriHarness",
+    "test:story:req-xcom2-machine-settings-missing-steam-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2MachineSettingsMissingSteamNativeGui",
     "test:story:req-xcom2-module-activation-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleActivationNativeGui",
     "test:story:req-xcom2-module-configuration-activation-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationActivationNativeGui",
     "test:story:req-xcom2-module-configuration-diagnostics-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationDiagnosticsNativeGui",

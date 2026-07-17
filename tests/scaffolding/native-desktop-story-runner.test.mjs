@@ -87,6 +87,36 @@ function selectedScenarioCount(profile, config = "cucumber.js") {
   return selectedScenarios(profile, config).length;
 }
 
+function dryRunSummary(profile) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cucumberEntry,
+      "--config",
+      "cucumber.js",
+      "--profile",
+      profile,
+      "--dry-run",
+      "--format",
+      "summary",
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 30_000,
+    },
+  );
+  assert.equal(
+    result.status,
+    0,
+    result.error?.message ?? result.stderr ?? `Cucumber dry-run failed: ${profile}`,
+  );
+  return result.stdout;
+}
+
 async function executable(directory, name) {
   const executablePath = path.join(directory, name);
   await writeFile(executablePath, "#!/bin/sh\nexit 0\n", "utf8");
@@ -536,6 +566,135 @@ test("focused desktop layout fresh-builds in isolated state without Java Python 
     assert.deepEqual(manifest.desiredWebViewViewport, { width: 1440, height: 900 });
     assert.equal(manifest.selectedScenarios.length, 1);
     assert.ok(manifest.selectedScenarios[0].tags.includes("@REQ-LAYOUT-DESKTOP-001"));
+    assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
+test("focused missing-Steam machine Settings fresh-builds with empty native-only state", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-xcom-missing-steam-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const calls = [];
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: "f".repeat(64),
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+
+    const result = await runNativeDesktopStory("xcom2MachineSettingsMissingSteamNativeGui", {
+      environment: {
+        PATH: process.env.PATH,
+        IDE_REFACTORKIT_DAEMON: "/untrusted/refactorkit",
+        IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+      },
+      buildApplication: async () => {
+        calls.push("fresh-release-no-bundle-build");
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("common-native-prerequisites-only");
+        assert.deepEqual(options, {
+          applicationPath,
+          requiresNativeJavaImport: false,
+        });
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("empty-isolated-native-state");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async (_command, arguments_, options) => {
+        calls.push("native-run");
+        assert.deepEqual(arguments_.slice(-2), [
+          "--profile",
+          "xcom2MachineSettingsMissingSteamNativeGui",
+        ]);
+        assert.equal(
+          arguments_.some((argument) => /tauri-harness|package|bundle/iu.test(argument)),
+          false,
+        );
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_TARGET, "desktop/tauri-webdriver");
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_WIDTH, "1440");
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_DESIRED_WEBVIEW_HEIGHT, "900");
+        assert.equal(options.environment.GDK_BACKEND, "x11");
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+        assert.equal(options.environment.IDE_REFACTORKIT_DAEMON, undefined);
+        assert.equal(options.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+
+        for (const variable of [
+          "HOME",
+          "XDG_CONFIG_HOME",
+          "XDG_CACHE_HOME",
+          "XDG_DATA_HOME",
+          "XDG_STATE_HOME",
+          "XDG_RUNTIME_DIR",
+          "IDE_HOME",
+          "IDE_WORKSPACE_ROOT",
+        ]) {
+          assert.equal(
+            path
+              .relative(
+                options.environment.IDE_STORY_NATIVE_GUI_SANDBOX_PATH,
+                options.environment[variable],
+              )
+              .startsWith(".."),
+            false,
+            variable,
+          );
+          assert.deepEqual(await readdir(options.environment[variable]), [], variable);
+        }
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("bounded-process-cleanup");
+        return {
+          sandboxPath,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "fresh-release-no-bundle-build",
+      "common-native-prerequisites-only",
+      "empty-isolated-native-state",
+      "native-run",
+      "bounded-process-cleanup",
+    ]);
+    assert.equal(result.skipped, false);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.equal(manifest.target, "desktop/tauri-webdriver");
+    assert.equal(manifest.profile, "xcom2MachineSettingsMissingSteamNativeGui");
+    assert.deepEqual(manifest.evidence, {
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+      applicationSha256: application.sha256,
+    });
+    assert.equal(manifest.selectedScenarios.length, 1);
+    assert.ok(
+      manifest.selectedScenarios[0].tags.includes("@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001"),
+    );
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
     assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
   } finally {
     await rm(artifactRoot, { recursive: true, force: true });
@@ -1195,6 +1354,7 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 6);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
+  assert.equal(selectedScenarioCount("xcom2MachineSettingsMissingSteamNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleConfigurationActivationNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleConfigurationDiagnosticsNativeGui"), 1);
@@ -1202,9 +1362,27 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
   assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
   assert.equal(profileSelectsScenarios("desktopLayoutNativeGui"), true);
+  assert.equal(profileSelectsScenarios("xcom2MachineSettingsMissingSteamNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleActivationNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationActivationNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationDiagnosticsNativeGui"), true);
+
+  const missingSteamSelection = discoverNativeDesktopSelection(
+    "xcom2MachineSettingsMissingSteamNativeGui",
+  );
+  assert.equal(missingSteamSelection.hasScenarios, true);
+  assert.equal(missingSteamSelection.includesNativeJavaImport, false);
+  assert.equal(missingSteamSelection.scenarios.length, 1);
+  assert.match(
+    dryRunSummary("xcom2MachineSettingsMissingSteamNativeGui"),
+    /1 scenario \(1 undefined\)[\s\S]*22 steps \(2 skipped, 20 undefined\)/,
+  );
+  assert.ok(
+    missingSteamSelection.scenarios[0].tags.includes(
+      "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
+    ),
+  );
+  assert.ok(missingSteamSelection.scenarios[0].tags.includes("@not-implemented"));
 
   const diagnosticSelection = discoverNativeDesktopSelection(
     "xcom2ModuleConfigurationDiagnosticsNativeGui",
@@ -1259,6 +1437,10 @@ test("implemented desktop discovery selects the exact harness and native require
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
   assert.equal(selection.scenarios.length, 6);
+  assert.match(
+    dryRunSummary("implementedDesktopTauriWebdriver"),
+    /6 scenarios \(6 skipped\)[\s\S]*176 steps \(176 skipped\)/,
+  );
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
     [

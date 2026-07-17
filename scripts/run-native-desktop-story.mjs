@@ -40,6 +40,7 @@ const supportedProfiles = new Set([
   "desktopFileOpenNativeGui",
   "refactorKitJavaImportNativeGui",
   "desktopLayoutNativeGui",
+  "xcom2MachineSettingsMissingSteamNativeGui",
   "xcom2ModuleActivationNativeGui",
   "xcom2ModuleConfigurationActivationNativeGui",
   "xcom2ModuleConfigurationDiagnosticsNativeGui",
