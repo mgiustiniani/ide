@@ -292,6 +292,29 @@ The preceding FUTURE/TARGET and `@not-implemented` language is retained as the h
 - The IDE never creates, writes, reformats, or deletes this file and never mutates `.gitignore`. Configuration adds no prompt or persistence record and no tool, process, external-root, or mutation authority. The separately recorded weak-evidence manual-confirmation flow and its persistence remain FUTURE/TARGET, as do external roots, Build, Problems, Logs, language support, actions, and other contextual XCOM tools.
 - Machine Settings remains independent and cannot activate a project. Browser behavior is unchanged.
 
+#### Approved FUTURE/TARGET invalid-configuration diagnostic UX
+
+This diagnostic presentation and lifecycle is an approved FUTURE/TARGET decision until implemented. It does not change the CURRENT/AS-BUILT status of configured activation or Option A recognition and is not implementation, progress, or validation evidence.
+
+- **Canonical presentation:** Place the warning in **Settings > Workspace > Current workspace**, immediately below that section's heading/Workspace Refresh control. Present one amber, non-color-only, atomic accessible `role="alert"` whose title is exactly **XCOM 2 project configuration needs attention**. The primary content is the human summary and remediation, always using the fixed project-file label `.ide/xcom2.json`; the exact stable typed code remains visible only as a secondary support identifier.
+- **Exhaustive safe copy:** The eight stop codes map to exactly this user-facing copy:
+
+  | Stable typed code                    | Summary                                                                      | Remediation                                                                                                                                       |
+  | ------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `configuration-unreadable`           | The IDE could not safely read the XCOM 2 project configuration.              | Make `.ide` a regular directory and `.ide/xcom2.json` a readable regular file, with neither entry a symbolic link, then refresh the workspace.    |
+  | `configuration-too-large`            | The XCOM 2 project configuration exceeds the 64 KiB limit.                   | Reduce `.ide/xcom2.json` to 64 KiB or less, then refresh the workspace.                                                                           |
+  | `configuration-invalid-utf8`         | The XCOM 2 project configuration is not valid UTF-8.                         | Save `.ide/xcom2.json` as UTF-8, then refresh the workspace.                                                                                      |
+  | `configuration-invalid-json`         | The XCOM 2 project configuration is not valid JSON.                          | Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.                                                |
+  | `configuration-invalid-schema`       | The XCOM 2 project configuration does not match the activation v1 structure. | Use exactly these fields once: numeric `version`, text `target`, and the `moduleRoots` list; remove all other fields, then refresh the workspace. |
+  | `configuration-unsupported-version`  | This XCOM 2 project configuration version is not supported.                  | Set `version` to 1, then refresh the workspace.                                                                                                   |
+  | `configuration-unsupported-target`   | This XCOM 2 project target is not supported.                                 | Set `target` to `"wotc"`, then refresh the workspace.                                                                                             |
+  | `configuration-invalid-module-roots` | The configured module roots are not valid for this workspace.                | Provide 1–64 unique, exact-case workspace-relative paths to existing directories, with no symbolic links, then refresh the workspace.             |
+
+- **No implied authority or mutation:** The diagnostic alone creates no XCOM activity, bottom contribution, badge implying activation, tool, or action. It offers no edit, open, or write action, and the IDE does not write the project file.
+- **Explicit-refresh lifecycle:** Only explicit **Workspace Refresh** reevaluates this state; there is no watcher or poll. Refresh synchronously revokes the old diagnostic and configured decision, displays a neutral **Checking XCOM 2 project configuration…** state, and accepts only the exactly correlated current result. Late or stale results restore neither old diagnostics nor old configured decisions.
+- **Result handling:** A valid correlated result clears the warning and may activate configured recognition. An invalid correlated result removes all configured authority. Strong existing Option A recognition (`recognized` / `high`) may remain active independently and, when its activity exists, mirrors the same complete safe warning using the atomic accessible presentation rather than a raw-code-only alert. An absent result is silent.
+- **Failure and disclosure boundary:** Transport, adapter, or controller errors remain generic failures and must never be forged into one of the eight stop codes. Never render or retain configuration bytes or content canaries, submitted roots, actual absolute paths, parser/provider/native-command details, secrets, raw causes, or other internals.
+
 #### Implementation and evidence
 
 The implementation follows this policy through separate bounded components:
