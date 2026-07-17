@@ -236,13 +236,13 @@ Use **Monaco Editor 0.52.2 as the only editor**:
 
 ## ADR 0007 — Machine Settings and Evidence-Activated XCOM Project Contributions
 
-**Status:** Accepted; the first recognition-only module-activation slice is CURRENT/AS-BUILT and declared `@implemented-and-validated`, while configured activation and contextual XCOM tooling remain FUTURE/TARGET.
+**Status:** Accepted; convention recognition and activation-only `.ide/xcom2.json` v1 are CURRENT/AS-BUILT and declared `@implemented-and-validated`, while manual confirmation, external roots, and contextual XCOM tooling remain FUTURE/TARGET.
 
 ### Context
 
 XCOM game/SDK/Steam download state, environment health, and operational setup describe a machine, not every opened workspace. Presenting them as a global XCOM activity entry or bottom tab creates false project context; starting polling in a generic web workspace creates hidden work for a native capability the browser cannot provide. Conversely, XCOM build, diagnostics, logs, and language support are meaningful only for an XCOM project/module. The first-party feature is built-in, experimental, and plugin-shaped, but the IDE has no extension install/remove lifecycle or generic third-party runtime. Java, IntelliJ-direction work, JDT LS, and RefactorKit are independent core capabilities.
 
-The generic target permits project/module activation after explicit configuration or conservative evidence evaluation. The current first slice deliberately narrows that target to bounded convention evidence: explicit configuration and manual confirmation were deferred from that implementation. The exact activation-only v1 configuration contract below is now approved as FUTURE/TARGET architecture before implementation; manual confirmation remains a separate concern.
+The generic target permits project/module activation after explicit configuration or conservative evidence evaluation. The first implemented slice deliberately narrowed that target to bounded convention evidence and deferred explicit configuration and manual confirmation. The exact activation-only v1 configuration contract was then approved before implementation and is now implemented without merging configuration intent into recognition confidence. Manual confirmation remains a separate concern.
 
 ### Decision
 
@@ -278,19 +278,34 @@ This subsection records an approved target architecture decision before implemen
 - **Authority boundary:** Configuration activation creates no manual prompt or persistence record because it grants no tool, process, external, or mutation authority. External roots, weak-evidence manual confirmation, Build, Problems, Logs, language support, and actions remain separate concerns.
 - **Refresh and revocation:** Configuration refresh occurs only through explicit **Workspace Refresh**, with no watch or poll. Refresh synchronously revokes prior configured state, increments the feature activation generation, jointly correlates configuration and scan results, and rejects stale or late results. Removing the file revokes the configuration basis; Option A recognition may independently remain.
 - **Platform boundary:** Browser behavior is unchanged.
-- **Requirements lifecycle:** The specialist FR-X2CFG-001 catalogue entry in `docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md` has been reconciled to this exact activation-only v1 schema with only `version`, `target`, and `moduleRoots`; `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` remains `@not-implemented`, and that reconciliation is not implementation or validation evidence. It does not accept that proposal's machine/tool configuration fields or expand this decision beyond recognition-only activation.
+- **Requirements lifecycle:** The specialist FR-X2CFG-001 catalogue entry in `docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md` was reconciled to this exact activation-only v1 schema with only `version`, `target`, and `moduleRoots`; at that reconciliation point, `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` remained `@not-implemented`, and the documentation change was not implementation or validation evidence. It did not accept that proposal's machine/tool configuration fields or expand this decision beyond recognition-only activation.
+
+#### 2026-07-17 configured-activation lifecycle amendment
+
+The preceding FUTURE/TARGET and `@not-implemented` language is retained as the historical approval record. At HEAD `34d5a5e`, `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` is declared `@implemented-and-validated`, and the approved activation-only contract is CURRENT/AS-BUILT. This amendment changes lifecycle status, not the accepted schema or authority boundary:
+
+- The only configuration is the project-owned, IDE-read-only `.ide/xcom2.json`. Its v1 data is exactly `{ "version": 1, "target": "wotc", "moduleRoots": [...] }`, with exactly those three fields and at most 64 KiB (65,536 bytes) of valid UTF-8. The reader rejects duplicate JSON keys, malformed JSON or trailing data, missing or extra fields, non-integral/coerced or unsupported values, duplicate roots, and invalid UTF-8.
+- `moduleRoots` contains 1–64 unique entries. `.` is allowed; every other entry is a slash-separated normalized relative path of at most 4096 UTF-8 bytes with no empty, `.` or `..` component, control character, backslash, absolute/drive path, or `file:/` URI form. Each component must match an existing directory with exact case, must not be a symlink, and must remain contained under the one native-authorized workspace root. Multiple and nested roots remain independent and additive.
+- A configuration-only root is `active` with source `configured` and activation confidence `explicit`; its recognition confidence remains independently `none`, `medium`, or `high` from Option A. A configured root with convention observations uses source `configured-and-recognized`, with the configuration reason ordered before the unchanged Option A reasons.
+- Invalid, unsupported, unreadable, oversized, or unsafe configuration grants no configured authority and yields only a presentation-safe typed diagnostic. It neither disables nor downgrades an independent Option A result.
+- Initial activation and a committed workspace switch perform their one correlated activation read. Thereafter only the explicit full **Workspace Refresh** re-reads configuration and recognition state; passive metadata/Settings refresh does not. There is no configuration watcher or poll. Full refresh synchronously revokes the previous contribution before I/O, increments activation correlation, jointly evaluates the configuration read and scan, and suppresses stale or late restoration. Removing the file therefore has no effect until full Workspace Refresh; after refresh, Option A may independently keep a root active.
+- The IDE never creates, writes, reformats, or deletes this file and never mutates `.gitignore`. Configuration adds no prompt or persistence record and no tool, process, external-root, or mutation authority. The separately recorded weak-evidence manual-confirmation flow and its persistence remain FUTURE/TARGET, as do external roots, Build, Problems, Logs, language support, actions, and other contextual XCOM tools.
+- Machine Settings remains independent and cannot activate a project. Browser behavior is unchanged.
 
 #### Implementation and evidence
 
-At HEAD `5cdc9c0`, the implementation follows this policy through separate bounded components:
+The implementation follows this policy through separate bounded components:
 
 - [`xcom2_module_evidence.rs`](apps/desktop/src-tauri/src/commands/xcom2_module_evidence.rs) is the dedicated read-only Rust metadata/name scanner. It uses exact-case Linux convention matching, excludes symlinks from traversal and evidence, fixes depth 8 and 20,000 encountered entries, and counts but does not traverse `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, or `.vite` directories.
-- [`xcom2-module-scanner-tauri.ts`](packages/tauri-adapters/src/xcom2-module-scanner-tauri.ts) is the strict Tauri adapter. It accepts only the fixed request and response schema, bounds, canonical workspace-relative paths, ordered enums, and exact workspace/scan correlation.
-- [`module-activation.ts`](packages/web-core/src/xcom2/module-activation.ts) is the pure evaluator. It groups independent canonical module roots and requires at least two distinct evidence kinds; repeated files of one kind, a lone weak marker, or a workspace/repository/directory name alone cannot activate recognition.
-- [`useXcom2ModuleActivationController.ts`](apps/desktop/src/features/xcom2-module-activation/useXcom2ModuleActivationController.ts) is the one-shot generation-correlated controller. It owns one scan per authorized workspace generation, synchronously revokes the prior snapshot at switch start, and rejects late or mismatched workspace identity, workspace generation, scan identity, or scan generation.
-- [`App.tsx`](apps/desktop/src/App.tsx) dynamically composes the accessible activity, and [`Xcom2ProjectRecognitionPanel.tsx`](packages/ui/src/components/Xcom2ProjectRecognitionPanel/Xcom2ProjectRecognitionPanel.tsx) renders only recognition evidence, completeness, and issues. The activity is not a bottom contribution and is independent of machine Settings.
+- [`xcom2-module-scanner-tauri.ts`](packages/tauri-adapters/src/xcom2-module-scanner-tauri.ts) is the strict Tauri scanner adapter. It accepts only the fixed request and response schema, bounds, canonical workspace-relative paths, ordered enums, and exact workspace/scan correlation.
+- [`xcom2_module_configuration.rs`](apps/desktop/src-tauri/src/commands/xcom2_module_configuration.rs) owns the fixed native read, strict JSON/UTF-8/schema checks, no-follow file and component traversal, exact-case directory lookup, containment, and stable-file checks. [`xcom2-module-configuration-tauri.ts`](packages/tauri-adapters/src/xcom2-module-configuration-tauri.ts) independently normalizes the exact safe result union and correlation without exposing native errors.
+- [`module-activation.ts`](packages/web-core/src/xcom2/module-activation.ts) remains the pure Option A evaluator. [`module-configuration-activation.ts`](packages/web-core/src/xcom2/module-configuration-activation.ts) combines configured intent and convention observations while preserving independent source and confidence, deterministic reasons, Option A fallback, and typed diagnostics.
+- [`useXcom2ModuleActivationController.ts`](apps/desktop/src/features/xcom2-module-activation/useXcom2ModuleActivationController.ts) jointly correlates one configuration read and one scan, revokes synchronously, and rejects late or mismatched workspace, activation, configuration-read, and scan identity/generation. The workspace controller reserves this re-read for explicit full Workspace Refresh.
+- [`App.tsx`](apps/desktop/src/App.tsx) dynamically composes the accessible activity, and [`Xcom2ProjectRecognitionPanel.tsx`](packages/ui/src/components/Xcom2ProjectRecognitionPanel/Xcom2ProjectRecognitionPanel.tsx) renders source, separate confidences, ordered reasons, safe diagnostics, completeness, and issues without a bottom contribution or project action. Machine Settings remains separate.
 
-The promoted [BDD Story](features/xcom2/module-activation.feature) passed one scenario with 26 reported steps against promotion baseline `903cb1a` using the actual sandbox filesystem and a freshly built production Linux X11 Tauri release/no-bundle executable with a 1440x900 WebKit DOM viewport. Focused Rust, Spec, strict-adapter, controller, composition, and UI tests cover exact-case and symlink exclusions, fixed limits and an excluded-directory fixture, distinct-kind evaluation, name-only and one-kind false-positive refusal, one-shot correlation, accessible presentation, synchronous deactivation, and stale-result suppression. This evidence makes no application-package, bundle, installer, Wayland, other-OS/DPI, proprietary-project compatibility, content-parsing, external-root, explicit-configuration, manual-confirmation, machine-setup-correctness, Build, Problems, Logs, or language-support claim.
+The promoted Option A [BDD Story](features/xcom2/module-activation.feature) passed one scenario with 26 reported steps against promotion baseline `903cb1a` using the actual sandbox filesystem and a freshly built production Linux X11 Tauri release/no-bundle executable with a 1440x900 WebKit DOM viewport. Focused Rust, Spec, strict-adapter, controller, composition, and UI tests cover exact-case and symlink exclusions, fixed limits and an excluded-directory fixture, distinct-kind evaluation, name-only and one-kind false-positive refusal, one-shot correlation, accessible presentation, synchronous deactivation, and stale-result suppression. This evidence makes no application-package, bundle, installer, Wayland, other-OS/DPI, proprietary-project compatibility, content-parsing, external-root, explicit-configuration, manual-confirmation, machine-setup-correctness, Build, Problems, Logs, or language-support claim.
+
+The configured-activation [BDD Story](features/xcom2/module-configuration-activation.feature) passed one scenario with 37 reported steps at implementation baseline `b706371`; promotion and implemented-route reconciliation are complete at HEAD `34d5a5e`. It used a scenario-owned sandbox and a fresh production Linux X11 Tauri release/no-bundle executable with an asserted 1440x900 WebKit DOM viewport. Its exact configuration fixture was 63 UTF-8 bytes with SHA-256 `53d92f8cd91d90f49a98a133b5de3ef3862b5472805248780d561e2c9b765dfb`. The run exercised configured-only activation, unchanged state before explicit refresh, synchronous revocation, stale-result suppression, exact external restoration, read-only file preservation, and contained non-symlink roots. It establishes no application package/installer, Git synchronization, watcher, Wayland or other-OS/DPI, proprietary-content compatibility, module-content parsing, external-root, manual-confirmation, machine-correctness, Build, Problems, Logs, language-support, action, or tool authority.
 
 ### Consequences
 
@@ -299,20 +314,20 @@ The promoted [BDD Story](features/xcom2/module-activation.feature) passed one sc
 - Machine and project scope remain separate, and names alone cannot classify a workspace.
 - Exact convention matching, independent canonical module roots, deterministic reason ordering, and a distinct-kind threshold make activation decisions reproducible.
 - Bounded read-only scanning, no symlink traversal, explicit partial completeness, and four-part stale-result rejection constrain authority and prevent uncertain traversal from becoming false absence.
-- A recognition-only contribution preserves the first-slice boundary while leaving the approved activation-only configuration contract for later implementation and evidence, and contextual tools for separate decisions or slices.
+- Recognition-only activation now supports either corroborated Option A evidence or the bounded project-owned configuration while preserving independent source/confidence and leaving contextual tools for separate decisions or slices.
 
 **Negative:**
 
 - Depth, entry, exclusion, unreadable-path, and Linux-only limits can produce partial results or omit evidence that a broader scanner could discover.
-- A single evidence kind cannot activate the recognition panel, and this slice provides no manual confirmation path.
-- External interactive setup, the approved but unimplemented explicit configuration contract, XCOM-specific build/problem/log/language/action flows, and a general external-root grant model remain target work.
+- A single Option A evidence kind still cannot activate the recognition panel, and there is no manual confirmation path.
+- External interactive setup, weak-evidence confirmation/persistence, XCOM-specific build/problem/log/language/action/tool flows, and a general external-root grant model remain target work.
 - A future generic extension runtime may require descriptor/API migration.
 
 ---
 
 ## ADR 0008 — Global Tooling Settings and Evidence-Activated Project Contributions
 
-**Status:** Accepted; the XCOM recognition-only scope is CURRENT/AS-BUILT, Java activation remains UNSCHEDULED TODO / frozen historical inventory, and broader contextual project contributions remain FUTURE/TARGET.
+**Status:** Accepted; XCOM recognition-only activation through convention evidence or activation-only configuration is CURRENT/AS-BUILT, Java activation remains UNSCHEDULED TODO / frozen historical inventory, and broader contextual project contributions remain FUTURE/TARGET.
 
 ### Context
 
@@ -341,6 +356,12 @@ ADR 0008's original FUTURE/TARGET wording is retained above as historical ration
 
 This amendment does not make configured XCOM activation or contextual tooling current. Explicit configuration, manual confirmation and persistence, external roots, content parsing, Build, Problems, Tests, Logs, language support, actions, and bottom contributions remain FUTURE/TARGET. It does not alter ADR 0005's RefactorKit blockers or Java activation freeze, the package-manager postponement in ADR 0007/0009, or the requirement for a separate generic plugin-runtime decision.
 
+#### 2026-07-17 XCOM configured-activation lifecycle amendment
+
+The preceding sentence is retained as the recognition-slice lifecycle record but is superseded for explicit activation status by ADR 0007's configured-activation amendment. Project-owned `.ide/xcom2.json` v1 is now CURRENT/AS-BUILT only for the recognition contribution, with an explicit full-Workspace-Refresh lifecycle, synchronous revocation, and stale-result suppression. Option A remains independent; invalid configuration grants no authority and cannot suppress recognized activation. Machine Settings and browser behavior remain unchanged.
+
+Manual weak-evidence confirmation and persistence, external roots, content parsing, Build, Problems, Tests, Logs, language support, actions/tools, and bottom contributions remain FUTURE/TARGET. This amendment does not alter ADR 0005's RefactorKit freeze/blockers, the package-manager postponement in ADR 0007/0009, or the separate-decision requirement for a generic plugin runtime.
+
 ### Consequences
 
 **Positive:**
@@ -353,7 +374,7 @@ This amendment does not make configured XCOM activation or contextual tooling cu
 **Negative:**
 
 - Existing native Java project-action handlers remain undiscoverable until activation exists.
-- The current XCOM recognition slice still provides no explicit configuration, manual confirmation, external-root authority, or contextual project tools; those concerns require future decisions, implementation, and evidence.
+- Current XCOM activation still provides no manual confirmation, external-root authority, or contextual project tools; those concerns require future decisions, implementation, and evidence.
 - Future modules must carry explicit scope metadata and cannot register global tabs as a shortcut.
 
 ---

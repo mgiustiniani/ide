@@ -1,10 +1,10 @@
 # XCOM 2 WOTC Modding Plugin — Product and Software Requirements
 
-**Evidence status:** **IMPLEMENTATION-INFORMED — late-reconciled through `5cdc9c0` on 2026-07-16.** ARC42 remains the mutable integrated status ledger; this specialist catalogue separates current machine Settings and recognition-only project activation from future project tooling.
+**Evidence status:** **IMPLEMENTATION-INFORMED — late-reconciled through `34d5a5e` on 2026-07-17.** ARC42 remains the mutable integrated status ledger; this specialist catalogue separates current machine Settings and activation-only project recognition from future project tooling.
 
-**Status:** Partially implemented; Settings-owned monitor/transaction runtime, concrete repeatable WOTC SDK transaction, and first recognition-only project slice AS-BUILT; external interactive setup and contextual project tooling FUTURE/TARGET
+**Status:** Partially implemented; Settings-owned monitor/transaction runtime, concrete repeatable WOTC SDK transaction, convention recognition, and project-owned activation-only configuration v1 AS-BUILT; external interactive setup and contextual project tooling FUTURE/TARGET
 
-**Implemented increment:** `REQ-XCOM2-MACHINE-SETTINGS-001` (`@implemented-not-e2e-validated`) plus `REQ-XCOM2-MODULE-ACTIVATION-001` (`@implemented-and-validated`): first-party Steam monitor; separate non-executable dry run; concrete 15-operation Prepare/Apply/Restore Vanilla SDK transaction; exact-digest one-transaction approval; Settings transaction controls; and bounded read-only workspace recognition with a dynamic accessible `XCOM 2 Project` activity. No live Apply, explicit project configuration, manual confirmation, external-root recognition, Build, Problems, Logs, or language capability
+**Implemented increment:** `REQ-XCOM2-MACHINE-SETTINGS-001` (`@implemented-not-e2e-validated`), `REQ-XCOM2-MODULE-ACTIVATION-001` (`@implemented-and-validated`), and `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` (`@implemented-and-validated`): first-party Steam monitor; separate non-executable dry run; concrete 15-operation Prepare/Apply/Restore Vanilla SDK transaction; exact-digest one-transaction approval; Settings transaction controls; bounded convention recognition; and read-only configured activation from project-owned `.ide/xcom2.json` v1. No live Apply, manual confirmation/persistence, external-root recognition, Build, Problems, Logs, or language capability
 **Target runtime:** Tauri desktop on Linux first; honest degraded web mode  
 **Primary goal:** replace Visual Studio Code—not Unreal Editor—as the daily development environment for XCOM 2: War of the Chosen mods.
 
@@ -38,17 +38,18 @@ The plugin is not intended to reimplement the Unreal Editor, ModBuddy visual des
 
 Status labels in this specification are normative: **AS-BUILT** means implemented now; **PARTIAL** means only the explicitly listed slice exists; **FUTURE/TARGET** is not an implementation claim.
 
-| Requirement area                                         | Status                                          | Current evidence / remaining boundary                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FR-X2ARCH-006 feature descriptor                         | **AS-BUILT**                                    | Fixed `ide.xcom2-wotc`; built-in, experimental, first-party, and plugin-shaped. No generic plugin runtime, extension install/remove lifecycle, third-party loading, or arbitrary plugin execution exists.                                                                                           |
-| FR-X2ENV-001 / 004 Steam health and gate                 | **PARTIAL / AS-BUILT Settings monitor**         | Desktop Settings reads only bounded allowlisted manifests for AppIDs `268500`, `602410`, and optional `299990`; derives conservative progress/staging/install/completeness/stability/blockers; exports redacted provenance. Broader tool/readiness checks remain target work.                       |
-| FR-X2ENV-005–012 setup workflow                          | **PARTIAL / concrete SDK transaction AS-BUILT** | Dry run remains separate/non-executable. Prepare audits vanilla SDK AppID `602410` and produces the fixed 15 reversible operations; exact-digest Apply approval, exact-baseline Restore Vanilla SDK, conflicts, recovery, and Prepare Again exist. External interactive steps remain FUTURE/TARGET. |
-| FR-X2UI-000 / FR-X2ARCH-007 machine runtime boundary     | **AS-BUILT Settings lifecycle**                 | Closed Settings performs no monitor/history/detail/poll/subscription work. Open Settings owns one monitor and one transaction adapter lifecycle under workspace/generation authority; close invalidates and cancels both. `REQ-XCOM2-MACHINE-SETTINGS-001` is harness-only.                         |
-| FR-X2UI-001 / 002 project contributions                  | **PARTIAL / recognition AS-BUILT**              | `REQ-XCOM2-MODULE-ACTIVATION-001` is current only for bounded Option A recognition: one read-only scan per workspace generation, pure two-kind evaluation, and the accessible `XCOM 2 Project` evidence activity. Bottom tabs, actions, language, Build, Problems, and Logs remain FUTURE/TARGET.   |
-| FR-X2UI-005 browser boundary                             | **AS-BUILT unavailable**                        | Browser setup reports unavailable without simulation and starts no XCOM adapter, polling, transaction, or subscription work.                                                                                                                                                                        |
-| FR-X2ARCH-004 external-root authorization                | **PARTIAL / narrow transaction grant AS-BUILT** | The full digest grants one reviewed external-SDK transaction only. No general reusable external-root grant exists; Proton/prefix/package-manager/interactive read/write/execute authorization remains FUTURE/TARGET.                                                                                |
-| `FR-X2LANG-*`, `FR-X2BUILD-*`, `FR-X2HL-*`, `FR-X2RUN-*` | **FUTURE/TARGET**                               | No XCOM-specific language, build/cook, Highlander, launch, or log workflow is implemented by this increment.                                                                                                                                                                                        |
-| Java/JDT LS/RefactorKit/IntelliJ roadmap                 | **Separate and unchanged**                      | XCOM work neither replaces nor changes the IDE's core Java capability roadmap.                                                                                                                                                                                                                      |
+| Requirement area                                         | Status                                          | Current evidence / remaining boundary                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-X2ARCH-006 feature descriptor                         | **AS-BUILT**                                    | Fixed `ide.xcom2-wotc`; built-in, experimental, first-party, and plugin-shaped. No generic plugin runtime, extension install/remove lifecycle, third-party loading, or arbitrary plugin execution exists.                                                                                                               |
+| FR-X2ENV-001 / 004 Steam health and gate                 | **PARTIAL / AS-BUILT Settings monitor**         | Desktop Settings reads only bounded allowlisted manifests for AppIDs `268500`, `602410`, and optional `299990`; derives conservative progress/staging/install/completeness/stability/blockers; exports redacted provenance. Broader tool/readiness checks remain target work.                                           |
+| FR-X2ENV-005–012 setup workflow                          | **PARTIAL / concrete SDK transaction AS-BUILT** | Dry run remains separate/non-executable. Prepare audits vanilla SDK AppID `602410` and produces the fixed 15 reversible operations; exact-digest Apply approval, exact-baseline Restore Vanilla SDK, conflicts, recovery, and Prepare Again exist. External interactive steps remain FUTURE/TARGET.                     |
+| FR-X2UI-000 / FR-X2ARCH-007 machine runtime boundary     | **AS-BUILT Settings lifecycle**                 | Closed Settings performs no monitor/history/detail/poll/subscription work. Open Settings owns one monitor and one transaction adapter lifecycle under workspace/generation authority; close invalidates and cancels both. `REQ-XCOM2-MACHINE-SETTINGS-001` is harness-only.                                             |
+| FR-X2CFG-001 / 003 activation v1                         | **AS-BUILT**                                    | `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` reads only project-owned `.ide/xcom2.json` v1 through a strict native boundary. Valid configuration contributes configured/explicit activation independently from convention recognition confidence; invalid configuration fails safely without suppressing Option A.   |
+| FR-X2UI-001 / 002 project contributions                  | **PARTIAL / recognition AS-BUILT**              | Convention and configured activation may contribute the accessible recognition-only `XCOM 2 Project` activity. Explicit full Workspace Refresh is the only configuration reread; it revokes synchronously and suppresses stale results. Bottom tabs, actions, language, Build, Problems, and Logs remain FUTURE/TARGET. |
+| FR-X2UI-005 browser boundary                             | **AS-BUILT unavailable and unchanged**          | Browser setup reports unavailable without simulation and starts no XCOM configuration reader, scanner, polling, transaction, or subscription work.                                                                                                                                                                      |
+| FR-X2ARCH-004 external-root authorization                | **PARTIAL / narrow transaction grant AS-BUILT** | The full digest grants one reviewed external-SDK transaction only. No general reusable external-root grant exists; Proton/prefix/package-manager/interactive read/write/execute authorization remains FUTURE/TARGET.                                                                                                    |
+| `FR-X2LANG-*`, `FR-X2BUILD-*`, `FR-X2HL-*`, `FR-X2RUN-*` | **FUTURE/TARGET**                               | No XCOM-specific language, build/cook, Highlander, launch, or log workflow is implemented by this increment.                                                                                                                                                                                                            |
+| Java/JDT LS/RefactorKit/IntelliJ roadmap                 | **Separate and unchanged**                      | XCOM work neither replaces nor changes the IDE's core Java capability roadmap.                                                                                                                                                                                                                                          |
 
 Architecture traceability: [ADR 0007](../ADR.md#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions), [ADR 0009](../ADR.md#adr-0009--durable-digest-approved-xcom-setup-transactions), [ARC42 current/target boundary](../ARC42.md#54-current-and-target-xcom-2-boundary), [C1](c4/system-context.md), [C2](c4/containers.md), [C3](c4/components.md), and [XCOM 2 target C4](c4/target-xcom2-setup.md).
 
@@ -56,7 +57,7 @@ Architecture traceability: [ADR 0007](../ADR.md#adr-0007--machine-settings-and-e
 
 An intentionally ignored native test, `live_steam_snapshot_probe`, performs a read-only live integration probe and must be run explicitly on a suitably configured machine. One validation run observed game download/staging at **13.63%/14.58%**, WOTC SDK at **51.46%/50.68%**, optional vanilla SDK installed, aggregate state `staging`, and both plan/apply flags false. A later two-sample, five-second probe reported `materialChanged=false` and `canApplySetup=false`.
 
-Synthetic fixtures prove repeated apply→rollback cycles restore exact original `FileState` and SHA-256 values for atomic patch, quarantine, generated file, generated directory, and symlink operations. They also prove reverse rollback order, restart recovery, conflict refusal, and conflict-safe retry. At implementation baseline `5cdc9c0`, the full Vitest suite passed 1021/1021 tests with V8 coverage of 86.37% statements/lines, 82.66% branches, and 86.74% functions. The Spec suite reports 132 cases, and Rust defaults report 181 passed plus 8 ignored. The deterministic desktop-harness route passed 2 scenarios/49 steps; its XCOM Settings scenario contributed 27/27 steps. The focused XCOM recognition native route passed 1 scenario/26 reported steps (25 authored plus cleanup), and the current native aggregate reports 4 scenarios/87 reported steps. A live ignored Prepare audit produced exactly 15 operations, executable, with no blockers. Live Apply, package/bundle/installer behavior, and machine-correctness evidence from the recognition Story remain unproven.
+Synthetic fixtures prove repeated apply→rollback cycles restore exact original `FileState` and SHA-256 values for atomic patch, quarantine, generated file, generated directory, and symlink operations. They also prove reverse rollback order, restart recovery, conflict refusal, and conflict-safe retry. At implementation baseline `34d5a5e`, the full Vitest suite passed 1156/1156 tests with V8 coverage of 86.52% statements/lines, 82.93% branches, and 87.19% functions. The Spec suite reports 154 cases, and Rust defaults report 204 passed plus 8 ignored. The deterministic desktop-harness route passed 2 scenarios/49 steps. The focused configured-activation route passed 1 scenario/37 reported steps, and the native aggregate reports 5 scenarios/124 reported steps. A live ignored Prepare audit produced exactly 15 operations, executable, with no blockers. Live Apply, package/bundle/installer behavior, and machine-correctness evidence from either activation Story remain unproven.
 
 ```bash
 cd apps/desktop/src-tauri
@@ -87,7 +88,21 @@ Machine setup transaction authority remains correlated to the current workspace/
 - an active result contributes only the keyboard-accessible **XCOM 2 Project** recognition activity and panel; a committed switch removes them synchronously, and workspace/scan generation correlation suppresses stale restoration; and
 - machine Settings monitoring, Steam/game/SDK state, completed setup, and transaction state are independent and cannot activate recognition.
 
-On 2026-07-16 against promotion baseline `903cb1a`, the focused native route passed 1 scenario/26 reported steps (25 authored plus cleanup) against an actual scenario-owned sandbox filesystem and the production Linux X11 release/no-bundle Tauri WebKit DOM at 1440×900. This does not prove a package, Wayland or another OS/DPI, proprietary project compatibility, content parsing, external roots, `.ide/xcom2.json`, explicit configuration, manual confirmation/persistence, machine correctness, Build, Problems, Logs, language support, project actions, or bottom contributions.
+On 2026-07-16 against promotion baseline `903cb1a`, the focused native route passed 1 scenario/26 reported steps (25 authored plus cleanup) against an actual scenario-owned sandbox filesystem and the production Linux X11 release/no-bundle Tauri WebKit DOM at 1440×900. This does not prove a package, Wayland or another OS/DPI, proprietary project compatibility, content parsing, external roots, explicit configuration, manual confirmation/persistence, machine correctness, Build, Problems, Logs, language support, project actions, or bottom contributions.
+
+### 2.5 Current configured-activation executable boundary
+
+`REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` is declared `@implemented-and-validated` for activation-only `.ide/xcom2.json` v1:
+
+- the native side owns the fixed project configuration path and reads at most 64 KiB of strict UTF-8 JSON with exactly `version`, `target`, and `moduleRoots`; duplicate keys, invalid UTF-8, trailing data, unsupported values, and missing or extra fields fail closed;
+- `version` is numeric `1`, `target` is `wotc`, and 1–64 unique module roots are normalized exact-case workspace-relative existing directories (or `.`) whose components and canonical result are regular, non-symlink, and contained in the authorized workspace;
+- the IDE treats the file as project-owned and read-only: it never creates, writes, reformats, deletes, or adds it to `.gitignore`, and it starts no watcher or poll;
+- valid configuration contributes source `configured` and activation confidence `explicit`; convention recognition confidence remains a separate field, so configured-only activation may have recognition confidence `none`;
+- invalid configuration exposes only safe typed diagnostics, grants no configured authority, and does not suppress an independent Option A recognition result;
+- only explicit full **Workspace Refresh** rereads configuration, synchronously revokes prior activation authority, jointly correlates configuration and scan results, and suppresses stale completions; workspace switching uses the same synchronous revoke/stale-result discipline; and
+- activation grants no external-root, process, mutation, Build, Problems, Logs, language, action, or bottom-contribution authority. Manual weak-evidence confirmation and a persistence record remain future work, as do external roots and contextual tooling. Machine Settings is independent; browser behavior is unchanged.
+
+On 2026-07-17 at `34d5a5e`, the focused native route passed 1 scenario/37 reported steps against a freshly built production Linux X11 release/no-bundle Tauri WebKit DOM at 1440×900 and a scenario-owned sandbox filesystem. The configured fixture was exactly 63 UTF-8 bytes with SHA-256 `53d92f8cd91d90f49a98a133b5de3ef3862b5472805248780d561e2c9b765dfb`. The Story observed configured/explicit activation with recognition confidence `none`, no watcher effect before refresh, synchronous revoke and stale suppression after external removal plus refresh, exact restoration after external replacement plus refresh, unchanged final file bytes, and no XCOM tooling authority. This is direct evidence for that fixture and environment only—not package, Git synchronization, watcher, proprietary content, external roots, Wayland/other OS/DPI, or machine/tool correctness.
 
 ## 3. Existing IDE constraints
 
@@ -181,7 +196,7 @@ The IDE does not currently expose a general third-party extension runtime. There
 
 ### FR-X2CFG-001 Workspace activation configuration
 
-**APPROVED FUTURE/TARGET; NOT IMPLEMENTED (`REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001`):** the plugin shall read only the project-owned activation file `.ide/xcom2.json`. ADR 0007 replaces the former broad proposed schema with this exact activation-only v1 contract:
+**AS-BUILT (`REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001`):** the plugin reads only the project-owned activation file `.ide/xcom2.json`. ADR 0007 replaces the former broad proposed schema with this exact activation-only v1 contract:
 
 ```json
 {
@@ -197,13 +212,13 @@ Acceptance criteria:
 - `version` is exactly the number `1`, `target` is exactly the string `wotc`, and `moduleRoots` contains 1–64 unique entries;
 - `.` is allowed; every other module root is a normalized, exact-case relative path of at most 4096 UTF-8 bytes naming an existing directory whose regular, non-symlink components and canonical result remain contained in the current authorized workspace;
 - the native side owns the fixed configuration path and workspace authority; callers provide neither a workspace root nor a configuration path;
-- the IDE reads but never creates, writes, reformats, deletes, or automatically ignores the project-owned file, and it performs no configuration watch or poll;
+- the IDE reads but never creates, writes, reformats, deletes, or adds the project-owned file to `.gitignore`, and it performs no configuration watch or poll;
 - valid configuration grants only recognition `active` with activation source `configured` and activation confidence `explicit`; recognition confidence remains separately derived from convention evidence, and matching configured plus convention evidence produces `configured-and-recognized`;
 - invalid configuration grants no configured authority and does not suppress an independent convention-recognition result; presentation uses only safe typed diagnostics;
 - explicit **Workspace Refresh** synchronously revokes prior configured state, advances activation authority, correlates configuration and scan results, and rejects stale or late results; removing the file revokes only its configured basis; and
 - activation v1 grants no manual confirmation, persistence record, external-root, tool, process, mutation, Build, Problems, Logs, language, action, or bottom-contribution authority.
 
-The approved target, exact feature declaration, and native route scaffolding are not implementation or validation evidence. User defaults and machine-, SDK-, game-, Steam-, Proton-, dependency-, tool-, and build-specific fields are deliberately absent; each remains a future separate contract and cannot be merged into, inherited by, or treated as an override layer for activation v1.
+The implemented contract and native evidence remain activation-only. User defaults and machine-, SDK-, game-, Steam-, Proton-, dependency-, tool-, and build-specific fields are deliberately absent; each remains a future separate contract and cannot be merged into, inherited by, or treated as an override layer for activation v1.
 
 ### FR-X2CFG-002 User-level defaults
 
@@ -227,7 +242,7 @@ Activation v1 `moduleRoots` shall be normalized workspace-relative paths (or `.`
 
 The dedicated scanner considers exact-case regular metadata/names only within the current authorized Linux workspace. It neither follows nor accepts symlinks, excludes the fixed heavy directories `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, and `.vite`, and applies fixed depth-8 and 20,000-encounter bounds. Detection returns module-scoped `active`, `inactive`, or `needs-confirmation` state, confidence, ordered reasons, completeness/issues, and matched module roots. The pure evaluator requires at least two distinct kinds under one root for `active`; one kind is `needs-confirmation` and contributes nothing. A directory, repository, project, workspace, or ordinary file name containing `xcom` is never evidence and shall not activate the feature. Inactive and needs-confirmation modules contribute no XCOM activity entry, bottom tab, build/log/language service, action, or polling.
 
-**FUTURE/TARGET:** explicit configuration may eventually activate a module, and manual confirmation may eventually resolve weak or partial layouts. Neither exists in the first slice.
+**AS-BUILT:** valid activation-only v1 configuration activates its declared roots with source `configured` and activation confidence `explicit`; convention recognition confidence remains separately derived. **FUTURE/TARGET:** manual confirmation plus its persistence record may eventually resolve weak or partial layouts. No confirmation path exists now.
 
 ### FR-X2PRJ-002 Project model
 
@@ -614,7 +629,7 @@ The browser setup adapter explicitly reports unavailable without simulation. Nor
 
 **PARTIAL / AS-BUILT (`REQ-XCOM2-MODULE-ACTIVATION-001`):** the dedicated accessible **XCOM 2 Project** activity entry opens a recognition-only evidence panel only when Option A's pure evaluator observes at least two distinct exact evidence kinds under one inferred module root. Generic, name-only, duplicate-kind, one-kind, `needs-confirmation`, and `inactive` workspaces show no entry. The contribution follows generation-correlated activation and synchronous deactivation and remains independent of the Java panel and machine Settings.
 
-**FUTURE/TARGET:** `.ide/xcom2.json`, explicit configuration, manual confirmation/persistence, external roots, project actions, and broader project panels remain unimplemented.
+**AS-BUILT:** valid `.ide/xcom2.json` v1 contributes configured/explicit recognition-only activation; explicit full Workspace Refresh is its only reread trigger. **FUTURE/TARGET:** manual confirmation/persistence, external roots, project actions, and broader project panels remain unimplemented.
 
 ### FR-X2UI-002 Conditional project bottom tabs
 
@@ -662,7 +677,7 @@ The web application may eventually provide syntax highlighting, fixture project 
 
 ### FR-X2ARCH-001 Contracts
 
-**PARTIAL / AS-BUILT:** `packages/contracts/src/xcom2-setup.ts` defines the provider-neutral dry-run, transaction, operation, approval, event, rollback, recovery, and export-safe types. The dry-run cannot carry executable operations; native code owns operation construction. Recognition contracts and the pure activation decision are also AS-BUILT. Explicit project configuration, confirmation, external roots, environment expansion, build, language, and runtime contracts remain FUTURE/TARGET.
+**PARTIAL / AS-BUILT:** `packages/contracts/src/xcom2-setup.ts` defines the provider-neutral dry-run, transaction, operation, approval, event, rollback, recovery, and export-safe types. The dry-run cannot carry executable operations; native code owns operation construction. Recognition and activation-only v1 configuration contracts plus pure activation decisions are AS-BUILT. Manual confirmation/persistence, external roots, environment expansion, build, language, and runtime contracts remain FUTURE/TARGET.
 
 No contract shall expose raw Tauri, Rust, Protontricks, Distrobox, native paths, or backup content.
 
@@ -670,7 +685,7 @@ No contract shall expose raw Tauri, Rust, Protontricks, Distrobox, native paths,
 
 **PARTIAL / AS-BUILT:** the focused `Xcom2SetupPort` supports `prepare`, `approve`, `apply`, `getTransaction`, `listTransactions`, `cancel`, `rollback`, `recover`, and `subscribe` with structured requests/results. Native implementations alone discover targets and construct allowlisted operations; callers provide no paths or raw filesystem instructions. The setup monitor port remains separate from this transaction port.
 
-The dedicated `Xcom2ModuleScannerPort` is AS-BUILT for one bounded read-only scan request/result. Explicit project configuration, confirmation, external roots, build, language, and runtime ports remain FUTURE/TARGET. All request/response types shall remain structured and workspace/generation scoped.
+The dedicated `Xcom2ModuleScannerPort` and read-only module-configuration port are AS-BUILT for bounded requests/results. Manual confirmation/persistence, external roots, build, language, and runtime ports remain FUTURE/TARGET. All request/response types shall remain structured and workspace/generation scoped.
 
 ### FR-X2ARCH-003 Adapters
 
@@ -678,11 +693,12 @@ The dedicated `Xcom2ModuleScannerPort` is AS-BUILT for one bounded read-only sca
 
 - the setup Tauri adapter maps typed setup operations to fixed Rust commands and validates native responses;
 - the recognition Tauri adapter accepts only the fixed correlation/limit request and strictly validates response identity, enums, canonical workspace-relative paths, ordering, and duplicates;
-- the dedicated Rust recognition command owns workspace authority and reads metadata/names only;
-- browser composition creates no recognition scanner and setup reports unavailable without simulation;
+- the configuration adapter accepts only current correlation, strictly sanitizes native failures, and exposes no caller-selected workspace/configuration path;
+- the dedicated Rust recognition and configuration commands own workspace authority; the latter enforces strict UTF-8/JSON/schema/size/path/duplicate/containment rules and reads only;
+- browser composition creates no configuration reader or recognition scanner, and setup reports unavailable without simulation;
 - UI consumes props/callbacks only; app shells own composition.
 
-Future configuration/confirmation/external-root/project-tool/build/language/runtime adapters must preserve the same boundaries.
+Future confirmation/external-root/project-tool/build/language/runtime adapters must preserve the same boundaries.
 
 ### FR-X2ARCH-004 External-root authorization
 
@@ -723,9 +739,9 @@ This descriptor is not permission to execute arbitrary third-party code. Its Set
 
 ### FR-X2ARCH-007 Activation boundary
 
-Project/module activation is **PARTIAL / AS-BUILT** under `REQ-XCOM2-MODULE-ACTIVATION-001` for recognition only. The bounded service remains separate from machine Settings monitoring. One authorized-workspace generation triggers one dedicated read-only metadata/name scan; the strict adapter and pure evaluator emit module roots plus state/confidence/reasons/completeness/issues, and only an `active` result drives the accessible recognition activity. Healthy Steam/game/SDK evidence or completed machine setup never activates a project. A committed switch removes the contribution synchronously, and mismatched workspace/scan correlation rejects stale results. Generic, name-only, and one-kind workspaces contribute nothing. The browser starts no recognition scan or XCOM monitor.
+Project/module activation is **PARTIAL / AS-BUILT** under `REQ-XCOM2-MODULE-ACTIVATION-001` and `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001`, both recognition-only. The bounded service remains separate from machine Settings monitoring. One authorized-workspace generation jointly correlates one dedicated read-only convention scan and one fixed-path activation-v1 read. A pure evaluator keeps activation source/confidence separate from convention recognition confidence; only an `active` result drives the accessible recognition activity. Invalid configuration grants no authority and cannot suppress an independent Option A result. Healthy Steam/game/SDK evidence or completed setup never activates a project. Explicit full Workspace Refresh and committed switching synchronously revoke the old contribution before reread/transition; mismatched configuration/scan/workspace authority rejects stale results. Generic, name-only, and one-kind workspaces contribute nothing unless valid v1 configuration explicitly activates a contained root. The browser starts no configuration read, recognition scan, or XCOM monitor.
 
-Explicit configuration/manual confirmation, persistence, external roots, content parsing, Build, Problems, Logs, language support, actions, and bottom contributions remain FUTURE/TARGET.
+Manual confirmation/persistence, external roots, content parsing, Build, Problems, Logs, language support, actions, and bottom contributions remain FUTURE/TARGET.
 
 ## 16. Security and safety requirements
 
@@ -863,10 +879,10 @@ Exit criterion: contracts and fixtures compile; no process execution.
 
 ### Phase 1 — Project, environment and operational setup
 
-**Status:** Partial. `REQ-XCOM2-MACHINE-SETTINGS-001` is `@implemented-not-e2e-validated`: Settings owns one bounded monitor/transaction lifecycle only while open, with synchronous close cancellation and guarded switch/restore/stale behavior. Monitor, separate non-executable dry run, browser-unavailable adapter, concrete 15-operation SDK Prepare, exact-digest one-transaction Apply approval, machine journals/backups, Restore Vanilla SDK, conflicts/recovery, and Prepare Again are AS-BUILT. The live Prepare audit passed with no blockers; no live Apply has occurred. `REQ-XCOM2-MODULE-ACTIVATION-001` is `@implemented-and-validated` only for Option A recognition: bounded scanning, pure two-kind evaluation, and the dynamic accessible evidence activity. `.ide/xcom2.json`, explicit configuration, manual confirmation, external roots, contextual project tools, complete health/tool discovery, general external-root grants, Proton/shortcut/prefix/package-manager work, and user-interaction checkpoints remain FUTURE/TARGET.
+**Status:** Partial. `REQ-XCOM2-MACHINE-SETTINGS-001` is `@implemented-not-e2e-validated`: Settings owns one bounded monitor/transaction lifecycle only while open, with synchronous close cancellation and guarded switch/restore/stale behavior. Monitor, separate non-executable dry run, browser-unavailable adapter, concrete 15-operation SDK Prepare, exact-digest one-transaction Apply approval, machine journals/backups, Restore Vanilla SDK, conflicts/recovery, and Prepare Again are AS-BUILT. The live Prepare audit passed with no blockers; no live Apply has occurred. Both `REQ-XCOM2-MODULE-ACTIVATION-001` and `REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001` are `@implemented-and-validated`: bounded Option A scanning and project-owned read-only activation v1 feed the same recognition-only contribution while retaining separate confidence and safe refresh/invalid-config behavior. Manual confirmation/persistence, external roots, contextual project tools, complete health/tool discovery, general external-root grants, Proton/shortcut/prefix/package-manager work, and user-interaction checkpoints remain FUTURE/TARGET.
 
-- recognition-only detection is current; full configured project model remains future;
-- `.ide/xcom2.json`;
+- convention and activation-v1 recognition are current; the full configured project model remains future;
+- activation-only `.ide/xcom2.json` v1 is current; broader configuration remains future;
 - complete health panel and SDK/game/tool/Distrobox discovery;
 - production operation builder and least-privilege external grants;
 - idempotent concrete SDK remediation, symlink and prefix-copy actions;

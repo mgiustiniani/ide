@@ -6,11 +6,11 @@
 structurizr validate -workspace docs/c4/workspace.dsl
 ```
 
-## XCOM 2 project recognition boundary
+## XCOM 2 project activation boundary
 
-The desktop architecture includes one recognition-only XCOM 2 project slice. After workspace authorization, a generation-correlated controller requests one dedicated read-only Rust metadata/name scan through a strict Tauri adapter. A pure evaluator activates recognition only when one canonical module root has at least two distinct exact evidence kinds. The accessible **XCOM 2 Project** activity displays active roots, ordered evidence, completeness, and scan issues.
+The desktop architecture combines two independent recognition-only activation inputs: the project-owned, IDE-read-only `.ide/xcom2.json` v1 contract and Option A convention recognition. The exact configuration schema is `{ "version": 1, "target": "wotc", "moduleRoots": [...] }`; configured roots must be unique normalized workspace-relative existing non-symlink directories contained in the authorized workspace. Valid configuration grants source `configured` with activation confidence `explicit`, while recognition confidence remains separate. Invalid configuration yields only safe diagnostics and cannot suppress an independent convention result.
 
-Workspace transitions revoke the activity synchronously, and late results are discarded unless workspace and scan correlation still match. Machine setup remains independently Settings-owned and cannot activate project recognition. The slice has no explicit configuration, manual confirmation, external-root grant, content parsing, Build, Problems, Logs, language support, actions, or bottom contribution; those concerns are not part of the current recognition path.
+Workspace transitions and explicit full **Workspace Refresh** revoke the activity synchronously. Joint configuration/scan correlation suppresses late results; there is no configuration watcher, polling, IDE write, `.gitignore` mutation, or external-root authority. The accessible **XCOM 2 Project** activity remains recognition-only. Machine Settings and browser behavior remain independent and unchanged. Manual confirmation, external roots, Build, Problems, Logs, language support, tools, actions, and bottom contributions remain future boundaries.
 
 The repository does not own a Structurizr container or image invocation. It therefore does not pin an image tag or digest. The version above is the validated CLI compatibility boundary; installation and acquisition of that CLI remain external to this repository.
 
