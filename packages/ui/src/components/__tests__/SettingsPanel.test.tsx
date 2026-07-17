@@ -12,6 +12,7 @@ import type {
   LanguageServiceStatus,
   WorkspaceInfo,
   WorkspaceRegistry,
+  Xcom2ModuleConfigurationDiagnosticPresentation,
   Xcom2SetupMonitorSnapshot,
   Xcom2SetupPlan,
 } from "@ide/contracts";
@@ -144,6 +145,15 @@ const workspaceRegistry: WorkspaceRegistry = {
     },
   ],
 };
+
+const diagnosticPresentation = {
+  title: "XCOM 2 project configuration needs attention",
+  projectFileLabel: ".ide/xcom2.json",
+  summary: "The XCOM 2 project configuration is not valid JSON.",
+  remediation:
+    "Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.",
+  supportIdentifier: "configuration-invalid-json",
+} as const satisfies Xcom2ModuleConfigurationDiagnosticPresentation;
 
 describe("SettingsPanel", () => {
   it("renders the simplified RPC-only Pi Agent settings and status", () => {
@@ -387,7 +397,55 @@ describe("SettingsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Refresh workspace/i }));
 
     await waitFor(() => expect(onRefreshWorkspace).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Workspace metadata refreshed.")).toBeDefined();
+    expect(await screen.findByText("Workspace refreshed.")).toBeDefined();
+  });
+
+  it("places the complete configuration diagnostic directly below current workspace controls without mutating it", () => {
+    const presentation = structuredClone(diagnosticPresentation);
+    const before = structuredClone(presentation);
+
+    render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        xcom2ModuleConfigurationDiagnosticPresentation: presentation,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+
+    const heading = screen.getByRole("heading", { name: "Current workspace" });
+    const controls = heading.closest("div.mb-5");
+    const diagnosticContainer = controls?.nextElementSibling;
+    expect(diagnosticContainer?.querySelector('[role="alert"]')).toBe(screen.getByRole("alert"));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: diagnosticPresentation.title })).toBeDefined();
+    expect(
+      Array.from(screen.getByRole("alert").querySelectorAll("dt"), (term) => term.textContent),
+    ).toEqual(["Project file", "Summary", "Remediation", "Support identifier"]);
+    expect(presentation).toEqual(before);
+  });
+
+  it("shows the exact neutral checking status in place of a supplied diagnostic", () => {
+    const { rerender } = render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        xcom2ModuleConfigurationDiagnosticPresentation: diagnosticPresentation,
+        isXcom2ModuleConfigurationChecking: true,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Checking XCOM 2 project configuration…");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(diagnosticPresentation.title)).toBeNull();
+    const controls = screen.getByRole("heading", { name: "Current workspace" }).closest("div.mb-5");
+    expect(controls?.nextElementSibling).toBe(status);
+
+    rerender(React.createElement(SettingsPanel, { workspaceInfo }));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("switches a known workspace through the supplied callback", async () => {
@@ -443,7 +501,7 @@ describe("SettingsPanel", () => {
     );
 
     resolveRefresh?.();
-    await waitFor(() => expect(screen.getByText("Workspace metadata refreshed.")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Workspace refreshed.")).toBeDefined());
   });
 
   it("sends only the RPC-only Pi Agent settings payload through the save callback", async () => {

@@ -18,6 +18,7 @@ import type {
   RefactorKitStatus,
   WorkspaceInfo,
   WorkspaceRegistry,
+  Xcom2ModuleConfigurationDiagnosticPresentation,
   Xcom2SetupMonitorSnapshot,
   Xcom2SetupPlan,
   Xcom2SetupTransactionDetail,
@@ -29,6 +30,7 @@ import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { JavaIntelligencePanel } from "../JavaIntelligencePanel";
 import { Xcom2SetupPanel } from "../Xcom2SetupPanel";
+import { Xcom2ModuleConfigurationDiagnosticAlert } from "../Xcom2ModuleConfigurationDiagnosticAlert";
 
 export type SettingsPanelSection = "ai-agents" | "java" | "xcom2" | "workspace" | "editor";
 export type SettingsPanelAction =
@@ -47,6 +49,10 @@ export interface SettingsPanelProps {
   workspaceRegistry?: WorkspaceRegistry | null;
   /** Workspace adapter or registry error to display. */
   workspaceError?: string | null;
+  /** Safe host-supplied presentation for an XCOM 2 project configuration stop. */
+  xcom2ModuleConfigurationDiagnosticPresentation?: Readonly<Xcom2ModuleConfigurationDiagnosticPresentation> | null;
+  /** Whether the host is checking the current XCOM 2 project configuration. */
+  isXcom2ModuleConfigurationChecking?: boolean;
   /** Host-managed global Eclipse JDT LS lifecycle and capability status. */
   javaLanguageServiceStatus?: LanguageServiceStatus | null;
   /** Whether Java language-service status is being refreshed. */
@@ -285,6 +291,8 @@ export function SettingsPanel({
   workspaceInfo,
   workspaceRegistry,
   workspaceError,
+  xcom2ModuleConfigurationDiagnosticPresentation,
+  isXcom2ModuleConfigurationChecking = false,
   javaLanguageServiceStatus,
   isJavaLanguageServiceRefreshing = false,
   javaRefactorKitStatus,
@@ -461,7 +469,7 @@ export function SettingsPanel({
     setWorkspaceFeedback(null);
     try {
       await onRefreshWorkspace();
-      setWorkspaceFeedback({ tone: "success", text: "Workspace metadata refreshed." });
+      setWorkspaceFeedback({ tone: "success", text: "Workspace refreshed." });
     } catch (error) {
       setWorkspaceFeedback({ tone: "error", text: getErrorMessage(error) });
     } finally {
@@ -795,6 +803,21 @@ export function SettingsPanel({
                       Refresh workspace
                     </Button>
                   </div>
+
+                  {isXcom2ModuleConfigurationChecking ? (
+                    <div
+                      className="mb-4 rounded-lg border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                      role="status"
+                    >
+                      Checking XCOM 2 project configuration…
+                    </div>
+                  ) : xcom2ModuleConfigurationDiagnosticPresentation ? (
+                    <div className="mb-4">
+                      <Xcom2ModuleConfigurationDiagnosticAlert
+                        {...xcom2ModuleConfigurationDiagnosticPresentation}
+                      />
+                    </div>
+                  ) : null}
 
                   {workspaceError ? (
                     <div

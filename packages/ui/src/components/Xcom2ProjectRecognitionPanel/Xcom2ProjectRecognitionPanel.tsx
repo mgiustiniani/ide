@@ -8,11 +8,13 @@ import {
   XCOM2_MODULE_CONFIGURATION_PATH,
   type Xcom2ModuleActivationDecision,
   type Xcom2ModuleActivationSnapshot,
+  type Xcom2ModuleConfigurationDiagnosticPresentation,
   type Xcom2ModuleScanIssue,
   type Xcom2ProjectActivationDecision,
   type Xcom2ProjectActivationSnapshot,
   type Xcom2ProjectConfigurationReason,
 } from "@ide/contracts";
+import { Xcom2ModuleConfigurationDiagnosticAlert } from "../Xcom2ModuleConfigurationDiagnosticAlert";
 
 export const XCOM2_PROJECT_RECOGNITION_LIMITATION =
   "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.";
@@ -28,6 +30,8 @@ export interface Xcom2ProjectRecognitionPanelProps {
   readonly recognitionSnapshot?: Readonly<Xcom2ModuleActivationSnapshot> | null;
   /** Active project decisions, in deterministic host-supplied display order. */
   readonly activeProjectDecisions?: readonly Readonly<Xcom2ProjectActivationDecision>[];
+  /** Complete safe presentation to mirror for a project configuration stop. */
+  readonly diagnosticPresentation?: Readonly<Xcom2ModuleConfigurationDiagnosticPresentation> | null;
 }
 
 interface EvidenceRow {
@@ -223,9 +227,9 @@ function ScanIssueAlert({ issue }: { issue: Readonly<Xcom2ModuleScanIssue> }): J
 export function Xcom2ProjectRecognitionPanel({
   snapshot,
   activeDecisions,
-  projectSnapshot,
   recognitionSnapshot,
   activeProjectDecisions,
+  diagnosticPresentation,
 }: Xcom2ProjectRecognitionPanelProps): JSX.Element {
   const headingId = useId();
   const projectMode = activeProjectDecisions !== undefined;
@@ -260,10 +264,8 @@ export function Xcom2ProjectRecognitionPanel({
               />
             ))}
 
-        {projectMode && projectSnapshot?.diagnostic ? (
-          <Alert>
-            <strong>configuration</strong>: {projectSnapshot.diagnostic.code}
-          </Alert>
+        {diagnosticPresentation ? (
+          <Xcom2ModuleConfigurationDiagnosticAlert {...diagnosticPresentation} />
         ) : null}
 
         {issues.map((issue, index) => (

@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import type {
   Xcom2ModuleActivationDecision,
   Xcom2ModuleActivationSnapshot,
+  Xcom2ModuleConfigurationDiagnosticPresentation,
   Xcom2ProjectActivationDecision,
   Xcom2ProjectActivationSnapshot,
 } from "@ide/contracts";
@@ -14,6 +15,15 @@ import {
 
 const recognitionLimitation =
   "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.";
+
+const diagnosticPresentation = {
+  title: "XCOM 2 project configuration needs attention",
+  projectFileLabel: ".ide/xcom2.json",
+  summary: "The XCOM 2 project configuration is not valid JSON.",
+  remediation:
+    "Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.",
+  supportIdentifier: "configuration-invalid-json",
+} as const satisfies Xcom2ModuleConfigurationDiagnosticPresentation;
 
 const primaryDecision: Xcom2ModuleActivationDecision = {
   moduleRoot: "Mods/Primary",
@@ -138,6 +148,7 @@ function renderProject(
   options: {
     readonly projectOverrides?: Partial<Xcom2ProjectActivationSnapshot>;
     readonly recognitionOverrides?: Partial<Xcom2ModuleActivationSnapshot>;
+    readonly diagnosticPresentation?: Readonly<Xcom2ModuleConfigurationDiagnosticPresentation>;
   } = {},
 ) {
   return render(
@@ -147,6 +158,7 @@ function renderProject(
       projectSnapshot={projectSnapshot(activeProjectDecisions, options.projectOverrides)}
       recognitionSnapshot={snapshot(options.recognitionOverrides)}
       activeProjectDecisions={activeProjectDecisions}
+      diagnosticPresentation={options.diagnosticPresentation}
     />,
   );
 }
@@ -282,9 +294,10 @@ describe("Xcom2ProjectRecognitionPanel", () => {
     ]);
   });
 
-  it("renders the safe project diagnostic and every scan issue as alerts", () => {
+  it("mirrors the complete safe project diagnostic and renders every scan issue separately", () => {
     const { rerender } = renderProject([configuredDecision], {
       projectOverrides: { diagnostic: { code: "configuration-invalid-json" } },
+      diagnosticPresentation,
       recognitionOverrides: {
         issues: [
           { kind: "unreadable-entry", relativePath: "Mods/Blocked.x2proj" },
@@ -293,8 +306,25 @@ describe("Xcom2ProjectRecognitionPanel", () => {
       },
     });
 
-    expect(screen.getAllByRole("alert").map((alert) => alert.textContent?.trim())).toEqual([
-      "configuration: configuration-invalid-json",
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(3);
+    expect(alerts[0].getAttribute("aria-atomic")).toBe("true");
+    expect(within(alerts[0]).getByRole("heading").textContent).toBe(
+      "XCOM 2 project configuration needs attention",
+    );
+    expect(Array.from(alerts[0].querySelectorAll("dt"), (term) => term.textContent)).toEqual([
+      "Project file",
+      "Summary",
+      "Remediation",
+      "Support identifier",
+    ]);
+    expect(Array.from(alerts[0].querySelectorAll("dd"), (value) => value.textContent)).toEqual([
+      ".ide/xcom2.json",
+      "The XCOM 2 project configuration is not valid JSON.",
+      "Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.",
+      "configuration-invalid-json",
+    ]);
+    expect(alerts.slice(1).map((alert) => alert.textContent?.trim())).toEqual([
       "unreadable-entry: Mods/Blocked.x2proj",
       "depth-limit-reached: Mods/Deep/Nested",
     ]);
@@ -303,7 +333,9 @@ describe("Xcom2ProjectRecognitionPanel", () => {
       <Xcom2ProjectRecognitionPanel
         snapshot={snapshot({ issues: [] })}
         activeDecisions={[primaryDecision]}
-        projectSnapshot={projectSnapshot([configuredDecision])}
+        projectSnapshot={projectSnapshot([configuredDecision], {
+          diagnostic: { code: "configuration-invalid-json" },
+        })}
         recognitionSnapshot={snapshot({ issues: [] })}
         activeProjectDecisions={[configuredDecision]}
       />,
@@ -319,7 +351,14 @@ describe("Xcom2ProjectRecognitionPanel", () => {
     });
     const projectDecisions = [combinedDecision, configuredDecision];
     const project = projectSnapshot(projectDecisions);
-    const before = structuredClone({ legacyDecisions, recognition, projectDecisions, project });
+    const presentation = structuredClone(diagnosticPresentation);
+    const before = structuredClone({
+      legacyDecisions,
+      recognition,
+      projectDecisions,
+      project,
+      presentation,
+    });
 
     const { container } = render(
       <Xcom2ProjectRecognitionPanel
@@ -328,10 +367,13 @@ describe("Xcom2ProjectRecognitionPanel", () => {
         projectSnapshot={project}
         recognitionSnapshot={recognition}
         activeProjectDecisions={projectDecisions}
+        diagnosticPresentation={presentation}
       />,
     );
 
-    expect({ legacyDecisions, recognition, projectDecisions, project }).toEqual(before);
+    expect({ legacyDecisions, recognition, projectDecisions, project, presentation }).toEqual(
+      before,
+    );
     expect(
       container.querySelectorAll(
         'button, a[href], input, select, textarea, [role="button"], [role="link"], [tabindex]',
