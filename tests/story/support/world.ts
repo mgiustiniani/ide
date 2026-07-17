@@ -7,6 +7,7 @@ import {
 import { NativeApplicationContentLayoutSession } from "./native-application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
 import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
+import { NativeXcom2MachineSettingsMissingSteamSession } from "./native-xcom2-machine-settings-missing-steam.js";
 import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activation.js";
 import { NativeXcom2ModuleConfigurationActivationSession } from "./native-xcom2-module-configuration-activation.js";
 import { NativeXcom2ModuleConfigurationDiagnosticsSession } from "./native-xcom2-module-configuration-diagnostics.js";
@@ -36,6 +37,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeDesktopEvidenceAttached = false;
   #nativeRefactorKitJavaImportSession?: NativeRefactorKitJavaImportSession;
   #nativeRefactorKitJavaImportEvidenceAttached = false;
+  #nativeXcom2MachineSettingsMissingSteamSession?: NativeXcom2MachineSettingsMissingSteamSession;
+  #nativeXcom2MachineSettingsMissingSteamEvidenceAttached = false;
   #nativeXcom2ModuleActivationSession?: NativeXcom2ModuleActivationSession;
   #nativeXcom2ModuleActivationEvidenceAttached = false;
   #nativeXcom2ModuleConfigurationActivationSession?: NativeXcom2ModuleConfigurationActivationSession;
@@ -258,6 +261,59 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeDesktopEvidenceAttached = true;
   }
 
+  createNativeXcom2MachineSettingsMissingSteamSession(): NativeXcom2MachineSettingsMissingSteamSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native missing-Steam Settings Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-webdriver" ||
+      this.targetEvidence.nativeGui !== true ||
+      this.targetEvidence.e2e !== true ||
+      this.targetEvidence.packagedApplication !== false ||
+      this.targetEvidence.artifactKind !== "release-no-bundle"
+    ) {
+      throw new TypeError(
+        "The native missing-Steam Settings Story requires explicit release/no-bundle tauri-webdriver evidence",
+      );
+    }
+    if (this.#nativeXcom2MachineSettingsMissingSteamSession) {
+      throw new Error("The native missing-Steam Settings Story session has already been created");
+    }
+    const session = new NativeXcom2MachineSettingsMissingSteamSession();
+    this.#nativeXcom2MachineSettingsMissingSteamSession = session;
+    return session;
+  }
+
+  nativeXcom2MachineSettingsMissingSteamSession(): NativeXcom2MachineSettingsMissingSteamSession {
+    if (!this.#nativeXcom2MachineSettingsMissingSteamSession) {
+      throw new Error("The native missing-Steam Settings Story session has not been created");
+    }
+    return this.#nativeXcom2MachineSettingsMissingSteamSession;
+  }
+
+  hasNativeXcom2MachineSettingsMissingSteamSession(): boolean {
+    return this.#nativeXcom2MachineSettingsMissingSteamSession !== undefined;
+  }
+
+  async attachNativeXcom2MachineSettingsMissingSteamEvidence(): Promise<void> {
+    if (this.#nativeXcom2MachineSettingsMissingSteamEvidenceAttached) return;
+    const session = this.nativeXcom2MachineSettingsMissingSteamSession();
+    await this.attach(JSON.stringify(session.evidence()), "application/json");
+    const diagnostics = session.redactedDiagnostics();
+    if (diagnostics) await this.attach(diagnostics, "text/plain");
+    this.#nativeXcom2MachineSettingsMissingSteamEvidenceAttached = true;
+  }
+
+  async assertNativeExecutableExited(): Promise<void> {
+    if (this.#nativeXcom2MachineSettingsMissingSteamSession) {
+      await this.#nativeXcom2MachineSettingsMissingSteamSession.assertExecutableExited();
+      return;
+    }
+    await this.nativeDesktopFileOpenSession().assertExecutableExited();
+  }
+
   createNativeXcom2ModuleActivationSession(): NativeXcom2ModuleActivationSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -447,6 +503,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const nativeApplicationContentLayoutSession = this.#nativeApplicationContentLayoutSession;
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
     const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
+    const nativeXcom2MachineSettingsMissingSteamSession =
+      this.#nativeXcom2MachineSettingsMissingSteamSession;
     const nativeXcom2ModuleActivationSession = this.#nativeXcom2ModuleActivationSession;
     const nativeXcom2ModuleConfigurationActivationSession =
       this.#nativeXcom2ModuleConfigurationActivationSession;
@@ -460,6 +518,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeApplicationContentLayoutSession = undefined;
     this.#nativeDesktopFileOpenSession = undefined;
     this.#nativeRefactorKitJavaImportSession = undefined;
+    this.#nativeXcom2MachineSettingsMissingSteamSession = undefined;
     this.#nativeXcom2ModuleActivationSession = undefined;
     this.#nativeXcom2ModuleConfigurationActivationSession = undefined;
     this.#nativeXcom2ModuleConfigurationDiagnosticsSession = undefined;
@@ -508,6 +567,18 @@ export class StoryWorld extends World<StoryWorldParameters> {
           }
         } finally {
           await nativeRefactorKitJavaImportSession.dispose();
+        }
+      }
+      if (nativeXcom2MachineSettingsMissingSteamSession) {
+        await nativeXcom2MachineSettingsMissingSteamSession.dispose();
+        if (!this.#nativeXcom2MachineSettingsMissingSteamEvidenceAttached) {
+          await this.attach(
+            JSON.stringify(nativeXcom2MachineSettingsMissingSteamSession.evidence()),
+            "application/json",
+          );
+          const diagnostics = nativeXcom2MachineSettingsMissingSteamSession.redactedDiagnostics();
+          if (diagnostics) await this.attach(diagnostics, "text/plain");
+          this.#nativeXcom2MachineSettingsMissingSteamEvidenceAttached = true;
         }
       }
       if (nativeXcom2ModuleActivationSession) {

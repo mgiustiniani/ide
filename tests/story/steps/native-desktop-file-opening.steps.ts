@@ -88,7 +88,7 @@ When<StoryWorld>("the person closes the native window", { timeout: 10_000 }, asy
 });
 
 Then<StoryWorld>("the executable exits cleanly", { timeout: 10_000 }, async function () {
-  await this.nativeDesktopFileOpenSession().assertExecutableExited();
+  await this.assertNativeExecutableExited();
 });
 
 Then<StoryWorld>(
