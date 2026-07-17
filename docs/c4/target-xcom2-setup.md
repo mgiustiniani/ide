@@ -6,16 +6,17 @@ This architecture is independent of the [current Java boundary and frozen invent
 
 ## Architectural Separation
 
-| Responsibility                  | Scope                                               | Boundary                                                                                                                                                    |
-| ------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Configured activation           | Current authorized desktop workspace                | **CURRENT:** read the project-owned `.ide/xcom2.json` v1 without mutation, validate contained module roots, and grant recognition-only explicit activation. |
-| Convention recognition          | Current authorized desktop workspace                | **CURRENT:** bounded read-only metadata/name scan and pure Option A evaluation. Recognition confidence remains independent from configured activation.      |
-| Activation lifecycle            | Workspace switch or explicit full Workspace Refresh | **CURRENT:** synchronously revoke prior state, jointly correlate configuration and recognition, and suppress stale results without a watcher or poller.     |
-| Machine runtime lifecycle       | Settings visibility + workspace correlation         | **CURRENT:** open Settings exclusively owns monitor and transaction adapter lifecycles. Machine evidence cannot activate a project.                         |
-| Concrete WOTC SDK transaction   | Desktop Settings + Rust backend                     | **CURRENT:** stable Prepare, exact-digest approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                                      |
-| Confirmation and external roots | Separately authorized project scope                 | **TARGET:** manual confirmation, persistence, and external-root authority require separate contracts.                                                       |
-| Contextual project tools        | Separately authorized module                        | **TARGET:** Build, Problems, Logs, language support, actions, and XCOM tools require their own activation and tool authority.                               |
-| Optional provisioning           | External Steam/prefix/package tooling               | **TARGET:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain separate from SDK Apply.                       |
+| Responsibility                  | Scope                                                    | Boundary                                                                                                                                                                                    |
+| ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configured activation           | Current authorized desktop workspace                     | **CURRENT:** read the project-owned `.ide/xcom2.json` v1 without mutation, validate contained module roots, and grant recognition-only explicit activation.                                 |
+| Convention recognition          | Current authorized desktop workspace                     | **CURRENT:** bounded read-only metadata/name scan and pure Option A evaluation. Recognition confidence remains independent from configured activation.                                      |
+| Activation lifecycle            | Workspace switch or explicit full Workspace Refresh      | **CURRENT:** synchronously clear prior decisions and diagnostics, show neutral checking, accept only exact current joint correlation, and reject stale results without a watcher or poller. |
+| Diagnostic presentation         | Settings > Workspace > Current workspace                 | **CURRENT:** map exactly eight safe codes to fixed copy and render one atomic alert; a surviving strong Option A activity mirrors the complete warning.                                     |
+| Machine runtime lifecycle       | XCOM machine Settings visibility + workspace correlation | **CURRENT:** open machine Settings exclusively owns monitor and transaction adapter lifecycles. Machine evidence cannot activate a project or diagnostic.                                   |
+| Concrete WOTC SDK transaction   | Desktop Settings + Rust backend                          | **CURRENT:** stable Prepare, exact-digest approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                                                                      |
+| Confirmation and external roots | Separately authorized project scope                      | **TARGET:** manual confirmation, persistence, and external-root authority require separate contracts.                                                                                       |
+| Contextual project tools        | Separately authorized module                             | **TARGET:** Build, Problems, Logs, language support, actions, and XCOM tools require their own activation and tool authority.                                                               |
+| Optional provisioning           | External Steam/prefix/package tooling                    | **TARGET:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain separate from SDK Apply.                                                       |
 
 A valid configured root or an active convention decision may add **XCOM 2 Project** to the desktop activity rail. The activity remains recognition-only and never adds a bottom tab or project action. The browser starts no project activation work. Machine Settings remains independently available and cannot provide project evidence.
 
@@ -35,16 +36,31 @@ The reader rejects duplicate or unknown fields, unsupported values, malformed or
 
 A valid root receives state `active`, source `configured`, and activation confidence `explicit`. Recognition confidence is independently derived from convention evidence and may remain `none`; matching convention evidence changes the source to `configured-and-recognized` without converting recognition confidence into configuration authority.
 
-Invalid configuration grants no configured authority. The boundary returns only presentation-safe typed diagnostics and does not expose raw paths, content, parser details, or native errors. An invalid file does not suppress an independently active Option A recognition decision.
+Invalid configuration grants no configured authority. An invalid file does not suppress an independently strong Option A recognition decision. The strict adapter exposes exactly the following presentation-safe codes; the pure mapper selects only fixed, non-interpolated copy.
 
-The IDE never creates, writes, reformats, or deletes `.ide/xcom2.json`, never updates `.gitignore`, and performs no Git synchronization. External edits are observed only when the user invokes the full **Workspace Refresh** control. There is no configuration watcher or polling.
+Every row uses title **XCOM 2 project configuration needs attention** and project-file label `.ide/xcom2.json`.
+
+| Safe code / support identifier       | Fixed summary                                                                | Fixed remediation                                                                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configuration-unreadable`           | The IDE could not safely read the XCOM 2 project configuration.              | Make `.ide` a regular directory and `.ide/xcom2.json` a readable regular file, with neither entry a symbolic link, then refresh the workspace. |
+| `configuration-too-large`            | The XCOM 2 project configuration exceeds the 64 KiB limit.                   | Reduce `.ide/xcom2.json` to 64 KiB or less, then refresh the workspace.                                                                        |
+| `configuration-invalid-utf8`         | The XCOM 2 project configuration is not valid UTF-8.                         | Save `.ide/xcom2.json` as UTF-8, then refresh the workspace.                                                                                   |
+| `configuration-invalid-json`         | The XCOM 2 project configuration is not valid JSON.                          | Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.                                             |
+| `configuration-invalid-schema`       | The XCOM 2 project configuration does not match the activation v1 structure. | Use exactly these fields once: numeric version, text target, and the `moduleRoots` list; remove all other fields, then refresh the workspace.  |
+| `configuration-unsupported-version`  | This XCOM 2 project configuration version is not supported.                  | Set version to 1, then refresh the workspace.                                                                                                  |
+| `configuration-unsupported-target`   | This XCOM 2 project target is not supported.                                 | Set target to `"wotc"`, then refresh the workspace.                                                                                            |
+| `configuration-invalid-module-roots` | The configured module roots are not valid for this workspace.                | Provide 1–64 unique, exact-case workspace-relative paths to existing directories, with no symbolic links, then refresh the workspace.          |
+
+The support identifier is the exact safe code in the first column. The warning contains no configuration bytes, submitted module roots, absolute paths, parser/provider/native-command details, secrets, or raw causes. It grants no edit, open, write, process, tool, project-action, external-root, or mutation authority.
+
+The IDE never creates, writes, reformats, or deletes `.ide/xcom2.json` or Option A evidence, never adds those project inputs to `.gitignore`, and performs no Git synchronization. Normal application-owned `.ide/workspace.json` marker and registry metadata updates are outside this XCOM project-input no-write scope. External edits are observed only when the user invokes the full **Workspace Refresh** control. There is no configuration or evidence watcher or polling.
 
 ## Current Activation Lifecycle
 
 ```text
 Workspace switch or explicit full Workspace Refresh
-  └─ synchronously revoke prior project activation
-                    │
+  └─ synchronously clear prior diagnostic and activation decisions
+                    │ neutral checking
                     ├─> read fixed `.ide/xcom2.json` through strict adapter
                     └─> scan bounded convention metadata through strict adapter
                                       │
@@ -54,15 +70,19 @@ Workspace switch or explicit full Workspace Refresh
                          └─ Option A recognition
                                       │
                                       ▼
-                        jointly correlated snapshot
-                                      │
-                                      ▼
-                    accessible `XCOM 2 Project` activity
+                        exact current jointly correlated snapshot
+                           ├─ safe code → fixed complete atomic warning
+                           │              in Workspace Settings
+                           └─ active decision → `XCOM 2 Project` activity
+                                └─ mirrors the complete warning only when
+                                   strong independent Option A survives
 ```
 
-Configuration correlation includes workspace identity, workspace generation, activation generation, and configuration-read identity. Recognition retains workspace and scan identity/generation. The controller publishes only when all fields match current authority. A switch or full refresh invalidates older work before filesystem I/O, so late configuration or scan results cannot recreate stale activity.
+Configuration correlation includes workspace identity, workspace generation, activation generation, and configuration-read identity. Recognition retains workspace and scan identity/generation. The controller publishes only when every field matches current authority. A switch or full refresh invalidates older work before filesystem I/O, so a late or stale result restores no diagnostic, configured authority, reason, activity, or prior decision.
 
-The activity shows module roots, state, activation source, activation confidence, separate recognition confidence, ordered reasons, scan limitations, and safe configuration diagnostics. It grants no Build, Problems, Logs, language support, action, process execution, external-root authority, or bottom contribution.
+After checking settles, **Settings > Workspace > Current workspace** renders exactly one shared `aria-atomic` alert for a diagnostic. The diagnostic alone creates no activity. If strong Option A evidence independently remains active, **XCOM 2 Project** retains its recognition-only activity and reuses the same warning component with the complete title, file label, summary, remediation, and support identifier.
+
+The activity shows module roots, state, activation source, activation confidence, separate recognition confidence, ordered reasons, and scan limitations. Neither it nor the diagnostic grants Build, Problems, Logs, language support, actions, process execution, external-root authority, edit/open/write control, mutation authority, tools, or a bottom contribution.
 
 ## Current Convention Recognition
 
@@ -74,7 +94,7 @@ Configured activation and convention recognition remain independent inputs. Remo
 
 ## Current Machine Settings and SDK Transaction
 
-Machine setup is not an activation input. Open Settings owns its monitor and transaction adapter lifecycles; closed Settings performs no monitor/history/detail reads, polling, or subscriptions. Workspace authorization and project activation do not start or extend those lifecycles. Passive Settings refresh remains distinct from the explicit full Workspace Refresh operation.
+Machine setup is not an activation or diagnostic input. Open XCOM machine Settings owns its monitor and transaction adapter lifecycles; closed machine Settings performs no monitor/history/detail reads, polling, or subscriptions. Workspace authorization, project activation, and the Workspace diagnostic do not start or extend those lifecycles. Passive machine Settings refresh remains distinct from explicit full Workspace Refresh and its neutral project-configuration checking state.
 
 Prepare validates a vanilla WOTC SDK installation identified by Steam AppID `602410` and produces a stable allowlisted set of reversible operations:
 
@@ -120,4 +140,4 @@ Optional Steam shortcut, compatibility-prefix, package-manager, Protontricks, an
 
 ## Browser Boundary
 
-Browser behavior is unchanged. The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no machine polling, transaction activity, simulated native state, configuration read, convention scan, or project activation lifecycle.
+Browser behavior is unchanged and gains no configuration warning. The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no machine polling, transaction activity, simulated native state, configuration read, convention scan, or project activation lifecycle. This architecture makes no browser, package/bundle/installer, Git synchronization, watcher, Wayland, other-OS/DPI, proprietary compatibility/content, external-root, machine-correctness, broader process/mutation, or contextual-tool claim.

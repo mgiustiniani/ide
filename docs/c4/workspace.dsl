@@ -42,12 +42,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomSetupPresentation = component "XCOM 2 Transaction Settings UI" "Shows transaction state, reviewed operations and digest, exact approval, rollback, and recovery; exports omit paths and content." "React" "Current"
                 xcomSetupController = component "XCOM Setup Controller" "Owns monitor and transaction adapter lifecycles only while Settings is open; transaction authority stays workspace-correlated." "TypeScript, React" "Current"
                 xcomProductionSetup = component "Concrete WOTC SDK Setup" "Builds reviewed reversible vanilla SDK changes; exact-digest external approval gates Apply, and restore or recovery preserves the baseline." "TypeScript, React" "Current"
-                xcomModuleActivationController = component "XCOM Project Activation Controller" "Runs correlated configuration and recognition reads, revokes synchronously, and suppresses stale results on switches and full refreshes." "TypeScript, React" "Current"
+                xcomModuleActivationController = component "XCOM Project Activation Controller" "Clears decisions and diagnostics synchronously, exposes checking, and accepts only exact current configuration and scan correlation." "TypeScript, React" "Current"
                 tauriXcomModuleConfigurationAdapter = component "XCOM Module Configuration Tauri Adapter" "Validates the exact correlated configuration union and exposes only bounded, presentation-safe failure codes." "TypeScript, Tauri API" "Current"
                 tauriXcomModuleScannerAdapter = component "XCOM Module Scanner Tauri Adapter" "Enforces exact request, response, correlation, bounds, enum, ordering, and workspace-relative path contracts." "TypeScript, Tauri API" "Current"
                 xcomActivationEvaluator = component "Pure XCOM Module Recognition Evaluator" "Evaluates recognition policy for exact observations grouped by module root and returns deterministic reasons." "TypeScript" "Current"
-                xcomConfiguredActivationEvaluator = component "Pure XCOM Project Activation Evaluator" "Combines explicit configuration with independent convention recognition; invalid configuration cannot suppress recognition." "TypeScript" "Current"
-                xcomProjectRecognitionPanel = component "XCOM 2 Project Activity" "Shows configured and recognized roots, separate activation and recognition confidence, safe diagnostics, and recognition-only limits." "React" "Current"
+                xcomConfiguredActivationEvaluator = component "Pure XCOM Project Activation Evaluator" "Removes invalid configured authority while preserving an independently strong Option A recognition decision." "TypeScript" "Current"
+                xcomConfigurationDiagnosticMapper = component "Pure XCOM Configuration Diagnostic Mapper" "Maps exactly eight bounded codes to fixed, non-interpolated title, file label, summary, remediation, and support identifier." "TypeScript" "Current"
+                xcomConfigurationDiagnosticAlert = component "Atomic XCOM Configuration Warning" "Renders one shared atomic alert in Workspace Settings and mirrors it only in an independently recognized project activity." "React" "Current"
+                xcomProjectRecognitionPanel = component "XCOM 2 Project Activity" "Shows active roots and confidence; strong independent recognition can mirror the complete warning without gaining authority." "React" "Current"
 
                 xcomConfirmationAndExternalRoots = component "XCOM Confirmation and External-root Grants" "Adds manual confirmation and separately authorized external roots without weakening project-contained activation." "TypeScript, React" "Target"
                 xcomContributionCoordinator = component "Contextual XCOM Contribution Coordinator" "Scopes Problems, Build, Tests, Logs, and XCOM tools to modules authorized beyond recognition-only mode." "TypeScript, React" "Target"
@@ -63,7 +65,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
             }
 
             rustBackend = container "Rust Backend" "Native workspace authorization, managed language services, RefactorKit commands, XCOM transactions, and read-only project activation inputs." "Rust, Tauri" {
-                workspaceCommands = component "Workspace and Command Handlers" "Provides authorized file operations and bounded one-shot command execution." "Rust" "Current"
+                workspaceCommands = component "Workspace and Command Handlers" "Provides authorized operations, application-owned .ide/workspace.json marker and registry metadata, and bounded one-shot commands." "Rust" "Current"
                 refactorKitHandlers = component "RefactorKit Status Handlers" "Bounded diagnostic status only; managed capability and import commands use the separate daemon facade." "Rust" "Current"
                 refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
                 refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "Requires the advertised API and exact Java-import methods; retains other provider metadata as evidence and fails closed on incomplete methods." "Rust" "Current"
@@ -76,7 +78,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomSteamMonitor = component "Native XCOM 2 Steam Monitor" "Reads bounded Steam metadata, derives conservative machine status, redacts paths, and queues bounded events without project activation." "Rust, Tauri" "Current"
                 xcomSetupWorkflow = component "Rollbackable XCOM Setup Transaction Engine" "Journals an approved SDK transaction with content-addressed backups; restore is conflict-safe and exports omit paths and content." "Rust" "Current"
                 xcomProductionOperations = component "Concrete WOTC SDK Operations" "Builds the allowlisted reversible vanilla SDK operation set and verifies its exact preconditions." "Rust" "Current"
-                xcomModuleConfigurationReader = component "XCOM Module Configuration Reader" "Reads fixed project-owned .ide/xcom2.json without project/Git writes; validates {version:1,target:wotc,moduleRoots} and contained non-symlink directories." "Rust" "Current"
+                xcomModuleConfigurationReader = component "XCOM Module Configuration Reader" "Reads fixed .ide/xcom2.json and contained roots without XCOM input writes; returns safe codes without path, content, or native-error disclosure." "Rust" "Current"
                 xcomModuleEvidenceScanner = component "XCOM Module Filesystem Evidence Scanner" "Reads only authorized-root entry metadata and exact names; it does not parse content, follow symlinks, write, or accept external roots." "Rust" "Current"
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
                 javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
@@ -175,16 +177,23 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         javaLifecycleOrchestrator -> jdk "Capability-probes and launches the resolved java executable" "Direct fixed argv"
         javaLifecycleOrchestrator -> jdtLs "Manages one external process for the active workspace" "LSP over stdio"
         developer -> xcomProjectRecognitionPanel "Reviews configured or recognized activation and safe diagnostics"
+        developer -> xcomConfigurationDiagnosticAlert "Reads one complete warning in Settings > Workspace > Current workspace"
         xcomModuleActivationController -> xcomFeatureContracts "Uses immutable activation, configuration, recognition, and correlation contracts"
         xcomModuleActivationController -> tauriXcomModuleConfigurationAdapter "Requests the fixed project configuration on activation or explicit full refresh" "Tauri adapter"
         tauriXcomModuleConfigurationAdapter -> xcomModuleConfigurationReader "Invokes the strict read-only configuration command" "Tauri invoke"
-        xcomModuleConfigurationReader -> filesystem "Reads .ide/xcom2.json and validates contained module directories" "Read-only filesystem access"
+        xcomModuleConfigurationReader -> filesystem "Reads fixed configuration and contained roots without XCOM input writes" "Read-only filesystem access"
         xcomModuleActivationController -> tauriXcomModuleScannerAdapter "Requests a generation-correlated metadata scan" "Tauri adapter"
         tauriXcomModuleScannerAdapter -> xcomModuleEvidenceScanner "Invokes the strict scanner command" "Tauri invoke"
         xcomModuleEvidenceScanner -> filesystem "Reads bounded metadata and exact names below the authorized root" "Read-only filesystem metadata"
         xcomModuleActivationController -> xcomActivationEvaluator "Evaluates the correlated scan snapshot"
         xcomModuleActivationController -> xcomConfiguredActivationEvaluator "Combines configured intent with independent recognition"
-        xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes active decisions, safe diagnostics, and recognition-only limits"
+        xcomModuleActivationController -> desktopUi "Exposes current activation and checking state"
+        desktopUi -> xcomConfigurationDiagnosticMapper "Maps the current correlated diagnostic code"
+        xcomConfigurationDiagnosticMapper -> xcomFeatureContracts "Exhaustively maps the eight presentation-safe stop codes"
+        desktopUi -> xcomConfigurationDiagnosticAlert "Hosts the warning in Workspace Settings after neutral checking"
+        xcomConfigurationDiagnosticMapper -> xcomConfigurationDiagnosticAlert "Supplies the selected fixed presentation"
+        xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes active decisions; diagnostics grant no activity authority"
+        xcomProjectRecognitionPanel -> xcomConfigurationDiagnosticAlert "Mirrors the complete warning when recognition independently survives"
         developer -> xcomMonitorPanel "Inspects machine health and requests a descriptive dry run"
         xcomMonitorPanel -> xcomSetupController "Renders monitor evidence and setup planning state"
         xcomSetupController -> xcomFeatureContracts "Uses generation-bound monitor evidence and export-safe records"
@@ -264,7 +273,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         component desktopApp "DesktopAppComponents" {
             title "Desktop App Components"
             description "Composition wires guarded controllers, Settings-owned machine setup, and read-only configured or recognized project activation."
-            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomProjectRecognitionPanel rustBackend
+            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel rustBackend
             autoLayout lr
         }
 
@@ -277,8 +286,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component desktopApp "Xcom2RecognitionDesktopComponents" {
             title "XCOM 2 Project Activation — Desktop Components"
-            description "The controller combines strict read-only configuration and convention recognition while preserving independent confidence and authority."
-            include developer desktopUi desktopSidebar workspaceController xcomFeatureContracts xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomProjectRecognitionPanel rustBackend
+            description "Strict activation and diagnostic components preserve independent recognition, safe presentation, exact correlation, and read-only scope."
+            include developer desktopUi desktopSidebar workspaceController xcomFeatureContracts xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel rustBackend
             autoLayout lr
         }
 
@@ -306,7 +315,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         component desktopApp "Xcom2ProjectDesktopComponents" {
             title "XCOM 2 Project Activation, Contextual Tools, and Settings"
             description "Recognition-only activation and machine Settings stay separate from future external roots, contextual tools, and provisioning."
-            include developer xcomFeatureContracts xcomSetupPresentation xcomSetupController tauriXcomTransactionAdapter xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomProjectRecognitionPanel xcomConfirmationAndExternalRoots xcomOptionalProvisioning xcomContributionCoordinator xcomLanguageBuildAdapters filesystem rustBackend
+            include developer xcomFeatureContracts xcomSetupPresentation xcomSetupController tauriXcomTransactionAdapter xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomConfirmationAndExternalRoots xcomOptionalProvisioning xcomContributionCoordinator xcomLanguageBuildAdapters filesystem rustBackend
             autoLayout lr
         }
 
@@ -331,8 +340,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
             xcomModuleEvidenceScanner -> filesystem "Reads bounded metadata and exact names"
             xcomModuleActivationController -> xcomActivationEvaluator "Evaluates convention recognition"
             xcomModuleActivationController -> xcomConfiguredActivationEvaluator "Combines independent activation inputs"
-            xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes current active decisions and safe diagnostics"
+            xcomModuleActivationController -> desktopUi "Exposes neutral checking during the correlated reads"
+            desktopUi -> xcomConfigurationDiagnosticMapper "Maps one exact current safe code"
+            xcomConfigurationDiagnosticMapper -> xcomConfigurationDiagnosticAlert "Supplies one fixed complete presentation"
+            desktopUi -> xcomConfigurationDiagnosticAlert "Shows it under Settings > Workspace > Current workspace"
+            xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes active decisions only"
+            xcomProjectRecognitionPanel -> xcomConfigurationDiagnosticAlert "Mirrors it when strong Option A recognition survives"
             desktopUi -> xcomProjectRecognitionPanel "Contributes the accessible activity"
+            developer -> xcomConfigurationDiagnosticAlert "Reads one atomic warning without actions"
             developer -> xcomProjectRecognitionPanel "Reviews activation sources and recognition confidence"
             autoLayout lr
         }
