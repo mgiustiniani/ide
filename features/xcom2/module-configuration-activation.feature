@@ -11,7 +11,7 @@ Business Need: Explicit XCOM 2 module activation through portable project config
   Browser behavior is unchanged and outside this native Story.
   It also makes no module-content parsing, external-root, machine-correctness, or contextual XCOM tool claim.
 
-  @REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-and-validated
   Scenario: Activate and explicitly refresh one configured recognition-only module
     Given one scenario sandbox owns all desktop user state and an actual workspace registry with exactly these authorized workspaces:
       | workspace       | initial role                  |
