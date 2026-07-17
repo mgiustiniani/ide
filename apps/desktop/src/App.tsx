@@ -428,7 +428,10 @@ export function App(): JSX.Element {
   const xcom2ProjectActivityContributions = useMemo<
     readonly Readonly<PanelLayoutActivityContribution>[]
   >(() => {
-    if (!xcom2ModuleActivation.snapshot || xcom2ModuleActivation.activeModules.length === 0) {
+    if (
+      !xcom2ModuleActivation.projectSnapshot ||
+      xcom2ModuleActivation.activeProjectDecisions.length === 0
+    ) {
       return NO_ACTIVITY_CONTRIBUTIONS;
     }
 
@@ -438,13 +441,21 @@ export function App(): JSX.Element {
       title: "XCOM 2 Project",
       content: (
         <Xcom2ProjectRecognitionPanel
-          snapshot={xcom2ModuleActivation.snapshot}
+          snapshot={xcom2ModuleActivation.snapshot!}
           activeDecisions={xcom2ModuleActivation.activeModules}
+          projectSnapshot={xcom2ModuleActivation.projectSnapshot}
+          recognitionSnapshot={xcom2ModuleActivation.snapshot}
+          activeProjectDecisions={xcom2ModuleActivation.activeProjectDecisions}
         />
       ),
     } satisfies PanelLayoutActivityContribution);
     return Object.freeze([contribution]);
-  }, [xcom2ModuleActivation.activeModules, xcom2ModuleActivation.snapshot]);
+  }, [
+    xcom2ModuleActivation.activeModules,
+    xcom2ModuleActivation.activeProjectDecisions,
+    xcom2ModuleActivation.projectSnapshot,
+    xcom2ModuleActivation.snapshot,
+  ]);
 
   useLayoutEffect(() => {
     if (activeActivity === "xcom2-project" && xcom2ProjectActivityContributions.length === 0) {

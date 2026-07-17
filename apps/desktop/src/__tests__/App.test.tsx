@@ -837,17 +837,22 @@ vi.mock("@ide/ui", () => ({
   },
   Xcom2ProjectRecognitionPanel: (props: any) => {
     testHarness.latestXcom2ProjectRecognitionPanelProps = props;
+    const recognitionSnapshot = props.recognitionSnapshot ?? props.snapshot;
+    const renderedDecisions = props.activeProjectDecisions ?? props.activeDecisions;
     return (
       <section
         data-testid="Xcom2ProjectRecognitionPanel"
-        data-workspace={props.snapshot.workspaceId}
-        data-active-count={String(props.activeDecisions.length)}
+        data-workspace={recognitionSnapshot.workspaceId}
+        data-active-count={String(renderedDecisions.length)}
         aria-label="XCOM 2 Project"
       >
         <h2>XCOM 2 Project</h2>
-        {props.activeDecisions.map((decision: any) => (
+        {renderedDecisions.map((decision: any) => (
           <div key={decision.moduleRoot}>{decision.moduleRoot}</div>
         ))}
+        {props.projectSnapshot?.diagnostic ? (
+          <p role="alert">configuration: {props.projectSnapshot.diagnostic.code}</p>
+        ) : null}
       </section>
     );
   },
@@ -2589,7 +2594,7 @@ describe("App", () => {
     consoleError?.mockRestore();
   });
 
-  it("keeps configured-only project activation out of the legacy recognition composition", async () => {
+  it("composes configured-only activation as one accessible immutable project contribution with exact project props", async () => {
     testHarness.xcom2ModuleConfiguration = {
       version: 1,
       target: "wotc",
@@ -2599,12 +2604,65 @@ describe("App", () => {
 
     render(<App />);
 
-    await waitFor(() => {
-      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
-      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+    const xcomActivity = await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+    expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+    expect(xcomActivity.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
+
+    const contributions = testHarness.latestPanelLayoutProps.activityContributions;
+    expect(contributions).toHaveLength(1);
+    expect(Object.isFrozen(contributions)).toBe(true);
+    expect(Object.isFrozen(contributions[0])).toBe(true);
+    expect(contributions[0]).toMatchObject({
+      id: "xcom2-project",
+      label: "XCOM 2 Project",
+      title: "XCOM 2 Project",
     });
-    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
-    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    const props = contributions[0].content.props;
+    expect(props.snapshot).toBe(props.recognitionSnapshot);
+    expect(props.snapshot).toEqual({
+      workspaceId: "workspace-one",
+      workspaceGeneration: 1,
+      scanId: "xcom2-module-scan:1",
+      scanGeneration: 1,
+      completeness: "complete",
+      state: "inactive",
+      confidence: "none",
+      decisions: [],
+      issues: [],
+      limits: { maximumDepth: 8, maximumEncounteredEntries: 20_000 },
+    });
+    expect(props.activeDecisions).toEqual([]);
+    expect(props.projectSnapshot).toEqual({
+      workspaceId: "workspace-one",
+      workspaceGeneration: 1,
+      activationGeneration: 1,
+      configurationReadId: "xcom2-configuration-read:1",
+      scanId: "xcom2-module-scan:1",
+      scanGeneration: 1,
+      state: "active",
+      recognitionConfidence: "none",
+      decisions: [
+        {
+          moduleRoot: "ConfiguredMod",
+          state: "active",
+          source: "configured",
+          activationConfidence: "explicit",
+          recognitionConfidence: "none",
+          reasons: [{ kind: "configuration", target: "wotc" }],
+        },
+      ],
+    });
+    expect(props.activeProjectDecisions).toEqual(props.projectSnapshot.decisions);
+
+    fireEvent.click(xcomActivity);
+    const panel = screen.getByTestId("Xcom2ProjectRecognitionPanel");
+    expect(panel.getAttribute("aria-label")).toBe("XCOM 2 Project");
+    expect(panel.dataset).toMatchObject({ workspace: "workspace-one", activeCount: "1" });
+    expect(screen.getByText("ConfiguredMod")).toBeDefined();
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps).toEqual(props);
   });
 
   it("composes one immutable active project contribution without automatically opening it", async () => {
@@ -2674,6 +2732,31 @@ describe("App", () => {
         ],
       },
     ]);
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.recognitionSnapshot).toBe(
+      testHarness.latestXcom2ProjectRecognitionPanelProps.snapshot,
+    );
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.projectSnapshot).toMatchObject({
+      workspaceId: "workspace-one",
+      state: "active",
+      recognitionConfidence: "high",
+    });
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeProjectDecisions).toEqual([
+      {
+        moduleRoot: "MyMod",
+        state: "active",
+        source: "recognized",
+        activationConfidence: "high",
+        recognitionConfidence: "high",
+        reasons: [
+          { kind: "recognition", evidenceKind: "x2proj", relativePath: "MyMod/MyMod.x2proj" },
+          {
+            kind: "recognition",
+            evidenceKind: "xcommod",
+            relativePath: "MyMod/MyMod.xcommod",
+          },
+        ],
+      },
+    ]);
 
     const bottomTabList = screen.getByRole("tablist", { name: "Bottom panel tabs" });
     expect(
@@ -2684,6 +2767,155 @@ describe("App", () => {
     for (const label of ["XCOM 2 Project", "Build", "Problems", "Logs", "Language"]) {
       expect(within(bottomTabList).queryByRole("tab", { name: label })).toBeNull();
     }
+  });
+
+  it("renders combined configured and recognized activation from the joint project decision", async () => {
+    testHarness.xcom2ModuleConfiguration = {
+      version: 1,
+      target: "wotc",
+      moduleRoots: ["MyMod"],
+    };
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const { App } = await import("../App");
+    render(<App />);
+
+    const xcomActivity = await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    fireEvent.click(xcomActivity);
+
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeProjectDecisions).toEqual([
+      {
+        moduleRoot: "MyMod",
+        state: "active",
+        source: "configured-and-recognized",
+        activationConfidence: "explicit",
+        recognitionConfidence: "high",
+        reasons: [
+          { kind: "configuration", target: "wotc" },
+          { kind: "recognition", evidenceKind: "x2proj", relativePath: "MyMod/MyMod.x2proj" },
+          {
+            kind: "recognition",
+            evidenceKind: "xcommod",
+            relativePath: "MyMod/MyMod.xcommod",
+          },
+        ],
+      },
+    ]);
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.projectSnapshot).toMatchObject({
+      state: "active",
+      recognitionConfidence: "high",
+    });
+    expect(screen.getByText("MyMod")).toBeDefined();
+  });
+
+  it("keeps an invalid configuration without strong Option A contribution-free", async () => {
+    testHarness.xcom2ModuleConfigurationStopCode = "configuration-invalid-json";
+    const { App } = await import("../App");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
+    });
+    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    expect(screen.queryByRole("alert", { name: /configuration/ })).toBeNull();
+  });
+
+  it("keeps strong Option A active when configuration is invalid and exposes only its typed diagnostic", async () => {
+    testHarness.xcom2ModuleConfigurationStopCode = "configuration-invalid-json";
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const { App } = await import("../App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "XCOM 2 Project" }));
+
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeProjectDecisions).toEqual([
+      expect.objectContaining({
+        moduleRoot: "MyMod",
+        state: "active",
+        source: "recognized",
+        activationConfidence: "high",
+        recognitionConfidence: "high",
+      }),
+    ]);
+    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.projectSnapshot.diagnostic).toEqual({
+      code: "configuration-invalid-json",
+    });
+    expect(screen.getByRole("alert").textContent).toBe("configuration: configuration-invalid-json");
+    expect(document.body.textContent).not.toContain("private native");
+  });
+
+  it("revokes configured activation synchronously on refresh, restores it explicitly, and never renders stale project props", async () => {
+    testHarness.xcom2ModuleConfiguration = {
+      version: 1,
+      target: "wotc",
+      moduleRoots: ["ConfiguredMod"],
+    };
+    const { App } = await import("../App");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "XCOM 2 Project" }));
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("xcom2-project");
+    expect(screen.getByText("ConfiguredMod")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    testHarness.xcom2ModuleConfiguration = null;
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh workspace" }));
+
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    await waitFor(() => {
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(2);
+      expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    });
+
+    testHarness.xcom2ModuleConfiguration = {
+      version: 1,
+      target: "wotc",
+      moduleRoots: ["ConfiguredMod"],
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+
+    const restoredActivity = await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    expect(restoredActivity.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
+    expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
+    const restoredProps = testHarness.latestPanelLayoutProps.activityContributions[0].content.props;
+    expect(restoredProps.projectSnapshot).toMatchObject({
+      activationGeneration: 3,
+      configurationReadId: "xcom2-configuration-read:3",
+      scanGeneration: 3,
+      scanId: "xcom2-module-scan:3",
+      state: "active",
+    });
+    expect(restoredProps.activeProjectDecisions).toEqual([
+      expect.objectContaining({ moduleRoot: "ConfiguredMod", source: "configured" }),
+    ]);
+    expect(JSON.stringify(restoredProps)).not.toContain("xcom2-configuration-read:1");
   });
 
   it("revokes a selected project contribution at switch start and does not reselect it", async () => {
