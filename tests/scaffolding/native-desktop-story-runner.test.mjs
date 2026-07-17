@@ -847,7 +847,7 @@ test("focused XCOM configuration activation isolates Story-created fixtures with
     assert.ok(
       manifest.selectedScenarios[0].tags.includes("@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001"),
     );
-    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"));
     assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
     assert.deepEqual(
       JSON.parse(
@@ -1007,7 +1007,7 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
 
 test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 4);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 5);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
@@ -1030,7 +1030,7 @@ test("native runner profiles select promoted and focused native scenarios", () =
       "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
     ),
   );
-  assert.ok(configurationSelection.scenarios[0].tags.includes("@not-implemented"));
+  assert.ok(configurationSelection.scenarios[0].tags.includes("@implemented-and-validated"));
 
   const xcomSelection = discoverNativeDesktopSelection("xcom2ModuleActivationNativeGui");
   assert.equal(xcomSelection.hasScenarios, true);
@@ -1058,7 +1058,7 @@ test("implemented desktop discovery selects the exact harness and native require
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 4);
+  assert.equal(selection.scenarios.length, 5);
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
     [
@@ -1066,6 +1066,7 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-LAYOUT-DESKTOP-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-002",
       "@REQ-XCOM2-MODULE-ACTIVATION-001",
+      "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
     ],
   );
   assert.ok(selection.scenarios.every(({ tags }) => tags.includes("@implemented-and-validated")));
