@@ -13,6 +13,7 @@ import { createFileTreeStore } from "@ide/web-core/state";
 import { createEditorStore } from "@ide/web-core/state";
 import { createTerminalStore } from "@ide/web-core/state";
 import { createPanelStore } from "@ide/web-core/state";
+import { mapXcom2ModuleConfigurationDiagnosticPresentation } from "@ide/web-core";
 
 // ── View models ─────────────────────────────────────────────────────────
 import { FileTreeViewModel } from "@ide/web-core/view-models";
@@ -425,6 +426,16 @@ export function App(): JSX.Element {
 
   // ── Derived values ──────────────────────────────────────────────────
 
+  const xcom2ModuleConfigurationDiagnosticCode =
+    xcom2ModuleActivation.projectSnapshot?.diagnostic?.code;
+  const xcom2ModuleConfigurationDiagnosticPresentation = useMemo(
+    () =>
+      xcom2ModuleConfigurationDiagnosticCode
+        ? mapXcom2ModuleConfigurationDiagnosticPresentation(xcom2ModuleConfigurationDiagnosticCode)
+        : null,
+    [xcom2ModuleConfigurationDiagnosticCode],
+  );
+
   const xcom2ProjectActivityContributions = useMemo<
     readonly Readonly<PanelLayoutActivityContribution>[]
   >(() => {
@@ -446,6 +457,7 @@ export function App(): JSX.Element {
           projectSnapshot={xcom2ModuleActivation.projectSnapshot}
           recognitionSnapshot={xcom2ModuleActivation.snapshot}
           activeProjectDecisions={xcom2ModuleActivation.activeProjectDecisions}
+          diagnosticPresentation={xcom2ModuleConfigurationDiagnosticPresentation}
         />
       ),
     } satisfies PanelLayoutActivityContribution);
@@ -455,6 +467,7 @@ export function App(): JSX.Element {
     xcom2ModuleActivation.activeProjectDecisions,
     xcom2ModuleActivation.projectSnapshot,
     xcom2ModuleActivation.snapshot,
+    xcom2ModuleConfigurationDiagnosticPresentation,
   ]);
 
   useLayoutEffect(() => {
@@ -751,6 +764,10 @@ export function App(): JSX.Element {
         workspaceInfo={workspaceInfo}
         workspaceRegistry={workspaceRegistry}
         workspaceError={workspaceError}
+        xcom2ModuleConfigurationDiagnosticPresentation={
+          xcom2ModuleConfigurationDiagnosticPresentation
+        }
+        isXcom2ModuleConfigurationChecking={xcom2ModuleActivation.isScanning}
         javaLanguageServiceStatus={displayedLanguageServiceStatus}
         isJavaLanguageServiceRefreshing={javaLanguage.refreshing}
         javaRefactorKitStatus={refactorKitStatus.status}

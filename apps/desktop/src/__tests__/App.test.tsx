@@ -222,6 +222,8 @@ const testHarness = vi.hoisted(() => {
     harness.xcom2ModuleScanError = null;
     harness.xcom2ModuleConfiguration = null;
     harness.xcom2ModuleConfigurationStopCode = null;
+    harness.xcom2ModuleConfigurationStoppedExtras = null;
+    harness.xcom2ModuleConfigurationGate = null;
     harness.xcom2ModuleConfigurationError = null;
     harness.xcom2Transaction = null;
     harness.xcom2Transactions = [];
@@ -303,6 +305,8 @@ const testHarness = vi.hoisted(() => {
     harness.externalJavaApplyResult = null;
     harness.latestPanelLayoutProps = null;
     harness.latestSemanticSymbolSearchProps = null;
+    harness.latestSettingsPanelDiagnosticPresentation = null;
+    harness.latestSettingsPanelConfigurationChecking = false;
     harness.latestXcom2ProjectRecognitionPanelProps = null;
     harness.refactorKitResult = {
       stdout: "RefactorKit scan complete",
@@ -644,22 +648,24 @@ vi.mock("@ide/tauri-adapters", () => {
   testHarness.xcom2ModuleScannerAdapter = xcom2ModuleScannerAdapter;
 
   const xcom2ModuleConfigurationAdapter = {
-    read: vi.fn((request: any) => {
+    read: vi.fn(async (request: any) => {
+      if (testHarness.xcom2ModuleConfigurationGate) {
+        await testHarness.xcom2ModuleConfigurationGate;
+      }
       if (testHarness.xcom2ModuleConfigurationError) {
-        return Promise.reject(testHarness.xcom2ModuleConfigurationError);
+        throw testHarness.xcom2ModuleConfigurationError;
       }
       if (testHarness.xcom2ModuleConfigurationStopCode) {
-        return Promise.resolve({
+        return {
           ...request,
           kind: "stopped",
           code: testHarness.xcom2ModuleConfigurationStopCode,
-        });
+          ...testHarness.xcom2ModuleConfigurationStoppedExtras,
+        };
       }
-      return Promise.resolve(
-        testHarness.xcom2ModuleConfiguration
-          ? { ...request, kind: "ready", configuration: testHarness.xcom2ModuleConfiguration }
-          : { ...request, kind: "absent" },
-      );
+      return testHarness.xcom2ModuleConfiguration
+        ? { ...request, kind: "ready", configuration: testHarness.xcom2ModuleConfiguration }
+        : { ...request, kind: "absent" };
     }),
   };
   testHarness.xcom2ModuleConfigurationAdapter = xcom2ModuleConfigurationAdapter;
@@ -850,8 +856,14 @@ vi.mock("@ide/ui", () => ({
         {renderedDecisions.map((decision: any) => (
           <div key={decision.moduleRoot}>{decision.moduleRoot}</div>
         ))}
-        {props.projectSnapshot?.diagnostic ? (
-          <p role="alert">configuration: {props.projectSnapshot.diagnostic.code}</p>
+        {props.diagnosticPresentation ? (
+          <div role="alert">
+            <strong>{props.diagnosticPresentation.title}</strong>
+            <span>Project file: {props.diagnosticPresentation.projectFileLabel}</span>
+            <span>{props.diagnosticPresentation.summary}</span>
+            <span>{props.diagnosticPresentation.remediation}</span>
+            <code>{props.diagnosticPresentation.supportIdentifier}</code>
+          </div>
         ) : null}
       </section>
     );
@@ -1406,6 +1418,8 @@ vi.mock("@ide/ui", () => ({
     aiAgentStatus,
     workspaceInfo,
     workspaceRegistry,
+    xcom2ModuleConfigurationDiagnosticPresentation,
+    isXcom2ModuleConfigurationChecking,
     xcom2SetupSnapshot,
     xcom2SetupPlan,
     isXcom2SetupLoading,
@@ -1442,6 +1456,10 @@ vi.mock("@ide/ui", () => ({
     onRefreshJavaRefactorKit,
     onClose,
   }: any) => {
+    testHarness.latestSettingsPanelDiagnosticPresentation =
+      xcom2ModuleConfigurationDiagnosticPresentation ?? null;
+    testHarness.latestSettingsPanelConfigurationChecking =
+      isXcom2ModuleConfigurationChecking ?? false;
     const [section, setSection] = useState("ai-agents");
     return isOpen ? (
       <div
@@ -1479,6 +1497,27 @@ vi.mock("@ide/ui", () => ({
         >
           XCOM 2
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={section === "workspace"}
+          onClick={() => setSection("workspace")}
+        >
+          Workspace
+        </button>
+        {section === "workspace" && isXcom2ModuleConfigurationChecking ? (
+          <div role="status">Checking XCOM 2 project configuration…</div>
+        ) : section === "workspace" && xcom2ModuleConfigurationDiagnosticPresentation ? (
+          <div role="alert">
+            <strong>{xcom2ModuleConfigurationDiagnosticPresentation.title}</strong>
+            <span>
+              Project file: {xcom2ModuleConfigurationDiagnosticPresentation.projectFileLabel}
+            </span>
+            <span>{xcom2ModuleConfigurationDiagnosticPresentation.summary}</span>
+            <span>{xcom2ModuleConfigurationDiagnosticPresentation.remediation}</span>
+            <code>{xcom2ModuleConfigurationDiagnosticPresentation.supportIdentifier}</code>
+          </div>
+        ) : null}
         {section === "java" ? (
           <div
             data-testid="JavaIntelligencePanel"
@@ -2589,6 +2628,7 @@ describe("App", () => {
       expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
     });
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
+    expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
     expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
     consoleError?.mockRestore();
@@ -2656,6 +2696,7 @@ describe("App", () => {
       ],
     });
     expect(props.activeProjectDecisions).toEqual(props.projectSnapshot.decisions);
+    expect(props.diagnosticPresentation).toBeNull();
 
     fireEvent.click(xcomActivity);
     const panel = screen.getByTestId("Xcom2ProjectRecognitionPanel");
@@ -2818,8 +2859,14 @@ describe("App", () => {
     expect(screen.getByText("MyMod")).toBeDefined();
   });
 
-  it("keeps an invalid configuration without strong Option A contribution-free", async () => {
+  it("presents an invalid-only configuration safely in Settings without creating activity", async () => {
     testHarness.xcom2ModuleConfigurationStopCode = "configuration-invalid-json";
+    testHarness.xcom2ModuleConfigurationStoppedExtras = {
+      path: "/private/workspace/.ide/xcom2.json",
+      content: "PRIVATE_CONFIGURATION_CONTENT",
+      cause: "PRIVATE_PARSER_CAUSE",
+      result: "PRIVATE_NATIVE_RESULT",
+    };
     const { App } = await import("../App");
     render(<App />);
 
@@ -2830,11 +2877,31 @@ describe("App", () => {
     expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
     expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
-    expect(screen.queryByRole("alert", { name: /configuration/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Workspace" }));
+
+    const warning = screen.getByRole("alert");
+    expect(warning.textContent).toContain("XCOM 2 project configuration needs attention");
+    expect(warning.textContent).toContain("Project file: .ide/xcom2.json");
+    expect(warning.textContent).toContain("not valid JSON");
+    expect(warning.textContent).toContain("Correct the JSON syntax");
+    expect(warning.textContent).toContain("configuration-invalid-json");
+    expect(testHarness.latestSettingsPanelConfigurationChecking).toBe(false);
+    expect(JSON.stringify(testHarness.latestSettingsPanelDiagnosticPresentation)).not.toMatch(
+      /PRIVATE_|\/private\//u,
+    );
+    expect(document.body.textContent).not.toMatch(/PRIVATE_|\/private\//u);
   });
 
-  it("keeps strong Option A active when configuration is invalid and exposes only its typed diagnostic", async () => {
+  it("keeps strong Option A recognized activity and mirrors one safe diagnostic object without configured authority", async () => {
     testHarness.xcom2ModuleConfigurationStopCode = "configuration-invalid-json";
+    testHarness.xcom2ModuleConfigurationStoppedExtras = {
+      path: "/private/workspace/.ide/xcom2.json",
+      content: "PRIVATE_CONFIGURATION_CONTENT",
+      cause: "PRIVATE_PARSER_CAUSE",
+      result: "PRIVATE_NATIVE_RESULT",
+    };
     testHarness.xcom2ModuleScanObservations = [
       {
         evidenceKind: "x2proj",
@@ -2851,21 +2918,86 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("tab", { name: "XCOM 2 Project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Workspace" }));
 
-    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.activeProjectDecisions).toEqual([
-      expect.objectContaining({
+    const recognitionProps = testHarness.latestXcom2ProjectRecognitionPanelProps;
+    expect(recognitionProps.activeProjectDecisions).toEqual([
+      {
         moduleRoot: "MyMod",
         state: "active",
         source: "recognized",
         activationConfidence: "high",
         recognitionConfidence: "high",
-      }),
+        reasons: [
+          { kind: "recognition", evidenceKind: "x2proj", relativePath: "MyMod/MyMod.x2proj" },
+          {
+            kind: "recognition",
+            evidenceKind: "xcommod",
+            relativePath: "MyMod/MyMod.xcommod",
+          },
+        ],
+      },
     ]);
-    expect(testHarness.latestXcom2ProjectRecognitionPanelProps.projectSnapshot.diagnostic).toEqual({
+    expect(recognitionProps.projectSnapshot.diagnostic).toEqual({
       code: "configuration-invalid-json",
     });
-    expect(screen.getByRole("alert").textContent).toBe("configuration: configuration-invalid-json");
-    expect(document.body.textContent).not.toContain("private native");
+    expect(recognitionProps.diagnosticPresentation).toBe(
+      testHarness.latestSettingsPanelDiagnosticPresentation,
+    );
+    expect(Object.isFrozen(recognitionProps.diagnosticPresentation)).toBe(true);
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
+    for (const warning of screen.getAllByRole("alert")) {
+      expect(warning.textContent).toContain("XCOM 2 project configuration needs attention");
+      expect(warning.textContent).toContain("configuration-invalid-json");
+    }
+    expect(JSON.stringify(recognitionProps)).not.toMatch(/PRIVATE_|\/private\//u);
+    expect(document.body.textContent).not.toMatch(/PRIVATE_|\/private\//u);
+  });
+
+  it("synchronously replaces an old warning with checking, then clears it for valid configured activity", async () => {
+    testHarness.xcom2ModuleConfigurationStopCode = "configuration-invalid-json";
+    const { App } = await import("../App");
+    render(<App />);
+
+    await waitFor(() =>
+      expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Workspace" }));
+    expect(screen.getByRole("alert").textContent).toContain("not valid JSON");
+
+    const gate = createDeferred<void>();
+    testHarness.xcom2ModuleConfigurationGate = gate.promise;
+    testHarness.xcom2ModuleConfigurationStopCode = null;
+    testHarness.xcom2ModuleConfiguration = {
+      version: 1,
+      target: "wotc",
+      moduleRoots: ["ConfiguredMod"],
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Checking XCOM 2 project configuration…")).toBeDefined();
+    expect(testHarness.latestSettingsPanelConfigurationChecking).toBe(true);
+    expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
+    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+
+    await act(async () => {
+      gate.resolve();
+    });
+    await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    expect(screen.queryByText("Checking XCOM 2 project configuration…")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(testHarness.latestSettingsPanelConfigurationChecking).toBe(false);
+    expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
+    expect(testHarness.latestPanelLayoutProps.activityContributions[0].content.props).toMatchObject(
+      { diagnosticPresentation: null },
+    );
+    expect(
+      testHarness.latestPanelLayoutProps.activityContributions[0].content.props
+        .activeProjectDecisions,
+    ).toEqual([expect.objectContaining({ moduleRoot: "ConfiguredMod", source: "configured" })]);
   });
 
   it("revokes configured activation synchronously on refresh, restores it explicitly, and never renders stale project props", async () => {
