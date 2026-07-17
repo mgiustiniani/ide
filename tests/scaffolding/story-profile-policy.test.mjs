@@ -181,6 +181,19 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     /implemented|partial|not-implemented/,
   );
 
+  assert.deepEqual(
+    cucumberProfiles.xcom2ModuleConfigurationDiagnosticsNativeGui.worldParameters,
+    nativeGuiEvidence,
+  );
+  assert.equal(
+    cucumberProfiles.xcom2ModuleConfigurationDiagnosticsNativeGui.tags,
+    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2ModuleConfigurationDiagnosticsNativeGui.tags,
+    /implemented|partial|not-implemented/,
+  );
+
   assert.deepEqual(cucumberProfiles.implementedDesktop.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
   });
@@ -250,6 +263,21 @@ test("focused XCOM module configuration activation profile stays status-independ
   );
 });
 
+test("focused XCOM module configuration diagnostics profile stays status-independent before promotion", () => {
+  const selected = selectedScenarios("xcom2ModuleConfigurationDiagnosticsNativeGui");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), [
+    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
+  ]);
+  assert.equal(selected[0].uri, "features/xcom2/module-configuration-diagnostics.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.equal(
+    cucumberProfiles.xcom2ModuleConfigurationDiagnosticsNativeGui.tags,
+    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 and @desktop and @native-gui and not @web",
+  );
+});
+
 test("focused native package commands make no harness or package claim", async () => {
   const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
   const commands = new Map([
@@ -268,6 +296,10 @@ test("focused native package commands make no harness or package claim", async (
     [
       "test:story:req-xcom2-module-configuration-activation-001:native",
       "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationActivationNativeGui",
+    ],
+    [
+      "test:story:req-xcom2-module-configuration-diagnostics-001:native",
+      "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationDiagnosticsNativeGui",
     ],
   ]);
 
@@ -307,29 +339,31 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("declared routes stay exact after XCOM module configuration activation promotion", () => {
+test("declared routes stay exact while XCOM module configuration diagnostics remains parked", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
   const harness = selectedScenarios("implementedDesktopTauriHarness");
   const nativeGui = selectedScenarios("implementedDesktopTauriWebdriver");
   const routing = evaluateDeclaredStoryRouting(declared);
+  const currentNativeRequirements = [
+    "@REQ-DESKTOP-FILE-OPEN-001",
+    "@REQ-LAYOUT-DESKTOP-001",
+    "@REQ-REFACTORKIT-JAVA-IMPORT-002",
+    "@REQ-XCOM2-MODULE-ACTIVATION-001",
+    "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
+  ];
 
   assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
   ]);
-  assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), [
-    "@REQ-DESKTOP-FILE-OPEN-001",
-    "@REQ-LAYOUT-DESKTOP-001",
-    "@REQ-REFACTORKIT-JAVA-IMPORT-002",
-    "@REQ-XCOM2-MODULE-ACTIVATION-001",
-    "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
-  ]);
+  assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
   ]);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 2);
@@ -338,13 +372,32 @@ test("declared routes stay exact after XCOM module configuration activation prom
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 2);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 5);
-  assert.deepEqual(routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(), [
-    "@REQ-DESKTOP-FILE-OPEN-001",
-    "@REQ-LAYOUT-DESKTOP-001",
-    "@REQ-REFACTORKIT-JAVA-IMPORT-002",
-    "@REQ-XCOM2-MODULE-ACTIVATION-001",
-    "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
-  ]);
+  assert.deepEqual(
+    routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
+    currentNativeRequirements,
+  );
+
+  const afterPromotion = declared.map((candidate) =>
+    candidate.tags.has("@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001")
+      ? {
+          ...candidate,
+          tags: new Set(
+            [...candidate.tags, "@implemented-and-validated"].filter(
+              (tag) => tag !== "@not-implemented",
+            ),
+          ),
+        }
+      : candidate,
+  );
+  const promotedRouting = evaluateDeclaredStoryRouting(afterPromotion);
+  assert.deepEqual(promotedRouting.failures, []);
+  assert.equal(promotedRouting.expectedWeb.length, 2);
+  assert.equal(promotedRouting.expectedDesktopTauriHarness.length, 2);
+  assert.equal(promotedRouting.expectedDesktopTauriWebdriver.length, 6);
+  assert.deepEqual(
+    promotedRouting.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
+    [...currentNativeRequirements, "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001"].sort(),
+  );
 });
 
 test("promoted desktop layout routes only to native GUI evidence", () => {

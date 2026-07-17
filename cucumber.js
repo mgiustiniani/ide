@@ -114,6 +114,12 @@ const xcom2ModuleConfigurationActivationNativeGui = {
   worldParameters: targets.desktopTauriWebdriver,
 };
 
+const xcom2ModuleConfigurationDiagnosticsNativeGui = {
+  ...common,
+  tags: "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 and @desktop and @native-gui and not @web",
+  worldParameters: targets.desktopTauriWebdriver,
+};
+
 const web = {
   ...common,
   tags: "@web and not @desktop",
@@ -141,6 +147,7 @@ export {
   xcom2MachineSettingsTauriHarness,
   xcom2ModuleActivationNativeGui,
   xcom2ModuleConfigurationActivationNativeGui,
+  xcom2ModuleConfigurationDiagnosticsNativeGui,
   web,
   desktop,
 };

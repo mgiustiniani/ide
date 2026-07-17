@@ -42,6 +42,7 @@ const supportedProfiles = new Set([
   "desktopLayoutNativeGui",
   "xcom2ModuleActivationNativeGui",
   "xcom2ModuleConfigurationActivationNativeGui",
+  "xcom2ModuleConfigurationDiagnosticsNativeGui",
 ]);
 
 const executablePrerequisites = [

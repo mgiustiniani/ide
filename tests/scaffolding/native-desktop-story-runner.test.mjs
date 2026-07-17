@@ -12,6 +12,7 @@ import {
   NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT,
   NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH,
   NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
+  NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
   NativeDesktopStoryAbortedError,
   NativeDesktopStoryExecutionError,
   NativeDesktopStoryPrerequisiteError,
@@ -863,6 +864,190 @@ test("focused XCOM configuration activation isolates Story-created fixtures with
   }
 });
 
+test("focused XCOM configuration diagnostics leaves fixtures to Story and records exact no-package cleanup evidence", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-xcom-config-diagnostics-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const calls = [];
+  let storyFixturePath;
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: "e".repeat(64),
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+    const untrustedEnvironment = {
+      PATH: process.env.PATH,
+      HOME: "/untrusted/home",
+      XDG_CONFIG_HOME: "/untrusted/xdg/config",
+      XDG_CACHE_HOME: "/untrusted/xdg/cache",
+      XDG_DATA_HOME: "/untrusted/xdg/data",
+      XDG_STATE_HOME: "/untrusted/xdg/state",
+      XDG_RUNTIME_DIR: "/untrusted/xdg/runtime",
+      IDE_HOME: "/untrusted/ide-home",
+      IDE_WORKSPACE_ROOT: "/untrusted/workspace",
+      TMPDIR: "/untrusted/tmp",
+      TEMP: "/untrusted/tmp",
+      TMP: "/untrusted/tmp",
+      IDE_REFACTORKIT_DAEMON: "/untrusted/refactorkit",
+      IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE: "1",
+      IDE_STORY_NATIVE_GUI_PYTHON_PATH: "/untrusted/python",
+    };
+
+    const result = await runNativeDesktopStory("xcom2ModuleConfigurationDiagnosticsNativeGui", {
+      environment: untrustedEnvironment,
+      buildApplication: async () => {
+        calls.push("fresh-release-no-bundle-build");
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("common-native-prerequisites-only");
+        assert.deepEqual(options, {
+          applicationPath,
+          requiresNativeJavaImport: false,
+        });
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("empty-isolated-runner-state");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async (_command, arguments_, options) => {
+        calls.push("Story-owns-diagnostic-fixture");
+        assert.deepEqual(arguments_.slice(-2), [
+          "--profile",
+          "xcom2ModuleConfigurationDiagnosticsNativeGui",
+        ]);
+        assert.equal(
+          arguments_.some((argument) =>
+            /tauri-harness|fake-backend|preflight|package/iu.test(argument),
+          ),
+          false,
+        );
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_TARGET, "desktop/tauri-webdriver");
+        for (const variable of [
+          "HOME",
+          "XDG_CONFIG_HOME",
+          "XDG_CACHE_HOME",
+          "XDG_DATA_HOME",
+          "XDG_STATE_HOME",
+          "XDG_RUNTIME_DIR",
+          "IDE_HOME",
+          "IDE_STORY_NATIVE_GUI_SCENARIO_ROOT",
+          "IDE_WORKSPACE_ROOT",
+          "TMPDIR",
+          "TEMP",
+          "TMP",
+        ]) {
+          assert.equal(
+            path
+              .relative(
+                options.environment.IDE_STORY_NATIVE_GUI_SANDBOX_PATH,
+                options.environment[variable],
+              )
+              .startsWith(".."),
+            false,
+            variable,
+          );
+        }
+        assert.deepEqual(await readdir(options.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT), []);
+        assert.deepEqual(await readdir(options.environment.IDE_WORKSPACE_ROOT), []);
+        assert.deepEqual(await readdir(options.environment.IDE_HOME), []);
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+        assert.equal(options.environment.IDE_REFACTORKIT_DAEMON, undefined);
+        assert.equal(options.environment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE, undefined);
+
+        storyFixturePath = path.join(
+          options.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT,
+          "req-xcom2-module-configuration-diagnostics-001-story-owned",
+          "fixture-owner",
+        );
+        await mkdir(path.dirname(storyFixturePath), { recursive: true });
+        await writeFile(storyFixturePath, "Story-owned fixture boundary\n", {
+          encoding: "utf8",
+          flag: "wx",
+        });
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("bounded-process-cleanup");
+        return {
+          sandboxPath,
+          termTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+          killTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "fresh-release-no-bundle-build",
+      "common-native-prerequisites-only",
+      "empty-isolated-runner-state",
+      "Story-owns-diagnostic-fixture",
+      "bounded-process-cleanup",
+    ]);
+    assert.equal(result.skipped, false);
+    assert.equal(await readFile(storyFixturePath, "utf8"), "Story-owned fixture boundary\n");
+
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.equal(manifest.target, "desktop/tauri-webdriver");
+    assert.equal(manifest.profile, "xcom2ModuleConfigurationDiagnosticsNativeGui");
+    assert.deepEqual(manifest.evidence, {
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+      applicationSha256: application.sha256,
+    });
+    assert.deepEqual(manifest.build, {
+      command: application.command,
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    });
+    assert.equal(manifest.selectedScenarios.length, 1);
+    assert.ok(
+      manifest.selectedScenarios[0].tags.includes(
+        "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
+      ),
+    );
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
+    assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
+
+    const cleanup = JSON.parse(
+      await readFile(
+        path.join(result.sandbox.paths.artifacts, "post-run-process-cleanup.json"),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(cleanup, {
+      sandboxPath: result.sandbox.root,
+      termTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+      killTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+      detectedProcessIds: [],
+      termSignaledProcessIds: [],
+      killSignaledProcessIds: [],
+      survivorProcessIds: [],
+    });
+    assert.deepEqual(result.cleanup, cleanup);
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
 test("selected native profile propagates build failure and build timeout without launch", async () => {
   const failures = [
     new NativeDesktopStoryExecutionError("fake build failure"),
@@ -1012,12 +1197,27 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleConfigurationActivationNativeGui"), 1);
+  assert.equal(selectedScenarioCount("xcom2ModuleConfigurationDiagnosticsNativeGui"), 1);
   assert.equal(profileSelectsScenarios("desktopFileOpenNativeGui"), true);
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
   assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
   assert.equal(profileSelectsScenarios("desktopLayoutNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleActivationNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationActivationNativeGui"), true);
+  assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationDiagnosticsNativeGui"), true);
+
+  const diagnosticSelection = discoverNativeDesktopSelection(
+    "xcom2ModuleConfigurationDiagnosticsNativeGui",
+  );
+  assert.equal(diagnosticSelection.hasScenarios, true);
+  assert.equal(diagnosticSelection.includesNativeJavaImport, false);
+  assert.equal(diagnosticSelection.scenarios.length, 1);
+  assert.ok(
+    diagnosticSelection.scenarios[0].tags.includes(
+      "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
+    ),
+  );
+  assert.ok(diagnosticSelection.scenarios[0].tags.includes("@not-implemented"));
 
   const configurationSelection = discoverNativeDesktopSelection(
     "xcom2ModuleConfigurationActivationNativeGui",

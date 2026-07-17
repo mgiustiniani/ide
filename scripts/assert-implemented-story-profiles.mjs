@@ -105,6 +105,9 @@ try {
   const xcom2ModuleConfigurationActivationNativeGui = discover(
     "xcom2ModuleConfigurationActivationNativeGui",
   );
+  const xcom2ModuleConfigurationDiagnosticsNativeGui = discover(
+    "xcom2ModuleConfigurationDiagnosticsNativeGui",
+  );
   const routing = evaluateDeclaredStoryRouting(declared);
   const expectedValidated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
   const failures = [...routing.failures];
@@ -152,6 +155,11 @@ try {
     desktopTauriWebdriverEvidence,
     failures,
   );
+  assertWorldParameters(
+    "xcom2ModuleConfigurationDiagnosticsNativeGui",
+    desktopTauriWebdriverEvidence,
+    failures,
+  );
   assertWorldParameters("desktop", desktopTauri, failures);
 
   compareProfileSelection("implementedDiscovery", validated, expectedValidated, failures);
@@ -196,6 +204,12 @@ try {
     "xcom2ModuleConfigurationActivationNativeGui",
     xcom2ModuleConfigurationActivationNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001")),
+    failures,
+  );
+  compareProfileSelection(
+    "xcom2ModuleConfigurationDiagnosticsNativeGui",
+    xcom2ModuleConfigurationDiagnosticsNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001")),
     failures,
   );
 
