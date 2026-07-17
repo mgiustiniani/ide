@@ -89,7 +89,8 @@ async function expectResponseRejection(
     throw new Error("expected configuration read to reject");
   } catch (error) {
     expect(error).toBeInstanceOf(TauriAdapterError);
-    expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: response });
+    expect(error).toMatchObject({ name: "TauriAdapterError", command });
+    expect((error as TauriAdapterError).cause).toBeUndefined();
     expect((error as Error).message).toMatch(
       /^\[tauri:read_xcom2_module_configuration\] Invalid read_xcom2_module_configuration response: /u,
     );
@@ -105,7 +106,8 @@ async function expectRequestRejection(malformedRequest: unknown): Promise<TauriA
     throw new Error("expected configuration request to reject");
   } catch (error) {
     expect(error).toBeInstanceOf(TauriAdapterError);
-    expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: malformedRequest });
+    expect(error).toMatchObject({ name: "TauriAdapterError", command });
+    expect((error as TauriAdapterError).cause).toBeUndefined();
     expect((error as Error).message).toMatch(
       /^\[tauri:read_xcom2_module_configuration\] Invalid read_xcom2_module_configuration request: /u,
     );
@@ -274,27 +276,54 @@ describe("TauriXcom2ModuleConfigurationAdapter request immutability and failures
   });
 
   it.each([
-    ["a raw string", "native configuration unavailable", "native configuration unavailable"],
-    ["an Error", new Error("native request denied"), "native request denied"],
-    ["a message record", { message: "native message" }, "native message"],
-    ["an error record", { error: "native error" }, "native error"],
-    ["a reason record", { reason: "native reason" }, "native reason"],
-    ["an opaque value", { status: 503 }, "Tauri command failed"],
-  ])(
-    "maps invoke rejection from %s according to the shared adapter contract",
-    async (_label, failure, message) => {
-      invokeMock.mockRejectedValueOnce(failure);
+    ["a raw string", "NATIVE-RAW-TEXT:/private/native/SECRET-CONTENT"],
+    ["an Error", new Error("NATIVE-RAW-TEXT:/private/native/SECRET-CONTENT")],
+    ["a message record", { message: "NATIVE-RAW-TEXT", content: "/private/native/SECRET-CONTENT" }],
+    ["an error record", { error: "NATIVE-RAW-TEXT", content: "/private/native/SECRET-CONTENT" }],
+    [
+      "a reason record",
+      {
+        reason: "NATIVE-RAW-TEXT",
+        text: "NATIVE-RAW-TEXT",
+        content: "/private/native/SECRET-CONTENT",
+      },
+    ],
+    [
+      "an opaque raw object",
+      {
+        status: 503,
+        raw: { text: "NATIVE-RAW-TEXT", content: "/private/native/SECRET-CONTENT" },
+      },
+    ],
+  ])("sanitizes invoke rejection from %s", async (_label, failure) => {
+    invokeMock.mockRejectedValueOnce(failure);
 
-      await expect(
-        new TauriXcom2ModuleConfigurationAdapter().read(request()),
-      ).rejects.toMatchObject({
-        name: "TauriAdapterError",
-        command,
-        message: `[tauri:${command}] ${message}`,
-        cause: failure,
-      });
-    },
-  );
+    let rejected: unknown;
+    try {
+      await new TauriXcom2ModuleConfigurationAdapter().read(request());
+    } catch (error) {
+      rejected = error;
+    }
+
+    expect(rejected).toBeInstanceOf(TauriAdapterError);
+    const error = rejected as TauriAdapterError;
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command,
+      message: `[tauri:${command}] Native XCOM 2 module configuration read failed`,
+    });
+    expect(error).not.toBe(failure);
+    expect(error.cause).toBeUndefined();
+
+    const exposedOwnText = Reflect.ownKeys(error)
+      .map((key) => String(Reflect.get(error, key)))
+      .join("\n");
+    for (const secret of ["NATIVE-RAW-TEXT", "/private/native/SECRET-CONTENT"]) {
+      expect(error.message).not.toContain(secret);
+      expect(exposedOwnText).not.toContain(secret);
+      expect(JSON.stringify(error)).not.toContain(secret);
+    }
+  });
 
   it.each([
     ["null", null],
@@ -426,13 +455,19 @@ describe("TauriXcom2ModuleConfigurationAdapter schema, roots, and stop vocabular
     ["trailing separator", "Mods/Alpha/"],
     ["C0 control", "Mods/Alpha\u0000"],
     ["C1 control", "Mods/Alpha\u009f"],
-    ["unpaired high surrogate before a non-low code unit", "Mods/\ud800A"],
     ["unpaired low surrogate", "Mods/\udc00"],
     ["above 4096 ASCII bytes", `A/${"a".repeat(4_095)}`],
     ["above 4096 multibyte bytes", `B/${"é".repeat(2_048)}`],
   ])("rejects non-canonical or invalid UTF-8 module root: %s", async (_label, root) => {
     const error = await expectResponseRejection(ready([root]));
     expect(error.message).toContain("configuration.moduleRoots[0] is not canonical");
+  });
+
+  it("rejects unpaired high surrogates before a non-low code unit and at the terminal position", async () => {
+    for (const root of ["Mods/\ud800", "Mods/\ud800A"]) {
+      const error = await expectResponseRejection(ready([root]));
+      expect(error.message).toContain("configuration.moduleRoots[0] is not canonical");
+    }
   });
 
   it.each([
@@ -478,12 +513,22 @@ describe("TauriXcom2ModuleConfigurationAdapter schema, roots, and stop vocabular
     );
   });
 
-  it("accepts native Unicode code-point and prefix lexical order without re-sorting", async () => {
-    const roots = [".", "Mods/Alpha", "Mods/Alpha/Nested", "Mods/Zeta", "Mods/β", "Mods/😀"];
+  it("accepts a valid surrogate pair in native Unicode code-point order without re-sorting", async () => {
+    const validSurrogatePairRoot = "Mods/\ud83d\ude00";
+    const roots = [
+      ".",
+      "Mods/Alpha",
+      "Mods/Alpha/Nested",
+      "Mods/Zeta",
+      "Mods/β",
+      validSurrogatePairRoot,
+    ];
     invokeMock.mockResolvedValueOnce(ready(roots));
 
     const result = await new TauriXcom2ModuleConfigurationAdapter().read(request());
 
+    expect(validSurrogatePairRoot).toBe("Mods/😀");
+    expect(new TextEncoder().encode(validSurrogatePairRoot)).toHaveLength(9);
     expect(result.kind === "ready" && result.configuration.moduleRoots).toEqual(roots);
   });
 
@@ -585,7 +630,7 @@ describe("TauriXcom2ModuleConfigurationAdapter exact response shapes and safe me
     }
   });
 
-  it("uses a generic log-facing message for malformed native content while retaining cause by contract", async () => {
+  it("uses a generic log-facing message for malformed native content without retaining cause", async () => {
     const secret = "/private/workspace/SECRET-CONTENT";
     const malformed = { ...ready(), configurationPath: secret };
 
@@ -595,6 +640,6 @@ describe("TauriXcom2ModuleConfigurationAdapter exact response shapes and safe me
       `[tauri:${command}] Invalid ${command} response: response has missing or unsupported fields`,
     );
     expect(error.message).not.toContain(secret);
-    expect(error.cause).toBe(malformed);
+    expect(error.cause).toBeUndefined();
   });
 });
