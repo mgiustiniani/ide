@@ -1024,7 +1024,7 @@ test("focused XCOM configuration diagnostics leaves fixtures to Story and record
         "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
       ),
     );
-    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"));
     assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
 
     const cleanup = JSON.parse(
@@ -1192,7 +1192,7 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
 
 test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 5);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 6);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
@@ -1217,7 +1217,7 @@ test("native runner profiles select promoted and focused native scenarios", () =
       "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
     ),
   );
-  assert.ok(diagnosticSelection.scenarios[0].tags.includes("@not-implemented"));
+  assert.ok(diagnosticSelection.scenarios[0].tags.includes("@implemented-and-validated"));
 
   const configurationSelection = discoverNativeDesktopSelection(
     "xcom2ModuleConfigurationActivationNativeGui",
@@ -1258,7 +1258,7 @@ test("implemented desktop discovery selects the exact harness and native require
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 5);
+  assert.equal(selection.scenarios.length, 6);
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
     [
@@ -1267,6 +1267,7 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-REFACTORKIT-JAVA-IMPORT-002",
       "@REQ-XCOM2-MODULE-ACTIVATION-001",
       "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
+      "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
     ],
   );
   assert.ok(selection.scenarios.every(({ tags }) => tags.includes("@implemented-and-validated")));

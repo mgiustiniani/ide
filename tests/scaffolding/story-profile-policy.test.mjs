@@ -263,7 +263,7 @@ test("focused XCOM module configuration activation profile stays status-independ
   );
 });
 
-test("focused XCOM module configuration diagnostics profile stays status-independent before promotion", () => {
+test("focused XCOM module configuration diagnostics profile stays status-independent after promotion", () => {
   const selected = selectedScenarios("xcom2ModuleConfigurationDiagnosticsNativeGui");
 
   assert.equal(selected.length, 1);
@@ -271,7 +271,7 @@ test("focused XCOM module configuration diagnostics profile stays status-indepen
     "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
   ]);
   assert.equal(selected[0].uri, "features/xcom2/module-configuration-diagnostics.feature");
-  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@implemented-and-validated"));
   assert.equal(
     cucumberProfiles.xcom2ModuleConfigurationDiagnosticsNativeGui.tags,
     "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 and @desktop and @native-gui and not @web",
@@ -339,7 +339,7 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("declared routes stay exact while XCOM module configuration diagnostics remains parked", () => {
+test("declared routes and parked inventory stay exact after XCOM module configuration diagnostics promotion", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -352,6 +352,7 @@ test("declared routes stay exact while XCOM module configuration diagnostics rem
     "@REQ-REFACTORKIT-JAVA-IMPORT-002",
     "@REQ-XCOM2-MODULE-ACTIVATION-001",
     "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
+    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
   ];
 
   assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
@@ -363,40 +364,17 @@ test("declared routes stay exact while XCOM module configuration diagnostics rem
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
-    "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
   ]);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 2);
-  assert.equal(nativeGui.length, 5);
+  assert.equal(nativeGui.length, 6);
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 2);
-  assert.equal(routing.expectedDesktopTauriWebdriver.length, 5);
+  assert.equal(routing.expectedDesktopTauriWebdriver.length, 6);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
     currentNativeRequirements,
-  );
-
-  const afterPromotion = declared.map((candidate) =>
-    candidate.tags.has("@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001")
-      ? {
-          ...candidate,
-          tags: new Set(
-            [...candidate.tags, "@implemented-and-validated"].filter(
-              (tag) => tag !== "@not-implemented",
-            ),
-          ),
-        }
-      : candidate,
-  );
-  const promotedRouting = evaluateDeclaredStoryRouting(afterPromotion);
-  assert.deepEqual(promotedRouting.failures, []);
-  assert.equal(promotedRouting.expectedWeb.length, 2);
-  assert.equal(promotedRouting.expectedDesktopTauriHarness.length, 2);
-  assert.equal(promotedRouting.expectedDesktopTauriWebdriver.length, 6);
-  assert.deepEqual(
-    promotedRouting.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
-    [...currentNativeRequirements, "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001"].sort(),
   );
 });
 
