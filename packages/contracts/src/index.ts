@@ -15,6 +15,7 @@ export * from "./domain/refactorkit-typescript-diagnostics";
 export * from "./domain/refactorkit-typescript-symbol-navigation";
 export * from "./domain/xcom2-module-activation";
 export * from "./domain/xcom2-module-configuration-activation";
+export * from "./domain/xcom2-module-configuration-diagnostics";
 export * from "./language-service";
 export * from "./java-intelligence";
 export * from "./xcom2";
