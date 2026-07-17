@@ -35,7 +35,7 @@ Business Need: Safe XCOM 2 project configuration diagnostics
       | remediation        | Correct the JSON syntax so the file contains one complete JSON object, then refresh the workspace.     |
       | support identifier | configuration-invalid-json                                                                             |
     And the warning is perceivable without color alone and offers no edit, open, or write action
-    And the rendered DOM contains none of these prohibited disclosures:
+    And that diagnostic warning and its mirrored project warning contain none of these prohibited disclosures:
       | prohibited disclosure                          |
       | CONFIG-SOURCE-MUST-NOT-APPEAR                  |
       | the actual absolute scenario sandbox root      |
