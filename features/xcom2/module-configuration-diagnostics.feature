@@ -12,7 +12,7 @@ Business Need: Safe XCOM 2 project configuration diagnostics
   It also makes no proprietary compatibility, module-content parsing, external-root, machine-correctness, process, mutation, or contextual XCOM tool claim.
   Browser behavior is unchanged and outside this native Story.
 
-  @REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-and-validated
   Scenario: Explain invalid project configuration across explicit refresh without suppressing recognized activation
     Given one scenario sandbox owns all desktop user state and an actual authorized workspace named "diagnostic-wotc"
     And the isolated desktop user state contains one scenario-owner secret canary that is absent from the workspace
