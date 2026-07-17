@@ -948,13 +948,14 @@ export class NativeXcom2ModuleConfigurationActivationSession {
           return;
         }
         let sawPending = false;
+        let sawCompletionCleared = false;
         const sample = (): void => {
           sawPending ||= button.disabled;
-          const completed = [
+          const completionCopyPresent = [
             ...(dialog?.querySelectorAll<HTMLElement>('[role="status"]') ?? []),
-          ].some(
-            (candidate) => normalized(candidate.textContent) === "Workspace metadata refreshed.",
-          );
+          ].some((candidate) => normalized(candidate.textContent) === "Workspace refreshed.");
+          sawCompletionCleared ||= !completionCopyPresent;
+          const completed = sawPending && sawCompletionCleared && completionCopyPresent;
           snapshots.push({
             elapsed: Math.round(performance.now() - startedAt),
             completed,

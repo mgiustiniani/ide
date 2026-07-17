@@ -6,6 +6,12 @@ function session(world: StoryWorld) {
   return world.nativeXcom2ModuleConfigurationActivationSession();
 }
 
+function sharedConfigurationSession(world: StoryWorld) {
+  return world.hasNativeXcom2ModuleConfigurationDiagnosticsSession()
+    ? world.nativeXcom2ModuleConfigurationDiagnosticsSession()
+    : world.nativeXcom2ModuleConfigurationActivationSession();
+}
+
 Given<StoryWorld>(
   /^"([^"]+)" contains no XCOM convention evidence and no "([^"]+)" configuration$/,
   async function (workspace: string, configurationPath: string) {
@@ -23,7 +29,7 @@ Given<StoryWorld>(
 Given<StoryWorld>(
   "its actual {string} path is an empty regular directory",
   async function (relativePath: string) {
-    await session(this).createEmptyModuleRoot(relativePath);
+    await sharedConfigurationSession(this).createEmptyModuleRoot(relativePath);
   },
 );
 
@@ -50,6 +56,12 @@ Given<StoryWorld>(
 Then<StoryWorld>(
   "it has no {string} activity entry, recognition panel, or XCOM bottom contribution",
   async function (activityName: string) {
+    if (this.hasNativeXcom2ModuleConfigurationDiagnosticsSession()) {
+      await this.nativeXcom2ModuleConfigurationDiagnosticsSession().assertNoConfiguredContributions(
+        activityName,
+      );
+      return;
+    }
     const configuredSession = session(this);
     const phase = configuredSession.evidence().readyWorkspaces.at(-1) ?? "workspace";
     await configuredSession.assertNoConfiguredContributions(activityName, phase);
@@ -75,7 +87,7 @@ Then<StoryWorld>(
 Then<StoryWorld>(
   "its ordered activation reasons are exactly:",
   async function (dataTable: DataTable) {
-    await session(this).assertOrderedActivationReasons(
+    await sharedConfigurationSession(this).assertOrderedActivationReasons(
       dataTable.hashes().map((row) => ({
         kind: row.kind ?? "",
         "workspace-relative path": row["workspace-relative path"] ?? "",
@@ -111,14 +123,14 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>("the application performs no configuration watch or poll refresh", function () {
-  session(this).assertNoConfigurationWatchOrPollRefresh();
+  sharedConfigurationSession(this).assertNoConfigurationWatchOrPollRefresh();
 });
 
 When<StoryWorld>(
   "the person invokes the actual {string} control",
   { timeout: 20_000 },
   async function (controlName: string) {
-    await session(this).invokeWorkspaceRefresh(controlName);
+    await sharedConfigurationSession(this).invokeWorkspaceRefresh(controlName);
   },
 );
 

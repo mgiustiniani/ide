@@ -6,6 +6,15 @@ function activationSession(world: StoryWorld) {
   return world.nativeXcom2ActivationSession();
 }
 
+function switchableActivationSession(world: StoryWorld) {
+  if (world.hasNativeXcom2ModuleConfigurationDiagnosticsSession()) {
+    throw new Error("The configuration diagnostics Story does not switch workspace roots");
+  }
+  return world.hasNativeXcom2ModuleConfigurationActivationSession()
+    ? world.nativeXcom2ModuleConfigurationActivationSession()
+    : world.nativeXcom2ModuleActivationSession();
+}
+
 function column(dataTable: DataTable, name: string): string[] {
   return dataTable.hashes().map((row) => {
     const value = row[name];
@@ -33,7 +42,7 @@ Given<StoryWorld>(
 Given<StoryWorld>(
   "the actual {string} workspace contains only these ordinary regular files:",
   async function (workspace: string, dataTable: DataTable) {
-    await activationSession(this).createWorkspaceFixtures(
+    await switchableActivationSession(this).createWorkspaceFixtures(
       workspace,
       column(dataTable, "relative path"),
     );
@@ -115,7 +124,7 @@ When<StoryWorld>(
   "the person uses the real Settings workspace controls to switch to {string}",
   { timeout: 10_000 },
   async function (workspace: string) {
-    await activationSession(this).switchWorkspace(workspace);
+    await switchableActivationSession(this).switchWorkspace(workspace);
   },
 );
 
@@ -155,6 +164,7 @@ Then<StoryWorld>(
 
 When<StoryWorld>(
   "the person opens {string} with the keyboard",
+  { timeout: 10_000 },
   async function (activityName: string) {
     await activationSession(this).openActivityWithKeyboard(activityName);
   },
@@ -167,12 +177,15 @@ Then<StoryWorld>("its recognition panel shows exactly:", async function (dataTab
 });
 
 Then<StoryWorld>("its ordered evidence list is exactly:", async function (dataTable: DataTable) {
-  await this.nativeXcom2ModuleActivationSession().assertOrderedEvidence(
-    dataTable.hashes().map((row) => ({
-      kind: row.kind ?? "",
-      "workspace-relative path": row["workspace-relative path"] ?? "",
-    })),
-  );
+  const rows = dataTable.hashes().map((row) => ({
+    kind: row.kind ?? "",
+    "workspace-relative path": row["workspace-relative path"] ?? "",
+  }));
+  if (this.hasNativeXcom2ModuleConfigurationDiagnosticsSession()) {
+    await this.nativeXcom2ModuleConfigurationDiagnosticsSession().assertOrderedEvidence(rows);
+    return;
+  }
+  await this.nativeXcom2ModuleActivationSession().assertOrderedEvidence(rows);
 });
 
 Then<StoryWorld>("no scan issue is shown", async function () {
@@ -190,7 +203,7 @@ When<StoryWorld>(
   "the person uses the real Settings workspace controls to switch back to {string}",
   { timeout: 20_000 },
   async function (workspace: string) {
-    await activationSession(this).switchBackToGeneric(workspace);
+    await switchableActivationSession(this).switchBackToGeneric(workspace);
   },
 );
 
@@ -200,14 +213,14 @@ Then<StoryWorld>(
     if (activityName !== "XCOM 2 Project") {
       throw new Error(`Unexpected activity removal assertion: ${activityName}`);
     }
-    if (!activationSession(this).evidence().synchronousRemovalObserved) {
+    if (!switchableActivationSession(this).evidence().synchronousRemovalObserved) {
       throw new Error("Synchronous XCOM contribution removal was not observed");
     }
   },
 );
 
 Then<StoryWorld>("the generic workspace has no XCOM bottom contribution", async function () {
-  await activationSession(this).assertNoGenericBottomContribution();
+  await switchableActivationSession(this).assertNoGenericBottomContribution();
 });
 
 Then<StoryWorld>(
