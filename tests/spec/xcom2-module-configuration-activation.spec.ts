@@ -241,6 +241,40 @@ describe("@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001 configured project acti
     expect(result.diagnostic).toEqual({ code: "configuration-invalid-module-roots" });
   });
 
+  it.each([
+    ["file URI-like root", "file:/inside"],
+    ["C0 control", "mods/c0\ninside"],
+    ["C1 control", "mods/c1\u009finside"],
+  ] as const)("rejects a forged ready %s atomically", (_case, invalidRoot) => {
+    const forged = {
+      ...readCorrelation,
+      kind: "ready",
+      configuration: configuration(["Mods/日本語/β", invalidRoot]),
+    } satisfies Xcom2ModuleConfigurationReadResult;
+
+    const result = accepted(forged);
+
+    expect(result.state).toBe("inactive");
+    expect(result.decisions).toEqual([]);
+    expect(result.diagnostic).toEqual({ code: "configuration-invalid-module-roots" });
+  });
+
+  it("continues to grant configured authority to a portable Unicode root", () => {
+    const result = accepted(ready(["Mods/日本語/β"]));
+
+    expect(result.decisions).toEqual([
+      {
+        moduleRoot: "Mods/日本語/β",
+        state: "active",
+        source: "configured",
+        activationConfidence: "explicit",
+        recognitionConfidence: "none",
+        reasons: [{ kind: "configuration", target: "wotc" }],
+      },
+    ]);
+    expect(result.diagnostic).toBeUndefined();
+  });
+
   it("rejects a forged ready root containing a lone high UTF-16 surrogate atomically", () => {
     const forged = {
       ...readCorrelation,
