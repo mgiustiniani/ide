@@ -8,6 +8,7 @@ import { NativeApplicationContentLayoutSession } from "./native-application-cont
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
 import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
 import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activation.js";
+import { NativeXcom2ModuleConfigurationActivationSession } from "./native-xcom2-module-configuration-activation.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
@@ -36,6 +37,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeRefactorKitJavaImportEvidenceAttached = false;
   #nativeXcom2ModuleActivationSession?: NativeXcom2ModuleActivationSession;
   #nativeXcom2ModuleActivationEvidenceAttached = false;
+  #nativeXcom2ModuleConfigurationActivationSession?: NativeXcom2ModuleConfigurationActivationSession;
+  #nativeXcom2ModuleConfigurationActivationEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
@@ -284,11 +287,70 @@ export class StoryWorld extends World<StoryWorldParameters> {
     return this.#nativeXcom2ModuleActivationSession;
   }
 
+  nativeXcom2ActivationSession():
+    NativeXcom2ModuleActivationSession | NativeXcom2ModuleConfigurationActivationSession {
+    const session =
+      this.#nativeXcom2ModuleActivationSession ??
+      this.#nativeXcom2ModuleConfigurationActivationSession;
+    if (!session) {
+      throw new Error("A native XCOM activation Story session has not been created");
+    }
+    return session;
+  }
+
   async attachNativeXcom2ModuleActivationEvidence(): Promise<void> {
     if (this.#nativeXcom2ModuleActivationEvidenceAttached) return;
     const session = this.nativeXcom2ModuleActivationSession();
     await this.attach(JSON.stringify(session.evidence()), "application/json");
     this.#nativeXcom2ModuleActivationEvidenceAttached = true;
+  }
+
+  createNativeXcom2ModuleConfigurationActivationSession(): NativeXcom2ModuleConfigurationActivationSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native configured XCOM Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-webdriver" ||
+      this.targetEvidence.nativeGui !== true ||
+      this.targetEvidence.e2e !== true ||
+      this.targetEvidence.packagedApplication !== false ||
+      this.targetEvidence.artifactKind !== "release-no-bundle"
+    ) {
+      throw new TypeError(
+        "The native configured XCOM Story requires explicit release/no-bundle tauri-webdriver evidence",
+      );
+    }
+    if (
+      this.#nativeXcom2ModuleConfigurationActivationSession ||
+      this.#nativeXcom2ModuleActivationSession
+    ) {
+      throw new Error("A native XCOM activation Story session has already been created");
+    }
+    const session = new NativeXcom2ModuleConfigurationActivationSession();
+    this.#nativeXcom2ModuleConfigurationActivationSession = session;
+    return session;
+  }
+
+  nativeXcom2ModuleConfigurationActivationSession(): NativeXcom2ModuleConfigurationActivationSession {
+    if (!this.#nativeXcom2ModuleConfigurationActivationSession) {
+      throw new Error("The native configured XCOM Story session has not been created");
+    }
+    return this.#nativeXcom2ModuleConfigurationActivationSession;
+  }
+
+  hasNativeXcom2ModuleConfigurationActivationSession(): boolean {
+    return this.#nativeXcom2ModuleConfigurationActivationSession !== undefined;
+  }
+
+  async attachNativeXcom2ModuleConfigurationActivationEvidence(): Promise<void> {
+    if (this.#nativeXcom2ModuleConfigurationActivationEvidenceAttached) return;
+    await this.attach(
+      JSON.stringify(this.nativeXcom2ModuleConfigurationActivationSession().evidence()),
+      "application/json",
+    );
+    this.#nativeXcom2ModuleConfigurationActivationEvidenceAttached = true;
   }
 
   createNativeRefactorKitJavaImportSession(): NativeRefactorKitJavaImportSession {
@@ -328,6 +390,8 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
     const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
     const nativeXcom2ModuleActivationSession = this.#nativeXcom2ModuleActivationSession;
+    const nativeXcom2ModuleConfigurationActivationSession =
+      this.#nativeXcom2ModuleConfigurationActivationSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
@@ -337,6 +401,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeDesktopFileOpenSession = undefined;
     this.#nativeRefactorKitJavaImportSession = undefined;
     this.#nativeXcom2ModuleActivationSession = undefined;
+    this.#nativeXcom2ModuleConfigurationActivationSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
@@ -399,6 +464,24 @@ export class StoryWorld extends World<StoryWorldParameters> {
             "application/json",
           );
           const diagnostics = nativeXcom2ModuleActivationSession.redactedDiagnostics();
+          if (diagnostics) await this.attach(diagnostics, "text/plain");
+        }
+      }
+      if (nativeXcom2ModuleConfigurationActivationSession) {
+        try {
+          if (!this.#nativeXcom2ModuleConfigurationActivationEvidenceAttached) {
+            await this.attach(
+              JSON.stringify(nativeXcom2ModuleConfigurationActivationSession.evidence()),
+              "application/json",
+            );
+          }
+        } finally {
+          await nativeXcom2ModuleConfigurationActivationSession.dispose();
+          await this.attach(
+            JSON.stringify(nativeXcom2ModuleConfigurationActivationSession.evidence()),
+            "application/json",
+          );
+          const diagnostics = nativeXcom2ModuleConfigurationActivationSession.redactedDiagnostics();
           if (diagnostics) await this.attach(diagnostics, "text/plain");
         }
       }

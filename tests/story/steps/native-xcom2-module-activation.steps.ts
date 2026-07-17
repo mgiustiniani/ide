@@ -2,6 +2,10 @@ import { Given, Then, When, type DataTable } from "@cucumber/cucumber";
 
 import type { StoryWorld } from "../support/world.js";
 
+function activationSession(world: StoryWorld) {
+  return world.nativeXcom2ActivationSession();
+}
+
 function column(dataTable: DataTable, name: string): string[] {
   return dataTable.hashes().map((row) => {
     const value = row[name];
@@ -13,20 +17,23 @@ function column(dataTable: DataTable, name: string): string[] {
 Given<StoryWorld>(
   "one scenario sandbox owns all desktop user state and an actual workspace registry with exactly these authorized workspaces:",
   async function (dataTable: DataTable) {
-    const session = this.createNativeXcom2ModuleActivationSession();
-    await session.allocateScenario(
-      dataTable.hashes().map((row) => ({
-        workspace: row.workspace ?? "",
-        "initial role": row["initial role"] ?? "",
-      })),
-    );
+    const rows = dataTable.hashes().map((row) => ({
+      workspace: row.workspace ?? "",
+      "initial role": row["initial role"] ?? "",
+    }));
+    const session = rows.some(
+      ({ "initial role": initialRole }) => initialRole === "explicitly configured module",
+    )
+      ? this.createNativeXcom2ModuleConfigurationActivationSession()
+      : this.createNativeXcom2ModuleActivationSession();
+    await session.allocateScenario(rows);
   },
 );
 
 Given<StoryWorld>(
   "the actual {string} workspace contains only these ordinary regular files:",
   async function (workspace: string, dataTable: DataTable) {
-    await this.nativeXcom2ModuleActivationSession().createWorkspaceFixtures(
+    await activationSession(this).createWorkspaceFixtures(
       workspace,
       column(dataTable, "relative path"),
     );
@@ -67,12 +74,12 @@ When<StoryWorld>(
   /^a freshly built production release\/no-bundle Tauri executable is launched directly on Linux X11 for "([^"]+)"$/,
   { timeout: 35_000 },
   async function (workspace: string) {
-    await this.nativeXcom2ModuleActivationSession().launch(workspace);
+    await activationSession(this).launch(workspace);
   },
 );
 
 When<StoryWorld>("its WebKit DOM viewport is exactly 1440x900", async function () {
-  const session = this.nativeXcom2ModuleActivationSession();
+  const session = activationSession(this);
   await session.assertViewport();
   await this.attach(JSON.stringify(session.evidence()), "application/json");
 });
@@ -81,6 +88,13 @@ Then<StoryWorld>(
   "within {int} seconds the generic workspace is ready",
   { timeout: 20_000 },
   async function (seconds: number) {
+    if (this.hasNativeXcom2ModuleConfigurationActivationSession()) {
+      await this.nativeXcom2ModuleConfigurationActivationSession().waitForWorkspaceReady(
+        seconds,
+        "plain-notes",
+      );
+      return;
+    }
     await this.nativeXcom2ModuleActivationSession().waitForWorkspaceReady(
       seconds,
       "xcom-reference-notes",
@@ -101,7 +115,7 @@ When<StoryWorld>(
   "the person uses the real Settings workspace controls to switch to {string}",
   { timeout: 10_000 },
   async function (workspace: string) {
-    await this.nativeXcom2ModuleActivationSession().switchWorkspace(workspace);
+    await activationSession(this).switchWorkspace(workspace);
   },
 );
 
@@ -128,29 +142,26 @@ Then<StoryWorld>(
   "within {int} seconds exactly one accessible activity entry named {string} appears",
   { timeout: 20_000 },
   async function (seconds: number, activityName: string) {
-    await this.nativeXcom2ModuleActivationSession().assertExactlyOneActivityWithin(
-      seconds,
-      activityName,
-    );
+    await activationSession(this).assertExactlyOneActivityWithin(seconds, activityName);
   },
 );
 
 Then<StoryWorld>(
   "that activity entry has a keyboard-focusable control with the accessible name {string}",
   async function (activityName: string) {
-    await this.nativeXcom2ModuleActivationSession().assertActivityKeyboardFocusable(activityName);
+    await activationSession(this).assertActivityKeyboardFocusable(activityName);
   },
 );
 
 When<StoryWorld>(
   "the person opens {string} with the keyboard",
   async function (activityName: string) {
-    await this.nativeXcom2ModuleActivationSession().openActivityWithKeyboard(activityName);
+    await activationSession(this).openActivityWithKeyboard(activityName);
   },
 );
 
 Then<StoryWorld>("its recognition panel shows exactly:", async function (dataTable: DataTable) {
-  await this.nativeXcom2ModuleActivationSession().assertRecognitionFields(
+  await activationSession(this).assertRecognitionFields(
     dataTable.hashes().map((row) => ({ field: row.field ?? "", value: row.value ?? "" })),
   );
 });
@@ -179,7 +190,7 @@ When<StoryWorld>(
   "the person uses the real Settings workspace controls to switch back to {string}",
   { timeout: 20_000 },
   async function (workspace: string) {
-    await this.nativeXcom2ModuleActivationSession().switchBackToGeneric(workspace);
+    await activationSession(this).switchBackToGeneric(workspace);
   },
 );
 
@@ -189,14 +200,14 @@ Then<StoryWorld>(
     if (activityName !== "XCOM 2 Project") {
       throw new Error(`Unexpected activity removal assertion: ${activityName}`);
     }
-    if (!this.nativeXcom2ModuleActivationSession().evidence().synchronousRemovalObserved) {
+    if (!activationSession(this).evidence().synchronousRemovalObserved) {
       throw new Error("Synchronous XCOM contribution removal was not observed");
     }
   },
 );
 
 Then<StoryWorld>("the generic workspace has no XCOM bottom contribution", async function () {
-  await this.nativeXcom2ModuleActivationSession().assertNoGenericBottomContribution();
+  await activationSession(this).assertNoGenericBottomContribution();
 });
 
 Then<StoryWorld>(

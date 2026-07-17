@@ -21,7 +21,10 @@ const LEASE_EVIDENCE_FILE = "native-scenario-environment-leases.jsonl";
 
 type EnvironmentVariable = (typeof ENVIRONMENT_VARIABLES)[number];
 type Requirement =
-  "REQ-LAYOUT-DESKTOP-001" | "REQ-DESKTOP-FILE-OPEN-001" | "REQ-XCOM2-MODULE-ACTIVATION-001";
+  | "REQ-LAYOUT-DESKTOP-001"
+  | "REQ-DESKTOP-FILE-OPEN-001"
+  | "REQ-XCOM2-MODULE-ACTIVATION-001"
+  | "REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001";
 
 interface NativeScenarioEnvironmentOptions {
   readonly workspaceName?: string;
