@@ -85,8 +85,20 @@ function isPortableModuleRoot(root: unknown): root is string {
     return false;
   }
 
+  for (let index = 0; index < root.length; index += 1) {
+    const codeUnit = root.charCodeAt(index);
+    if (codeUnit <= 0x1f || (codeUnit >= 0x7f && codeUnit <= 0x9f)) return false;
+  }
+
   if (root === ".") return true;
-  if (root.startsWith("/") || root.includes("\\") || /^[A-Za-z]:/.test(root)) return false;
+  if (
+    root.startsWith("/") ||
+    root.includes("\\") ||
+    /^[A-Za-z]:/.test(root) ||
+    /^file:\//i.test(root)
+  ) {
+    return false;
+  }
 
   const components = root.split("/");
   return components.every(
