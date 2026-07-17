@@ -7,6 +7,7 @@ Business Need: Safe XCOM 2 project configuration diagnostics
 
   Eventual native evidence is bounded to a scenario-owned sandbox filesystem and the production Linux X11 Tauri release/no-bundle WebKit DOM at an asserted 1440x900 viewport.
   The project fixture contains no proprietary content, and every project path remains regular, non-symlink, exact-case, and contained within the current authorized workspace.
+  Normal application-owned `.ide/workspace.json` marker/registry metadata updates are outside this project-input no-write assertion and are not XCOM configuration or evidence writes.
   It makes no application-package, Git-synchronization, configuration-watcher, Wayland, other-operating-system, or other-DPI-behavior claim.
   It also makes no proprietary compatibility, module-content parsing, external-root, machine-correctness, process, mutation, or contextual XCOM tool claim.
   Browser behavior is unchanged and outside this native Story.
@@ -109,5 +110,5 @@ Business Need: Safe XCOM 2 project configuration diagnostics
     And no late stale configured decision, explicit authority, explicit-configuration reason, second activity entry, or XCOM bottom contribution appears
     And the actual ".ide/xcom2.json" bytes remain exactly the unsupported-target bytes specified above
     And both Option A descriptor files remain exact empty regular files
-    And after application launch the only workspace filesystem mutations are the scenario owner's two exact external configuration replacements and exact external creation of those two descriptor files
+    And after application launch the only changes to the project configuration and Option A evidence paths are the scenario owner's two exact external configuration replacements and exact external creation of those two descriptor files
     And throughout the scenario the application never creates, writes, reformats, or deletes the project configuration or Option A evidence files
