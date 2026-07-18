@@ -28,6 +28,12 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`REQ-XCOM2-MACHINE-SETTINGS-001`
 |`@implemented-not-e2e-validated`
 
+|link:../../features/xcom2/machine-settings-missing-steam.feature[`features/xcom2/machine-settings-missing-steam.feature`]
+|Honest native XCOM machine Settings when Steam products are missing
+|1
+|`REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001`
+|`@not-implemented`
+
 |link:../../features/xcom2/module-activation.feature[`features/xcom2/module-activation.feature`]
 |Conservative recognition-only XCOM module activation
 |1
@@ -89,7 +95,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains eleven feature files, twelve scenarios, and twelve repository-unique stable requirement IDs: eight validated, two harness-only, and two not implemented. The status values above are copied from Gherkin, not inferred from observed evidence.
+NOTE: The configured inventory contains twelve feature files, thirteen scenarios, and thirteen repository-unique stable requirement IDs: eight validated, two harness-only, and three not implemented. The status values above are copied from Gherkin, not inferred from observed evidence. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` remains a FUTURE/TARGET declaration pending promotion and does not change current evidence or implemented aggregate routing.
 
 == Requirement Catalogue
 
