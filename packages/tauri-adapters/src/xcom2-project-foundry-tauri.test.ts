@@ -1,8 +1,10 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
   type Xcom2ProjectFoundryDestinationParentSelectionGrant,
   type Xcom2ProjectFoundryOperationGrant,
+  type Xcom2ProjectFoundryRenderRequest,
   type Xcom2ProjectFoundrySourceSelectionGrant,
 } from "@ide/contracts";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,11 +14,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TauriAdapterError } from "./errors";
 import {
   XCOM2_PROJECT_FOUNDRY_COMMANDS,
+  XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS,
   TauriProjectFoundryAdapter,
+  TauriProjectFoundryRendererAdapter,
   TauriProjectFoundrySelectionCancelledError,
   TauriXcom2ProjectFoundryAdapter,
+  TauriXcom2ProjectFoundryRendererAdapter,
   createTauriProjectFoundryComposition,
+  createTauriProjectFoundryRendererComposition,
   createTauriXcom2ProjectFoundryComposition,
+  createTauriXcom2ProjectFoundryRendererComposition,
 } from "./xcom2-project-foundry-tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -25,6 +32,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 const invokeMock = vi.mocked(invoke);
 const openMock = vi.mocked(open);
 const commands = XCOM2_PROJECT_FOUNDRY_COMMANDS;
+const rendererCommands = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS;
 const dialogCommand = "plugin:dialog|open";
 const modId = "FoundryPreviewFixture";
 
@@ -59,6 +67,35 @@ function operationGrant(
     identity: "operation-grant:1",
     ...overrides,
   } as Xcom2ProjectFoundryOperationGrant;
+}
+
+function renderRequest(overrides: Record<string, unknown> = {}): Xcom2ProjectFoundryRenderRequest {
+  return {
+    sourceGrant: sourceGrant(),
+    destinationParentGrant: destinationGrant(),
+    modId,
+    ...overrides,
+  } as Xcom2ProjectFoundryRenderRequest;
+}
+
+function renderedResult(
+  planBody: unknown = { schemaVersion: 1, entries: ["Config", "Src"] },
+  grant: Xcom2ProjectFoundryOperationGrant = operationGrant(),
+): Record<string, unknown> {
+  return { kind: "rendered", operationGrant: grant, planBody };
+}
+
+function nestedJson(depth: number): unknown {
+  let value: unknown = "leaf";
+  for (let index = 0; index < depth; index += 1) value = [value];
+  return value;
+}
+
+function nodeBoundPlan(extraNodes = 0): Record<string, unknown> {
+  return {
+    groups: Array.from({ length: 256 }, () => Array(38).fill(null)),
+    remainder: Array(13 + extraNodes).fill(null),
+  };
 }
 
 function destinationSelection(
@@ -1077,5 +1114,685 @@ describe("Project Foundry sanitized errors and hostile provider values", () => {
     expect(getter).not.toHaveBeenCalled();
     expect(error.message).not.toContain("/private/provider/SECRET-PATH");
     expect(error.cause).toBeUndefined();
+  });
+});
+
+describe("Project Foundry corrected renderer commands and parent-only selection", () => {
+  it("publishes the exact frozen corrected renderer command vocabulary", () => {
+    expect(rendererCommands).toEqual({
+      authorizeDestinationParentSelection:
+        "authorize_xcom2_project_foundry_destination_parent_selection",
+      renderPreview: "render_xcom2_project_foundry_preview",
+      revokeOperation: "revoke_xcom2_project_foundry_operation_grants",
+    });
+    expect(Object.isFrozen(rendererCommands)).toBe(true);
+    expect(Reflect.set(rendererCommands, "renderPreview", "unsafe")).toBe(false);
+  });
+
+  it("selects only the destination parent with exact dialog options and invoke args", async () => {
+    const events: string[] = [];
+    openMock.mockImplementationOnce((options) => {
+      events.push("dialog");
+      expect(options).toEqual({ directory: true, multiple: false });
+      expect(Reflect.ownKeys(options as object)).toEqual(["directory", "multiple"]);
+      expect(Object.isFrozen(options)).toBe(true);
+      return Promise.resolve("/destination/parent");
+    });
+    invokeMock.mockImplementationOnce((command, args) => {
+      events.push("invoke");
+      expect(command).toBe(rendererCommands.authorizeDestinationParentSelection);
+      expect(args).toEqual({ request: { selectedRoot: "/destination/parent" } });
+      expect(Reflect.ownKeys(args as object)).toEqual(["request"]);
+      expect(Reflect.ownKeys((args as { request: object }).request)).toEqual(["selectedRoot"]);
+      expect(Object.isFrozen(args)).toBe(true);
+      expect(Object.isFrozen((args as { request: object }).request)).toBe(true);
+      return Promise.resolve(destinationGrant());
+    });
+
+    const result = await new TauriXcom2ProjectFoundryRendererAdapter().selectDestinationParent();
+
+    expect(events).toEqual(["dialog", "invoke"]);
+    expect(openMock).toHaveBeenCalledExactlyOnceWith({ directory: true, multiple: false });
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(
+      rendererCommands.authorizeDestinationParentSelection,
+      { request: { selectedRoot: "/destination/parent" } },
+    );
+    expect(result).toEqual(destinationGrant());
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("rejects a parent grant not bound to the selected parent", async () => {
+    openMock.mockResolvedValueOnce("/destination/parent");
+    invokeMock.mockResolvedValueOnce(destinationGrant({ parent: "/destination/other" }));
+
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().selectDestinationParent(),
+      rendererCommands.authorizeDestinationParentSelection,
+      "response",
+    );
+  });
+
+  it("reports destination cancellation without invoking parent authorization", async () => {
+    openMock.mockResolvedValueOnce(null);
+
+    const error = await captureRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().selectDestinationParent(),
+    );
+
+    expect(error).toMatchObject({
+      name: "TauriProjectFoundrySelectionCancelledError",
+      message: "Native directory selection was cancelled",
+      selection: "destination-parent",
+    });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project Foundry corrected render request, result, refusal, and bindings", () => {
+  it("invokes the exact render command with only a detached strict request", async () => {
+    const caller = renderRequest();
+    invokeMock.mockImplementationOnce((command, args) => {
+      expect(command).toBe(rendererCommands.renderPreview);
+      expect(args).toEqual({ request: renderRequest() });
+      expect(Reflect.ownKeys(args as object)).toEqual(["request"]);
+      const request = (args as { request: Xcom2ProjectFoundryRenderRequest }).request;
+      expect(Reflect.ownKeys(request)).toEqual(["sourceGrant", "destinationParentGrant", "modId"]);
+      expect(request).not.toBe(caller);
+      expect(request.sourceGrant).not.toBe(caller.sourceGrant);
+      expect(request.destinationParentGrant).not.toBe(caller.destinationParentGrant);
+      expect(Object.isFrozen(args)).toBe(true);
+      expect(Object.isFrozen(request)).toBe(true);
+      expect(Object.isFrozen(request.sourceGrant)).toBe(true);
+      expect(Object.isFrozen(request.destinationParentGrant)).toBe(true);
+      return Promise.resolve(renderedResult());
+    });
+
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(caller),
+    ).resolves.toEqual(renderedResult());
+
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(rendererCommands.renderPreview, {
+      request: renderRequest(),
+    });
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it.each(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES)(
+    "accepts and freezes exact renderer refusal %s",
+    async (code) => {
+      const provider = { kind: "refused", code };
+      invokeMock.mockResolvedValueOnce(provider);
+
+      const result = await new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(
+        renderRequest(),
+      );
+
+      expect(result).toEqual({ kind: "refused", code });
+      expect(result).not.toBe(provider);
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Reflect.ownKeys(result)).toEqual(["kind", "code"]);
+    },
+  );
+
+  it.each([
+    ["null", null],
+    ["array", []],
+    ["primitive", "rendered"],
+    ["missing kind", { operationGrant: operationGrant(), planBody: {} }],
+    ["unknown kind", { kind: "ready", operationGrant: operationGrant(), planBody: {} }],
+    ["rendered missing plan body", { kind: "rendered", operationGrant: operationGrant() }],
+    ["rendered extra top-level key", { ...renderedResult(), providerPath: "/private/provider" }],
+    ["refusal missing code", { kind: "refused" }],
+    ["refusal extra top-level key", { kind: "refused", code: "mod-id-invalid", detail: "raw" }],
+    ["unsupported refusal", { kind: "refused", code: "provider-secret" }],
+    ["class instance", Object.assign(new (class NativeResult {})(), renderedResult())],
+  ])("rejects inexact render response: %s", async (_label, response) => {
+    invokeMock.mockResolvedValueOnce(response);
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it.each([
+    ["missing destination grant", { sourceGrant: sourceGrant(), modId }],
+    ["extra operation authority", { ...renderRequest(), operationGrant: operationGrant() }],
+    ["extra source evidence", { ...renderRequest(), sourceObject: evidence() }],
+    ["extra destination state", { ...renderRequest(), destinationState: "absent" }],
+    [
+      "same source and destination identity",
+      renderRequest({ destinationParentGrant: destinationGrant({ identity: "source-grant:1" }) }),
+    ],
+    ["invalid source grant", renderRequest({ sourceGrant: sourceGrant({ kind: "other" }) })],
+    [
+      "invalid destination grant",
+      renderRequest({ destinationParentGrant: destinationGrant({ parent: "relative" }) }),
+    ],
+    ["invalid ModId", renderRequest({ modId: "1Invalid" })],
+    ["class request", Object.assign(new (class RenderRequest {})(), renderRequest())],
+  ])(
+    "rejects render request or source/destination binding mismatch: %s",
+    async (_label, request) => {
+      await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(
+          request as Xcom2ProjectFoundryRenderRequest,
+        ),
+        rendererCommands.renderPreview,
+        "request",
+      );
+      expect(invokeMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not execute an accessor-backed render request field", async () => {
+    const getter = vi.fn(() => "/private/provider/SECRET-PATH");
+    const request = renderRequest() as unknown as Record<string, unknown>;
+    Object.defineProperty(request, "modId", { enumerable: true, get: getter });
+
+    const error = await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(
+        request as unknown as Xcom2ProjectFoundryRenderRequest,
+      ),
+      rendererCommands.renderPreview,
+      "request",
+    );
+
+    expect(getter).not.toHaveBeenCalled();
+    expect(error.message).not.toContain("SECRET-PATH");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["wrong derived destination", operationGrant({ derivedDestination: "/destination/other" })],
+    ["operation identity equals source", operationGrant({ identity: "source-grant:1" })],
+    ["operation identity equals destination", operationGrant({ identity: "destination-grant:1" })],
+  ])("rejects rendered operation binding mismatch: %s", async (_label, grant) => {
+    invokeMock.mockResolvedValueOnce(renderedResult({}, grant));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+});
+
+describe("Project Foundry bounded strict unknown JSON render plan", () => {
+  it("preserves arbitrary extra plan keys and every supported JSON value kind", async () => {
+    const planBody = {
+      schemaVersion: 1,
+      providerNeutralExtension: {
+        nullValue: null,
+        booleanValue: true,
+        numberValue: -12.5,
+        stringValue: "safe text 🧪",
+        arrayValue: [false, 0, "value", { nested: "accepted" }],
+      },
+    };
+    invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+
+    const result = await new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(
+      renderRequest(),
+    );
+
+    expect(result).toEqual(renderedResult(planBody));
+    expect(result.kind).toBe("rendered");
+    if (result.kind === "rendered") {
+      expect(result.planBody).toEqual(planBody);
+      expect(result.planBody).not.toBe(planBody);
+    }
+  });
+
+  it.each([
+    ["undefined", { value: undefined }],
+    ["function", () => undefined],
+    ["symbol", Symbol("native")],
+    ["bigint", BigInt(1)],
+    ["NaN", Number.NaN],
+    ["positive infinity", Number.POSITIVE_INFINITY],
+    ["negative infinity", Number.NEGATIVE_INFINITY],
+    ["date", new Date(0)],
+    ["class instance", new (class NativePlan {})()],
+  ])("rejects non-JSON plan body value: %s", async (_label, planBody) => {
+    invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it.each([
+    ["C0 control", "unsafe\u0000text"],
+    ["C1 control", "unsafe\u009ftext"],
+    ["lone high surrogate", "unsafe\ud800text"],
+    ["terminal high surrogate", "unsafe\ud800"],
+    ["lone low surrogate", "unsafe\udc00text"],
+    ["terminal low surrogate", "unsafe\udc00"],
+  ])("rejects unsafe plan string: %s", async (_label, value) => {
+    invokeMock.mockResolvedValueOnce(renderedResult({ value }));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("rejects unsafe string and symbol field names", async () => {
+    const unsafeNames = ["control\u0000key", "surrogate\ud800", Symbol("native-secret")];
+    for (const key of unsafeNames) {
+      const planBody: Record<PropertyKey, unknown> = { safe: true };
+      Object.defineProperty(planBody, key, { enumerable: true, value: "value" });
+      invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+      await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+        rendererCommands.renderPreview,
+        "response",
+      );
+    }
+  });
+
+  it("rejects plan accessors without executing them or leaking their value", async () => {
+    const getter = vi.fn(() => "/private/provider/SECRET-PATH");
+    const planBody = { safe: true };
+    Object.defineProperty(planBody, "providerPath", { enumerable: true, get: getter });
+    invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+
+    const error = await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+
+    expect(getter).not.toHaveBeenCalled();
+    expect(error.message).not.toContain("SECRET-PATH");
+    expect(error.cause).toBeUndefined();
+  });
+
+  it("rejects hidden plan fields", async () => {
+    const planBody = { safe: true };
+    Object.defineProperty(planBody, "providerPath", {
+      enumerable: false,
+      value: "/private/provider/SECRET-PATH",
+    });
+    invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("rejects cyclic plan objects", async () => {
+    const planBody: Record<string, unknown> = {};
+    planBody.self = planBody;
+    invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("rejects sparse, accessor-backed, and extra-property arrays", async () => {
+    const sparse = Array(2);
+    sparse[1] = "present";
+    const getter = vi.fn(() => "/private/provider/SECRET-PATH");
+    const accessor = ["safe"];
+    Object.defineProperty(accessor, "0", { enumerable: true, get: getter });
+    const extra = ["safe"];
+    Object.defineProperty(extra, "providerPath", { enumerable: true, value: "secret" });
+
+    for (const planBody of [sparse, accessor, extra]) {
+      invokeMock.mockResolvedValueOnce(renderedResult(planBody));
+      await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+        rendererCommands.renderPreview,
+        "response",
+      );
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it("accepts depth 32 and rejects depth 33", async () => {
+    invokeMock.mockResolvedValueOnce(renderedResult(nestedJson(32)));
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+
+    invokeMock.mockResolvedValueOnce(renderedResult(nestedJson(33)));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("accepts exactly 10000 JSON nodes and rejects 10001", async () => {
+    invokeMock.mockResolvedValueOnce(renderedResult(nodeBoundPlan()));
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+
+    invokeMock.mockResolvedValueOnce(renderedResult(nodeBoundPlan(1)));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("enforces array length and object field bounds", async () => {
+    const maximumArray = Array(4_096).fill(null);
+    const maximumObject = Object.fromEntries(
+      Array.from({ length: 256 }, (_, index) => [`field${index}`, null]),
+    );
+    invokeMock
+      .mockResolvedValueOnce(renderedResult(maximumArray))
+      .mockResolvedValueOnce(renderedResult(maximumObject));
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+
+    invokeMock
+      .mockResolvedValueOnce(renderedResult(Array(4_097).fill(null)))
+      .mockResolvedValueOnce(
+        renderedResult(
+          Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`field${index}`, null])),
+        ),
+      );
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("enforces per-key and per-string byte bounds", async () => {
+    const maximumKey = "k".repeat(256);
+    const maximumString = "s".repeat(1_048_576);
+    invokeMock
+      .mockResolvedValueOnce(renderedResult({ [maximumKey]: true }))
+      .mockResolvedValueOnce(renderedResult(maximumString));
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+
+    invokeMock
+      .mockResolvedValueOnce(renderedResult({ ["k".repeat(257)]: true }))
+      .mockResolvedValueOnce(renderedResult("s".repeat(1_048_577)));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+
+  it("enforces the aggregate string byte bound including field names", async () => {
+    const exactTotal = {
+      a: "x".repeat(1_048_576),
+      b: "x".repeat(1_048_576),
+      c: "x".repeat(1_048_576),
+      d: "x".repeat(1_048_572),
+    };
+    invokeMock.mockResolvedValueOnce(renderedResult(exactTotal));
+    await expect(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    ).resolves.toMatchObject({ kind: "rendered" });
+
+    invokeMock.mockResolvedValueOnce(renderedResult({ ...exactTotal, d: "x".repeat(1_048_573) }));
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+  });
+});
+
+describe("Project Foundry corrected renderer copy, freeze, and failure isolation", () => {
+  it("copies caller input before invoke and isolates it from later caller mutation", async () => {
+    const response = deferred<unknown>();
+    const caller = renderRequest();
+    let captured: { request: Xcom2ProjectFoundryRenderRequest } | undefined;
+    invokeMock.mockImplementationOnce((_command, args) => {
+      captured = args as { request: Xcom2ProjectFoundryRenderRequest };
+      return response.promise;
+    });
+    const operation = new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(caller);
+
+    (caller.sourceGrant as unknown as Record<string, unknown>).repository = "/caller/mutated";
+    (caller.destinationParentGrant as unknown as Record<string, unknown>).parent =
+      "/caller/mutated";
+    (caller as unknown as Record<string, unknown>).modId = "CallerMutated";
+
+    expect(captured?.request).toEqual(renderRequest());
+    expect(captured?.request).not.toBe(caller);
+    expect(Object.isFrozen(captured)).toBe(true);
+    expect(Object.isFrozen(captured?.request)).toBe(true);
+    expect(Object.isFrozen(captured?.request.sourceGrant)).toBe(true);
+    expect(Object.isFrozen(captured?.request.destinationParentGrant)).toBe(true);
+
+    response.resolve(renderedResult());
+    await expect(operation).resolves.toEqual(renderedResult());
+  });
+
+  it("deeply copies and freezes native rendered data against provider and caller mutation", async () => {
+    const providerGrant = operationGrant();
+    const providerEntry = { path: "Config/DefaultGame.ini", flags: [true, null] };
+    const providerPlan = { entries: [providerEntry], metadata: { version: 1 } };
+    const provider = renderedResult(providerPlan, providerGrant);
+    invokeMock.mockResolvedValueOnce(provider);
+
+    const result = await new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(
+      renderRequest(),
+    );
+    (providerGrant as unknown as Record<string, unknown>).identity = "provider-mutated";
+    providerEntry.path = "/private/provider/SECRET-PATH";
+    providerEntry.flags.push(false);
+    providerPlan.metadata.version = 2;
+
+    expect(result).toEqual(
+      renderedResult({
+        entries: [{ path: "Config/DefaultGame.ini", flags: [true, null] }],
+        metadata: { version: 1 },
+      }),
+    );
+    expect(result).not.toBe(provider);
+    expect(Object.isFrozen(result)).toBe(true);
+    if (result.kind === "rendered") {
+      const plan = result.planBody as {
+        entries: readonly [{ path: string; flags: readonly unknown[] }];
+        metadata: { version: number };
+      };
+      expect(result.operationGrant).not.toBe(providerGrant);
+      expect(plan).not.toBe(providerPlan);
+      expect(Object.isFrozen(result.operationGrant)).toBe(true);
+      expect(Object.isFrozen(plan)).toBe(true);
+      expect(Object.isFrozen(plan.entries)).toBe(true);
+      expect(Object.isFrozen(plan.entries[0])).toBe(true);
+      expect(Object.isFrozen(plan.entries[0].flags)).toBe(true);
+      expect(Object.isFrozen(plan.metadata)).toBe(true);
+      expect(Reflect.set(plan.entries[0], "path", "/caller/mutated")).toBe(false);
+      expect(Reflect.set(plan.metadata, "version", 3)).toBe(false);
+    }
+  });
+
+  it("sanitizes renderer invoke failures without retaining native details", async () => {
+    const failure = {
+      message: "renderer failed at /private/provider/SECRET-PATH",
+      token: "SECRET-TOKEN",
+    };
+    invokeMock.mockRejectedValueOnce(failure);
+
+    const error = await captureRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    );
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: rendererCommands.renderPreview,
+      message: `[tauri:${rendererCommands.renderPreview}] Native Project Foundry command failed`,
+      cause: undefined,
+    });
+    expect(error).not.toBe(failure);
+    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("SECRET");
+    expect(`${error.message}\n${JSON.stringify(error)}`).not.toContain("/private/provider");
+  });
+
+  it("surfaces only an allowlisted renderer rejection code without retaining its Error", async () => {
+    const failure = new Error("rendered-plan-invalid");
+    invokeMock.mockRejectedValueOnce(failure);
+
+    const error = await captureRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+    );
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: rendererCommands.renderPreview,
+      message: `[tauri:${rendererCommands.renderPreview}] Native Project Foundry command rejected: rendered-plan-invalid`,
+      cause: undefined,
+    });
+    expect(error).not.toBe(failure);
+  });
+
+  it("fails closed on a hostile render result without leaking its inspection exception", async () => {
+    const secret = new Error("SECRET-PROXY:/private/provider/SECRET-PATH");
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => {
+          throw secret;
+        },
+      },
+    );
+    invokeMock.mockResolvedValueOnce(hostile);
+
+    const error = await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().renderPreview(renderRequest()),
+      rendererCommands.renderPreview,
+      "response",
+    );
+
+    expect(error.message).toBe(
+      `[tauri:${rendererCommands.renderPreview}] Invalid Project Foundry response: render result could not be safely inspected`,
+    );
+    expect(error.message).not.toContain("SECRET-PROXY");
+    expect(error.message).not.toContain("/private/provider");
+    expect(error.cause).toBeUndefined();
+  });
+});
+
+describe("Project Foundry operation revocation and corrected factory composition", () => {
+  it("invokes revokeOperation with no args and validates empty acknowledgement", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await new TauriXcom2ProjectFoundryRendererAdapter().revokeOperation();
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock.mock.calls[0]).toEqual([rendererCommands.revokeOperation, undefined]);
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it.each([null, undefined])(
+    "accepts empty operation revocation acknowledgement %j",
+    async (acknowledgement) => {
+      invokeMock.mockResolvedValueOnce(acknowledgement);
+      await expect(
+        new TauriXcom2ProjectFoundryRendererAdapter().revokeOperation(),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it.each([false, true, 0, "", "ok", {}, []])(
+    "rejects non-empty operation revocation acknowledgement %j",
+    async (acknowledgement) => {
+      invokeMock.mockResolvedValueOnce(acknowledgement);
+      await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().revokeOperation(),
+        rendererCommands.revokeOperation,
+        "response",
+      );
+    },
+  );
+
+  it("preserves revokeAll alongside operation revocation on the frozen grants facet", async () => {
+    invokeMock.mockResolvedValueOnce(null).mockResolvedValueOnce(undefined);
+    const composition = createTauriXcom2ProjectFoundryRendererComposition();
+
+    expect(Reflect.ownKeys(composition.grants)).toEqual(["revokeOperation", "revokeAll"]);
+    expect(Object.isFrozen(composition.grants)).toBe(true);
+    await composition.grants.revokeOperation();
+    await composition.grants.revokeAll();
+
+    expect(invokeMock.mock.calls).toEqual([
+      [rendererCommands.revokeOperation, undefined],
+      [commands.revokeAll, undefined],
+    ]);
+    expect(typeof composition.selectors.selectSourceRepository).toBe("function");
+    expect(typeof composition.selectors.selectDestinationParent).toBe("function");
+    expect(typeof composition.renderer.renderPreview).toBe("function");
+  });
+
+  it("wires corrected factories, aliases, frozen facets, and parent-only API", async () => {
+    const composition = createTauriXcom2ProjectFoundryRendererComposition();
+    const aliasComposition = createTauriProjectFoundryRendererComposition();
+
+    expect(composition).toBeInstanceOf(TauriXcom2ProjectFoundryRendererAdapter);
+    expect(composition).toBeInstanceOf(TauriProjectFoundryRendererAdapter);
+    expect(aliasComposition).toBeInstanceOf(TauriXcom2ProjectFoundryRendererAdapter);
+    expect(new TauriProjectFoundryRendererAdapter()).toBeInstanceOf(
+      TauriXcom2ProjectFoundryRendererAdapter,
+    );
+    expect(Reflect.ownKeys(composition.selectors)).toEqual([
+      "selectSourceRepository",
+      "selectDestinationParent",
+    ]);
+    expect(Reflect.ownKeys(composition.renderer)).toEqual(["renderPreview"]);
+    for (const facet of [composition.selectors, composition.renderer, composition.grants]) {
+      expect(Object.isFrozen(facet)).toBe(true);
+    }
+
+    openMock
+      .mockResolvedValueOnce("/source/repository")
+      .mockResolvedValueOnce("/destination/parent");
+    invokeMock
+      .mockResolvedValueOnce(sourceGrant())
+      .mockResolvedValueOnce(destinationGrant())
+      .mockResolvedValueOnce(renderedResult());
+
+    await expect(composition.selectors.selectSourceRepository()).resolves.toEqual(sourceGrant());
+    await expect(composition.selectors.selectDestinationParent()).resolves.toEqual(
+      destinationGrant(),
+    );
+    await expect(composition.renderer.renderPreview(renderRequest())).resolves.toEqual(
+      renderedResult(),
+    );
+    expect(invokeMock.mock.calls).toEqual([
+      [commands.authorizeSourceRepository, { request: { selectedRoot: "/source/repository" } }],
+      [
+        rendererCommands.authorizeDestinationParentSelection,
+        { request: { selectedRoot: "/destination/parent" } },
+      ],
+      [rendererCommands.renderPreview, { request: renderRequest() }],
+    ]);
   });
 });
