@@ -480,3 +480,92 @@ Implement the XCOM setup mutation foundation as a native, durable transaction en
 - External interactive setup remains incomplete and non-executable. No live Apply has been performed.
 
 ---
+
+## ADR 0010 — Deterministic Project Foundry v1 for XCOM 2
+
+**Status:** Approved FUTURE/TARGET decision only. This ADR records approval of the target architecture; it is not implementation, progress, validation, licensing-clearance, or distribution evidence.
+
+### Context
+
+Project Foundry v1 needs to create an XCOM 2 mod project from the canonical EnhancedModProjectTemplate v1.4 while keeping template execution, external-root authority, and licensing claims out of the IDE. The source template is locally available as a pinned Git object, but permission to use that object during local development is not permission to distribute template-derived material. The template's wizard and `RUN_THIS` flow also create intermediate state that is not part of the desired project, and executing those tools would introduce process and mutation authority unrelated to deterministic project creation.
+
+The target therefore needs a reproducible final topology, an exact preview/apply boundary, conflict-safe cleanup, explicit native grants for the two external roots, and a first-party recipe that can later be extracted without implying a generic plugin ecosystem. The architecture must also remain acceptably testable through the production route when native chooser automation is initially unavailable.
+
+### Decision
+
+Adopt **Project Foundry v1** as a bounded, deterministic project-creation capability under the following target policy.
+
+#### Product and licensing lifecycle
+
+- XCOM remains built-in, experimental, and extraction-ready at this stage.
+- Local development may consume the user-selected local EnhancedModProjectTemplate v1.4 Git object at commit `d968be3`. Unresolved distribution licensing is not treated as a blocker to that local development use.
+- Distribution, bundling, release artifact or application packaging, and package or module publication containing this capability or template-derived material remain blocked until the XCOM 2/template capability is an explicit, separately distributable module and its applicable license, attribution, notices, and redistribution policy are resolved.
+- Development permission and distribution permission are separate decisions. This approval grants no permission or evidence for distribution.
+
+#### Foundry identity, final topology, and defaults
+
+- One user-supplied, validated ASCII-safe `ModId` is reused **exactly** as the solution identity, project identity, and UnrealScript package identity. The exact grammar and length bounds are requirements and implementation policy to approve separately; they must not weaken the one-identifier, ASCII-safe, exact-reuse invariant.
+- The recipe generates the deterministic semantic final topology that would exist after `RUN_THIS`, directly. It does not reproduce or expose intermediate wizard/template state.
+- The v1 default generates no `.XComMod`, no `.ide/xcom2.json`, no Git repository initialization, and no build profile.
+- The selected destination must be absent. Existing destinations are rejected rather than merged, replaced, or adopted.
+
+#### Complete preview, one-shot apply, and conflict-safe cleanup
+
+- Preview produces one complete digest-bound plan. The preview binds the selected source and destination grant identities, pinned source object and immutable input fingerprints, recipe/pack identity, `ModId`, complete final path inventory, exact generated content and content fingerprints, topology, and selected defaults/options.
+- Apply is one-shot and accepts only that exact approved plan. Any missing, stale, changed, unreadable, or mismatched bound input, authority, path, content, fingerprint, or destination precondition refuses Apply and requires a new preview.
+- Apply creates a same-filesystem sibling staging root, materializes the approved plan there, and verifies staged paths, inventory, content, and fingerprints against the plan. It then atomically renames the verified staging root to the still-absent destination. It does not copy over or merge into a destination.
+- Cleanup and rollback are conflict-safe. They never overwrite or delete user-changed, unexpected, or unverified content. Before commit, cleanup may remove only staging content proven to belong to the approved operation. After commit, rollback or removal may proceed only while the generated inventory and content still match the approved fingerprints; otherwise it refuses and preserves the content for review.
+
+#### Extraction-ready first-party pack
+
+- The first-party pack ID is exactly `ide.xcom2.empt-v1_4`.
+- The pack is built-in and experimental but structurally separable. It consists of a declarative recipe plus immutable fingerprints over the user-selected local exact Git object at commit `d968be3`, the canonical v1.4 source.
+- Template inputs are read from the committed Git object through the selected repository's local object database, never from working-tree files. Working-tree modifications and untracked files have no effect.
+- Missing, mismatched, or unreadable object or source evidence is rejected. There is no fallback to the working tree, network, a bundled copy, or execution.
+- This pack shape establishes neither a generic plugin runtime nor third-party pack loading, installation, removal, or execution.
+
+#### Native authority grants
+
+- Source and destination selection are explicit, native, user-mediated, exact-root grants. The preview binds the selected identities and fingerprints so that a changed or replaced selection cannot inherit approval.
+- The source grant authorizes only resolving and reading the selected local Git repository and the exact pinned object inputs required by this recipe. It grants no broader repository, working-tree, network, or external-root authority.
+- The destination grant authorizes only the exact proposed absent project root and the same-filesystem sibling staging, atomic rename, and verified cleanup needed for the approved operation.
+- Neither grant creates persistent or general external-root authority. Grants are revoked or consumed with the plan lifecycle, including discard, refusal, failed or completed Apply, and replacement by a new preview.
+- Exact native chooser API mechanics are left to requirements and implementation policy. They must preserve explicit user mediation, exact-root scope, plan binding, and lifecycle revocation rather than introducing ambient path authority.
+
+#### Explicit non-authority
+
+Project Foundry must never execute or invoke Visual Studio or the Firaxis wizard, `RUN_THIS.bat` or any other batch file, PE helpers including `replace_text.exe`, PowerShell, inline or compiled C#, or template code. It has no authority to read or mutate an SDK or game installation and no build, deployment, cooking, launch, package-manager, browser, or general process authority. Project Foundry v1 is project creation only.
+
+#### Requirements and acceptance handoff
+
+A requirements owner may introduce a stable identifier such as `REQ-PROJECT-FOUNDRY-XCOM2-001`; this ADR does not assign or modify requirement status. The requirement and acceptance work must cover, without treating this approval as evidence:
+
+1. the approved ASCII-safe `ModId` grammar and length policy while preserving exact reuse across all three identities;
+2. deterministic final topology and byte/content fingerprints from the pinned committed object, including dirty and untracked working-tree independence and all refusal paths;
+3. the four default absences: `.XComMod`, `.ide/xcom2.json`, Git initialization, and build profile;
+4. exact native source/destination grant selection, plan binding, consumption/revocation, and absence of persistent or ambient external-root authority;
+5. complete-digest preview, exact-plan one-shot Apply, same-filesystem staging verification, absent-destination atomic rename, and stale/mismatch refusal;
+6. pre-commit cleanup and post-commit rollback/removal conflict refusal, including preservation of changed or unverified content;
+7. enforcement of every process, SDK/game, network-fallback, browser, build/deployment/cooking/launch, package-manager, and template-execution exclusion;
+8. structural separability of `ide.xcom2.empt-v1_4` and a release/publication gate that remains closed until the separately distributable module and applicable licensing, attribution, notices, and redistribution policy are resolved; and
+9. acceptance through the unchanged production route. If the real native chooser cannot initially be automated, deterministic harness evidence is acceptable only as the first evidence tier; later native acceptance must use the real chooser and the same unchanged production route, with no production-only hooks or backdoors added for testing.
+
+### Consequences
+
+**Positive:**
+
+- A preview describes the exact final project rather than wizard intermediates or mutable working-tree state.
+- Exact-root grants, immutable object inputs, complete plan binding, verified staging, and atomic destination commit constrain creation authority and stale-plan risk.
+- Conflict-safe cleanup and rollback preserve content that no longer matches the approved operation.
+- The first-party pack can be extracted later without prematurely claiming a generic extension runtime.
+- Deterministic harness evidence can start acceptance work without compromising the later real native path.
+
+**Negative:**
+
+- Users must provide the exact local Git object and select a new absent destination; missing evidence or any mismatch stops creation rather than falling back.
+- One-shot exact-plan approval requires a new preview after any relevant source, grant, plan, or destination change.
+- Refusal to delete changed or unverified content can leave staging or generated projects for manual review.
+- Exact `ModId` bounds and chooser mechanics still require requirements-level approval before implementation.
+- Distribution and publication remain blocked even if local development and validation succeed.
+
+---
