@@ -23,8 +23,7 @@ import type {
   Xcom2ProjectFoundryApplyResult,
   Xcom2ProjectFoundryCreatedReceipt,
   Xcom2ProjectFoundryDestinationParentSelectionGrant,
-  Xcom2ProjectFoundryOperationGrant,
-  Xcom2ProjectFoundrySourceObjectEvidence,
+  Xcom2ProjectFoundryRenderRequest,
   Xcom2ProjectFoundrySourceSelectionGrant,
 } from "../../../packages/contracts/src/domain/xcom2-project-foundry.js";
 
@@ -33,6 +32,8 @@ import {
   FOUNDRY_SOURCE_BLOB_OIDS,
   FOUNDRY_SOURCE_PATHS,
   materializeFoundryFixture,
+  renderFoundryPlan,
+  type StoryFoundryRender,
 } from "./xcom2-project-foundry-materializer.js";
 
 const PREVIEW_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-001";
@@ -43,6 +44,9 @@ const DESTINATION_PARENT = "/scenario/foundry-output";
 const DESTINATION_GRANT_IDENTITY = "destination-parent-grant-foundry-preview-001";
 const DERIVED_DESTINATION = "/scenario/foundry-output/FoundryPreviewFixture";
 const OPERATION_GRANT_IDENTITY = "operation-grant-foundry-preview-001";
+const REPLACEMENT_OPERATION_GRANT_IDENTITY = "operation-grant-foundry-preview-002";
+const REPLACEMENT_MOD_ID = "Mod_1";
+const REPLACEMENT_DERIVED_DESTINATION = "/scenario/foundry-output/Mod_1";
 const SOURCE_COMMIT = "d968be3c32b250376723563a743a120770ec5c95";
 const SOURCE_TREE = "cc8823fa99c0d292c4fe48a8b9463ff790176371";
 const PLAN_DIGEST = "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6";
@@ -106,8 +110,6 @@ interface SelectionValues {
   readonly sourceGrantIdentity: string;
   readonly destinationParent: string;
   readonly destinationGrantIdentity: string;
-  readonly derivedDestination: string;
-  readonly operationGrantIdentity: string;
 }
 
 function canonicalJson(value: unknown): string {
@@ -192,16 +194,12 @@ function normalizeRows(rows: readonly Readonly<Record<string, string>>[]): Selec
     sourceGrantIdentity: values["source grant identity"] ?? "",
     destinationParent: values["destination parent"] ?? "",
     destinationGrantIdentity: values["destination grant identity"] ?? "",
-    derivedDestination: values["derived destination"] ?? "",
-    operationGrantIdentity: values["operation grant identity"] ?? "",
   };
   assert.deepEqual(normalized, {
     sourceRepository: SOURCE_REPOSITORY,
     sourceGrantIdentity: SOURCE_GRANT_IDENTITY,
     destinationParent: DESTINATION_PARENT,
     destinationGrantIdentity: DESTINATION_GRANT_IDENTITY,
-    derivedDestination: DERIVED_DESTINATION,
-    operationGrantIdentity: OPERATION_GRANT_IDENTITY,
   });
   return normalized;
 }
@@ -224,14 +222,21 @@ export class Xcom2ProjectFoundryHarness {
   #objectBaseline?: TreeFingerprint;
   #objectReads: ObjectRead[] = [];
   #committedSource = new Map<string, Uint8Array>();
+  #renderCalls: Readonly<Xcom2ProjectFoundryRenderRequest>[] = [];
+  #renderedByModId = new Map<string, StoryFoundryRender>();
+  #renderedDigests = new Map<string, string>();
   #expectedDirectories?: readonly ExpectedDirectory[];
   #expectedFiles?: readonly ExpectedFile[];
+  #expectedWarnings?: readonly string[];
   #applyCalls: Readonly<Xcom2ProjectFoundryApplyRequest>[] = [];
   #applyTranscript: Readonly<Record<string, unknown>>[] = [];
   #pendingApply?: PendingApply;
+  #pendingApplyRender?: StoryFoundryRender;
   #createdReceipt?: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
   #applyControlDisabledAtCall?: boolean;
+  #applyRerendered = false;
   #separateRustAuthorityAcknowledged = false;
+  #correctedRendererBoundaryAcknowledged = false;
   #tauriCalls: TauriCall[] = [];
   #activeGrants = new Set<string>();
   #revokedGrants = new Set<string>();
@@ -278,6 +283,23 @@ export class Xcom2ProjectFoundryHarness {
 
   acknowledgeSeparateRustAuthority(): void {
     this.#separateRustAuthorityAcknowledged = true;
+  }
+
+  acknowledgeCorrectedRendererBoundary(): void {
+    this.#correctedRendererBoundaryAcknowledged = true;
+  }
+
+  assertRendererOwnsCompleteOutput(): void {
+    assert.equal(this.#correctedRendererBoundaryAcknowledged, true);
+  }
+
+  assertFrontendCustodyOnly(): void {
+    assert.equal(this.#correctedRendererBoundaryAcknowledged, true);
+  }
+
+  assertNoSelectorOutputAuthority(): void {
+    assert.equal(this.#correctedRendererBoundaryAcknowledged, true);
+    assert.equal(this.#renderCalls.length, 0);
   }
 
   async openWithSelectionsAndModId(dialogName: string, modId: string): Promise<void> {
@@ -424,7 +446,7 @@ export class Xcom2ProjectFoundryHarness {
   }
 
   async assertDerivedDestinationAbsent(path: string): Promise<void> {
-    assert.equal(path, DERIVED_DESTINATION);
+    assert.ok(path === DERIVED_DESTINATION || path === REPLACEMENT_DERIVED_DESTINATION);
     await assertPathAbsent(join(this.#requireDestinationRoot(), basename(path)));
   }
 
@@ -476,14 +498,18 @@ export class Xcom2ProjectFoundryHarness {
       await form.getByLabel("EMPT repository", { exact: true }).inputValue(),
       SOURCE_REPOSITORY,
     );
-    assert.equal(
-      await form.getByLabel("Destination parent", { exact: true }).inputValue(),
-      DESTINATION_PARENT,
-    );
+    const destinationValue = await form
+      .getByLabel("Destination parent", { exact: true })
+      .inputValue();
+    if (destinationValue !== DESTINATION_PARENT) {
+      throw new Error(
+        "MISSING_UI_CAPABILITY: production App/controller still expects a selector-minted operation grant; migrate it to the parent-only selector result and renderer.renderPreview(request)",
+      );
+    }
   }
 
   async enterModId(modId: string): Promise<void> {
-    assert.equal(modId, "FoundryPreviewFixture");
+    assert.ok(modId === "FoundryPreviewFixture" || modId === REPLACEMENT_MOD_ID);
     await this.#dialog().getByLabel("ModId", { exact: true }).fill(modId);
   }
 
@@ -702,6 +728,163 @@ export class Xcom2ProjectFoundryHarness {
     const list = this.#dialog().getByRole("list", { name, exact: true });
     const actual = (await list.getByRole("listitem").allTextContents()).map((text) => text.trim());
     assert.deepEqual(actual, expected);
+    if (name === "Project Foundry warnings") this.#expectedWarnings = [...expected];
+  }
+
+  assertRendererMintedInitialGrant(operationIdentity: string, destination: string): void {
+    assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
+    assert.equal(destination, DERIVED_DESTINATION);
+    assert.equal(this.#renderCalls.length, 1);
+    assert.equal(this.#renderCalls[0]?.modId, "FoundryPreviewFixture");
+    assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), true);
+    assert.ok(this.#renderedByModId.has("FoundryPreviewFixture"));
+  }
+
+  async assertRendererResultValidated(): Promise<void> {
+    const digest = this.#renderedDigests.get("FoundryPreviewFixture");
+    assert.equal(digest, PLAN_DIGEST);
+    assert.equal(await this.#dialog().getByText(PLAN_DIGEST, { exact: true }).count(), 2);
+  }
+
+  async changeExactModId(from: string, to: string): Promise<void> {
+    assert.equal(from, "FoundryPreviewFixture");
+    assert.equal(to, REPLACEMENT_MOD_ID);
+    const input = this.#dialog().getByLabel("ModId", { exact: true });
+    assert.equal(await input.inputValue(), from);
+    await input.fill(to);
+  }
+
+  async assertReplacementInvalidatedSynchronously(): Promise<void> {
+    assert.equal(
+      await this.#dialog().locator('[aria-label="Complete Project Foundry preview"]').count(),
+      0,
+    );
+    assert.equal(await this.#dialog().getByText(PLAN_DIGEST, { exact: true }).count(), 0);
+    assert.equal(
+      await this.#dialog()
+        .getByRole("button", { name: "Create project", exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), false);
+  }
+
+  assertInitialOperationRevoked(operationIdentity: string, replacementModId: string): void {
+    assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
+    assert.equal(replacementModId, REPLACEMENT_MOD_ID);
+    assert.equal(this.#revokedGrants.has(OPERATION_GRANT_IDENTITY), true);
+    assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), false);
+  }
+
+  assertSelectionGrantsRemainForReplacement(destination: string): void {
+    assert.equal(destination, REPLACEMENT_DERIVED_DESTINATION);
+    assert.equal(this.#activeGrants.has(SOURCE_GRANT_IDENTITY), true);
+    assert.equal(this.#activeGrants.has(DESTINATION_GRANT_IDENTITY), true);
+    assert.equal(this.#activeGrants.has(REPLACEMENT_OPERATION_GRANT_IDENTITY), false);
+  }
+
+  assertReplacementRendererRead(modId: string): void {
+    assert.equal(modId, REPLACEMENT_MOD_ID);
+    assert.equal(this.#renderCalls.length, 2);
+    assert.equal(this.#renderCalls[1]?.modId, modId);
+    assert.equal(this.#objectReads.length, 2);
+  }
+
+  assertReplacementGrant(operationIdentity: string): void {
+    assert.equal(operationIdentity, REPLACEMENT_OPERATION_GRANT_IDENTITY);
+    assert.equal(this.#activeGrants.has(operationIdentity), true);
+    assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), false);
+  }
+
+  async assertReplacementValidated(): Promise<void> {
+    const digest = this.#renderedDigests.get(REPLACEMENT_MOD_ID);
+    assert.ok(digest);
+    assert.notEqual(digest, PLAN_DIGEST);
+    assert.match(digest, /^[0-9a-f]{64}$/u);
+    assert.equal(await this.#dialog().getByText(digest, { exact: true }).count(), 2);
+  }
+
+  async assertReplacementFacts(rows: readonly Readonly<Record<string, string>>[]): Promise<void> {
+    const displayed = new Map(
+      (await this.#tableRows("Project Foundry bound identities and source facts")).map(
+        ([field, value]) => [field, value],
+      ),
+    );
+    for (const row of rows) {
+      assert.equal(displayed.get(row.field ?? ""), row["exact value"] ?? "");
+    }
+  }
+
+  async assertReplacementDirectories(
+    destination: string,
+    rows: readonly string[][],
+  ): Promise<void> {
+    assert.equal(destination, REPLACEMENT_DERIVED_DESTINATION);
+    assert.equal(rows.length, 12);
+    assert.deepEqual(await this.#tableRows("Project Foundry directory topology"), rows);
+    assert.equal(await this.#dialog().getByText("No symlinks", { exact: true }).count(), 1);
+  }
+
+  async assertReplacementFiles(
+    count: number,
+    destination: string,
+    rows: readonly string[][],
+  ): Promise<void> {
+    assert.equal(count, 27);
+    assert.equal(destination, REPLACEMENT_DERIVED_DESTINATION);
+    assert.equal(rows.length, count);
+    assert.deepEqual(await this.#tableRows("Project Foundry regular files"), rows);
+  }
+
+  async assertReplacementWarnings(): Promise<void> {
+    assert.ok(this.#expectedWarnings, "Initial warning golden was not captured");
+    await this.assertExactList("Project Foundry warnings", this.#expectedWarnings);
+  }
+
+  assertNoStaleFixtureLiteral(stale: string): void {
+    assert.equal(stale, "FoundryPreviewFixture");
+    const rendered = this.#renderedByModId.get(REPLACEMENT_MOD_ID);
+    assert.ok(rendered);
+    const body = rendered.rendered.planBody;
+    const sensitiveMetadata = {
+      destination: body.destination,
+      directories: body.directories,
+      files: body.files,
+      generatedPreviews: body.generatedPreviews,
+      absences: body.absences,
+    };
+    assert.equal(JSON.stringify(sensitiveMetadata).includes(stale), false);
+    for (const file of body.files) {
+      if (file.classification === "copied") continue;
+      const bytes = rendered.internalBytes.get(file.path);
+      assert.ok(bytes, `Missing renderer bytes for ${file.path}`);
+      assert.equal(Buffer.from(bytes).includes(Buffer.from(stale)), false, file.path);
+    }
+  }
+
+  async assertReplacementDigestBinding(): Promise<void> {
+    const digest = this.#renderedDigests.get(REPLACEMENT_MOD_ID);
+    assert.ok(digest);
+    const text =
+      (await this.#dialog()
+        .getByRole("region", { name: "Project Foundry plan integrity", exact: true })
+        .textContent()) ?? "";
+    for (const value of ["schema version 1", "RFC 8785", "SHA-256", digest]) {
+      assert.ok(text.includes(value));
+    }
+  }
+
+  async assertBothDestinationsAbsent(): Promise<void> {
+    await this.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
+    await this.assertDerivedDestinationAbsent(REPLACEMENT_DERIVED_DESTINATION);
+  }
+
+  assertApplyRerenderedThroughSharedRenderer(): void {
+    assert.equal(this.#applyRerendered, true);
+  }
+
+  assertApplyHasNoFrontendOutputAuthority(): void {
+    this.assertApplyRequestHasNoClaims();
   }
 
   async assertDigestBinding(): Promise<void> {
@@ -820,8 +1003,11 @@ export class Xcom2ProjectFoundryHarness {
     assert.ok(pending, "No deterministic Apply call is pending");
     assert.ok(this.#expectedDirectories, "Previewed directory manifest was not captured");
     assert.ok(this.#expectedFiles, "Previewed file manifest was not captured");
+    const rendered = this.#pendingApplyRender;
+    assert.ok(rendered, "Apply backend has not rerendered the approved plan");
+    this.#pendingApplyRender = undefined;
     const finalRoot = join(this.#requireDestinationRoot(), "FoundryPreviewFixture");
-    await materializeFoundryFixture(this.#committedSource, finalRoot);
+    await materializeFoundryFixture(rendered, finalRoot);
     const receipt: Xcom2ProjectFoundryCreatedReceipt = Object.freeze({
       result: "created",
       planDigest: PLAN_DIGEST,
@@ -975,7 +1161,9 @@ export class Xcom2ProjectFoundryHarness {
     await this.#requirePage()
       .getByRole("dialog", { name, exact: true })
       .waitFor({ state: "detached" });
-    assert.equal(await this.#requirePage().getByText(PLAN_DIGEST, { exact: true }).count(), 0);
+    for (const digest of this.#renderedDigests.values()) {
+      assert.equal(await this.#requirePage().getByText(digest, { exact: true }).count(), 0);
+    }
   }
 
   async assertSourceIdentity(): Promise<void> {
@@ -997,17 +1185,18 @@ export class Xcom2ProjectFoundryHarness {
 
   async assertNoResidue(): Promise<void> {
     await this.assertNoFilesystemWrites();
+    await this.assertDerivedDestinationAbsent(REPLACEMENT_DERIVED_DESTINATION);
     const sandboxEntries = (await readdir(this.#requireSandbox())).sort();
     assert.deepEqual(sandboxEntries, ["empt-v1_4", "foundry-output"]);
   }
 
   assertGrantsRevoked(): void {
     assert.deepEqual([...this.#activeGrants], []);
-    assert.deepEqual([...this.#revokedGrants].sort(), [
-      DESTINATION_GRANT_IDENTITY,
-      OPERATION_GRANT_IDENTITY,
-      SOURCE_GRANT_IDENTITY,
-    ]);
+    const expected = [DESTINATION_GRANT_IDENTITY, OPERATION_GRANT_IDENTITY, SOURCE_GRANT_IDENTITY];
+    if (this.#renderedByModId.has(REPLACEMENT_MOD_ID)) {
+      expected.push(REPLACEMENT_OPERATION_GRANT_IDENTITY);
+    }
+    assert.deepEqual([...this.#revokedGrants].sort(), expected.sort());
   }
 
   evidence(): Readonly<Record<string, unknown>> {
@@ -1022,11 +1211,18 @@ export class Xcom2ProjectFoundryHarness {
       sourceIdentity: this.#sourceBaseline,
       destinationIdentity: this.#destinationBaseline,
       objectDatabaseIdentity: this.#objectBaseline,
+      rendererRequests: this.#renderCalls,
+      rendererPlanDigests: Object.fromEntries(this.#renderedDigests),
+      rendererInternalFileCounts: Object.fromEntries(
+        [...this.#renderedByModId].map(([modId, rendered]) => [modId, rendered.internalBytes.size]),
+      ),
       sourceObjectReads: this.#objectReads,
       applyRequests: this.#applyCalls,
       applyTranscript: this.#applyTranscript,
       createdReceipt: this.#createdReceipt,
       separateRustAuthorityAcknowledged: this.#separateRustAuthorityAcknowledged,
+      correctedRendererBoundaryAcknowledged: this.#correctedRendererBoundaryAcknowledged,
+      applyRerendered: this.#applyRerendered,
       productionTauriCalls: this.#tauriCalls,
       productionExecutableTranscript: this.#tauriCalls.filter((call) =>
         /(?:process|shell|terminal|git|network|powershell|batch|execute|spawn)/iu.test(
@@ -1068,74 +1264,82 @@ export class Xcom2ProjectFoundryHarness {
       this.#activeGrants.add(grant.identity);
       return grant;
     });
-    await context.exposeBinding("__storyFoundrySelectDestination", async () => {
+    await context.exposeBinding("__storyFoundrySelectDestinationParent", async () => {
       const selections = this.#requireSelections();
       const destinationParentGrant: Xcom2ProjectFoundryDestinationParentSelectionGrant = {
         kind: "destination-parent",
         parent: selections.destinationParent,
         identity: selections.destinationGrantIdentity,
       };
-      const operationGrant: Xcom2ProjectFoundryOperationGrant = {
-        kind: "preview-operation",
-        derivedDestination: selections.derivedDestination,
-        identity: selections.operationGrantIdentity,
-      };
       this.#activeGrants.add(destinationParentGrant.identity);
-      this.#activeGrants.add(operationGrant.identity);
-      return { destinationParentGrant, operationGrant };
-    });
-    await context.exposeBinding("__storyFoundryResolveSource", async (_source, grant: unknown) => {
-      assert.deepEqual(grant, {
-        kind: "source-repository",
-        repository: SOURCE_REPOSITORY,
-        identity: SOURCE_GRANT_IDENTITY,
-      });
-      assert.equal(this.#activeGrants.has(SOURCE_GRANT_IDENTITY), true);
-      const packRoot = join(this.#requireSourceRoot(), ".git", "objects", "pack");
-      const packFiles = (await readdir(packRoot))
-        .filter((path) => path.endsWith(".pack") || path.endsWith(".idx"))
-        .sort();
-      assert.equal(
-        packFiles.some((path) => path.endsWith(".pack")),
-        true,
-      );
-      assert.equal(
-        packFiles.some((path) => path.endsWith(".idx")),
-        true,
-      );
-      for (const path of packFiles) await readFile(join(packRoot, path));
-      assert.deepEqual(
-        await fingerprintTree(join(this.#requireSourceRoot(), ".git", "objects")),
-        this.#objectBaseline,
-      );
-      this.#objectReads.push({
-        commit: SOURCE_COMMIT,
-        tree: SOURCE_TREE,
-        objectPaths: packFiles.map((path) => `.git/objects/pack/${path}`),
-      });
-      const evidence: Xcom2ProjectFoundrySourceObjectEvidence = {
-        commit: SOURCE_COMMIT,
-        tree: SOURCE_TREE,
-        fingerprintResult: "Verified",
-      };
-      return evidence;
+      return destinationParentGrant;
     });
     await context.exposeBinding(
-      "__storyFoundryInspectDestination",
-      async (_source, destinationGrant: unknown, operationGrant: unknown) => {
-        assert.deepEqual(destinationGrant, {
+      "__storyFoundryRenderPreview",
+      async (_source, candidate: unknown) => {
+        const request = structuredClone(candidate) as Xcom2ProjectFoundryRenderRequest;
+        assert.deepEqual(request.sourceGrant, {
+          kind: "source-repository",
+          repository: SOURCE_REPOSITORY,
+          identity: SOURCE_GRANT_IDENTITY,
+        });
+        assert.deepEqual(request.destinationParentGrant, {
           kind: "destination-parent",
           parent: DESTINATION_PARENT,
           identity: DESTINATION_GRANT_IDENTITY,
         });
-        assert.deepEqual(operationGrant, {
-          kind: "preview-operation",
-          derivedDestination: DERIVED_DESTINATION,
-          identity: OPERATION_GRANT_IDENTITY,
+        assert.ok(
+          request.modId === "FoundryPreviewFixture" || request.modId === REPLACEMENT_MOD_ID,
+        );
+        assert.equal(this.#activeGrants.has(SOURCE_GRANT_IDENTITY), true);
+        assert.equal(this.#activeGrants.has(DESTINATION_GRANT_IDENTITY), true);
+
+        const packRoot = join(this.#requireSourceRoot(), ".git", "objects", "pack");
+        const packFiles = (await readdir(packRoot))
+          .filter((path) => path.endsWith(".pack") || path.endsWith(".idx"))
+          .sort();
+        assert.equal(
+          packFiles.some((path) => path.endsWith(".pack")),
+          true,
+        );
+        assert.equal(
+          packFiles.some((path) => path.endsWith(".idx")),
+          true,
+        );
+        for (const path of packFiles) await readFile(join(packRoot, path));
+        assert.deepEqual(
+          await fingerprintTree(join(this.#requireSourceRoot(), ".git", "objects")),
+          this.#objectBaseline,
+        );
+        this.#objectReads.push({
+          commit: SOURCE_COMMIT,
+          tree: SOURCE_TREE,
+          objectPaths: packFiles.map((path) => `.git/objects/pack/${path}`),
         });
+
+        const operationIdentity =
+          request.modId === REPLACEMENT_MOD_ID
+            ? REPLACEMENT_OPERATION_GRANT_IDENTITY
+            : OPERATION_GRANT_IDENTITY;
+        const rendered = renderFoundryPlan(this.#committedSource, request, operationIdentity);
         await this.#assertDestinationIdentity();
-        await this.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
-        return "absent";
+        await this.assertDerivedDestinationAbsent(
+          request.modId === REPLACEMENT_MOD_ID
+            ? REPLACEMENT_DERIVED_DESTINATION
+            : DERIVED_DESTINATION,
+        );
+        const previousOperation =
+          request.modId === REPLACEMENT_MOD_ID
+            ? OPERATION_GRANT_IDENTITY
+            : REPLACEMENT_OPERATION_GRANT_IDENTITY;
+        if (this.#activeGrants.delete(previousOperation)) {
+          this.#revokedGrants.add(previousOperation);
+        }
+        this.#activeGrants.add(operationIdentity);
+        this.#renderCalls.push(request);
+        this.#renderedByModId.set(request.modId, rendered);
+        this.#renderedDigests.set(request.modId, sha256(canonicalJson(rendered.rendered.planBody)));
+        return rendered.rendered;
       },
     );
     await context.exposeBinding(
@@ -1150,6 +1354,23 @@ export class Xcom2ProjectFoundryHarness {
         const snapshot = structuredClone(request) as Xcom2ProjectFoundryApplyRequest;
         this.#applyCalls.push(snapshot);
         this.#applyTranscript.push({ event: "called", request: snapshot });
+        const applyRenderRequest: Xcom2ProjectFoundryRenderRequest = {
+          sourceGrant: snapshot.sourceGrant,
+          destinationParentGrant: snapshot.destinationParentGrant,
+          modId: snapshot.modId,
+        };
+        const applyRender = renderFoundryPlan(
+          this.#committedSource,
+          applyRenderRequest,
+          snapshot.operationGrant.identity,
+        );
+        assert.equal(
+          sha256(canonicalJson(applyRender.rendered.planBody)),
+          snapshot.approvedPlanDigest,
+          "Apply rerender must reproduce the approved plan digest",
+        );
+        this.#pendingApplyRender = applyRender;
+        this.#applyRerendered = true;
         this.#applyControlDisabledAtCall = await source.page
           .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
           .getByRole("button", { name: "Create project", exact: true })

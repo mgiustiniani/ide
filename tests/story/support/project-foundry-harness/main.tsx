@@ -6,8 +6,8 @@ import type {
   Xcom2ProjectFoundryApplyRequest,
   Xcom2ProjectFoundryApplyResult,
   Xcom2ProjectFoundryDestinationParentSelectionGrant,
-  Xcom2ProjectFoundryOperationGrant,
-  Xcom2ProjectFoundrySourceObjectEvidence,
+  Xcom2ProjectFoundryRenderedPlanResult,
+  Xcom2ProjectFoundryRenderRequest,
   Xcom2ProjectFoundrySourceSelectionGrant,
 } from "../../../../packages/contracts/src/domain/xcom2-project-foundry";
 import { App } from "../../../../apps/desktop/src/App";
@@ -21,10 +21,9 @@ declare global {
       invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
     };
     __storyFoundrySelectSource: StoryBinding;
-    __storyFoundrySelectDestination: StoryBinding;
-    __storyFoundryResolveSource: StoryBinding;
-    __storyFoundryInspectDestination: StoryBinding;
-    __storyFoundryApply: StoryBinding;
+    __storyFoundrySelectDestinationParent: StoryBinding;
+    __storyFoundryRenderPreview: StoryBinding;
+    __storyFoundryApply?: StoryBinding;
     __storyFoundryRevokeGrants: StoryBinding;
     __storyRecordTauriCall: StoryBinding;
   }
@@ -33,23 +32,14 @@ declare global {
 interface ProjectFoundryHarnessComposition {
   readonly selectors: {
     selectSourceRepository(): Promise<Xcom2ProjectFoundrySourceSelectionGrant>;
-    selectDestinationParent(): Promise<{
-      readonly destinationParentGrant: Xcom2ProjectFoundryDestinationParentSelectionGrant;
-      readonly operationGrant: Xcom2ProjectFoundryOperationGrant;
-    }>;
+    selectDestinationParent(): Promise<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
   };
-  readonly source: {
-    resolvePinnedObject(
-      grant: Xcom2ProjectFoundrySourceSelectionGrant,
-    ): Promise<Xcom2ProjectFoundrySourceObjectEvidence>;
+  readonly renderer: {
+    renderPreview(
+      request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+    ): Promise<Readonly<Xcom2ProjectFoundryRenderedPlanResult>>;
   };
-  readonly destination: {
-    inspectDerivedDestination(
-      destinationParentGrant: Xcom2ProjectFoundryDestinationParentSelectionGrant,
-      operationGrant: Xcom2ProjectFoundryOperationGrant,
-    ): Promise<"absent">;
-  };
-  apply(request: Xcom2ProjectFoundryApplyRequest): Promise<Xcom2ProjectFoundryApplyResult>;
+  apply?(request: Xcom2ProjectFoundryApplyRequest): Promise<Xcom2ProjectFoundryApplyResult>;
   readonly grants: {
     revokeAll(): Promise<void>;
   };
@@ -64,24 +54,20 @@ const composition: ProjectFoundryHarnessComposition = {
     selectSourceRepository: async () =>
       (await window.__storyFoundrySelectSource()) as Xcom2ProjectFoundrySourceSelectionGrant,
     selectDestinationParent: async () =>
-      (await window.__storyFoundrySelectDestination()) as {
-        readonly destinationParentGrant: Xcom2ProjectFoundryDestinationParentSelectionGrant;
-        readonly operationGrant: Xcom2ProjectFoundryOperationGrant;
-      },
+      (await window.__storyFoundrySelectDestinationParent()) as Xcom2ProjectFoundryDestinationParentSelectionGrant,
   },
-  source: {
-    resolvePinnedObject: async (grant) =>
-      (await window.__storyFoundryResolveSource(grant)) as Xcom2ProjectFoundrySourceObjectEvidence,
+  renderer: {
+    renderPreview: async (request) =>
+      (await window.__storyFoundryRenderPreview(
+        request,
+      )) as Readonly<Xcom2ProjectFoundryRenderedPlanResult>,
   },
-  destination: {
-    inspectDerivedDestination: async (destinationParentGrant, operationGrant) =>
-      (await window.__storyFoundryInspectDestination(
-        destinationParentGrant,
-        operationGrant,
-      )) as "absent",
+  apply: async (request) => {
+    if (!window.__storyFoundryApply) {
+      throw new Error("Project Foundry Apply is not supplied by this composition");
+    }
+    return (await window.__storyFoundryApply(request)) as Xcom2ProjectFoundryApplyResult;
   },
-  apply: async (request) =>
-    (await window.__storyFoundryApply(request)) as Xcom2ProjectFoundryApplyResult,
   grants: {
     revokeAll: async () => {
       await window.__storyFoundryRevokeGrants();
@@ -205,8 +191,8 @@ window.__TAURI_INTERNALS__ = {
 const root = document.getElementById("root");
 if (!root) throw new Error("Project Foundry Story harness root is unavailable");
 
-// The cast keeps the anticipated Apply port isolated to the Story composition.
-// Production receives the composition unchanged and owns whether that port is used.
+// The cast deliberately presents the corrected renderer composition before App migration.
+// A focused Story run must therefore stay RED until App/controller adopts this exact boundary.
 const ComposableApp = App as ComponentType<ProjectFoundryComposableAppProps>;
 ReactDOM.createRoot(root).render(
   <React.StrictMode>

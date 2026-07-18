@@ -27,7 +27,7 @@ Given<StoryWorld>(
 );
 
 Given<StoryWorld>(
-  "complementary focused production Rust filesystem integration evidence is the separate authority for the real independent renderer, revalidation, stage and journal transaction, fsync durability, and Linux no-replace atomic commit",
+  "complementary focused production Rust filesystem integration evidence is the separate authority for rerendering through the same shared Rust renderer used by Preview, revalidation, stage and journal transaction, fsync durability, and Linux no-replace atomic commit",
   function () {
     session(this).acknowledgeSeparateRustAuthority();
   },
@@ -62,6 +62,24 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
+  "the shared Rust renderer returns the complete plan body and internal file bytes and mints operation grant {string} only after exact rendering and destination-absence validation succeed",
+  function (operationIdentity: string) {
+    session(this).assertRendererMintedInitialGrant(
+      operationIdentity,
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "TypeScript strictly validates that renderer result and shows one still-live complete preview for exact plan digest {string}",
+  async function (planDigest: string) {
+    await session(this).assertLivePreview(planDigest);
+    await session(this).assertRendererResultValidated();
+  },
+);
+
+Then<StoryWorld>(
   "one still-live complete preview is shown for exact plan digest {string}",
   async function (planDigest: string) {
     await session(this).assertLivePreview(planDigest);
@@ -69,7 +87,7 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "it binds exact ModId {string}, project GUID {string}, all supplied grants, the exact source commit and tree, and the absent final project location",
+  "it binds exact ModId {string}, project GUID {string}, the supplied source and selected-parent grants, the renderer-minted operation grant, the exact source commit and tree, and the absent final project location",
   async function (modId: string, projectGuid: string) {
     await session(this).assertApplyPreviewBindings(modId, projectGuid);
   },
@@ -135,6 +153,20 @@ Then<StoryWorld>(
   "the approvedPlanDigest is treated as a full lowercase SHA-{int} approval, not as authoritative output or proof of success",
   function (bits: number) {
     session(this).assertApprovalDigest(bits);
+  },
+);
+
+Then<StoryWorld>(
+  "Rust reopens the pinned blobs and invokes the same shared renderer used by Preview to obtain the complete plan body and internal bytes afresh before any stage or write",
+  function () {
+    session(this).assertApplyRerenderedThroughSharedRenderer();
+  },
+);
+
+Then<StoryWorld>(
+  "TypeScript, web core, the submitted request, and the retained preview provide no embedded source byte, manifest, rendered byte, or parallel output authority to Apply",
+  function () {
+    session(this).assertApplyHasNoFrontendOutputAuthority();
   },
 );
 
@@ -210,7 +242,35 @@ Given<StoryWorld>(
 );
 
 Given<StoryWorld>(
-  "that composition supplies only these non-persistent selector and source-adapter results:",
+  "Preview and Apply are specified to use one shared Rust in-process git2 renderer as their sole output authority",
+  function () {
+    session(this).acknowledgeCorrectedRendererBoundary();
+  },
+);
+
+Given<StoryWorld>(
+  "the renderer returns the complete rendered plan body and internal bytes for every output file to TypeScript",
+  function () {
+    session(this).assertRendererOwnsCompleteOutput();
+  },
+);
+
+Given<StoryWorld>(
+  "TypeScript strictly validates the complete closed renderer result, verifies internal-byte consistency, computes the plan digest, deep-freezes the plan, and owns approval and presentation custody without repairing, supplementing, or reinterpreting output",
+  function () {
+    session(this).assertFrontendCustodyOnly();
+  },
+);
+
+Given<StoryWorld>(
+  "web core embeds no EMPT or other template-derived source byte and no fixture-hardcoded path, size, hash, generated preview, output metadata, or parallel rendering authority",
+  function () {
+    session(this).assertNoSelectorOutputAuthority();
+  },
+);
+
+Given<StoryWorld>(
+  "that composition supplies only these non-persistent selector results:",
   function (dataTable: DataTable) {
     session(this).configureSelections(dataTable.hashes());
   },
@@ -296,8 +356,12 @@ When<StoryWorld>("the person activates {string}", async function (name: string) 
   await session(this).activateDialogControl(name);
 });
 
+When<StoryWorld>("the person activates {string} again", async function (name: string) {
+  await session(this).activateDialogControl(name);
+});
+
 Then<StoryWorld>(
-  "the source adapter resolves only the pinned commit and tree from the selected local Git object database",
+  "the shared Rust renderer resolves only the pinned commit, tree, and required blobs from the selected local Git object database",
   async function () {
     await session(this).assertPinnedObjectRead();
   },
@@ -307,6 +371,20 @@ Then<StoryWorld>(
   "the modified tracked canary and untracked canary are ignored and do not affect the plan",
   function () {
     session(this).assertDirtyCanariesIgnored();
+  },
+);
+
+Then<StoryWorld>(
+  "only after exact rendering succeeds and {string} is confirmed absent, Rust mints operation grant {string} for only that exact destination and its operation-specific same-parent stage and journal names",
+  function (destination: string, operationIdentity: string) {
+    session(this).assertRendererMintedInitialGrant(operationIdentity, destination);
+  },
+);
+
+Then<StoryWorld>(
+  "TypeScript accepts only the strictly valid renderer result and computes the displayed plan digest as lowercase SHA-256 over the RFC 8785 canonical JSON plan body",
+  async function () {
+    await session(this).assertRendererResultValidated();
   },
 );
 
@@ -404,6 +482,113 @@ Then<StoryWorld>(
   },
 );
 
+When<StoryWorld>(
+  "the person changes the exact ModId from {string} to {string}",
+  async function (from: string, to: string) {
+    await session(this).changeExactModId(from, to);
+  },
+);
+
+Then<StoryWorld>(
+  "before any further asynchronous work the displayed preview, digest, approval state, and Apply authority are cleared",
+  async function () {
+    await session(this).assertReplacementInvalidatedSynchronously();
+  },
+);
+
+Then<StoryWorld>(
+  "operation grant {string} is synchronously revoked and cannot authorize {string}",
+  function (operationIdentity: string, replacementModId: string) {
+    session(this).assertInitialOperationRevoked(operationIdentity, replacementModId);
+  },
+);
+
+Then<StoryWorld>(
+  "the source grant and selected-parent grant remain live without granting authority for {string}",
+  function (destination: string) {
+    session(this).assertSelectionGrantsRemainForReplacement(destination);
+  },
+);
+
+Then<StoryWorld>(
+  "the same shared Rust renderer reopens the pinned blobs and dynamically renders exact ModId {string}",
+  function (modId: string) {
+    session(this).assertReplacementRendererRead(modId);
+  },
+);
+
+Then<StoryWorld>(
+  "only after the exact render succeeds and {string} is confirmed absent, Rust mints replacement operation grant {string}",
+  function (destination: string, operationIdentity: string) {
+    if (destination !== "/scenario/foundry-output/Mod_1") {
+      throw new Error(`Unexpected replacement destination ${destination}`);
+    }
+    session(this).assertReplacementGrant(operationIdentity);
+  },
+);
+
+Then<StoryWorld>(
+  /^TypeScript strictly validates the returned complete plan body and internal bytes, computes a new lowercase RFC 8785\/SHA-256 plan digest, and deep-freezes the replacement preview$/u,
+  async function () {
+    await session(this).assertReplacementValidated();
+  },
+);
+
+Then<StoryWorld>(
+  "the replacement preview shows exactly these changed bound identities:",
+  async function (dataTable: DataTable) {
+    await session(this).assertReplacementFacts(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "the replacement preview shows this complete directory topology relative to {string}, with no symlink:",
+  async function (destination: string, dataTable: DataTable) {
+    await session(this).assertReplacementDirectories(destination, dataTable.raw().slice(1));
+  },
+);
+
+Then<StoryWorld>(
+  "the replacement preview shows exactly these {int} regular files relative to {string}:",
+  async function (count: number, destination: string, dataTable: DataTable) {
+    await session(this).assertReplacementFiles(count, destination, dataTable.raw().slice(1));
+  },
+);
+
+Then<StoryWorld>(
+  "the replacement preview declares exactly these absent outputs and capabilities:",
+  async function (dataTable: DataTable) {
+    await session(this).assertExactList(
+      "Project Foundry absent outputs and capabilities",
+      dataTable
+        .raw()
+        .slice(1)
+        .map(([value]) => value ?? ""),
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "the replacement preview shows the same six exact warnings as the initial golden preview",
+  async function () {
+    await session(this).assertReplacementWarnings();
+  },
+);
+
+Then<StoryWorld>(
+  "every ModId-sensitive derived destination, directory path, file path, transformed or generated internal byte sequence, generated preview, and explicit absence contains zero stale {string} value",
+  function (stale: string) {
+    session(this).assertNoStaleFixtureLiteral(stale);
+  },
+);
+
+Then<StoryWorld>(
+  "every replacement identity, path, mode, size, hash, classification, generated preview, absence, warning, option, and canonical-schema version is bound by the new displayed plan digest",
+  async function () {
+    await session(this).assertReplacementDigestBinding();
+  },
+);
+
 Then<StoryWorld>(
   "no source, destination-parent, derived-destination, sibling, journal, staging, or IDE project-state write has occurred",
   async function () {
@@ -449,14 +634,27 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "no Foundry stage, journal, output, filesystem write, remembered path, retained plan, or project state remains",
+  "{string} and {string} remain absent",
+  async function (initial: string, replacement: string) {
+    if (
+      initial !== "/scenario/foundry-output/FoundryPreviewFixture" ||
+      replacement !== "/scenario/foundry-output/Mod_1"
+    ) {
+      throw new Error("Unexpected Project Foundry destination pair");
+    }
+    await session(this).assertBothDestinationsAbsent();
+  },
+);
+
+Then<StoryWorld>(
+  "no Foundry stage, journal, output, filesystem write, remembered path, retained plan, digest, approval state, Apply authority, or project state remains",
   async function () {
     await session(this).assertNoResidue();
   },
 );
 
 Then<StoryWorld>(
-  "every supplied source, destination-parent, and operation grant is revoked with no authority residue",
+  "every supplied source and destination-parent grant and every renderer-minted operation grant is revoked with no authority residue",
   function () {
     session(this).assertGrantsRevoked();
   },
