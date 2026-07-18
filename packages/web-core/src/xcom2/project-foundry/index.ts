@@ -37,6 +37,11 @@ import {
 } from "./approved-preview-metadata";
 import { canonicalizeJsonRfc8785, sha256Hex, uuidV5 } from "./deterministic-data";
 
+export {
+  createXcom2ProjectFoundryRenderRequest,
+  validateAndDigestXcom2ProjectFoundryRenderedPlan,
+} from "./rendered-plan-custody";
+
 const URL_NAMESPACE = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
 const MOD_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/u;
 const WINDOWS_DEVICE_PATTERN = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu;
@@ -130,8 +135,8 @@ export function validateXcom2ProjectFoundryModId(
   return Object.freeze({ kind: "accepted", modId: candidate });
 }
 
-/** Derive the deterministic uppercase-braced URL-namespace UUIDv5 for a valid ModId. */
-export function deriveXcom2ProjectFoundryProjectGuid(modId: string): string {
+/** Derive the legacy generator's deterministic project identity during App migration. */
+function deriveXcom2ProjectFoundryProjectGuid(modId: string): string {
   if (validateXcom2ProjectFoundryModId(modId).kind !== "accepted") {
     throw new TypeError("A valid Project Foundry ModId is required");
   }
@@ -139,7 +144,10 @@ export function deriveXcom2ProjectFoundryProjectGuid(modId: string): string {
   return `{${uuidV5(URL_NAMESPACE, name).toUpperCase()}}`;
 }
 
-/** Copy selector data into a provider-neutral, deeply immutable request. */
+/**
+ * @deprecated Transitional frontend render request retained only until the current App uses the
+ * native renderer port and createXcom2ProjectFoundryRenderRequest.
+ */
 export function createXcom2ProjectFoundryPreviewRequest(
   input: Xcom2ProjectFoundryPreviewRequest,
 ): Readonly<Xcom2ProjectFoundryPreviewRequest> {
@@ -151,7 +159,10 @@ export function digestXcom2ProjectFoundryPlan(plan: Xcom2ProjectFoundryDigestBou
   return sha256Hex(canonicalizeJsonRfc8785(plan));
 }
 
-/** Validate all bound evidence and return the immutable display-only Foundry plan. */
+/**
+ * @deprecated Transitional frontend output generator retained solely so the current App compiles.
+ * Native rendering is the only target output authority.
+ */
 export function previewXcom2ProjectFoundry(
   request: Readonly<Xcom2ProjectFoundryPreviewRequest>,
 ): Xcom2ProjectFoundryPreviewResult {
