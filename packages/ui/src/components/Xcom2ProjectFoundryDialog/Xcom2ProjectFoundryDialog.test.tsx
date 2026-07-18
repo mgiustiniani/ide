@@ -290,6 +290,24 @@ describe("Xcom2ProjectFoundryDialog", () => {
     },
   );
 
+  it("maps an invalid rendered plan to the exact safe summary without raw cause or details", () => {
+    const unsafeState = {
+      kind: "refused",
+      code: "rendered-plan-invalid",
+      cause: "RAW_RENDER_VALIDATION_CAUSE_DO_NOT_RENDER",
+      details: "RAW_RENDER_VALIDATION_DETAILS_DO_NOT_RENDER",
+    } as const;
+
+    render(<Xcom2ProjectFoundryDialog {...baseProps({ viewState: unsafeState })} />);
+
+    const alert = screen.getByRole("alert");
+    expect(
+      within(alert).getByText("The project preview could not be validated.", { exact: true }),
+    ).toBeDefined();
+    expect(alert.textContent).not.toContain("RAW_RENDER_VALIDATION_CAUSE_DO_NOT_RENDER");
+    expect(alert.textContent).not.toContain("RAW_RENDER_VALIDATION_DETAILS_DO_NOT_RENDER");
+  });
+
   it("shows the exact 16 bound identities and source facts including the complete plan digest", () => {
     render(
       <Xcom2ProjectFoundryDialog

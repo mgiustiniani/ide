@@ -1,7 +1,8 @@
-import type {
-  Xcom2ProjectFoundryCreatedReceipt,
-  Xcom2ProjectFoundryPreviewPlan,
-  Xcom2ProjectFoundryPreviewRefusalCode,
+import {
+  XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY,
+  type Xcom2ProjectFoundryCreatedReceipt,
+  type Xcom2ProjectFoundryPreviewPlan,
+  type Xcom2ProjectFoundryPreviewRefusalCode,
 } from "@ide/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/Button";
@@ -66,6 +67,7 @@ const refusalMessages: Record<Xcom2ProjectFoundryPreviewRefusalCode, string> = {
   "derived-destination-present": "The derived destination already exists.",
   "derived-destination-mismatched": "The derived destination does not match this request.",
   "operation-grant-invalid": "The preview operation grant is invalid.",
+  "rendered-plan-invalid": XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY,
 };
 
 function isValidModId(modId: string): boolean {
