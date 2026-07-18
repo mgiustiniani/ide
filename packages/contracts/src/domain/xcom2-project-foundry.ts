@@ -8,6 +8,9 @@ export const XCOM2_PROJECT_FOUNDRY_SOURCE_TREE =
 export const XCOM2_PROJECT_FOUNDRY_PLATFORM = "Linux desktop only" as const;
 export const XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS = "Non-publishable" as const;
 export const XCOM2_PROJECT_FOUNDRY_PLAN_SCHEMA_VERSION = 1 as const;
+export const XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_CODE = "rendered-plan-invalid" as const;
+export const XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY =
+  "The project preview could not be validated." as const;
 
 export const XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES = Object.freeze([
   "mod-id-invalid",
@@ -30,6 +33,7 @@ export const XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES = Object.freeze([
   "derived-destination-present",
   "derived-destination-mismatched",
   "operation-grant-invalid",
+  XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_CODE,
 ] as const);
 
 export type Xcom2ProjectFoundryPreviewRefusalCode =
@@ -53,6 +57,17 @@ export interface Xcom2ProjectFoundryOperationGrant {
   readonly identity: string;
 }
 
+/** Provider-neutral input to the authoritative native renderer. */
+export interface Xcom2ProjectFoundryRenderRequest {
+  readonly sourceGrant: Readonly<Xcom2ProjectFoundrySourceSelectionGrant>;
+  readonly destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
+  readonly modId: string;
+}
+
+/**
+ * @deprecated Transitional frontend-owned evidence. Native rendering now owns source-object
+ * validation; migrate callers to Xcom2ProjectFoundryRenderRequest.
+ */
 export interface Xcom2ProjectFoundrySourceObjectEvidence {
   readonly commit: string;
   readonly tree: string;
@@ -62,9 +77,17 @@ export interface Xcom2ProjectFoundrySourceObjectEvidence {
         "missing" | "unreadable" | "mismatched" | "fingerprint-invalid"}`;
 }
 
+/**
+ * @deprecated Transitional frontend-owned destination authority. Native rendering now owns
+ * destination validation; migrate callers to Xcom2ProjectFoundryRenderRequest.
+ */
 export type Xcom2ProjectFoundryDestinationState =
   "absent" | "parent-unavailable" | "present" | "mismatched";
 
+/**
+ * @deprecated Transitional frontend rendering authority. Use Xcom2ProjectFoundryRenderRequest;
+ * remove this contract after web-core, adapters, desktop composition, and story support migrate.
+ */
 export interface Xcom2ProjectFoundryPreviewRequest {
   readonly sourceGrant: Readonly<Xcom2ProjectFoundrySourceSelectionGrant>;
   readonly destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
@@ -129,9 +152,35 @@ export interface Xcom2ProjectFoundryDigestBoundPlan {
   readonly warnings: readonly string[];
 }
 
+/** Complete renderer-owned body before TypeScript digest custody is applied. */
+export type Xcom2ProjectFoundryRenderedPlanBody = Xcom2ProjectFoundryDigestBoundPlan;
+
+/** Successful native render with a newly minted exact-destination operation grant. */
+export interface Xcom2ProjectFoundryRenderedPlanResult {
+  readonly kind: "rendered";
+  readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
+  readonly planBody: Readonly<Xcom2ProjectFoundryRenderedPlanBody>;
+}
+
 export interface Xcom2ProjectFoundryPreviewPlan extends Xcom2ProjectFoundryDigestBoundPlan {
   readonly planDigest: string;
 }
+
+/** The only presentation-safe refusal for invalid native rendered-plan data. */
+export interface Xcom2ProjectFoundryRenderedPlanRefusal {
+  readonly kind: "refused";
+  readonly code: typeof XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_CODE;
+  readonly summary: typeof XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY;
+}
+
+/** Result of strict TypeScript validation and digest custody for native rendered-plan data. */
+export type Xcom2ProjectFoundryRenderedPlanValidationResult =
+  | {
+      readonly kind: "ready";
+      readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
+      readonly plan: Readonly<Xcom2ProjectFoundryPreviewPlan>;
+    }
+  | Xcom2ProjectFoundryRenderedPlanRefusal;
 
 export type Xcom2ProjectFoundryModIdValidationResult =
   | { readonly kind: "accepted"; readonly modId: string }

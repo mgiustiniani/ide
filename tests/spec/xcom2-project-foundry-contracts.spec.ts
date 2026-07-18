@@ -6,43 +6,19 @@ import {
   XCOM2_PROJECT_FOUNDRY_PLATFORM,
   XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS,
   XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
+  XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_CODE,
+  XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-  type Xcom2ProjectFoundryDestinationParentSelectionGrant,
-  type Xcom2ProjectFoundryDigestBoundPlan,
   type Xcom2ProjectFoundryOperationGrant,
   type Xcom2ProjectFoundryPreviewPlan,
-  type Xcom2ProjectFoundrySourceSelectionGrant,
+  type Xcom2ProjectFoundryRenderRequest,
+  type Xcom2ProjectFoundryRenderedPlanBody,
+  type Xcom2ProjectFoundryRenderedPlanRefusal,
+  type Xcom2ProjectFoundryRenderedPlanResult,
+  type Xcom2ProjectFoundryRenderedPlanValidationResult,
 } from "../../packages/contracts/src/domain/xcom2-project-foundry";
 import { RENDERED_FIXTURES } from "./support/xcom2-project-foundry-rendered-fixtures";
-
-const SAFE_RENDERED_PLAN_INVALID_SUMMARY = "The project preview could not be validated." as const;
-
-interface Xcom2ProjectFoundryRenderRequestContract {
-  readonly sourceGrant: Readonly<Xcom2ProjectFoundrySourceSelectionGrant>;
-  readonly destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
-  readonly modId: string;
-}
-
-interface Xcom2ProjectFoundryRenderedPlanBodyContract extends Xcom2ProjectFoundryDigestBoundPlan {}
-
-interface Xcom2ProjectFoundryRenderedPlanResultContract {
-  readonly kind: "rendered";
-  readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
-  readonly planBody: Readonly<Xcom2ProjectFoundryRenderedPlanBodyContract>;
-}
-
-type Xcom2ProjectFoundryRenderedPlanValidationContract =
-  | {
-      readonly kind: "ready";
-      readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
-      readonly plan: Readonly<Xcom2ProjectFoundryPreviewPlan>;
-    }
-  | {
-      readonly kind: "refused";
-      readonly code: "rendered-plan-invalid";
-      readonly summary: typeof SAFE_RENDERED_PLAN_INVALID_SUMMARY;
-    };
 
 const approvedRefusalCodes = [
   "mod-id-invalid",
@@ -81,25 +57,27 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 ADR0010@0f1fcd5 corrected contracts", (
   it("adds only the safe rendered-plan-invalid vocabulary to the approved preview refusals", () => {
     expect(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES).toEqual(approvedRefusalCodes);
     expect(Object.isFrozen(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES)).toBe(true);
-    expect(SAFE_RENDERED_PLAN_INVALID_SUMMARY).toBe("The project preview could not be validated.");
+    expect(XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_CODE).toBe("rendered-plan-invalid");
+    expect(XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY).toBe(
+      "The project preview could not be validated.",
+    );
   });
 
   it("defines the provider-neutral render request without native evidence or operation authority", () => {
-    const request = RENDERED_FIXTURES[0].request satisfies Xcom2ProjectFoundryRenderRequestContract;
+    const request = RENDERED_FIXTURES[0].request satisfies Xcom2ProjectFoundryRenderRequest;
 
     expect(Object.keys(request)).toEqual(["sourceGrant", "destinationParentGrant", "modId"]);
     expect(request).not.toHaveProperty("operationGrant");
     expect(request).not.toHaveProperty("sourceObject");
     expect(request).not.toHaveProperty("destinationState");
-    expectTypeOf(request).toMatchTypeOf<Readonly<Xcom2ProjectFoundryRenderRequestContract>>();
-    expectTypeOf<Xcom2ProjectFoundryRenderRequestContract>().not.toHaveProperty("operationGrant");
-    expectTypeOf<Xcom2ProjectFoundryRenderRequestContract>().not.toHaveProperty("sourceObject");
-    expectTypeOf<Xcom2ProjectFoundryRenderRequestContract>().not.toHaveProperty("destinationState");
+    expectTypeOf(request).toMatchTypeOf<Readonly<Xcom2ProjectFoundryRenderRequest>>();
+    expectTypeOf<Xcom2ProjectFoundryRenderRequest>().not.toHaveProperty("operationGrant");
+    expectTypeOf<Xcom2ProjectFoundryRenderRequest>().not.toHaveProperty("sourceObject");
+    expectTypeOf<Xcom2ProjectFoundryRenderRequest>().not.toHaveProperty("destinationState");
   });
 
   it("defines a native rendered body/result that returns the newly minted operation grant", () => {
-    const rendered = RENDERED_FIXTURES[0]
-      .rendered satisfies Xcom2ProjectFoundryRenderedPlanResultContract;
+    const rendered = RENDERED_FIXTURES[0].rendered satisfies Xcom2ProjectFoundryRenderedPlanResult;
 
     expect(Object.keys(rendered)).toEqual(["kind", "operationGrant", "planBody"]);
     expect(rendered.kind).toBe("rendered");
@@ -115,8 +93,14 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 ADR0010@0f1fcd5 corrected contracts", (
     expect(rendered.planBody.destination.derivedAbsentDestination).toBe(
       rendered.operationGrant.derivedDestination,
     );
-    expectTypeOf(rendered).toMatchTypeOf<Readonly<Xcom2ProjectFoundryRenderedPlanResultContract>>();
-    expectTypeOf<Xcom2ProjectFoundryRenderedPlanValidationContract>().toMatchTypeOf<
+    expectTypeOf(rendered).toMatchTypeOf<Readonly<Xcom2ProjectFoundryRenderedPlanResult>>();
+    expectTypeOf<Xcom2ProjectFoundryRenderedPlanBody>().toEqualTypeOf<
+      Xcom2ProjectFoundryRenderedPlanResult["planBody"]
+    >();
+    expectTypeOf<Xcom2ProjectFoundryRenderedPlanRefusal>().toEqualTypeOf<
+      Extract<Xcom2ProjectFoundryRenderedPlanValidationResult, { readonly kind: "refused" }>
+    >();
+    expectTypeOf<Xcom2ProjectFoundryRenderedPlanValidationResult>().toEqualTypeOf<
       | {
           readonly kind: "ready";
           readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
