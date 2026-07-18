@@ -3,12 +3,12 @@ Business Need: Safe deterministic preview of a new XCOM 2 project
   Linux desktop users need Project Foundry to preview and discard one pinned EMPT v1.4 plan.
 
   This is the first bounded Story from ADR 0010 and traces to AT-X2-029.
-  Its future evidence route is only the deterministic desktop/tauri-harness composition over the unchanged production App, controller, and preview and discard use cases.
+  Its evidence route is only the deterministic desktop/tauri-harness composition over the unchanged production App, controller, and preview and discard use cases.
   The separate harness supplies deterministic selectors and a local Git-object source adapter through production ports, without a query parameter, environment switch, hidden command, production test branch, or alternate use case.
   It provides no native GUI, native chooser, browser, web, project-creation, build, package, bundle, release, distribution, licensing-clearance, extracted-module, or separately distributable-module claim.
   Project Foundry is Linux-only; Windows implementation, evidence, support, and parity remain end-of-project work.
 
-  @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Preview and discard the exact EMPT v1.4 Foundry plan without mutation or execution
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and discard use cases use a separate deterministic Tauri-harness composition
     And that composition supplies only these non-persistent selector and source-adapter results:
