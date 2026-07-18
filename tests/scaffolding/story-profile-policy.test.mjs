@@ -312,20 +312,22 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
-test("focused XCOM Project Foundry profile stays harness-only after promotion", () => {
+test("focused XCOM Project Foundry profile retains its partial deterministic harness route", () => {
   const selected = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
   assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
-  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
+  assert.ok(selected[0].tags.has("@partial"));
+  assert.equal(selected[0].tags.has("@implemented-not-e2e-validated"), false);
+  assert.equal(selected[0].tags.has("@not-implemented"), false);
   assert.ok(selected[0].tags.has("@desktop"));
   assert.ok(selected[0].tags.has("@tauri-harness"));
   assert.equal(selected[0].tags.has("@web"), false);
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryTauriHarness"),
-    /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
+    /1 scenario \(1 undefined\)[\s\S]*58 steps \(32 skipped, 26 undefined\)/,
   );
 });
 
@@ -345,20 +347,21 @@ test("focused XCOM Project Foundry command declares only deterministic harness e
   );
 });
 
-test("focused XCOM Project Foundry Apply profile selects only its parked harness requirement", () => {
+test("focused XCOM Project Foundry Apply profile retains its non-implemented harness route", () => {
   const selected = selectedScenarios("xcom2ProjectFoundryApplyTauriHarness");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-002"]);
   assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
   assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.equal(selected[0].tags.has("@partial"), false);
   assert.ok(selected[0].tags.has("@desktop"));
   assert.ok(selected[0].tags.has("@tauri-harness"));
   assert.equal(selected[0].tags.has("@web"), false);
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryApplyTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*36 steps \(9 skipped, 27 undefined\)/,
+    /1 scenario \(1 undefined\)[\s\S]*39 steps \(32 skipped, 7 undefined\)/,
   );
 });
 
@@ -500,13 +503,13 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("promoted XCOM Project Foundry routes only to deterministic harness evidence", () => {
-  const [promoted] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
+test("partial XCOM Project Foundry stays excluded from every implemented route", () => {
+  const [partial] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
-  const routing = evaluateDeclaredStoryRouting([promoted]);
+  const routing = evaluateDeclaredStoryRouting([partial]);
   assert.deepEqual(routing.failures, []);
   assert.deepEqual(routing.expectedWeb, []);
-  assert.deepEqual(routing.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(routing.expectedDesktopTauriHarness, []);
   assert.deepEqual(routing.expectedDesktopTauriWebdriver, []);
 });
 
@@ -534,9 +537,12 @@ test("parked XCOM Project Foundry Apply can promote only to deterministic harnes
   assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
 });
 
-test("declared routes and parked inventory stay exact with Project Foundry Apply parked", () => {
+test("declared routes and partial versus non-implemented inventory stay exact", () => {
   const declared = selectedScenarios("declaredDiscovery");
-  const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
+  const validated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
+  const harnessOnly = declared.filter(({ tags }) => tags.has("@implemented-not-e2e-validated"));
+  const partial = declared.filter(({ tags }) => tags.has("@partial"));
+  const notImplemented = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
   const harness = selectedScenarios("implementedDesktopTauriHarness");
   const nativeGui = selectedScenarios("implementedDesktopTauriWebdriver");
@@ -555,17 +561,20 @@ test("declared routes and parked inventory stay exact with Project Foundry Apply
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
-    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
-  assert.deepEqual(parked.flatMap(requirementIds).sort(), [
+  assert.deepEqual(partial.flatMap(requirementIds), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
+  assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
     "@REQ-XCOM2-PROJECT-FOUNDRY-002",
   ]);
-  assert.equal(parked.length, 3);
+  assert.equal(validated.length, 9);
+  assert.equal(harnessOnly.length, 2);
+  assert.equal(partial.length, 1);
+  assert.equal(notImplemented.length, 3);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 3);
+  assert.equal(harness.length, 2);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -573,7 +582,7 @@ test("declared routes and parked inventory stay exact with Project Foundry Apply
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /3 scenarios \(3 skipped\)[\s\S]*84 steps \(84 skipped\)/,
+    /2 scenarios \(2 skipped\)[\s\S]*49 steps \(49 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -581,7 +590,7 @@ test("declared routes and parked inventory stay exact with Project Foundry Apply
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 3);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 2);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
