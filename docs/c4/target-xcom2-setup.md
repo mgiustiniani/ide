@@ -1,6 +1,6 @@
 # XCOM 2 Activation, Machine Setup, and Future Project Tooling
 
-> **MIXED CURRENT/TARGET BOUNDARY.** Project-owned configured activation, convention recognition, and repeatable WOTC SDK setup are **CURRENT/AS-BUILT**. Manual confirmation, external-root grants, contextual Build/Problems/Logs/language tooling, and optional provisioning remain **FUTURE/TARGET**. See [System Context](system-context.md), [Containers](containers.md), and [Components](components.md).
+> **MIXED CURRENT/TARGET BOUNDARY.** Project-owned configured activation, convention recognition, display-only Project Foundry preview, and repeatable WOTC SDK setup are **CURRENT/AS-BUILT**. Manual confirmation, external-root grants, contextual Build/Problems/Logs/language tooling, and optional provisioning remain **FUTURE/TARGET**. See [System Context](system-context.md), [Containers](containers.md), and [Components](components.md).
 
 This architecture is independent of the [current Java boundary and frozen inventory](target-java-intelligence.md) and makes no IntelliJ-parity claim. It also does not change the postponed packaged-application boundary.
 
@@ -14,11 +14,22 @@ This architecture is independent of the [current Java boundary and frozen invent
 | Diagnostic presentation         | Settings > Workspace > Current workspace                 | **CURRENT:** map exactly eight safe codes to fixed copy and render one atomic alert; a surviving strong Option A activity mirrors the complete warning.                                     |
 | Machine runtime lifecycle       | XCOM machine Settings visibility + workspace correlation | **CURRENT:** open machine Settings exclusively owns monitor and transaction adapter lifecycles. Machine evidence cannot activate a project or diagnostic.                                   |
 | Concrete WOTC SDK transaction   | Desktop Settings + Rust backend                          | **CURRENT:** stable Prepare, exact-digest approval, Apply, Restore Vanilla SDK, rollback, recovery, and Prepare Again.                                                                      |
+| Project Foundry preview         | Global desktop dialog + Rust backend                     | **CURRENT:** select local source and destination directories, attest pinned Git objects, and render a pure digest-bound plan without Apply or output.                                       |
 | Confirmation and external roots | Separately authorized project scope                      | **TARGET:** manual confirmation, persistence, and external-root authority require separate contracts.                                                                                       |
 | Contextual project tools        | Separately authorized module                             | **TARGET:** Build, Problems, Logs, language support, actions, and XCOM tools require their own activation and tool authority.                                                               |
 | Optional provisioning           | External Steam/prefix/package tooling                    | **TARGET:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain separate from SDK Apply.                                                       |
 
-A valid configured root or an active convention decision may add **XCOM 2 Project** to the desktop activity rail. The activity remains recognition-only and never adds a bottom tab or project action. The browser starts no project activation work. Machine Settings remains independently available and cannot provide project evidence.
+A valid configured root or an active convention decision may add **XCOM 2 Project** to the desktop activity rail. The activity remains recognition-only and never adds a bottom tab or project action. The global **New XCOM 2 Project** dialog is independent of that activity and of machine Settings. The browser starts no project activation or Foundry work. Machine Settings remains independently available and cannot provide project evidence.
+
+## Current Display-only Project Foundry Preview
+
+Production desktop startup injects the strict Tauri Foundry composition into the application root. The global dialog delegates lifecycle and authority to a dedicated controller, renders only provider-neutral states, and supplies no Apply control. Fake selectors exist only at harness and adapter-test seams; they are not production runtime components or evidence of native chooser execution.
+
+The Tauri adapter composes the allow-open directory plugin with exact request and response validation. It accepts only canonical Linux directory paths and binds native-issued source, destination-parent, and preview-operation grants. The Rust boundary revalidates selected directory identity, derives and checks the absent destination, and revokes all grants from in-memory state when the controller replaces or closes the flow.
+
+Source attestation uses `git2` against the selected local repository object database. It verifies the pinned commit, tree, and reachable blobs while ignoring working-tree modifications and untracked files. It launches no Git process, reads no network repository, and writes neither source nor destination. Once source and destination evidence is current, the pure planner validates every binding and returns a safe refusal or immutable digest-bound display plan.
+
+This boundary is separate from workspace activation, Workspace Settings diagnostics, XCOM machine Settings, and SDK transactions. It grants no activity, project tooling, setup, or mutation authority. C4 models the production composition but makes no native chooser GUI/E2E claim. There is no Apply, project creation, output, build, deploy, cooking, package, distribution, license-clearance, or publication capability.
 
 ## Current Project-owned Configured Activation
 
@@ -142,4 +153,4 @@ Optional Steam shortcut, compatibility-prefix, package-manager, Protontricks, an
 
 ## Browser Boundary
 
-Browser behavior is unchanged and gains no configuration warning. The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no machine polling, transaction activity, simulated native state, configuration read, convention scan, or project activation lifecycle. This architecture makes no browser, package/bundle/installer, Git synchronization, watcher, Wayland, other-OS/DPI, proprietary compatibility/content, external-root, machine-correctness, broader process/mutation, or contextual-tool claim.
+Browser behavior is unchanged and gains no configuration warning or Project Foundry flow. The browser XCOM setup adapter reports unavailable unless deliberate simulation is enabled. Normal browser composition starts no machine polling, transaction activity, simulated native state, configuration read, convention scan, project activation lifecycle, directory selection, local-Git attestation, or Foundry planning. This architecture makes no browser, package/bundle/installer, Git synchronization, watcher, Wayland, other-OS/DPI, proprietary compatibility/content, external-root, machine-correctness, broader process/mutation, or contextual-tool claim.

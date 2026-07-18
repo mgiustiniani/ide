@@ -483,7 +483,7 @@ Implement the XCOM setup mutation foundation as a native, durable transaction en
 
 ## ADR 0010 — Deterministic Project Foundry v1 for XCOM 2
 
-**Status:** Approved FUTURE/TARGET decision only. This ADR records approval of the target architecture; it is not implementation, progress, validation, licensing-clearance, native-acceptance, or distribution evidence.
+**Status:** Accepted. The deterministic preview-and-discard slice is CURRENT/AS-BUILT and `REQ-XCOM2-PROJECT-FOUNDRY-001` is declared `@implemented-not-e2e-validated` at repository HEAD `159b59b`. Native chooser GUI/E2E acceptance and the complete creation lifecycle remain FUTURE/TARGET; this status grants no licensing clearance, packaging, publication, release, or distribution claim.
 
 ### Context
 
@@ -497,7 +497,7 @@ The approved target is Linux native desktop only. Windows implementation, eviden
 
 ### Decision
 
-Adopt **Project Foundry v1** under the following FUTURE/TARGET policy.
+Adopt **Project Foundry v1**. The policy below retains the originally accepted full target; the explicit 2026-07-18 lifecycle amendment promotes only the bounded preview-and-discard slice and leaves every later lifecycle boundary FUTURE/TARGET.
 
 #### Platform, packaging, and licensing boundary
 
@@ -641,9 +641,21 @@ The first increment is limited to **preview and discard an exact EMPT v1.4 creat
 
 This deterministic test tier does not establish native acceptance, completed creation, implementation of later lifecycle boundaries, or complete requirement status.
 
+#### 2026-07-18 preview lifecycle and evidence amendment
+
+The preceding approval-only and first-increment language is retained as the historical target record. At repository HEAD `159b59b`, the bounded preview-and-discard slice is CURRENT/AS-BUILT and `REQ-XCOM2-PROJECT-FOUNDRY-001` is promoted only to `@implemented-not-e2e-validated`. The accepted full decision remains active, while native acceptance and all creation behavior remain FUTURE/TARGET.
+
+- The deterministic `desktop/tauri-harness` Story passed 1 scenario/35 steps at exact clean validation baseline `c88198f`. It exercised the production desktop `App`, globally available **New XCOM 2 Project** control, controller, shared dialog UI, and pure preview/discard plan through a separate deterministic composition. That composition supplied fake selectors and a development-local source adapter; it was not a native chooser, native WebView GUI, real IPC, packaged-application, or E2E run.
+- The production desktop composition separately includes a strict typed Tauri adapter that invokes the native directory-dialog plugin and fail-closed Foundry commands. The Rust boundary uses in-process `git2` to attest the selected repository's exact commit `d968be3c32b250376723563a743a120770ec5c95` and tree `cc8823fa99c0d292c4fe48a8b9463ff790176371` from its local Git object database, ignoring working-tree and untracked content. Focused adapter and Rust tests cover this composition and authority boundary, but their existence does not promote a native chooser GUI/E2E claim.
+- The validated preview contains exactly 12 mode-`0755` directories and 27 mode-`0644` regular files, including two explicitly empty directories and no symlink. It derives the uppercase-braced UUIDv5 identity and binds the complete versioned plan with SHA-256 over RFC 8785 canonical JSON. The recipe carries expected fingerprints only; no EMPT template blob or other template byte is bundled.
+- Cancel discards the plan, leaves the recorded source and destination trees unchanged, keeps the derived destination absent, performs zero filesystem/project-state writes and zero process invocations, and revokes the supplied source, destination-parent, and operation grants without retained authority.
+- This promotion establishes no Apply, project creation, filesystem output, staging, journal, recovery, removal, build, deployment, cooking, package, bundle, installer, release, distribution, extracted-module, licensing-clearance, SDK/game validation, Windows implementation/parity, or native chooser GUI/E2E behavior. Linux remains the only platform; Windows remains end-of-project work.
+- The global Foundry dialog is neither machine Settings nor an activated XCOM project contribution. It does not activate, switch, or replace the current workspace, and it does not merge machine Settings with project recognition or contextual project tools. Existing RefactorKit provider authority and package-isolation policies remain unchanged: shared UI, contracts, and web-core planning do not acquire Tauri, Git, process, or template-byte authority; native dialog and Git-object authority stay behind the Tauri/Rust boundary.
+- Publication remains fail-closed until the XCOM capability is explicitly extracted as a separately distributable module and the applicable licensing, attribution, notices, and redistribution policy is approved. Implementation and local deterministic evidence do not satisfy that gate.
+
 #### Later native selection and grant target
 
-The following selection policy is reserved for later stories and decisions; it is not part of the first increment:
+The following selection policy is retained as the original later acceptance boundary; it is not part of the promoted deterministic increment. The current strict Tauri adapter and Rust support recorded above do not by themselves establish native chooser GUI/E2E behavior:
 
 - The current-workspace source option is available only under the exact commit/tree condition above. Otherwise a native repository chooser obtains a source grant without switching the workspace.
 - The source grant authorizes only the selected repository's local object database and the exact pinned objects required by the recipe. It grants no working-tree, repository-mutation, network, process, or ambient external-root authority.
@@ -667,7 +679,7 @@ The following lifecycle is also reserved for later stories and decisions and mak
 
 #### Requirements and acceptance handoff
 
-A requirements owner may assign a stable requirement identifier; this ADR does not assign or promote requirement status. Requirement and acceptance work must preserve the following split without treating target approval as implementation or evidence.
+The requirements owner assigns stable requirement identifiers and statuses; this ADR does not originate or independently promote them. The lifecycle amendment above late-reconciles the current `REQ-XCOM2-PROJECT-FOUNDRY-001` declaration and its bounded evidence. Requirement and acceptance work must preserve the following split without treating broader target approval as implementation or evidence.
 
 The first bounded story covers deterministic preview and discard only: the exact source commit/tree and dirty-worktree independence; exact `ModId` and GUID; direct post-`RUN_THIS` transformations; complete topology, bytes, modes, sizes, hashes, classifications, generated content, warnings, and absences; strict no-execution; and cancel/discard with zero mutation and grant revocation through the separate fake-selector composition over unchanged production use cases.
 

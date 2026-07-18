@@ -20,6 +20,14 @@ Separately, the native desktop path presents the exact accessible missing-Steam 
 
 The repository does not own a Structurizr container or image invocation. It therefore does not pin an image tag or digest. The version above is the validated CLI compatibility boundary; installation and acquisition of that CLI remain external to this repository.
 
+## Project Foundry preview boundary
+
+The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Production startup injects the strict Tauri Foundry composition into the App; fake selectors remain confined to harness and adapter-test seams.
+
+The adapter uses only the Tauri allow-open directory capability, validates canonical Linux paths and exact DTO bindings, and delegates ephemeral grants to Rust. Rust revalidates directory identities and destination absence and uses `git2` to attest the pinned commit, tree, and reachable blobs from the selected local object database. Working-tree content is ignored and neither selected location is written. A pure TypeScript planner then returns a safe refusal or immutable digest-bound display plan for the accessible dialog.
+
+This architecture records production responsibilities and composition, not native chooser GUI or end-to-end evidence. It provides no Apply, project creation, output, build, deploy, cooking, package, distribution, license-clearance, or publication capability. RefactorKit import mutation and its package policies remain separate and unchanged.
+
 ## Self-contained rendering
 
 The workspace intentionally has no `theme` declaration. Its explicit styles cover the generic rounded element shape, software-system and container boundaries, and every modeled person, software system, container, component, external system, target element, and frozen element. This keeps the established C4 colors, shapes, boundaries, and target/frozen borders under repository control without fetching the former Structurizr Cloud default theme.

@@ -1,10 +1,10 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. The global Project Foundry flow is a separate display-only composition with strict native selection, local-Git attestation, and pure planning. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires capability and shell controllers; composes RefactorKit Symbol Navigation support behind its parked boundary; derives presentation props; and renders the shell. Feature orchestration remains inside the controllers rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires capability and shell controllers; composes RefactorKit Symbol Navigation support behind its parked boundary; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. Production `main.tsx` supplies the strict Tauri Foundry composition. Feature orchestration remains inside the controllers rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities. It synchronously revokes XCOM project recognition before a root transition and starts recognition only after authorization. Open Settings independently owns the machine monitor and transaction runtime.
 
@@ -53,6 +53,46 @@ The six additional extracted controllers keep shell, document, and editor coordi
 | **Desktop Shell Controller**       | Routes left-sidebar and bottom-panel resize/visibility requests to layout state without resetting dimensions; owns active bottom-tab state, AI command loading on activation, and guarded Problems visibility/severity policy. |
 
 The Workspace Controller coordinates lifecycle ordering; normal feature interactions remain direct at the most specific C3 boundary. In particular, editor readiness feeds the Java Language Controller, the RefactorKit Import Controller opens only a backend-reported result through the Desktop Editor Controller, and the extracted command/navigation controllers reuse those boundaries rather than bypassing them.
+
+## Display-only Project Foundry Preview
+
+```text
+Desktop main ──injects strict production composition──> App.tsx
+                                                        │
+                                                        ├─> Project Foundry Preview Controller
+                                                        └─> Project Foundry Preview Dialog
+
+Project Foundry Preview Dialog ──gestures──> Controller
+Controller
+  ├─ serialized ephemeral authority + stale-result guards
+  ├─> Strict Project Foundry Tauri Adapter
+  │     ├─ allow-open single-directory selection
+  │     └─ exact request/response and Linux path validation
+  │              │
+  │              ▼
+  │     Native Project Foundry Attestation and Grants
+  │       ├─ source/destination directory identity revalidation
+  │       ├─ git2 pinned commit/tree/reachable-blob attestation
+  │       ├─ working tree ignored
+  │       ├─ derived destination absence inspection
+  │       └─ in-memory grant revocation; no source/destination write
+  └─> Pure Project Foundry Preview Planner
+         └─ immutable digest-bound display plan or fixed refusal
+```
+
+| Current C3 component                              | Stable structural responsibility                                                                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop Composition Root and IDE UI State**     | Receives the production Foundry composition, renders the global control and dialog, and passes controller state and callbacks without absorbing authority or planning.                          |
+| **Project Foundry Preview Controller**            | Owns dialog sessions, serialized selector authority, generation guards, source/destination inspection ordering, safe refusal projection, and revocation on lifecycle changes.                   |
+| **Project Foundry Preview Dialog**                | Provides the accessible modal form, readonly selected paths, ModId input, busy/refused/ready states, and complete contract-provided plan rendering. It exposes Preview and Cancel but no Apply. |
+| **Pure Project Foundry Preview Planner**          | Validates bound grants, pinned source evidence, destination absence, and ModId; derives deterministic project metadata and an immutable digest-bound plan without I/O.                          |
+| **Strict Project Foundry Tauri Adapter**          | Composes the allow-open directory plugin with bounded commands; validates canonical Linux paths, exact DTO shapes, binding identities, safe native rejections, and destination state.           |
+| **Tauri Directory Dialog Plugin**                 | Supplies only the open-directory capability used by production selectors; save, message, confirmation, and broader dialog permissions are outside the composition.                              |
+| **Native Project Foundry Attestation and Grants** | Mints revocable in-memory grants, revalidates directory identities, attests pinned local Git objects with `git2`, and checks derived destination absence without filesystem writes.             |
+
+The provider-neutral `ProjectFoundryComposition` is the injection seam. Fake source and destination selectors are used only by harness and adapter tests; the production desktop entry point injects `TauriXcom2ProjectFoundryAdapter`. This separation does not turn deterministic harness selection into native chooser GUI or end-to-end evidence.
+
+Project Foundry is global desktop composition rather than XCOM machine Settings or workspace-scoped activation. It does not consume activation evidence, contribute an activity or bottom tool, or acquire setup-transaction authority. The plan is presentation only: there is no Apply, project creation, output write, build, deploy, cooking, package, distribution, license-clearance, or publication flow. RefactorKit remains the sole owner of its separate managed Java-import writes and rollback authority.
 
 ## Controlled Desktop Panel Visibility
 
