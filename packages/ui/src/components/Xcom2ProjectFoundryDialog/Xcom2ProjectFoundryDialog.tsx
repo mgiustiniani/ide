@@ -339,10 +339,11 @@ export function Xcom2ProjectFoundryDialog({
     readyPlan.destination.parent === destinationParent &&
     readyPlan.project.modId === modId &&
     readyPlan.destination.derivedAbsentDestination === finalProjectLocation;
-  const showCreateProject =
-    readyPlan !== null && creationState.kind !== "unavailable" && onCreateProject !== undefined;
   const createProjectDisabled =
-    !isCurrentReadyPlan || creationState.kind !== "ready" || locallySubmitted;
+    !isCurrentReadyPlan ||
+    creationState.kind !== "ready" ||
+    onCreateProject === undefined ||
+    locallySubmitted;
 
   useEffect(() => {
     const previouslyFocused =
@@ -591,28 +592,26 @@ export function Xcom2ProjectFoundryDialog({
             <Button type="submit" disabled={!canPreview} isLoading={busy}>
               Preview
             </Button>
-            {showCreateProject ? (
-              <Button
-                type="button"
-                disabled={createProjectDisabled}
-                onClick={(event) => {
-                  if (
-                    createProjectDisabled ||
-                    readyPlan === null ||
-                    onCreateProject === undefined ||
-                    submittedPlanRef.current === readyPlan
-                  ) {
-                    return;
-                  }
-                  submittedPlanRef.current = readyPlan;
-                  event.currentTarget.disabled = true;
-                  setLocallySubmitted(true);
-                  void onCreateProject(readyPlan.planDigest);
-                }}
-              >
-                Create project
-              </Button>
-            ) : null}
+            <Button
+              type="button"
+              disabled={createProjectDisabled}
+              onClick={(event) => {
+                if (
+                  createProjectDisabled ||
+                  readyPlan === null ||
+                  onCreateProject === undefined ||
+                  submittedPlanRef.current === readyPlan
+                ) {
+                  return;
+                }
+                submittedPlanRef.current = readyPlan;
+                event.currentTarget.disabled = true;
+                setLocallySubmitted(true);
+                void onCreateProject(readyPlan.planDigest);
+              }}
+            >
+              Create project
+            </Button>
           </footer>
         </form>
       </div>

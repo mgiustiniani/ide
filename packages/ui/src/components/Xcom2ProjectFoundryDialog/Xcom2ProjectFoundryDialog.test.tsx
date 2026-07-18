@@ -147,6 +147,10 @@ describe("Xcom2ProjectFoundryDialog", () => {
     expect(finalProjectLocation.value).toBe(FINAL_PROJECT_LOCATION);
     expect(within(form).getByRole("button", { name: "Preview" })).toBeDefined();
     expect(within(form).getByRole("button", { name: "Cancel" })).toBeDefined();
+    const create = within(form).getByRole("button", {
+      name: "Create project",
+    }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
   });
 
   it("exposes the exact Gherkin helper descriptions through each field's accessibility tree", () => {
@@ -259,7 +263,12 @@ describe("Xcom2ProjectFoundryDialog", () => {
     render(<Xcom2ProjectFoundryDialog {...props} />);
 
     expect(screen.getByRole("status").textContent).toContain("read-only");
-    for (const name of ["Select EMPT repository", "Select Destination parent", "Preview"]) {
+    for (const name of [
+      "Select EMPT repository",
+      "Select Destination parent",
+      "Preview",
+      "Create project",
+    ]) {
       expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     }
     const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
@@ -449,7 +458,116 @@ describe("Xcom2ProjectFoundryDialog", () => {
         creationState={{ kind: "unavailable" }}
       />,
     );
-    expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Create project" })).toHaveLength(1);
+    expect(
+      (screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(create);
+    expect(onCreateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps one disabled creation control through invalidation, busy, refusal, applying, and created transitions", () => {
+    const onCreateProject = vi.fn();
+    const plan = readyPlan();
+    const initial = baseProps({ onCreateProject });
+    const { rerender } = render(<Xcom2ProjectFoundryDialog {...initial} />);
+
+    const expectOneDisabledCreate = (): void => {
+      const controls = screen.getAllByRole("button", { name: "Create project" });
+      expect(controls).toHaveLength(1);
+      expect((controls[0] as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(controls[0]);
+    };
+
+    expectOneDisabledCreate();
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        viewState={{ kind: "busy" }}
+        creationState={{ kind: "unavailable" }}
+      />,
+    );
+    expectOneDisabledCreate();
+    expect(screen.getByRole("status").textContent).toContain("read-only");
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        viewState={{ kind: "refused", code: "mod-id-invalid" }}
+        creationState={{ kind: "unavailable" }}
+      />,
+    );
+    expectOneDisabledCreate();
+    expect(screen.getByRole("alert").textContent).toContain("Preview refused");
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        viewState={{ kind: "ready", plan }}
+        creationState={{ kind: "ready" }}
+      />,
+    );
+    const readyCreate = screen.getByRole("button", {
+      name: "Create project",
+    }) as HTMLButtonElement;
+    expect(screen.getAllByRole("button", { name: "Create project" })).toHaveLength(1);
+    expect(readyCreate.disabled).toBe(false);
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        viewState={{ kind: "ready", plan }}
+        creationState={{ kind: "creating" }}
+      />,
+    );
+    expectOneDisabledCreate();
+    expect(screen.getByRole("status").textContent).toBe("Creating project…");
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        viewState={{ kind: "ready", plan }}
+        creationState={{ kind: "created", receipt: createdReceipt() }}
+      />,
+    );
+    expectOneDisabledCreate();
+    expect(screen.getByRole("status").textContent).toBe("Project created");
+    expect(screen.getByRole("table", { name: "Project Foundry creation receipt" })).toBeDefined();
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        modId="ChangedModId"
+        viewState={{ kind: "ready", plan }}
+        creationState={{ kind: "ready" }}
+      />,
+    );
+    expectOneDisabledCreate();
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...initial}
+        modId="ChangedModId"
+        viewState={{ kind: "editing" }}
+        creationState={{ kind: "unavailable" }}
+      />,
+    );
+    expectOneDisabledCreate();
+    expect(onCreateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps creation disabled when the current ready preview has no callback", () => {
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: { kind: "ready" },
+        })}
+      />,
+    );
+
+    const create = screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
   });
 
   it("submits the displayed digest once and disables synchronously and from creating/consumed props", () => {
