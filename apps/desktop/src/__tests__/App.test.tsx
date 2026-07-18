@@ -893,10 +893,21 @@ vi.mock("@ide/ui", () => ({
         ModId
         <input value={props.modId} onChange={(event) => props.onModIdChange(event.target.value)} />
       </label>
+      <label>
+        Final project location
+        <input value={props.finalProjectLocation ?? ""} readOnly />
+      </label>
       {props.viewState.kind === "ready" ? (
         <output>{props.viewState.plan.planDigest}</output>
       ) : props.viewState.kind === "refused" ? (
         <div role="alert">{props.viewState.code}</div>
+      ) : null}
+      {props.creationState?.kind === "creating" ? <div role="status">Creating project…</div> : null}
+      {props.creationState?.kind === "created" ? (
+        <div role="status">
+          Project created
+          <span>{props.creationState.receipt.finalProjectLocation}</span>
+        </div>
       ) : null}
       <button type="button" onClick={() => void props.onCancel()}>
         Cancel
@@ -908,6 +919,15 @@ vi.mock("@ide/ui", () => ({
       >
         Preview
       </button>
+      {props.viewState.kind === "ready" && props.creationState?.kind !== "unavailable" ? (
+        <button
+          type="button"
+          disabled={props.creationState?.kind !== "ready"}
+          onClick={() => void props.onCreateProject?.(props.viewState.plan.planDigest)}
+        >
+          Create project
+        </button>
+      ) : null}
     </div>
   ),
   LeftSidebar: ({ children, workspaceContent, isVisible, onToggle }: any) => {
@@ -2015,6 +2035,108 @@ describe("App", () => {
       "",
     );
     expect((within(reopened).getByLabelText("ModId") as HTMLInputElement).value).toBe("");
+  });
+
+  it("wires one exact pending Foundry Apply, locks before entry, and retains the created receipt", async () => {
+    const applyGate = createDeferred<any>();
+    const revokeAll = vi.fn(async () => undefined);
+    const source = {
+      kind: "source-repository" as const,
+      repository: "/scenario/empt-v1_4",
+      identity: "source-grant-foundry-preview-001",
+    };
+    const destination = {
+      kind: "destination-parent" as const,
+      parent: "/scenario/foundry-output",
+      identity: "destination-parent-grant-foundry-preview-001",
+    };
+    const operation = {
+      kind: "preview-operation" as const,
+      derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
+      identity: "operation-grant-foundry-preview-001",
+    };
+    let createDisabledAtPortEntry = false;
+    let creatingVisibleAtPortEntry = false;
+    const apply = vi.fn((request: any) => {
+      const create = screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement;
+      createDisabledAtPortEntry = create.disabled;
+      creatingVisibleAtPortEntry = screen
+        .queryAllByRole("status")
+        .some((status) => status.textContent === "Creating project…");
+      return applyGate.promise.then(() => ({
+        result: "created" as const,
+        planDigest: request.approvedPlanDigest,
+        finalProjectLocation: operation.derivedDestination,
+        sourceCommit: "d968be3c32b250376723563a743a120770ec5c95",
+        sourceTree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
+        committedDirectories: 12,
+        committedFiles: 27,
+      }));
+    });
+    const composition = {
+      selectors: {
+        selectSourceRepository: vi.fn(async () => source),
+        selectDestinationParent: vi.fn(async () => ({
+          destinationParentGrant: destination,
+          operationGrant: operation,
+        })),
+      },
+      source: {
+        resolvePinnedObject: vi.fn(async () => ({
+          commit: "d968be3c32b250376723563a743a120770ec5c95",
+          tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
+          fingerprintResult: "Verified" as const,
+        })),
+      },
+      destination: { inspectDerivedDestination: vi.fn(async () => "absent" as const) },
+      apply,
+      grants: { revokeAll },
+    };
+    const { App } = await import("../App");
+    render(
+      <StrictMode>
+        <App projectFoundry={composition} />
+      </StrictMode>,
+    );
+    const strictRevocations = revokeAll.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "New XCOM 2 Project" }));
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select EMPT repository" }));
+    await within(dialog).findByDisplayValue(source.repository);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select Destination parent" }));
+    await within(dialog).findByDisplayValue(destination.parent);
+    expect(
+      (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe(operation.derivedDestination);
+    fireEvent.change(within(dialog).getByLabelText("ModId"), {
+      target: { value: "FoundryPreviewFixture" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    const create = await within(dialog).findByRole("button", { name: "Create project" });
+    const digest = within(dialog).getByText(/^[0-9a-f]{64}$/u).textContent ?? "";
+
+    fireEvent.click(create);
+    fireEvent.click(create);
+    await waitFor(() => expect(apply).toHaveBeenCalledOnce());
+    expect(createDisabledAtPortEntry).toBe(true);
+    expect(creatingVisibleAtPortEntry).toBe(true);
+    expect(apply.mock.calls[0]?.[0]).toEqual({
+      schemaVersion: 1,
+      sourceGrant: source,
+      destinationParentGrant: destination,
+      operationGrant: operation,
+      modId: "FoundryPreviewFixture",
+      approvedPlanDigest: digest,
+    });
+
+    applyGate.resolve(undefined);
+    await screen.findByText("Project created", { exact: true });
+    expect(screen.getAllByText(operation.derivedDestination)).not.toHaveLength(0);
+    expect(revokeAll.mock.calls.length).toBeGreaterThan(strictRevocations);
+    fireEvent.click(create);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    expect(apply).toHaveBeenCalledOnce();
   });
 
   it("keeps back-to-back Foundry selectors serialized and rendered under StrictMode", async () => {

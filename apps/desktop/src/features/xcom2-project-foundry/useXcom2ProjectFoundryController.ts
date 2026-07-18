@@ -1,14 +1,23 @@
 import type {
+  Xcom2ProjectFoundryApplyCurrentSelection,
+  Xcom2ProjectFoundryApplyRequest,
+  Xcom2ProjectFoundryApplyResult,
+  Xcom2ProjectFoundryApplyState,
   Xcom2ProjectFoundryDestinationParentSelectionGrant,
   Xcom2ProjectFoundryDestinationState,
   Xcom2ProjectFoundryOperationGrant,
   Xcom2ProjectFoundrySourceObjectEvidence,
   Xcom2ProjectFoundrySourceSelectionGrant,
 } from "@ide/contracts";
-import type { Xcom2ProjectFoundryDialogViewState } from "@ide/ui";
+import type {
+  Xcom2ProjectFoundryDialogCreationState,
+  Xcom2ProjectFoundryDialogViewState,
+} from "@ide/ui";
 import {
   createXcom2ProjectFoundryPreviewRequest,
+  createXcom2ProjectFoundryReadyApplyState,
   previewXcom2ProjectFoundry,
+  reduceXcom2ProjectFoundryApplyState,
   validateXcom2ProjectFoundryModId,
 } from "@ide/web-core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,6 +43,13 @@ export interface ProjectFoundryComposition {
       operationGrant: Xcom2ProjectFoundryOperationGrant,
     ): Promise<Xcom2ProjectFoundryDestinationState>;
   };
+  /**
+   * Optional until a real native Apply adapter exists. Deterministic desktop compositions can
+   * inject the provider-neutral one-shot port without granting production Tauri mutation authority.
+   */
+  apply?(
+    request: Readonly<Xcom2ProjectFoundryApplyRequest>,
+  ): Promise<Xcom2ProjectFoundryApplyResult>;
   readonly grants: {
     revokeAll(): Promise<void>;
   };
@@ -44,16 +60,24 @@ export interface Xcom2ProjectFoundryController {
   readonly sourceRepository: string;
   readonly destinationParent: string;
   readonly modId: string;
+  /** Exact value copied from the current operation grant; never reconstructed in the App or UI. */
+  readonly finalProjectLocation: string;
   readonly viewState: Xcom2ProjectFoundryDialogViewState;
+  readonly creationState: Xcom2ProjectFoundryDialogCreationState;
+  /** Immutable pure lifecycle snapshot retained for controller diagnostics and tests. */
+  readonly applyState: Readonly<Xcom2ProjectFoundryApplyState> | null;
   open(): void;
   selectSourceRepository(): Promise<void>;
   selectDestinationParent(): Promise<void>;
   setModId(modId: string): void;
   preview(modId: string): Promise<void>;
+  apply(approvedPlanDigest: string): Promise<void>;
   cancel(): Promise<void>;
 }
 
 const EDITING = Object.freeze({ kind: "editing" } as const);
+const CREATION_UNAVAILABLE = Object.freeze({ kind: "unavailable" } as const);
+const SAFE_APPLY_FAILURE_REASON = "Project creation failed safely.";
 
 type DestinationSelection = {
   readonly destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
@@ -137,9 +161,133 @@ function snapshotSourceEvidence(
   } as Xcom2ProjectFoundrySourceObjectEvidence);
 }
 
+function exactDataRecord(
+  value: unknown,
+  fields: readonly string[],
+): Readonly<Record<string, unknown>> | null {
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return null;
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.length !== fields.length ||
+      keys.some((key) => typeof key !== "string" || !fields.includes(key)) ||
+      fields.some((field) => !keys.includes(field))
+    ) {
+      return null;
+    }
+    const snapshot: Record<string, unknown> = {};
+    for (const field of fields) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return null;
+      snapshot[field] = descriptor.value;
+    }
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
+/** Snapshot only an exact plain Apply result before it reaches the pure reducer. */
+function snapshotApplyResult(value: unknown): Readonly<Xcom2ProjectFoundryApplyResult> | null {
+  let resultKind: unknown;
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "result");
+    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return null;
+    resultKind = descriptor.value;
+  } catch {
+    return null;
+  }
+  if (typeof resultKind !== "string") return null;
+
+  if (resultKind === "created") {
+    const result = exactDataRecord(value, [
+      "result",
+      "planDigest",
+      "finalProjectLocation",
+      "sourceCommit",
+      "sourceTree",
+      "committedDirectories",
+      "committedFiles",
+    ]);
+    if (
+      !result ||
+      result.result !== "created" ||
+      typeof result.planDigest !== "string" ||
+      typeof result.finalProjectLocation !== "string" ||
+      typeof result.sourceCommit !== "string" ||
+      typeof result.sourceTree !== "string" ||
+      typeof result.committedDirectories !== "number" ||
+      !Number.isSafeInteger(result.committedDirectories) ||
+      typeof result.committedFiles !== "number" ||
+      !Number.isSafeInteger(result.committedFiles)
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      result: "created",
+      planDigest: result.planDigest,
+      finalProjectLocation: result.finalProjectLocation,
+      sourceCommit: result.sourceCommit,
+      sourceTree: result.sourceTree,
+      committedDirectories: result.committedDirectories,
+      committedFiles: result.committedFiles,
+    });
+  }
+
+  if (resultKind === "refused" || resultKind === "failed") {
+    const result = exactDataRecord(value, ["result", "phase", "reason"]);
+    if (
+      !result ||
+      result.result !== resultKind ||
+      result.phase !== "pre-commit" ||
+      typeof result.reason !== "string"
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      result: resultKind,
+      phase: "pre-commit",
+      reason: result.reason,
+    }) as Readonly<Xcom2ProjectFoundryApplyResult>;
+  }
+
+  if (resultKind === "created-recovery-required") {
+    const result = exactDataRecord(value, [
+      "result",
+      "phase",
+      "planDigest",
+      "finalProjectLocation",
+      "reason",
+    ]);
+    if (
+      !result ||
+      result.result !== "created-recovery-required" ||
+      result.phase !== "post-commit" ||
+      typeof result.planDigest !== "string" ||
+      typeof result.finalProjectLocation !== "string" ||
+      typeof result.reason !== "string"
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      result: "created-recovery-required",
+      phase: "post-commit",
+      planDigest: result.planDigest,
+      finalProjectLocation: result.finalProjectLocation,
+      reason: result.reason,
+    });
+  }
+
+  return null;
+}
+
 /**
- * Provider-neutral desktop orchestration for the display-only Project Foundry preview.
- * Authority is injected, serialized, generation-checked, and always discarded explicitly.
+ * Provider-neutral desktop orchestration for Project Foundry preview and an injected one-shot
+ * Apply port. Authority is serialized, generation-checked, consumed before port entry, and
+ * explicitly revoked. No workspace, editor, process, or filesystem side effect is performed here.
  */
 export function useXcom2ProjectFoundryController(
   composition?: ProjectFoundryComposition,
@@ -157,12 +305,19 @@ export function useXcom2ProjectFoundryController(
   const sourceGrantRef = useRef<Readonly<Xcom2ProjectFoundrySourceSelectionGrant> | null>(null);
   const destinationSelectionRef = useRef<DestinationSelection | null>(null);
   const modIdRef = useRef("");
+  const applyStateRef = useRef<Readonly<Xcom2ProjectFoundryApplyState> | null>(null);
 
   const [isOpen, setIsOpen] = useState(false);
   const [sourceRepository, setSourceRepository] = useState("");
   const [destinationParent, setDestinationParent] = useState("");
   const [modId, setModIdState] = useState("");
+  const [finalProjectLocation, setFinalProjectLocation] = useState("");
   const [viewState, setViewState] = useState<Xcom2ProjectFoundryDialogViewState>(EDITING);
+  const [creationState, setCreationState] =
+    useState<Xcom2ProjectFoundryDialogCreationState>(CREATION_UNAVAILABLE);
+  const [applyState, setApplyState] = useState<Readonly<Xcom2ProjectFoundryApplyState> | null>(
+    null,
+  );
 
   const enqueueAuthority = useCallback(<T>(operation: () => Promise<T>): Promise<T> => {
     const result = authorityQueueRef.current.then(operation, operation);
@@ -191,18 +346,32 @@ export function useXcom2ProjectFoundryController(
     if (!mountedRef.current) return;
     setSourceRepository("");
     setDestinationParent("");
+    setFinalProjectLocation("");
   }, []);
 
   const clearAuthorityMemory = useCallback((): void => {
     clearGrantMemory();
     modIdRef.current = "";
+    applyStateRef.current = null;
   }, [clearGrantMemory]);
 
   const clearRenderedMemory = useCallback((): void => {
     clearRenderedGrants();
     setModIdState("");
     setViewState(EDITING);
+    setCreationState(CREATION_UNAVAILABLE);
+    setApplyState(null);
   }, [clearRenderedGrants]);
+
+  const invalidateReadyApproval = useCallback((): boolean => {
+    const retainedReadyPreview = applyStateRef.current?.status === "ready";
+    applyStateRef.current = null;
+    if (mountedRef.current) {
+      setApplyState(null);
+      setCreationState(retainedReadyPreview ? { kind: "consumed" } : CREATION_UNAVAILABLE);
+    }
+    return retainedReadyPreview;
+  }, []);
 
   const invalidateAll = useCallback((): number => {
     const generation = ++sessionGenerationRef.current;
@@ -211,6 +380,11 @@ export function useXcom2ProjectFoundryController(
     previewGenerationRef.current += 1;
     return generation;
   }, []);
+
+  const authorityConsumed = useCallback(
+    (): boolean => applyStateRef.current?.authority === "consumed",
+    [],
+  );
 
   const open = useCallback((): void => {
     const owner = compositionRef.current;
@@ -226,15 +400,16 @@ export function useXcom2ProjectFoundryController(
 
   const selectSourceRepository = useCallback(async (): Promise<void> => {
     const owner = compositionRef.current;
+    if (authorityConsumed()) return;
     if (!owner || !openRef.current) {
       if (openRef.current) setViewState({ kind: "refused", code: "source-grant-invalid" });
       return;
     }
     const session = sessionGenerationRef.current;
     const selectionGeneration = ++sourceGenerationRef.current;
-    const replacesExistingGrant = sourceGrantRef.current !== null;
     previewGenerationRef.current += 1;
-    setViewState(EDITING);
+    const retainedReadyPreview = invalidateReadyApproval();
+    if (!retainedReadyPreview) setViewState(EDITING);
 
     await enqueueAuthority(async () => {
       const isCurrent = (): boolean =>
@@ -242,14 +417,9 @@ export function useXcom2ProjectFoundryController(
         openRef.current &&
         compositionRef.current === owner &&
         sessionGenerationRef.current === session &&
-        sourceGenerationRef.current === selectionGeneration;
+        sourceGenerationRef.current === selectionGeneration &&
+        !authorityConsumed();
       if (!isCurrent()) return;
-      if (replacesExistingGrant) {
-        await revokeSafely(owner);
-        clearGrantMemory();
-        clearRenderedGrants();
-        if (!isCurrent()) return;
-      }
 
       let selected: unknown;
       try {
@@ -280,10 +450,18 @@ export function useXcom2ProjectFoundryController(
       sourceGrantRef.current = grant;
       flushSync(() => setSourceRepository(grant.repository));
     });
-  }, [clearGrantMemory, clearRenderedGrants, enqueueAuthority, revokeSafely]);
+  }, [
+    authorityConsumed,
+    clearGrantMemory,
+    clearRenderedGrants,
+    enqueueAuthority,
+    invalidateReadyApproval,
+    revokeSafely,
+  ]);
 
   const selectDestinationParent = useCallback(async (): Promise<void> => {
     const owner = compositionRef.current;
+    if (authorityConsumed()) return;
     if (!owner || !openRef.current) {
       if (openRef.current) {
         setViewState({ kind: "refused", code: "destination-parent-grant-invalid" });
@@ -292,9 +470,9 @@ export function useXcom2ProjectFoundryController(
     }
     const session = sessionGenerationRef.current;
     const selectionGeneration = ++destinationGenerationRef.current;
-    const replacesExistingGrant = destinationSelectionRef.current !== null;
     previewGenerationRef.current += 1;
-    setViewState(EDITING);
+    const retainedReadyPreview = invalidateReadyApproval();
+    if (!retainedReadyPreview) setViewState(EDITING);
 
     await enqueueAuthority(async () => {
       const isCurrent = (): boolean =>
@@ -302,14 +480,9 @@ export function useXcom2ProjectFoundryController(
         openRef.current &&
         compositionRef.current === owner &&
         sessionGenerationRef.current === session &&
-        destinationGenerationRef.current === selectionGeneration;
+        destinationGenerationRef.current === selectionGeneration &&
+        !authorityConsumed();
       if (!isCurrent()) return;
-      if (replacesExistingGrant) {
-        await revokeSafely(owner);
-        clearGrantMemory();
-        clearRenderedGrants();
-        if (!isCurrent()) return;
-      }
 
       let selected: unknown;
       try {
@@ -340,22 +513,38 @@ export function useXcom2ProjectFoundryController(
         return;
       }
       destinationSelectionRef.current = selection;
-      flushSync(() => setDestinationParent(selection.destinationParentGrant.parent));
+      flushSync(() => {
+        setDestinationParent(selection.destinationParentGrant.parent);
+        setFinalProjectLocation(selection.operationGrant.derivedDestination);
+      });
     });
-  }, [clearGrantMemory, clearRenderedGrants, enqueueAuthority, revokeSafely]);
+  }, [
+    authorityConsumed,
+    clearGrantMemory,
+    clearRenderedGrants,
+    enqueueAuthority,
+    invalidateReadyApproval,
+    revokeSafely,
+  ]);
 
-  const setModId = useCallback((nextModId: string): void => {
-    modIdRef.current = nextModId;
-    previewGenerationRef.current += 1;
-    setModIdState(nextModId);
-    setViewState(EDITING);
-  }, []);
+  const setModId = useCallback(
+    (nextModId: string): void => {
+      if (authorityConsumed()) return;
+      modIdRef.current = nextModId;
+      previewGenerationRef.current += 1;
+      const retainedReadyPreview = invalidateReadyApproval();
+      setModIdState(nextModId);
+      if (!retainedReadyPreview) setViewState(EDITING);
+    },
+    [authorityConsumed, invalidateReadyApproval],
+  );
 
   const preview = useCallback(
     async (exactModId: string): Promise<void> => {
-      if (!openRef.current) return;
+      if (!openRef.current || authorityConsumed()) return;
       modIdRef.current = exactModId;
       setModIdState(exactModId);
+      invalidateReadyApproval();
 
       const validation = validateXcom2ProjectFoundryModId(exactModId);
       if (validation.kind === "refused") {
@@ -383,8 +572,9 @@ export function useXcom2ProjectFoundryController(
         openRef.current &&
         compositionRef.current === owner &&
         sessionGenerationRef.current === session &&
-        previewGenerationRef.current === previewGeneration;
-      setViewState({ kind: "busy" });
+        previewGenerationRef.current === previewGeneration &&
+        !authorityConsumed();
+      if (viewState.kind !== "ready") setViewState({ kind: "busy" });
 
       await enqueueAuthority(async () => {
         if (!current()) return;
@@ -427,13 +617,96 @@ export function useXcom2ProjectFoundryController(
             modId: exactModId,
           });
           if (!current()) return;
-          setViewState(previewXcom2ProjectFoundry(request));
+          const result = previewXcom2ProjectFoundry(request);
+          if (result.kind === "ready") {
+            const currentSelection: Xcom2ProjectFoundryApplyCurrentSelection = {
+              sourceGrant,
+              destinationParentGrant: destinationSelection.destinationParentGrant,
+              operationGrant: destinationSelection.operationGrant,
+              modId: exactModId,
+            };
+            const readyApplyState = createXcom2ProjectFoundryReadyApplyState({
+              preview: result,
+              current: currentSelection,
+            });
+            applyStateRef.current = readyApplyState;
+            setApplyState(readyApplyState);
+            setCreationState(
+              typeof owner.apply === "function" ? { kind: "ready" } : CREATION_UNAVAILABLE,
+            );
+          }
+          setViewState(result);
         } catch {
           if (current()) setViewState({ kind: "refused", code: "operation-grant-invalid" });
         }
       });
     },
-    [enqueueAuthority],
+    [authorityConsumed, enqueueAuthority, invalidateReadyApproval, viewState.kind],
+  );
+
+  const apply = useCallback(
+    async (approvedPlanDigest: string): Promise<void> => {
+      if (!openRef.current) return;
+      const owner = compositionRef.current;
+      const state = applyStateRef.current;
+      if (!owner || typeof owner.apply !== "function" || !state) return;
+
+      const prepared = reduceXcom2ProjectFoundryApplyState(state, {
+        kind: "apply-requested",
+        approvedPlanDigest,
+      });
+      if (prepared.kind !== "prepared") return;
+
+      applyStateRef.current = prepared.state;
+      flushSync(() => {
+        setApplyState(prepared.state);
+        setCreationState({ kind: "creating" });
+      });
+
+      const session = sessionGenerationRef.current;
+      const request = prepared.request;
+      await enqueueAuthority(async () => {
+        const isCurrent = (): boolean =>
+          mountedRef.current &&
+          openRef.current &&
+          compositionRef.current === owner &&
+          sessionGenerationRef.current === session &&
+          applyStateRef.current === prepared.state;
+        if (!isCurrent()) return;
+
+        let result: Readonly<Xcom2ProjectFoundryApplyResult>;
+        try {
+          const providerResult = await owner.apply!(request);
+          result =
+            snapshotApplyResult(providerResult) ??
+            ({ result: "created" } as unknown as Xcom2ProjectFoundryApplyResult);
+        } catch {
+          result = Object.freeze({
+            result: "failed",
+            phase: "pre-commit",
+            reason: SAFE_APPLY_FAILURE_REASON,
+          });
+        }
+        if (!isCurrent()) return;
+
+        const completion = reduceXcom2ProjectFoundryApplyState(prepared.state, {
+          kind: "apply-completed",
+          result,
+        });
+        applyStateRef.current = completion.state;
+        clearGrantMemory();
+        if (mountedRef.current) {
+          setApplyState(completion.state);
+          if (completion.kind === "transitioned" && completion.state.status === "created") {
+            setCreationState({ kind: "created", receipt: completion.state.receipt });
+          } else {
+            setCreationState({ kind: "consumed" });
+          }
+        }
+        await revokeSafely(owner);
+      });
+    },
+    [clearGrantMemory, enqueueAuthority, revokeSafely],
   );
 
   const cancel = useCallback(async (): Promise<void> => {
@@ -484,12 +757,16 @@ export function useXcom2ProjectFoundryController(
     sourceRepository,
     destinationParent,
     modId,
+    finalProjectLocation,
     viewState,
+    creationState,
+    applyState,
     open,
     selectSourceRepository,
     selectDestinationParent,
     setModId,
     preview,
+    apply,
     cancel,
   };
 }

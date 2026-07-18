@@ -125,7 +125,8 @@ describe("useXcom2ProjectFoundryController", () => {
     expect(plan.destination.parent).toBe(destinationParentGrant.parent);
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.files)).toBe(true);
-    expect(controller.result.current).not.toHaveProperty("apply");
+    expect(controller.result.current.creationState).toEqual({ kind: "unavailable" });
+    expect(controller.result.current.apply).toEqual(expect.any(Function));
   });
 
   it("preserves the exact ModId and safely refuses invalid or destination-mismatched values", async () => {
@@ -385,6 +386,243 @@ describe("useXcom2ProjectFoundryController", () => {
     expect(harness.revokeAll).toHaveBeenCalled();
   });
 
+  it("consumes exact approval synchronously before one port entry and snapshots a matching receipt", async () => {
+    const applyGate = deferred<any>();
+    let observedAtPortEntry: ReturnType<typeof renderFoundryController>["result"]["current"];
+    const apply = vi.fn((_request: any) => {
+      observedAtPortEntry = controller.result.current;
+      return applyGate.promise;
+    });
+    const harness = createComposition({ apply });
+    const controller = renderFoundryController(harness.composition);
+    await selectInputs(controller);
+    await act(() => controller.result.current.preview("FoundryPreviewFixture"));
+    expect(controller.result.current.creationState).toEqual({ kind: "ready" });
+    expect(controller.result.current.finalProjectLocation).toBe(operationGrant.derivedDestination);
+    expect(controller.result.current.applyState?.status).toBe("ready");
+    const readyState = controller.result.current.applyState;
+    if (readyState?.status !== "ready") throw new Error("Expected ready Apply state");
+    const digest = readyState.preview.plan.planDigest;
+
+    let first!: Promise<void>;
+    let repeated!: Promise<void>;
+    act(() => {
+      first = controller.result.current.apply(digest);
+      repeated = controller.result.current.apply(digest);
+    });
+    await waitFor(() => expect(apply).toHaveBeenCalledOnce());
+
+    expect(observedAtPortEntry!.creationState).toEqual({ kind: "creating" });
+    expect(observedAtPortEntry!.applyState).toMatchObject({
+      status: "applying",
+      authority: "consumed",
+    });
+    const request = apply.mock.calls[0]?.[0];
+    expect(request).toEqual({
+      schemaVersion: 1,
+      sourceGrant,
+      destinationParentGrant,
+      operationGrant,
+      modId: "FoundryPreviewFixture",
+      approvedPlanDigest: digest,
+    });
+    expect(Object.isFrozen(request)).toBe(true);
+
+    const mutableReceipt = {
+      result: "created" as const,
+      planDigest: digest,
+      finalProjectLocation: operationGrant.derivedDestination,
+      sourceCommit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
+      sourceTree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+      committedDirectories: readyState.preview.plan.directories.length,
+      committedFiles: readyState.preview.plan.files.length,
+    };
+    applyGate.resolve(mutableReceipt);
+    await act(async () => Promise.all([first, repeated]));
+    mutableReceipt.finalProjectLocation = "/mutated/provider/location";
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(controller.result.current.applyState).toMatchObject({
+      status: "created",
+      authority: "consumed",
+    });
+    expect(controller.result.current.creationState).toMatchObject({
+      kind: "created",
+      receipt: { finalProjectLocation: operationGrant.derivedDestination },
+    });
+    expect(Object.isFrozen(controller.result.current.creationState)).toBe(false);
+    if (controller.result.current.creationState.kind !== "created") {
+      throw new Error("Expected created presentation");
+    }
+    expect(Object.isFrozen(controller.result.current.creationState.receipt)).toBe(true);
+    expect(controller.result.current).toMatchObject({
+      sourceRepository: sourceGrant.repository,
+      destinationParent: destinationParentGrant.parent,
+      modId: "FoundryPreviewFixture",
+      finalProjectLocation: operationGrant.derivedDestination,
+      viewState: { kind: "ready" },
+    });
+    expect(harness.revokeAll).toHaveBeenCalledOnce();
+
+    await act(() => controller.result.current.preview("FoundryPreviewFixture"));
+    await act(() => controller.result.current.apply(digest));
+    expect(apply).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [
+      "source",
+      (controller: ReturnType<typeof renderFoundryController>) =>
+        controller.result.current.selectSourceRepository(),
+    ],
+    [
+      "destination",
+      (controller: ReturnType<typeof renderFoundryController>) =>
+        controller.result.current.selectDestinationParent(),
+    ],
+    [
+      "ModId",
+      (controller: ReturnType<typeof renderFoundryController>) =>
+        Promise.resolve(controller.result.current.setModId("ChangedMod")),
+    ],
+  ] as const)("invalidates ready approval immediately on %s change", async (_name, change) => {
+    const apply = vi.fn();
+    const harness = createComposition({ apply });
+    const controller = renderFoundryController(harness.composition);
+    await selectInputs(controller);
+    await act(() => controller.result.current.preview("FoundryPreviewFixture"));
+    expect(controller.result.current.creationState).toEqual({ kind: "ready" });
+
+    let changePromise!: Promise<void>;
+    act(() => {
+      changePromise = change(controller);
+    });
+    expect(controller.result.current.creationState).toEqual({ kind: "consumed" });
+    expect(controller.result.current.applyState).toBeNull();
+    await act(async () => changePromise);
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("consumes mismatched receipts and safely reduces typed refusals and failures", async () => {
+    const cases = [
+      {
+        result: {
+          result: "created" as const,
+          planDigest: "b".repeat(64),
+          finalProjectLocation: operationGrant.derivedDestination,
+          sourceCommit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
+          sourceTree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+          committedDirectories: 12,
+          committedFiles: 27,
+        },
+        expectedStatus: "applying",
+      },
+      {
+        result: {
+          result: "refused" as const,
+          phase: "pre-commit" as const,
+          reason: "Safe refusal",
+        },
+        expectedStatus: "refused",
+      },
+      {
+        result: { result: "failed" as const, phase: "pre-commit" as const, reason: "Safe failure" },
+        expectedStatus: "failed",
+      },
+    ];
+
+    for (const scenario of cases) {
+      const harness = createComposition({ apply: vi.fn(async () => scenario.result as any) });
+      const controller = renderFoundryController(harness.composition);
+      await selectInputs(controller);
+      await act(() => controller.result.current.preview("FoundryPreviewFixture"));
+      const ready = controller.result.current.applyState;
+      if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+      await act(() => controller.result.current.apply(ready.preview.plan.planDigest));
+
+      expect(controller.result.current.creationState).toEqual({ kind: "consumed" });
+      expect(controller.result.current.applyState?.status).toBe(scenario.expectedStatus);
+      expect(harness.revokeAll).toHaveBeenCalledOnce();
+      controller.unmount();
+    }
+  });
+
+  it("maps thrown provider failures to a fixed safe failure without exposing the cause", async () => {
+    const privateCause = "/private/output token=raw-secret";
+    const harness = createComposition({
+      apply: vi.fn(async () => {
+        throw new Error(privateCause);
+      }),
+    });
+    const controller = renderFoundryController(harness.composition);
+    await selectInputs(controller);
+    await act(() => controller.result.current.preview("FoundryPreviewFixture"));
+    const ready = controller.result.current.applyState;
+    if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+    await act(() => controller.result.current.apply(ready.preview.plan.planDigest));
+
+    expect(controller.result.current.applyState).toMatchObject({
+      status: "failed",
+      failure: { reason: "Project creation failed safely." },
+    });
+    expect(JSON.stringify(controller.result.current)).not.toContain(privateCause);
+  });
+
+  it("suppresses a pending completion after cancel, composition replacement, and unmount", async () => {
+    for (const invalidation of ["cancel", "composition", "unmount"] as const) {
+      const gate = deferred<any>();
+      const first = createComposition({ apply: vi.fn(() => gate.promise) });
+      const second = createComposition({ apply: vi.fn() });
+      const hook = renderHook(
+        ({ composition }: { composition: ProjectFoundryComposition }) =>
+          useXcom2ProjectFoundryController(composition),
+        { initialProps: { composition: first.composition } },
+      );
+      act(() => hook.result.current.open());
+      await act(() => hook.result.current.selectSourceRepository());
+      await act(() => hook.result.current.selectDestinationParent());
+      act(() => hook.result.current.setModId("FoundryPreviewFixture"));
+      await act(() => hook.result.current.preview("FoundryPreviewFixture"));
+      const ready = hook.result.current.applyState;
+      if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+      let pending!: Promise<void>;
+      act(() => {
+        pending = hook.result.current.apply(ready.preview.plan.planDigest);
+      });
+      await waitFor(() => expect(first.composition.apply).toHaveBeenCalledOnce());
+
+      let cancellation: Promise<void> | undefined;
+      if (invalidation === "cancel") {
+        act(() => {
+          cancellation = hook.result.current.cancel();
+        });
+      } else if (invalidation === "composition") {
+        hook.rerender({ composition: second.composition });
+      } else {
+        hook.unmount();
+      }
+      gate.resolve({
+        result: "created",
+        planDigest: ready.preview.plan.planDigest,
+        finalProjectLocation: operationGrant.derivedDestination,
+        sourceCommit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
+        sourceTree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+        committedDirectories: 12,
+        committedFiles: 27,
+      });
+      await act(async () => {
+        await pending;
+        await cancellation;
+      });
+      if (invalidation !== "unmount") {
+        expect(hook.result.current.isOpen).toBe(false);
+        expect(hook.result.current.creationState).toEqual({ kind: "unavailable" });
+      }
+      expect(first.revokeAll).toHaveBeenCalled();
+      if (invalidation !== "unmount") hook.unmount();
+    }
+  });
+
   it("refuses an absent composition safely and contains no native/Tauri dependency", async () => {
     const controller = renderFoundryController();
     act(() => controller.result.current.open());
@@ -403,6 +641,5 @@ describe("useXcom2ProjectFoundryController", () => {
       "utf8",
     );
     expect(productionSource).not.toMatch(/@tauri-apps|invoke\s*\(/u);
-    expect(productionSource).not.toMatch(/\bapply\b/iu);
   });
 });

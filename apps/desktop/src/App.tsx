@@ -768,11 +768,14 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
           sourceRepository={projectFoundryController.sourceRepository}
           destinationParent={projectFoundryController.destinationParent}
           modId={projectFoundryController.modId}
+          finalProjectLocation={projectFoundryController.finalProjectLocation}
           viewState={projectFoundryController.viewState}
+          creationState={projectFoundryController.creationState}
           onSelectSourceRepository={projectFoundryController.selectSourceRepository}
           onSelectDestinationParent={projectFoundryController.selectDestinationParent}
           onModIdChange={projectFoundryController.setModId}
           onPreview={projectFoundryController.preview}
+          onCreateProject={projectFoundryController.apply}
           onCancel={projectFoundryController.cancel}
         />
       ) : null}
