@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState } from "react";
+import { RENDERED_FIXTURES } from "../../../../tests/spec/support/xcom2-project-foundry-rendered-fixtures";
 
 const testHarness = vi.hoisted(() => {
   const harness: any = {};
@@ -1978,30 +1979,16 @@ describe("App", () => {
       identity: "source-grant-foundry-preview-001",
     }));
     const selectDestinationParent = vi.fn(async () => ({
-      destinationParentGrant: {
-        kind: "destination-parent" as const,
-        parent: "/scenario/foundry-output",
-        identity: "destination-parent-grant-foundry-preview-001",
-      },
-      operationGrant: {
-        kind: "preview-operation" as const,
-        derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
-        identity: "operation-grant-foundry-preview-001",
-      },
+      kind: "destination-parent" as const,
+      parent: "/scenario/foundry-output",
+      identity: "destination-parent-grant-foundry-preview-001",
     }));
+    const renderPreview = vi.fn(async () => structuredClone(RENDERED_FIXTURES[0].rendered));
+    const revokeOperation = vi.fn(async () => undefined);
     const composition = {
       selectors: { selectSourceRepository, selectDestinationParent },
-      source: {
-        resolvePinnedObject: vi.fn(async () => ({
-          commit: "d968be3c32b250376723563a743a120770ec5c95",
-          tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
-          fingerprintResult: "Verified" as const,
-        })),
-      },
-      destination: {
-        inspectDerivedDestination: vi.fn(async () => "absent" as const),
-      },
-      grants: { revokeAll },
+      renderer: { renderPreview },
+      grants: { revokeOperation, revokeAll },
     };
     const { App } = await import("../App");
     render(<App projectFoundry={composition} />);
@@ -2021,7 +2008,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByTestId("Xcom2ProjectFoundryDialog").dataset.viewState).toBe("ready");
     });
-    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith("");
+    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith();
+    expect(renderPreview).toHaveBeenCalledExactlyOnceWith({
+      sourceGrant: RENDERED_FIXTURES[0].request.sourceGrant,
+      destinationParentGrant: RENDERED_FIXTURES[0].request.destinationParentGrant,
+      modId: "FoundryPreviewFixture",
+    });
     expect(screen.getByText(/^[0-9a-f]{64}$/u)).toBeDefined();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -2076,21 +2068,13 @@ describe("App", () => {
     const composition = {
       selectors: {
         selectSourceRepository: vi.fn(async () => source),
-        selectDestinationParent: vi.fn(async () => ({
-          destinationParentGrant: destination,
-          operationGrant: operation,
-        })),
+        selectDestinationParent: vi.fn(async () => destination),
       },
-      source: {
-        resolvePinnedObject: vi.fn(async () => ({
-          commit: "d968be3c32b250376723563a743a120770ec5c95",
-          tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
-          fingerprintResult: "Verified" as const,
-        })),
+      renderer: {
+        renderPreview: vi.fn(async () => structuredClone(RENDERED_FIXTURES[0].rendered)),
       },
-      destination: { inspectDerivedDestination: vi.fn(async () => "absent" as const) },
       apply,
-      grants: { revokeAll },
+      grants: { revokeOperation: vi.fn(async () => undefined), revokeAll },
     };
     const { App } = await import("../App");
     render(
@@ -2108,12 +2092,15 @@ describe("App", () => {
     await within(dialog).findByDisplayValue(destination.parent);
     expect(
       (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
-    ).toBe(operation.derivedDestination);
+    ).toBe("");
     fireEvent.change(within(dialog).getByLabelText("ModId"), {
       target: { value: "FoundryPreviewFixture" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
     const create = await within(dialog).findByRole("button", { name: "Create project" });
+    expect(
+      (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe(operation.derivedDestination);
     const digest = within(dialog).getByText(/^[0-9a-f]{64}$/u).textContent ?? "";
 
     fireEvent.click(create);
@@ -2146,25 +2133,17 @@ describe("App", () => {
       identity: string;
     }>();
     const destinationSelection = createDeferred<{
-      destinationParentGrant: {
-        kind: "destination-parent";
-        parent: string;
-        identity: string;
-      };
-      operationGrant: {
-        kind: "preview-operation";
-        derivedDestination: string;
-        identity: string;
-      };
+      kind: "destination-parent";
+      parent: string;
+      identity: string;
     }>();
     const selectSourceRepository = vi.fn(() => sourceSelection.promise);
     const selectDestinationParent = vi.fn(() => destinationSelection.promise);
     const revokeAll = vi.fn(async () => undefined);
     const composition = {
       selectors: { selectSourceRepository, selectDestinationParent },
-      source: { resolvePinnedObject: vi.fn() },
-      destination: { inspectDerivedDestination: vi.fn() },
-      grants: { revokeAll },
+      renderer: { renderPreview: vi.fn() },
+      grants: { revokeOperation: vi.fn(async () => undefined), revokeAll },
     };
     const { App } = await import("../App");
     render(
@@ -2193,19 +2172,12 @@ describe("App", () => {
     expect((within(dialog).getByLabelText("EMPT repository") as HTMLInputElement).value).toBe(
       "/scenario/empt-v1_4",
     );
-    await waitFor(() => expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith(""));
+    await waitFor(() => expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith());
     await act(async () => {
       destinationSelection.resolve({
-        destinationParentGrant: {
-          kind: "destination-parent",
-          parent: "/scenario/foundry-output",
-          identity: "destination-parent-grant-foundry-preview-001",
-        },
-        operationGrant: {
-          kind: "preview-operation",
-          derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
-          identity: "operation-grant-foundry-preview-001",
-        },
+        kind: "destination-parent",
+        parent: "/scenario/foundry-output",
+        identity: "destination-parent-grant-foundry-preview-001",
       });
       await destinationSelection.promise;
     });
@@ -2213,7 +2185,7 @@ describe("App", () => {
       "/scenario/foundry-output",
     );
 
-    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith("");
+    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith();
     expect(revokeAll).toHaveBeenCalledTimes(strictModeRevocations);
     expect(screen.getByTestId("PanelLayout")).toBeDefined();
     expect(screen.getAllByRole("button", { name: "New XCOM 2 Project" })).toHaveLength(1);
