@@ -277,10 +277,22 @@ fn command_dtos_are_exact_camel_case_and_reject_unknown_fields() {
         .is_err()
     );
 
+    let destination_selection: AuthorizeFoundryDestinationParentSelectionRequest =
+        serde_json::from_value(serde_json::json!({"selectedRoot": "/tmp/parent"}))
+            .expect("camelCase destination parent selection request");
+    assert_eq!(destination_selection.selected_root, "/tmp/parent");
+    assert!(
+        serde_json::from_value::<AuthorizeFoundryDestinationParentSelectionRequest>(
+            serde_json::json!({"selectedRoot": "/tmp/parent", "modId": "ExactMod"})
+        )
+        .is_err(),
+        "parent-only authorization must not accept a ModId"
+    );
+
     let destination: AuthorizeFoundryDestinationParentRequest = serde_json::from_value(
         serde_json::json!({"selectedRoot": "/tmp/parent", "modId": "ExactMod"}),
     )
-    .expect("camelCase destination request");
+    .expect("camelCase legacy destination request");
     assert_eq!(destination.mod_id, "ExactMod");
 
     let render: RenderFoundryPreviewRequest = serde_json::from_value(serde_json::json!({
@@ -515,6 +527,77 @@ fn paths_must_be_bounded_absolute_canonical_utf8_strings() {
         )
         .is_err());
     }
+}
+
+#[test]
+fn parent_only_selection_precedes_mod_id_render_mints_operation_and_revoke_invalidates_it() {
+    let fixture = RendererRepositoryFixture::new("parent-only-render", None, false);
+    let parent = TestDirectory::new("parent-only-render-destination");
+    let state = fixture.state();
+    let source = authorize_source_repository(&state, fixture.source_request())
+        .expect("authorize renderer source");
+
+    let destination = authorize_destination_parent_selection(
+        &state,
+        AuthorizeFoundryDestinationParentSelectionRequest {
+            selected_root: parent.string(),
+        },
+    )
+    .expect("authorize only the selected destination parent");
+    let destination_wire = serde_json::to_value(&destination).expect("serialize parent grant");
+    let destination_wire = destination_wire.as_object().expect("parent grant object");
+    assert_eq!(destination_wire.len(), 3);
+    assert_eq!(destination_wire["kind"], "destination-parent");
+    assert_eq!(destination_wire["parent"], parent.string());
+    assert!(!destination_wire.contains_key("modId"));
+    assert!(!destination_wire.contains_key("derivedDestination"));
+    assert!(!destination_wire.contains_key("operationGrant"));
+    {
+        let grants = state.grants.lock().expect("read parent-only grant store");
+        let record = grants
+            .destination_grants
+            .get(&destination.identity)
+            .expect("stored parent-only grant");
+        assert!(record.operation.is_none());
+        assert!(grants.operation_to_destination.is_empty());
+    }
+
+    let later_mod_id = "ChosenLater";
+    let (operation, plan) = expect_rendered(render_preview(
+        &state,
+        render_request(source, destination.clone(), later_mod_id),
+    ));
+    assert_eq!(plan.project.mod_id, later_mod_id);
+    assert_eq!(
+        operation.derived_destination,
+        parent
+            .0
+            .join(later_mod_id)
+            .to_str()
+            .expect("UTF-8 derived destination")
+    );
+    assert_eq!(
+        inspect_destination(
+            &state,
+            InspectFoundryDestinationRequest {
+                destination_parent_grant: destination.clone(),
+                operation_grant: operation.clone(),
+            }
+        ),
+        Ok(FoundryDestinationState::Absent)
+    );
+
+    revoke_all(&state).expect("revoke parent and rendered operation grants");
+    assert_eq!(
+        inspect_destination(
+            &state,
+            InspectFoundryDestinationRequest {
+                destination_parent_grant: destination,
+                operation_grant: operation,
+            }
+        ),
+        Err("operation-grant-invalid".to_string())
+    );
 }
 
 #[test]

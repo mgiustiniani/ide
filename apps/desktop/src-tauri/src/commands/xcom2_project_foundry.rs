@@ -51,6 +51,12 @@ pub struct FoundrySourceObjectEvidence {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthorizeFoundryDestinationParentSelectionRequest {
+    pub selected_root: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AuthorizeFoundryDestinationParentRequest {
     pub selected_root: String,
     pub mod_id: String,
@@ -241,6 +247,18 @@ pub fn render_xcom2_project_foundry_preview(
         return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid);
     }
     render_preview(&state, request)
+}
+
+/// Authorizes exactly one selected existing parent, without accepting a ModId or deriving a child.
+/// The returned parent grant is inert until the renderer validates a later ModId and mints an
+/// operation grant.
+#[tauri::command]
+pub fn authorize_xcom2_project_foundry_destination_parent_selection(
+    state: tauri::State<'_, Xcom2ProjectFoundryState>,
+    request: AuthorizeFoundryDestinationParentSelectionRequest,
+) -> Result<FoundryDestinationParentSelectionGrant, String> {
+    require_linux()?;
+    authorize_destination_parent_selection(&state, request)
 }
 
 /// Authorizes one selected existing parent and derives one absent child for the exact ModId.
@@ -588,6 +606,39 @@ fn render_failure_code(failure: RenderFailure) -> FoundryRenderRefusalCode {
         }
         RenderFailure::RenderedPlanInvalid => FoundryRenderRefusalCode::RenderedPlanInvalid,
     }
+}
+
+fn authorize_destination_parent_selection(
+    state: &Xcom2ProjectFoundryState,
+    request: AuthorizeFoundryDestinationParentSelectionRequest,
+) -> Result<FoundryDestinationParentSelectionGrant, String> {
+    let parent = inspect_selected_directory(&request.selected_root)
+        .map_err(|_| "destination-parent-unavailable".to_string())?;
+    let parent_string = canonical_path_string(&parent.canonical_path)?;
+
+    let mut grants = state
+        .grants
+        .lock()
+        .map_err(|_| "destination-parent-grant-invalid".to_string())?;
+    if total_grants(&grants) + 1 > MAXIMUM_ACTIVE_GRANTS {
+        return Err("destination-parent-grant-invalid".to_string());
+    }
+    let destination_identity = mint_unique_identity("foundry-destination", &grants, None)?;
+    let destination_grant = FoundryDestinationParentSelectionGrant {
+        kind: "destination-parent".to_string(),
+        parent: parent_string,
+        identity: destination_identity.clone(),
+    };
+    let record = DestinationGrantRecord {
+        parent,
+        destination_grant: destination_grant.clone(),
+        operation: None,
+    };
+    revalidate_destination_parent_record(&record)?;
+    grants
+        .destination_grants
+        .insert(destination_identity, record);
+    Ok(destination_grant)
 }
 
 fn authorize_destination_parent(
