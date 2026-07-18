@@ -33,7 +33,7 @@ Business Need: Honest native XCOM machine Settings when Steam products are missi
     And the selected section presents the accessible heading "XCOM 2 WOTC Setup"
     And it presents the exact badge "Built-in · Experimental"
     And it presents a focusable scroll region named "XCOM 2 setup monitor details"
-    And that region contains one note with exactly "Steam products were not found. Install them through Steam, then refresh."
+    And that region contains one note with exactly "Steam products not found. Steam may be unavailable, or no monitored app manifests were discovered."
     And "Aggregate setup state" shows exactly:
       | field                      | value                               |
       | Overall state              | Not Found                           |
