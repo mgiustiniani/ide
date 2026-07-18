@@ -483,100 +483,225 @@ Implement the XCOM setup mutation foundation as a native, durable transaction en
 
 ## ADR 0010 — Deterministic Project Foundry v1 for XCOM 2
 
-**Status:** Approved FUTURE/TARGET decision only. This ADR records approval of the target architecture; it is not implementation, progress, validation, licensing-clearance, or distribution evidence.
+**Status:** Approved FUTURE/TARGET decision only. This ADR records approval of the target architecture; it is not implementation, progress, validation, licensing-clearance, native-acceptance, or distribution evidence.
 
 ### Context
 
-Project Foundry v1 needs to create an XCOM 2 mod project from the canonical EnhancedModProjectTemplate v1.4 while keeping template execution, external-root authority, and licensing claims out of the IDE. The source template is locally available as a pinned Git object, but permission to use that object during local development is not permission to distribute template-derived material. The template's wizard and `RUN_THIS` flow also create intermediate state that is not part of the desired project, and executing those tools would introduce process and mutation authority unrelated to deterministic project creation.
+Project Foundry v1 needs a deterministic plan for creating an XCOM 2 mod project from EnhancedModProjectTemplate v1.4 without executing the template, granting ambient filesystem authority, or treating local source availability as redistribution permission. The authoritative input is one pinned commit and tree in a user-selected local Git object database. Working-tree and untracked content are outside that authority.
 
-The target therefore needs a reproducible final topology, an exact preview/apply boundary, conflict-safe cleanup, explicit native grants for the two external roots, and a first-party recipe that can later be extracted without implying a generic plugin ecosystem. The architecture must also remain acceptably testable through the production route when native chooser automation is initially unavailable.
+The desired output is the semantic project topology after the template's `RUN_THIS` processing, not its wizard inputs or intermediate files. The plan must therefore define exact identity, transformations, generated content, topology, absences, fingerprints, and non-execution boundaries. The extraction-ready pack must not become a second source of template bytes, and structural separability alone cannot satisfy the licensing and publication boundary.
 
-The approved target scope is intentionally platform-bounded. Project Foundry v1 and the subsequent currently contemplated XCOM template and Linux build increments are Linux-only. Windows implementation, evidence, and parity are postponed until the end of the project, and runtime web remains unavailable.
+The first bounded increment is narrower than project creation: it is approved to provide deterministic preview and discard only through production use cases and a separate test composition. Native selection, output mutation, Apply, staging, journaling, recovery, and native acceptance remain later target work. The complete creation lifecycle is retained below only as an explicitly later architectural boundary.
+
+The approved target is Linux native desktop only. Windows implementation, evidence, and parity are postponed until the end of the project. There is no web route.
 
 ### Decision
 
-Adopt **Project Foundry v1** as a bounded, deterministic project-creation capability under the following target policy.
+Adopt **Project Foundry v1** under the following FUTURE/TARGET policy.
 
-#### Product and licensing lifecycle
+#### Platform, packaging, and licensing boundary
 
-- XCOM remains built-in, experimental, and extraction-ready at this stage.
-- Local development may consume the user-selected local EnhancedModProjectTemplate v1.4 Git object at commit `d968be3`. Unresolved distribution licensing is not treated as a blocker to that local development use.
-- Distribution, bundling, release artifact or application packaging, and package or module publication containing this capability or template-derived material remain blocked until the XCOM 2/template capability is an explicit, separately distributable module and its applicable license, attribution, notices, and redistribution policy are resolved.
-- Development permission and distribution permission are separate decisions. This approval grants no permission or evidence for distribution.
+- The target capability is Linux native desktop only. Windows implementation, evidence, support, validation, and parity are end-of-project work and must not be implied before then.
+- There is no browser adapter, browser simulation, remote browser service, web application path, query-parameter route, or other web route for Foundry.
+- The experimental first-party pack ID is exactly `ide.xcom2.empt-v1_4`.
+- The extraction-ready pack contains only the recipe and expected immutable fingerprints. It contains no embedded EMPT/development capsule, fallback capsule, template blob, or other template bytes, even when such bytes would be marked local-only or non-distributable.
+- Any publication, package, module, application bundle, or release containing this capability or template-derived material must fail closed until the XCOM capability is explicitly extracted as a separately distributable module and an applicable licensing, attribution, notices, and redistribution policy is approved. Structural extraction-readiness does not satisfy this gate.
+- This approval grants no licensing clearance or redistribution permission and establishes no generic plugin runtime or third-party pack loading, installation, removal, or execution.
 
-#### Platform and runtime scope
+#### Exact source object and repository policy
 
-- Project Foundry v1 and all subsequent XCOM template or Linux build increments currently contemplated by this decision are approved only as FUTURE/TARGET Linux-native desktop work.
-- Windows implementation, evidence, and parity are postponed until the end of the project. Before that end-of-project phase, requirements, designs, plans, documentation, acceptance material, and capability statements must not state or imply Windows implementation, evidence, validation, support, or parity.
-- Runtime web remains unavailable for this capability and those increments. No browser adapter, browser simulation, remote browser service, web application path, or other browser/web runtime route may be introduced or implied.
-- In this ADR, the unchanged production route and later native acceptance mean the target Linux native desktop route only. They are future handoff criteria and make no current, implemented, validated, or as-built claim.
+- The only source revision is commit `d968be3c32b250376723563a743a120770ec5c95` with tree `cc8823fa99c0d292c4fe48a8b9463ff790176371`, resolved from a user-selected local Git object database.
+- Recipe inputs are read from that committed tree, never from working-tree files. Working-tree modifications and untracked files are ignored and cannot affect the plan.
+- A target implementation may use an in-process Git object reader or library. It must never spawn `git` and has no shell, network, checkout, branch-switch, worktree-mutation, or repository-mutation authority.
+- Missing, unreadable, mismatched, or fingerprint-invalid commit, tree, or blob evidence refuses the operation. There is no fallback to working-tree content, the network, an embedded copy, or execution.
+- **Use current workspace** is offered only when the current workspace's local object database contains that exact commit and tree. Otherwise the user must choose **Choose EMPT repository**. Selecting another repository does not switch or replace the active workspace.
 
-#### Foundry identity, final topology, and defaults
+#### Exact `ModId` and deterministic GUID
 
-- One user-supplied, validated ASCII-safe `ModId` is reused **exactly** as the solution identity, project identity, and UnrealScript package identity. The exact grammar and length bounds are requirements and implementation policy to approve separately; they must not weaken the one-identifier, ASCII-safe, exact-reuse invariant.
-- The recipe generates the deterministic semantic final topology that would exist after `RUN_THIS`, directly. It does not reproduce or expose intermediate wizard/template state.
-- The v1 default generates no `.XComMod`, no `.ide/xcom2.json`, no Git repository initialization, and no build profile.
-- The selected destination must be absent. Existing destinations are rejected rather than merged, replaced, or adopted.
+- `ModId` must match the exact regular expression `^[A-Za-z][A-Za-z0-9_]{0,47}$`; it is therefore 1–48 ASCII bytes.
+- `ModId` is case-preserving and case-sensitive. It is never trimmed, normalized, sanitized, case-folded, or replaced with a generated alternative.
+- The exact value is reused for solution, project, package, destination/path, `$Name$`, and `$ModSafeName$` identities.
+- The case-insensitive Windows device names `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, and `LPT1`–`LPT9` are refused as future portability hygiene. This refusal does not claim Windows implementation, support, evidence, or parity.
+- Foundry does not check SDK or game package collisions because it has no SDK/game authority; the preview must warn about that limitation.
+- The project GUID is UUIDv5 in URL namespace `6ba7b811-9dad-11d1-80b4-00c04fd430c8`, using this exact UTF-8 name, where `<ModId>` is the unmodified validated value:
 
-#### Complete preview, one-shot apply, and conflict-safe cleanup
+  ```text
+  urn:ide:project-foundry:ide.xcom2.empt-v1_4:d968be3c32b250376723563a743a120770ec5c95:<ModId>
+  ```
 
-- Preview produces one complete digest-bound plan. The preview binds the selected source and destination grant identities, pinned source object and immutable input fingerprints, recipe/pack identity, `ModId`, complete final path inventory, exact generated content and content fingerprints, topology, and selected defaults/options.
-- Apply is one-shot and accepts only that exact approved plan. Any missing, stale, changed, unreadable, or mismatched bound input, authority, path, content, fingerprint, or destination precondition refuses Apply and requires a new preview.
-- Apply creates a same-filesystem sibling staging root, materializes the approved plan there, and verifies staged paths, inventory, content, and fingerprints against the plan. It then atomically renames the verified staging root to the still-absent destination. It does not copy over or merge into a destination.
-- Cleanup and rollback are conflict-safe. They never overwrite or delete user-changed, unexpected, or unverified content. Before commit, cleanup may remove only staging content proven to belong to the approved operation. After commit, rollback or removal may proceed only while the generated inventory and content still match the approved fingerprints; otherwise it refuses and preserves the content for review.
+- The GUID is rendered uppercase with braces. The same rendered GUID is used in `<ModId>.x2proj` and `<ModId>.XCOM_sln`.
 
-#### Extraction-ready first-party pack
+#### Exact semantic post-`RUN_THIS` topology
 
-- The first-party pack ID is exactly `ide.xcom2.empt-v1_4`.
-- The pack is built-in and experimental but structurally separable. It consists of a declarative recipe plus immutable fingerprints over the user-selected local exact Git object at commit `d968be3`, the canonical v1.4 source.
-- Template inputs are read from the committed Git object through the selected repository's local object database, never from working-tree files. Working-tree modifications and untracked files have no effect.
-- Missing, mismatched, or unreadable object or source evidence is rejected. There is no fallback to the working tree, network, a bundled copy, or execution.
-- This pack shape establishes neither a generic plugin runtime nor third-party pack loading, installation, removal, or execution.
+The destination is exactly `<selected-parent>/<ModId>` and contains the following 27 regular files. Every file has mode `0644`, every directory has mode `0755`, no path is a symlink, and `Content/` and `ContentForCook/` are present and empty.
 
-#### Native authority grants
+```text
+<ModId>/
+├── .gitignore
+├── <ModId>.XCOM_sln
+├── .scripts/
+│   ├── build.ps1
+│   └── X2ModBuildCommon/
+│       ├── CHANGELOG.md
+│       ├── EmptyUMap
+│       ├── InvokePowershellTask.cs
+│       ├── LICENSE
+│       ├── README.md
+│       ├── XCOM2.targets
+│       ├── build_common.ps1
+│       ├── clean.ps1
+│       └── clean_cooker_output.ps1
+└── <ModId>/
+    ├── <ModId>.x2proj
+    ├── Content/                       # empty
+    ├── ContentForCook/                # empty
+    ├── ContentOptions.json
+    ├── ModPreview.jpg
+    ├── ReadMe.txt
+    ├── Config/
+    │   ├── Base/
+    │   │   ├── XComEditor.ini
+    │   │   ├── XComEngine.ini
+    │   │   └── XComGame.ini
+    │   ├── XComTemplateCreator.ini
+    │   └── XComTemplateEditor.ini
+    ├── Localization/
+    │   ├── XComGame.int
+    │   └── <ModId>.int
+    └── Src/
+        ├── extra_globals.uci
+        └── <ModId>/Classes/
+            ├── ConfigEngine.uc
+            ├── Help.uc
+            └── X2DLCInfo_<ModId>.uc
+```
 
-- Source and destination selection are explicit, native, user-mediated, exact-root grants. The preview binds the selected identities and fingerprints so that a changed or replaced selection cannot inherit approval.
-- The source grant authorizes only resolving and reading the selected local Git repository and the exact pinned object inputs required by this recipe. It grants no broader repository, working-tree, network, or external-root authority.
-- The destination grant authorizes only the exact proposed absent project root and the same-filesystem sibling staging, atomic rename, and verified cleanup needed for the approved operation.
-- Neither grant creates persistent or general external-root authority. Grants are revoked or consumed with the plan lifecycle, including discard, refusal, failed or completed Apply, and replacement by a new preview.
-- Exact native chooser API mechanics are left to requirements and implementation policy. They must preserve explicit user mediation, exact-root scope, plan binding, and lifecycle revocation rather than introducing ambient path authority.
+The topology explicitly excludes `.XComMod`, `.ide/xcom2.json`, Git initialization, a build profile, `RUN_THIS.bat`, `replace_text.exe`, the template root `README.md`, `ProjectIcon.ico`, `EnhancedModProjectTemplate.vstemplate`, and `Src/.gitignore`. The first four are v1 product defaults; the remaining paths are excluded template/intermediate artifacts. An existing destination is refused rather than merged, replaced, or adopted.
 
-#### Explicit non-authority
+#### Token and transformation boundary
 
-Project Foundry must never execute or invoke Visual Studio or the Firaxis wizard, `RUN_THIS.bat` or any other batch file, PE helpers including `replace_text.exe`, PowerShell, inline or compiled C#, or template code. It has no authority to read or mutate an SDK or game installation and no build, deployment, cooking, launch, package-manager, browser, or general process authority. Project Foundry v1 is project creation only.
+- The only recognized tokens are `$guid1$` for the deterministic GUID, `$Name$` and `$ModSafeName$` for the exact `ModId`, and `$Description$` for the empty string in v1.
+- PowerShell variables and MSBuild `$()` expressions are never interpreted as template tokens.
+- Token transformation is enabled only for these mapped source files:
+  - `ProjectTemplate.x2proj` to `<ModId>.x2proj`;
+  - `.scripts/build.ps1`;
+  - `Config/Base/XComEditor.ini`, `Config/Base/XComEngine.ini`, and `Config/Base/XComGame.ini`;
+  - `ConfigEngine.uc`, `Help.uc`, and `extra_globals.uci`;
+  - `X2DLCInfo_Mod.uc` to `X2DLCInfo_<ModId>.uc`; and
+  - `Mod.int` to `Localization/<ModId>.int`.
+- The generated `.x2proj` directly expresses post-`RUN_THIS` semantics: remove the two `.scripts` folder entries; remove all `.scripts`, `.gitignore`, `RUN_THIS.bat`, and `replace_text.exe` content entries; set `<SolutionRoot>$(MSBuildProjectDirectory)\..\</SolutionRoot>`; retain `ScriptsDir`, `BuildCommonRoot`, and the import; and require that no recognized template token remains.
+- `<ModId>.XCOM_sln` is generated with the established Visual Studio 2013/XCOM 2 configuration shape, fixed project-type GUID `{9519DC3F-12CA-4742-AC8D-A664DE90DF21}`, exact nested project path, and the deterministic project GUID.
+- `ReadMe.txt` is generated as UTF-8 with LF line endings and this exact content:
+
+  ```text
+  X2ModBuildCommon v1.2.1 successfully installed.
+  Edit .scripts\build.ps1 if you want to enable cooking or build against Highlander.
+
+  Enjoy making your mod, and may the odds be ever in your favor.
+
+
+  Created with Enhanced Mod Project Template v1.4
+
+  Get news and updates here:
+  https://github.com/Iridar/EnhancedModProjectTemplate
+  ```
+
+- Every untouched mapped source blob is copied byte-identically from the exact Git object.
+
+#### Preview contract
+
+Preview is a complete immutable plan, not proof that output was created. It shows and digest-binds:
+
+- pack ID `ide.xcom2.empt-v1_4`, Linux-only scope, and non-publishable status;
+- selected source repository and grant identity, full commit and tree IDs, source fingerprint result, and the statement that working-tree and untracked content are ignored;
+- exact `ModId`, deterministic GUID, selected-parent and derived absent destination identities, and operation grant identities;
+- the complete directory topology at mode `0755`, including the explicitly empty `Content/` and `ContentForCook/` directories;
+- all 27 files, each with path, mode `0644`, byte size, SHA-256 value, and copied/transformed/generated classification;
+- exact generated `<ModId>.XCOM_sln` and `<ModId>.x2proj` content;
+- the four default absences and all other explicit topology absences above; and
+- warnings that there is no `.XComMod`, build, deployment, cooking, SDK/game validation, collision validation, or Windows support, and that changed or unexpected output will be preserved rather than rolled back or removed.
+
+The plan digest is SHA-256 over a versioned RFC 8785 canonical JSON representation of all bound plan data. Any change to source, fingerprints, grants, identities, GUID, destination, topology, mode, size, content hash, classification, generated content, warning, absence, option, or canonical-schema version produces a different plan or a refusal.
+
+Copied PowerShell and C# files are inert output only. Preview must say that Foundry never executes them.
+
+#### No-execution and non-authority boundary
+
+Foundry never executes anything. It must not invoke Visual Studio, the template wizard, `RUN_THIS.bat` or any batch file, `replace_text.exe` or any PE helper, PowerShell, inline or compiled C#, template code, `git`, or any general process. It has no shell, SDK/game read or mutation, build, deployment, cooking, launch, package-manager, network, browser, or general process authority. Directly producing post-`RUN_THIS` semantics is a data transformation, not execution.
+
+#### First bounded increment: deterministic preview and discard only
+
+The first increment is limited to **preview and discard an exact EMPT v1.4 creation plan**:
+
+- A separate test-only deterministic composition must supply fake source and destination selector grants and a development-local external EMPT repository while invoking the unchanged production use cases.
+- No query parameter, environment switch, hidden command, test branch, production backdoor, or alternate test-only use case may be added to production.
+- The increment must cover one valid exact `ModId`, exact local object resolution, the complete 27-file/two-empty-directory preview, fingerprints, generated content, warnings, classifications, and explicit absences.
+- Cancel before or after preview writes nothing, discards the plan, and revokes the supplied grants.
+- The increment has no real native source or destination selection, no native chooser acceptance, no Apply, no staging, no journal, no recovery, no filesystem output, and no execution claim.
+
+This deterministic test tier does not establish native acceptance, completed creation, implementation of later lifecycle boundaries, or complete requirement status.
+
+#### Later native selection and grant target
+
+The following selection policy is reserved for later stories and decisions; it is not part of the first increment:
+
+- The current-workspace source option is available only under the exact commit/tree condition above. Otherwise a native repository chooser obtains a source grant without switching the workspace.
+- The source grant authorizes only the selected repository's local object database and the exact pinned objects required by the recipe. It grants no working-tree, repository-mutation, network, process, or ambient external-root authority.
+- A native existing-parent folder chooser selects the destination parent. The only destination is the derived `<selected-parent>/<ModId>`; there is no independent destination basename.
+- Each operation receives explicit authority for the exact absent destination root and only its operation-specific same-parent staging and journal siblings. There is no remembered silent default or ambient external-root authority.
+- Preview binds source, parent, derived destination, and grant identities. Changed or replaced identities cannot inherit approval.
+- Grants are non-persistent and are revoked or consumed on cancel, discard, refusal, replacement, failure, or completion as appropriate.
+- Opening the created project is a separate explicit action after successful completion.
+
+#### Later Apply, staging, journal, removal, and recovery target
+
+The following lifecycle is also reserved for later stories and decisions and makes no claim about increment 1:
+
+- Apply is one-shot and repeat submission is disabled. Before mutation it revalidates every source object and fingerprint, grant and parent identity, destination absence, plan digest, and bound plan field. Any stale, changed, unreadable, absent, unexpected, or mismatched condition refuses Apply and requires a new preview.
+- Apply stages on the same filesystem at `.<ModId>.foundry-stage-<full-plan-digest>` and records a private mode-`0600` sibling journal at `.<ModId>.foundry-journal-<full-plan-digest>.json`.
+- It verifies the complete staged topology, modes, bytes, and fingerprints before atomically renaming the stage to the still-absent destination. Rename is the commit point; no merge or copy-over is permitted.
+- Before rename, failure triggers cleanup only after verifying the exact operation-owned stage. Anything unverified is preserved.
+- A failure after rename reports **created; recovery required** and never claims rollback.
+- Post-commit removal is a separate explicit operation requiring a fresh grant. It removes the destination only after exact inventory and content verification; changed, unexpected, or unverified output is refused and preserved.
+- Recovery starts only after explicit parent selection and never scans ambient paths. A valid journal may offer only: discard an exact incomplete stage; acknowledge an exact committed destination and clean the journal; or preserve and report a mismatch or orphan. Recovery never silently resumes Apply or deletes an unverified path.
 
 #### Requirements and acceptance handoff
 
-A requirements owner may introduce a stable identifier such as `REQ-PROJECT-FOUNDRY-XCOM2-001`; this ADR does not assign or modify requirement status. The requirement and acceptance work must cover, without treating this approval as evidence:
+A requirements owner may assign a stable requirement identifier; this ADR does not assign or promote requirement status. Requirement and acceptance work must preserve the following split without treating target approval as implementation or evidence.
 
-1. the approved ASCII-safe `ModId` grammar and length policy while preserving exact reuse across all three identities;
-2. deterministic final topology and byte/content fingerprints from the pinned committed object, including dirty and untracked working-tree independence and all refusal paths;
-3. the four default absences: `.XComMod`, `.ide/xcom2.json`, Git initialization, and build profile;
-4. exact native source/destination grant selection, plan binding, consumption/revocation, and absence of persistent or ambient external-root authority;
-5. complete-digest preview, exact-plan one-shot Apply, same-filesystem staging verification, absent-destination atomic rename, and stale/mismatch refusal;
-6. pre-commit cleanup and post-commit rollback/removal conflict refusal, including preservation of changed or unverified content;
-7. enforcement of every process, SDK/game, network-fallback, browser, build/deployment/cooking/launch, package-manager, and template-execution exclusion;
-8. structural separability of `ide.xcom2.empt-v1_4` and a release/publication gate that remains closed until the separately distributable module and applicable licensing, attribution, notices, and redistribution policy are resolved; and
-9. acceptance through the unchanged production route. If the real native chooser cannot initially be automated, deterministic harness evidence is acceptable only as the first evidence tier; later native acceptance must use the real chooser and the same unchanged production route, with no production-only hooks or backdoors added for testing.
+The first bounded story covers deterministic preview and discard only: the exact source commit/tree and dirty-worktree independence; exact `ModId` and GUID; direct post-`RUN_THIS` transformations; complete topology, bytes, modes, sizes, hashes, classifications, generated content, warnings, and absences; strict no-execution; and cancel/discard with zero mutation and grant revocation through the separate fake-selector composition over unchanged production use cases.
+
+Later stories cover, independently:
+
+1. real Linux native source and existing-parent destination chooser grants and lifecycle revocation;
+2. missing/mismatched object and invalid `ModId` refusals;
+3. one-shot staged Apply and atomic commit;
+4. stale source/grant/destination/plan refusal matrices;
+5. verified pre-commit cleanup and conflict-refusing post-commit removal;
+6. explicit-parent journal recovery;
+7. the extraction boundary and fail-closed package/publication/release gate;
+8. real Linux native chooser acceptance through the unchanged production route; and
+9. Windows implementation and parity at the end of the project only.
 
 ### Consequences
 
 **Positive:**
 
-- A preview describes the exact final project rather than wizard intermediates or mutable working-tree state.
-- Exact-root grants, immutable object inputs, complete plan binding, verified staging, and atomic destination commit constrain creation authority and stale-plan risk.
-- Conflict-safe cleanup and rollback preserve content that no longer matches the approved operation.
-- The first-party pack can be extracted later without prematurely claiming a generic extension runtime.
-- Deterministic harness evidence can start acceptance work without compromising the later real native path.
-- The explicit Linux-only target prevents future acceptance material from prematurely implying Windows parity or a browser/web runtime.
+- One exact commit and tree, one exact `ModId`, deterministic UUIDv5 identity, and a complete canonical preview make the proposed project independently inspectable without executing template tooling.
+- The pack remains structurally extractable without embedding a second copy of EMPT source bytes.
+- Direct post-`RUN_THIS` data semantics exclude wizard intermediates and define one exact 27-file destination.
+- The first increment can validate deterministic production planning and zero-mutation discard without pretending fake selectors are native chooser evidence.
+- Later exact-root grants, staged atomic commit, journals, conflict refusal, and explicit recovery have clear architectural boundaries without being claimed as increment-1 behavior.
+- Linux-only and no-web boundaries prevent premature Windows, native-acceptance, and browser claims.
 
 **Negative:**
 
-- Users must provide the exact local Git object and select a new absent destination; missing evidence or any mismatch stops creation rather than falling back.
-- One-shot exact-plan approval requires a new preview after any relevant source, grant, plan, or destination change.
-- Refusal to delete changed or unverified content can leave staging or generated projects for manual review.
-- Exact `ModId` bounds and chooser mechanics still require requirements-level approval before implementation.
-- Distribution and publication remain blocked even if local development and validation succeed.
-- Windows implementation, evidence, and parity wait until the end of the project; runtime web remains unavailable.
+- The first increment creates no project; native selection, Apply, staging, journal, recovery, removal, and filesystem output remain later work.
+- Users will need the exact local commit and tree; missing or mismatched object evidence stops planning rather than falling back.
+- The conservative `ModId` grammar and device-name refusal reject names that broader filesystems might accept, and Foundry cannot validate SDK/game collisions.
+- Exact plan binding means any relevant source, grant, destination, identity, topology, warning, or content change requires a new preview.
+- Later conflict-safe cleanup and removal can preserve staging or generated output for manual review rather than deleting uncertain content.
+- Packaging, publication, and release remain blocked even when structural extraction-readiness or local deterministic evidence exists.
+- Windows work waits until the end of the project, and no web route is planned.
 
 ---
