@@ -3,6 +3,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import type {
+  Xcom2ProjectFoundryApplyRequest,
+  Xcom2ProjectFoundryApplyResult,
   Xcom2ProjectFoundryDestinationParentSelectionGrant,
   Xcom2ProjectFoundryOperationGrant,
   Xcom2ProjectFoundrySourceObjectEvidence,
@@ -22,6 +24,7 @@ declare global {
     __storyFoundrySelectDestination: StoryBinding;
     __storyFoundryResolveSource: StoryBinding;
     __storyFoundryInspectDestination: StoryBinding;
+    __storyFoundryApply: StoryBinding;
     __storyFoundryRevokeGrants: StoryBinding;
     __storyRecordTauriCall: StoryBinding;
   }
@@ -46,6 +49,7 @@ interface ProjectFoundryHarnessComposition {
       operationGrant: Xcom2ProjectFoundryOperationGrant,
     ): Promise<"absent">;
   };
+  apply(request: Xcom2ProjectFoundryApplyRequest): Promise<Xcom2ProjectFoundryApplyResult>;
   readonly grants: {
     revokeAll(): Promise<void>;
   };
@@ -76,6 +80,8 @@ const composition: ProjectFoundryHarnessComposition = {
         operationGrant,
       )) as "absent",
   },
+  apply: async (request) =>
+    (await window.__storyFoundryApply(request)) as Xcom2ProjectFoundryApplyResult,
   grants: {
     revokeAll: async () => {
       await window.__storyFoundryRevokeGrants();
@@ -199,9 +205,8 @@ window.__TAURI_INTERNALS__ = {
 const root = document.getElementById("root");
 if (!root) throw new Error("Project Foundry Story harness root is unavailable");
 
-// The cast is isolated to the Story composition because production does not yet
-// declare this prop. The focused RED proves that the production App currently
-// ignores the composition and has no Project Foundry controller or UI.
+// The cast keeps the anticipated Apply port isolated to the Story composition.
+// Production receives the composition unchanged and owns whether that port is used.
 const ComposableApp = App as ComponentType<ProjectFoundryComposableAppProps>;
 ReactDOM.createRoot(root).render(
   <React.StrictMode>

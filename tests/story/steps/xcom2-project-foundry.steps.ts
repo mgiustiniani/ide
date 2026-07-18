@@ -7,6 +7,198 @@ function session(world: StoryWorld) {
 }
 
 Given<StoryWorld>(
+  "the production desktop App, its {string} controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition",
+  { timeout: 25_000 },
+  async function (controllerName: string) {
+    if (controllerName !== "New XCOM 2 Project") {
+      throw new Error(`Unexpected controller ${controllerName}`);
+    }
+    await this.createXcom2ProjectFoundrySession();
+    session(this).configureApplyScenario();
+    session(this).assertProductionComposition();
+  },
+);
+
+Given<StoryWorld>(
+  "the deterministic backend maps {string} to a scenario-owned temporary destination parent",
+  function (path: string) {
+    session(this).assertDestinationMapping(path);
+  },
+);
+
+Given<StoryWorld>(
+  "complementary focused production Rust filesystem integration evidence is the separate authority for the real independent renderer, revalidation, stage and journal transaction, fsync durability, and Linux no-replace atomic commit",
+  function () {
+    session(this).acknowledgeSeparateRustAuthority();
+  },
+);
+
+Given<StoryWorld>(
+  "the source repository resolves exact commit {string} and exact tree {string} from committed local objects only",
+  async function (commit: string, tree: string) {
+    await session(this).createPinnedObjectDatabase(commit, tree);
+  },
+);
+
+Given<StoryWorld>(
+  "the temporary destination parent's exact topology, modes, and bytes are recorded",
+  async function () {
+    await session(this).createDestinationParentAndRecord();
+  },
+);
+
+When<StoryWorld>(
+  "the person opens {string}, accepts the supplied selections, and enters exact ModId {string}",
+  async function (dialogName: string, modId: string) {
+    await session(this).openWithSelectionsAndModId(dialogName, modId);
+  },
+);
+
+Then<StoryWorld>(
+  "the form exposes these exact accessible fields, values, and plain-language descriptions:",
+  async function (dataTable: DataTable) {
+    await session(this).assertAccessibleFields(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "one still-live complete preview is shown for exact plan digest {string}",
+  async function (planDigest: string) {
+    await session(this).assertLivePreview(planDigest);
+  },
+);
+
+Then<StoryWorld>(
+  "it binds exact ModId {string}, project GUID {string}, all supplied grants, the exact source commit and tree, and the absent final project location",
+  async function (modId: string, projectGuid: string) {
+    await session(this).assertApplyPreviewBindings(modId, projectGuid);
+  },
+);
+
+Then<StoryWorld>(
+  "it shows exactly these {int} destination directories relative to the final project location, with no symlink:",
+  async function (count: number, dataTable: DataTable) {
+    await session(this).assertApplyDirectories(count, dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "it shows exactly these {int} destination files relative to the final project location:",
+  async function (count: number, dataTable: DataTable) {
+    await session(this).assertApplyFiles(count, dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "changing the EMPT repository, Destination parent, or ModId immediately invalidates the preview and disables exact-plan approval until a new preview succeeds",
+  async function () {
+    await session(this).assertPreviewInvalidation();
+  },
+);
+
+Then<StoryWorld>(
+  "exactly one accessible {string} control approves only this displayed exact plan",
+  async function (name: string) {
+    await session(this).assertSingleApplyControl(name);
+  },
+);
+
+Then<StoryWorld>(
+  "the controller enters its applying state and announces accessible status {string}",
+  async function (status: string) {
+    await session(this).assertApplyingStatus(status);
+  },
+);
+
+Then<StoryWorld>(
+  "{string} is disabled before the Apply call starts and remains disabled for this preview",
+  async function (name: string) {
+    await session(this).assertApplyControlDisabled(name);
+  },
+);
+
+Then<StoryWorld>(
+  "the deterministic backend receives exactly one Apply call with only this request schema:",
+  function (dataTable: DataTable) {
+    session(this).assertExactApplyRequest(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "the request contains no source-object claim, destination-state claim, output manifest, rendered byte, receipt, or success assertion",
+  function () {
+    session(this).assertApplyRequestHasNoClaims();
+  },
+);
+
+Then<StoryWorld>(
+  "the approvedPlanDigest is treated as a full lowercase SHA-{int} approval, not as authoritative output or proof of success",
+  function (bits: number) {
+    session(this).assertApprovalDigest(bits);
+  },
+);
+
+Then<StoryWorld>(
+  "a repeated activation cannot enqueue or invoke a second Apply call",
+  async function () {
+    await session(this).assertRepeatedActivationIsOneShot();
+  },
+);
+
+When<StoryWorld>("the deterministic backend completes the pending Apply call", async function () {
+  await session(this).completePendingApply();
+});
+
+Then<StoryWorld>(
+  "the temporary final project location contains exactly the previewed {int} directories and {int} regular files with their exact modes, byte sizes, and SHA-{int} hashes",
+  async function (directoryCount: number, fileCount: number, hashBits: number) {
+    await session(this).assertCreatedOutput(directoryCount, fileCount, hashBits);
+  },
+);
+
+Then<StoryWorld>(
+  "the destination parent differs from its recording only by the new {string} root",
+  async function (rootName: string) {
+    await session(this).assertDestinationHasOnlyCreatedRoot(rootName);
+  },
+);
+
+Then<StoryWorld>(
+  "no Foundry stage, journal, receipt file, other sibling, symlink, Git repository, or {string} configuration exists",
+  async function (configurationName: string) {
+    await session(this).assertNoCreatedResidue(configurationName);
+  },
+);
+
+Then<StoryWorld>(
+  "the dialog announces {string} and shows this exact immutable in-memory receipt:",
+  async function (announcement: string, dataTable: DataTable) {
+    await session(this).assertCreatedReceipt(announcement, dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "creation does not auto-open the project, switch or alter the workspace, initialize Git, write IDE configuration, or retain any grant or later Apply authority",
+  async function () {
+    await session(this).assertCreationIsolation();
+  },
+);
+
+Then<StoryWorld>(
+  "creation performs no build, deployment, cooking, launch, SDK or game access or validation, package, bundle, installer, release, publication, or distribution",
+  function () {
+    session(this).assertNoCreationExecutionOrDistribution();
+  },
+);
+
+Then<StoryWorld>(
+  "it provides no native chooser, native GUI or E2E, extracted-module, licensing-clearance, Windows implementation, support, or parity claim",
+  function () {
+    session(this).assertEvidenceLimits();
+  },
+);
+
+Given<StoryWorld>(
   "the production desktop App, its {string} controller, and its production preview and discard use cases use a separate deterministic Tauri-harness composition",
   { timeout: 25_000 },
   async function (controllerName: string) {

@@ -1,14 +1,27 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import type {
+  Xcom2ProjectFoundryApplyRequest,
+  Xcom2ProjectFoundryApplyResult,
+  Xcom2ProjectFoundryCreatedReceipt,
   Xcom2ProjectFoundryDestinationParentSelectionGrant,
   Xcom2ProjectFoundryOperationGrant,
   Xcom2ProjectFoundrySourceObjectEvidence,
@@ -16,8 +29,14 @@ import type {
 } from "../../../packages/contracts/src/domain/xcom2-project-foundry.js";
 
 import { launchAvailableChromium } from "./standalone-web-app.js";
+import {
+  FOUNDRY_SOURCE_BLOB_OIDS,
+  FOUNDRY_SOURCE_PATHS,
+  materializeFoundryFixture,
+} from "./xcom2-project-foundry-materializer.js";
 
-const REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-001";
+const PREVIEW_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-001";
+const APPLY_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-002";
 const SOURCE_REPOSITORY = "/scenario/empt-v1_4";
 const SOURCE_GRANT_IDENTITY = "source-grant-foundry-preview-001";
 const DESTINATION_PARENT = "/scenario/foundry-output";
@@ -32,6 +51,8 @@ const START_TIMEOUT_MS = 15_000;
 const UI_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 2_000;
 const PROJECT_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const EXTERNAL_EMPT_ROOT =
+  process.env.IDE_STORY_EMPT_REPOSITORY ?? "/home/paperboy/workspace/EnhancedModProjectTemplate";
 const HARNESS_ROOT = fileURLToPath(new URL("./project-foundry-harness/", import.meta.url));
 const WEB_APP_ROOT = resolve(PROJECT_ROOT, "apps/web");
 const VITE_ENTRYPOINT = resolve(WEB_APP_ROOT, "node_modules/vite/bin/vite.js");
@@ -59,6 +80,25 @@ interface ObjectRead {
 interface TauriCall {
   readonly command: string;
   readonly args: Readonly<Record<string, unknown>>;
+}
+
+interface ExpectedDirectory {
+  readonly path: string;
+  readonly mode: string;
+  readonly state: string;
+}
+
+interface ExpectedFile {
+  readonly path: string;
+  readonly mode: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+interface PendingApply {
+  readonly request: Readonly<Xcom2ProjectFoundryApplyRequest>;
+  readonly promise: Promise<Xcom2ProjectFoundryApplyResult>;
+  readonly resolve: (result: Xcom2ProjectFoundryApplyResult) => void;
 }
 
 interface SelectionValues {
@@ -89,6 +129,10 @@ function canonicalJson(value: unknown): string {
 
 function sha256(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function gitBlobOid(bytes: Uint8Array): string {
+  return createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
 }
 
 function modeOf(mode: number): string {
@@ -123,6 +167,20 @@ async function fingerprintTree(root: string): Promise<TreeFingerprint> {
   }
   await visit(root);
   return { identity: sha256(canonicalJson(entries)), entries };
+}
+
+function flattenScalarFields(value: unknown, prefix = ""): Readonly<Record<string, string>> {
+  assert.ok(value !== null && typeof value === "object" && !Array.isArray(value));
+  const flattened: Record<string, string> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (child !== null && typeof child === "object" && !Array.isArray(child)) {
+      Object.assign(flattened, flattenScalarFields(child, path));
+    } else {
+      flattened[path] = String(child);
+    }
+  }
+  return flattened;
 }
 
 function normalizeRows(rows: readonly Readonly<Record<string, string>>[]): SelectionValues {
@@ -160,10 +218,20 @@ export class Xcom2ProjectFoundryHarness {
   #sourceRoot?: string;
   #destinationRoot?: string;
   #selections?: SelectionValues;
+  #requirementId = PREVIEW_REQUIREMENT_ID;
   #sourceBaseline?: TreeFingerprint;
   #destinationBaseline?: TreeFingerprint;
   #objectBaseline?: TreeFingerprint;
   #objectReads: ObjectRead[] = [];
+  #committedSource = new Map<string, Uint8Array>();
+  #expectedDirectories?: readonly ExpectedDirectory[];
+  #expectedFiles?: readonly ExpectedFile[];
+  #applyCalls: Readonly<Xcom2ProjectFoundryApplyRequest>[] = [];
+  #applyTranscript: Readonly<Record<string, unknown>>[] = [];
+  #pendingApply?: PendingApply;
+  #createdReceipt?: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
+  #applyControlDisabledAtCall?: boolean;
+  #separateRustAuthorityAcknowledged = false;
   #tauriCalls: TauriCall[] = [];
   #activeGrants = new Set<string>();
   #revokedGrants = new Set<string>();
@@ -199,6 +267,74 @@ export class Xcom2ProjectFoundryHarness {
     assert.ok(this.#sandbox, "Scenario-owned fixture sandbox is unavailable");
   }
 
+  configureApplyScenario(): void {
+    this.#requirementId = APPLY_REQUIREMENT_ID;
+  }
+
+  assertDestinationMapping(path: string): void {
+    assert.equal(path, DESTINATION_PARENT);
+    assert.ok(this.#destinationRoot?.startsWith(this.#requireSandbox()));
+  }
+
+  acknowledgeSeparateRustAuthority(): void {
+    this.#separateRustAuthorityAcknowledged = true;
+  }
+
+  async openWithSelectionsAndModId(dialogName: string, modId: string): Promise<void> {
+    await this.activateGlobalControl(dialogName);
+    await this.assertModal(dialogName);
+    await this.answerSelectors();
+    await this.enterModId(modId);
+  }
+
+  async assertAccessibleFields(rows: readonly Readonly<Record<string, string>>[]): Promise<void> {
+    const form = this.#dialog().getByRole("form", {
+      name: "New XCOM 2 Project",
+      exact: true,
+    });
+    const missing: string[] = [];
+    for (const row of rows) {
+      const name = row["accessible field"] ?? "";
+      const field = form.getByLabel(name, { exact: true });
+      if ((await field.count()) !== 1) {
+        missing.push(`${name}: missing exact labeled field`);
+        continue;
+      }
+      const locator = field.first();
+      const expectedReadOnly = row["field state"] === "read-only";
+      if ((await locator.isEditable()) === expectedReadOnly) {
+        missing.push(`${name}: expected ${row["field state"]}`);
+      }
+      if ((await locator.inputValue()) !== row["exact value"]) {
+        missing.push(`${name}: unexpected exact value`);
+      }
+      const describedBy = await locator.getAttribute("aria-describedby");
+      const description = describedBy
+        ? (
+            await Promise.all(
+              describedBy.split(/\s+/u).map(async (id) =>
+                (
+                  (await this.#requirePage()
+                    .locator(`[id=${JSON.stringify(id)}]`)
+                    .textContent()) ?? ""
+                )
+                  .replace(/\s+/gu, " ")
+                  .trim(),
+              ),
+            )
+          ).join(" ")
+        : "";
+      if (description !== row["exact accessible description"]) {
+        missing.push(`${name}: missing exact accessible description`);
+      }
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `MISSING_UI_CAPABILITY: Project Foundry Apply form lacks required helper/final-location behavior: ${missing.join("; ")}`,
+      );
+    }
+  }
+
   configureSelections(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.equal(this.#selections, undefined, "Project Foundry selections were already configured");
     this.#selections = normalizeRows(rows);
@@ -208,56 +344,68 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(commit, SOURCE_COMMIT);
     assert.equal(tree, SOURCE_TREE);
     const sourceRoot = this.#requireSourceRoot();
-    const commitPath = join(sourceRoot, ".git", "objects", commit.slice(0, 2), commit.slice(2));
-    const treePath = join(sourceRoot, ".git", "objects", tree.slice(0, 2), tree.slice(2));
-    await mkdir(dirname(commitPath), { recursive: true, mode: 0o755 });
-    await mkdir(dirname(treePath), { recursive: true, mode: 0o755 });
-    await writeFile(
-      commitPath,
-      `${JSON.stringify({ kind: "commit", oid: commit, tree, fixture: "EMPT v1.4" })}\n`,
-      { mode: 0o444 },
+    try {
+      assert.equal(
+        (
+          await readFile(join(EXTERNAL_EMPT_ROOT, ".git", "refs", "heads", "master"), "utf8")
+        ).trim(),
+        SOURCE_COMMIT,
+      );
+      await cp(EXTERNAL_EMPT_ROOT, sourceRoot, { recursive: true, errorOnExist: true });
+    } catch (error) {
+      throw new Error(
+        `BUILD_ENVIRONMENT_FAILURE: exact external EMPT v1.4 fixture is unavailable at ${EXTERNAL_EMPT_ROOT}: ${String(error)}`,
+      );
+    }
+    for (const path of FOUNDRY_SOURCE_PATHS) {
+      const bytes = await readFile(join(sourceRoot, path));
+      assert.equal(
+        gitBlobOid(bytes),
+        FOUNDRY_SOURCE_BLOB_OIDS[path as keyof typeof FOUNDRY_SOURCE_BLOB_OIDS],
+        `External EMPT file does not match its pinned committed blob: ${path}`,
+      );
+      this.#committedSource.set(path, bytes);
+    }
+    const objectRoot = join(sourceRoot, ".git", "objects");
+    this.#objectBaseline = await fingerprintTree(objectRoot);
+    assert.equal(
+      this.#objectBaseline.entries.some(
+        (entry) =>
+          entry.kind === "file" && entry.path.startsWith("pack/") && entry.path.endsWith(".pack"),
+      ),
+      true,
+      "External pinned EMPT object database has no pack object",
     );
-    await writeFile(
-      treePath,
-      `${JSON.stringify({ kind: "tree", oid: tree, trackedCanary: "committed-canary-bytes\\n" })}\n`,
-      { mode: 0o444 },
-    );
-    await chmod(commitPath, 0o444);
-    await chmod(treePath, 0o444);
-    this.#objectBaseline = await fingerprintTree(join(sourceRoot, ".git", "objects"));
   }
 
   async createDirtyCanaries(): Promise<void> {
     assert.ok(this.#objectBaseline, "Pinned object database must exist before dirty canaries");
     const sourceRoot = this.#requireSourceRoot();
-    await writeFile(join(sourceRoot, "tracked-canary.txt"), "committed-canary-bytes\n", {
-      mode: 0o644,
-    });
-    await writeFile(join(sourceRoot, "tracked-canary.txt"), "dirty-tracked-working-tree-bytes\n");
+    const committedGitignore = this.#committedSource.get(".gitignore");
+    assert.ok(committedGitignore, "Committed .gitignore source is unavailable");
+    await writeFile(join(sourceRoot, ".gitignore"), "dirty-tracked-working-tree-bytes\n");
     await writeFile(
       join(sourceRoot, "untracked-canary.txt"),
       "dirty-untracked-working-tree-bytes\n",
-      {
-        mode: 0o600,
-      },
+      { mode: 0o600 },
     );
-    assert.notEqual(
-      await readFile(join(sourceRoot, "tracked-canary.txt"), "utf8"),
-      "committed-canary-bytes\n",
-    );
-    assert.notEqual(
-      await readFile(join(sourceRoot, "untracked-canary.txt"), "utf8"),
-      "committed-canary-bytes\n",
-    );
+    assert.notDeepEqual(await readFile(join(sourceRoot, ".gitignore")), committedGitignore);
   }
 
   async recordSourceIdentity(): Promise<void> {
     const sourceRoot = this.#requireSourceRoot();
     this.#sourceBaseline = await fingerprintTree(sourceRoot);
     assert.equal(
-      this.#sourceBaseline.entries.filter((entry) => entry.path.endsWith("tracked-canary.txt"))
-        .length,
-      2,
+      this.#sourceBaseline.entries.some(
+        (entry) => entry.path === ".gitignore" && entry.kind === "file",
+      ),
+      true,
+    );
+    assert.equal(
+      this.#sourceBaseline.entries.some(
+        (entry) => entry.path === "untracked-canary.txt" && entry.kind === "file",
+      ),
+      true,
     );
   }
 
@@ -350,16 +498,13 @@ export class Xcom2ProjectFoundryHarness {
         exact: true,
       })
       .waitFor({ state: "visible" });
-    assert.deepEqual(this.#objectReads, [
-      {
-        commit: SOURCE_COMMIT,
-        tree: SOURCE_TREE,
-        objectPaths: [
-          `.git/objects/${SOURCE_COMMIT.slice(0, 2)}/${SOURCE_COMMIT.slice(2)}`,
-          `.git/objects/${SOURCE_TREE.slice(0, 2)}/${SOURCE_TREE.slice(2)}`,
-        ],
-      },
-    ]);
+    assert.equal(this.#objectReads.length, 1);
+    assert.equal(this.#objectReads[0]?.commit, SOURCE_COMMIT);
+    assert.equal(this.#objectReads[0]?.tree, SOURCE_TREE);
+    assert.equal(
+      this.#objectReads[0]?.objectPaths.every((path) => path.startsWith(".git/objects/pack/")),
+      true,
+    );
   }
 
   assertDirtyCanariesIgnored(): void {
@@ -389,6 +534,136 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(count, 27);
     assert.equal(rows.length, count);
     assert.deepEqual(await this.#tableRows("Project Foundry regular files"), rows);
+  }
+
+  async assertLivePreview(planDigest: string): Promise<void> {
+    assert.equal(planDigest, PLAN_DIGEST);
+    await this.#dialog()
+      .locator('[aria-label="Complete Project Foundry preview"]')
+      .waitFor({ state: "visible" });
+    assert.equal(await this.#dialog().getByText(planDigest, { exact: true }).count(), 2);
+  }
+
+  async assertApplyPreviewBindings(modId: string, projectGuid: string): Promise<void> {
+    assert.equal(modId, "FoundryPreviewFixture");
+    assert.equal(projectGuid, "{30DF67AA-2360-5109-80CF-02CB38BED26F}");
+    const rows = await this.#tableRows("Project Foundry bound identities and source facts");
+    const facts = new Map(rows.map(([field, value]) => [field, value]));
+    assert.deepEqual(
+      Object.fromEntries(
+        [
+          "ModId",
+          "project GUID",
+          "source grant identity",
+          "destination grant identity",
+          "operation grant identity",
+          "commit",
+          "tree",
+          "derived absent destination",
+        ].map((field) => [field, facts.get(field)]),
+      ),
+      {
+        ModId: modId,
+        "project GUID": projectGuid,
+        "source grant identity": SOURCE_GRANT_IDENTITY,
+        "destination grant identity": DESTINATION_GRANT_IDENTITY,
+        "operation grant identity": OPERATION_GRANT_IDENTITY,
+        commit: SOURCE_COMMIT,
+        tree: SOURCE_TREE,
+        "derived absent destination": DERIVED_DESTINATION,
+      },
+    );
+    assert.deepEqual([...this.#activeGrants].sort(), [
+      DESTINATION_GRANT_IDENTITY,
+      OPERATION_GRANT_IDENTITY,
+      SOURCE_GRANT_IDENTITY,
+    ]);
+    await this.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
+  }
+
+  async assertApplyDirectories(
+    count: number,
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.equal(count, 12);
+    assert.equal(rows.length, count);
+    const expected = rows.map((row) => ({
+      path: row.path ?? "",
+      mode: row.mode ?? "",
+      state: row.state ?? "",
+    }));
+    assert.deepEqual(
+      await this.#tableRows("Project Foundry directory topology"),
+      expected.map((row) => [row.path, row.mode, row.state]),
+    );
+    assert.equal(await this.#dialog().getByText("No symlinks", { exact: true }).count(), 1);
+    this.#expectedDirectories = expected;
+  }
+
+  async assertApplyFiles(
+    count: number,
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.equal(count, 27);
+    assert.equal(rows.length, count);
+    const expected = rows.map((row) => ({
+      path: row.path ?? "",
+      mode: row.mode ?? "",
+      bytes: Number(row.bytes),
+      sha256: row["SHA-256"] ?? "",
+    }));
+    const displayed = await this.#tableRows("Project Foundry regular files");
+    assert.deepEqual(
+      displayed.map(([path, _classification, mode, bytes, hash]) => [path, mode, bytes, hash]),
+      expected.map((row) => [row.path, row.mode, String(row.bytes), row.sha256]),
+    );
+    this.#expectedFiles = expected;
+  }
+
+  async assertPreviewInvalidation(): Promise<void> {
+    const dialog = this.#dialog();
+    const create = dialog.getByRole("button", { name: "Create project", exact: true });
+    if ((await create.count()) !== 1) {
+      throw new Error(
+        'MISSING_UI_CAPABILITY: the displayed exact Foundry plan has no accessible "Create project" approval control',
+      );
+    }
+    const waitForApproval = async (): Promise<void> => {
+      await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+      await this.#requirePage().waitForFunction(() =>
+        Array.from(document.querySelectorAll("button")).some(
+          (button) => button.textContent?.trim() === "Create project" && !button.disabled,
+        ),
+      );
+    };
+
+    await dialog.getByRole("button", { name: "Select EMPT repository", exact: true }).click();
+    assert.equal(await create.isDisabled(), true, "Source change must disable exact-plan approval");
+    await dialog.getByRole("button", { name: "Select Destination parent", exact: true }).click();
+    await waitForApproval();
+
+    await dialog.getByRole("button", { name: "Select Destination parent", exact: true }).click();
+    assert.equal(
+      await create.isDisabled(),
+      true,
+      "Destination change must disable exact-plan approval",
+    );
+    await dialog.getByRole("button", { name: "Select EMPT repository", exact: true }).click();
+    await waitForApproval();
+
+    const modId = dialog.getByLabel("ModId", { exact: true });
+    await modId.fill("FoundryPreviewFixtureChanged");
+    assert.equal(await create.isDisabled(), true, "ModId change must disable exact-plan approval");
+    await modId.fill("FoundryPreviewFixture");
+    await waitForApproval();
+  }
+
+  async assertSingleApplyControl(name: string): Promise<void> {
+    assert.equal(name, "Create project");
+    const control = this.#dialog().getByRole("button", { name, exact: true });
+    assert.equal(await control.count(), 1);
+    assert.equal(await control.isEnabled(), true);
+    assert.ok((await this.#dialog().textContent())?.includes(PLAN_DIGEST));
   }
 
   async assertGeneratedPreview(
@@ -471,6 +746,230 @@ export class Xcom2ProjectFoundryHarness {
     );
   }
 
+  async assertApplyingStatus(status: string): Promise<void> {
+    assert.equal(status, "Creating project…");
+    const liveStatus = this.#dialog().getByRole("status");
+    await liveStatus.getByText(status, { exact: true }).waitFor({ state: "visible" });
+    assert.equal(this.#pendingApply !== undefined, true, "Apply must remain pending");
+  }
+
+  async assertApplyControlDisabled(name: string): Promise<void> {
+    assert.equal(name, "Create project");
+    assert.equal(this.#applyControlDisabledAtCall, true, "Apply control was enabled at port entry");
+    assert.equal(
+      await this.#dialog().getByRole("button", { name, exact: true }).isDisabled(),
+      true,
+    );
+  }
+
+  assertExactApplyRequest(rows: readonly Readonly<Record<string, string>>[]): void {
+    assert.equal(this.#applyCalls.length, 1);
+    assert.deepEqual(this.#applyTranscript, [{ event: "called", request: this.#applyCalls[0] }]);
+    const request = this.#applyCalls[0];
+    assert.ok(request);
+    const expected = Object.fromEntries(
+      rows.map((row) => [row.field ?? "", row["exact value"] ?? ""]),
+    );
+    assert.deepEqual(flattenScalarFields(request), expected);
+    assert.deepEqual(Object.keys(request).sort(), [
+      "approvedPlanDigest",
+      "destinationParentGrant",
+      "modId",
+      "operationGrant",
+      "schemaVersion",
+      "sourceGrant",
+    ]);
+  }
+
+  assertApplyRequestHasNoClaims(): void {
+    const serialized = JSON.stringify(this.#applyCalls[0]);
+    for (const forbidden of [
+      "sourceObject",
+      "destinationState",
+      "manifest",
+      "rendered",
+      "receipt",
+      "success",
+    ]) {
+      assert.equal(serialized.includes(forbidden), false, forbidden);
+    }
+  }
+
+  assertApprovalDigest(bits: number): void {
+    assert.equal(bits, 256);
+    const digest = this.#applyCalls[0]?.approvedPlanDigest;
+    assert.equal(digest, PLAN_DIGEST);
+    assert.match(digest, /^[0-9a-f]{64}$/u);
+    assert.equal(this.#createdReceipt, undefined);
+    assert.ok(this.#pendingApply, "Digest approval must not imply backend completion");
+  }
+
+  async assertRepeatedActivationIsOneShot(): Promise<void> {
+    const control = this.#dialog().getByRole("button", {
+      name: "Create project",
+      exact: true,
+    });
+    await control.evaluate((element: HTMLButtonElement) => element.click());
+    await this.#requirePage().waitForTimeout(50);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(this.#pendingApply !== undefined, true);
+  }
+
+  async completePendingApply(): Promise<void> {
+    const pending = this.#pendingApply;
+    assert.ok(pending, "No deterministic Apply call is pending");
+    assert.ok(this.#expectedDirectories, "Previewed directory manifest was not captured");
+    assert.ok(this.#expectedFiles, "Previewed file manifest was not captured");
+    const finalRoot = join(this.#requireDestinationRoot(), "FoundryPreviewFixture");
+    await materializeFoundryFixture(this.#committedSource, finalRoot);
+    const receipt: Xcom2ProjectFoundryCreatedReceipt = Object.freeze({
+      result: "created",
+      planDigest: PLAN_DIGEST,
+      finalProjectLocation: DERIVED_DESTINATION,
+      sourceCommit: SOURCE_COMMIT,
+      sourceTree: SOURCE_TREE,
+      committedDirectories: 12,
+      committedFiles: 27,
+    });
+    this.#createdReceipt = receipt;
+    this.#applyTranscript.push({ event: "completed", result: receipt });
+    this.#pendingApply = undefined;
+    pending.resolve(receipt);
+  }
+
+  async assertCreatedOutput(
+    directoryCount: number,
+    fileCount: number,
+    hashBits: number,
+  ): Promise<void> {
+    assert.equal(directoryCount, 12);
+    assert.equal(fileCount, 27);
+    assert.equal(hashBits, 256);
+    const expectedDirectories = this.#expectedDirectories;
+    const expectedFiles = this.#expectedFiles;
+    assert.ok(expectedDirectories);
+    assert.ok(expectedFiles);
+    const fingerprint = await fingerprintTree(
+      join(this.#requireDestinationRoot(), "FoundryPreviewFixture"),
+    );
+    assert.deepEqual(
+      fingerprint.entries
+        .filter((entry) => entry.kind === "directory")
+        .sort((left, right) => left.path.localeCompare(right.path)),
+      expectedDirectories
+        .map((entry) => ({
+          path: entry.path,
+          kind: "directory" as const,
+          mode: entry.mode,
+        }))
+        .sort((left, right) => left.path.localeCompare(right.path)),
+    );
+    assert.deepEqual(
+      fingerprint.entries
+        .filter((entry) => entry.kind === "file")
+        .sort((left, right) => left.path.localeCompare(right.path)),
+      expectedFiles
+        .map((entry) => ({
+          path: entry.path,
+          kind: "file" as const,
+          mode: entry.mode,
+          bytes: entry.bytes,
+          sha256: entry.sha256,
+        }))
+        .sort((left, right) => left.path.localeCompare(right.path)),
+    );
+  }
+
+  async assertDestinationHasOnlyCreatedRoot(rootName: string): Promise<void> {
+    assert.equal(rootName, "FoundryPreviewFixture");
+    const baseline = this.#destinationBaseline;
+    assert.ok(baseline);
+    const current = await fingerprintTree(this.#requireDestinationRoot());
+    assert.deepEqual(
+      current.entries.filter(
+        (entry) =>
+          entry.path === "." || (!entry.path.startsWith(`${rootName}/`) && entry.path !== rootName),
+      ),
+      baseline.entries,
+    );
+    assert.equal(
+      current.entries.some((entry) => entry.path === rootName),
+      true,
+    );
+  }
+
+  async assertNoCreatedResidue(configurationName: string): Promise<void> {
+    assert.equal(configurationName, ".ide");
+    const fingerprint = await fingerprintTree(
+      join(this.#requireDestinationRoot(), "FoundryPreviewFixture"),
+    );
+    const forbidden = /(?:^|\/)(?:\.git|\.ide|.*stage.*|.*journal.*|.*receipt.*)(?:\/|$)/iu;
+    assert.deepEqual(
+      fingerprint.entries.filter((entry) => forbidden.test(entry.path)),
+      [],
+    );
+    assert.equal(
+      (await readdir(this.#requireDestinationRoot())).sort().join(","),
+      "FoundryPreviewFixture,existing-sibling",
+    );
+  }
+
+  async assertCreatedReceipt(
+    announcement: string,
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.equal(announcement, "Project created");
+    await this.#dialog().getByText(announcement, { exact: true }).waitFor({ state: "visible" });
+    const expected = Object.fromEntries(
+      rows.map((row) => [row["receipt field"] ?? "", row["exact value"] ?? ""]),
+    );
+    const receipt = this.#createdReceipt;
+    assert.ok(receipt);
+    assert.deepEqual(expected, {
+      result: receipt.result,
+      "plan digest": receipt.planDigest,
+      "final project location": receipt.finalProjectLocation,
+      "source commit": receipt.sourceCommit,
+      "source tree": receipt.sourceTree,
+      "committed directories": String(receipt.committedDirectories),
+      "committed files": String(receipt.committedFiles),
+    });
+    const displayed = await this.#tableRows("Project Foundry creation receipt");
+    assert.deepEqual(displayed, Object.entries(expected));
+  }
+
+  async assertCreationIsolation(): Promise<void> {
+    await this.#requirePage().waitForTimeout(50);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.deepEqual([...this.#activeGrants], []);
+    assert.deepEqual([...this.#revokedGrants].sort(), [
+      DESTINATION_GRANT_IDENTITY,
+      OPERATION_GRANT_IDENTITY,
+      SOURCE_GRANT_IDENTITY,
+    ]);
+    const forbiddenWorkspaceCalls = /(?:open|switch|set).*workspace|initialize.*git|write.*ide/iu;
+    assert.deepEqual(
+      this.#tauriCalls.filter((call) => forbiddenWorkspaceCalls.test(call.command)),
+      [],
+    );
+  }
+
+  assertNoCreationExecutionOrDistribution(): void {
+    const forbidden =
+      /(?:build|deploy|cook|launch|sdk|game|package|bundle|install|release|publish|distribut|network|process|shell)/iu;
+    assert.deepEqual(
+      this.#tauriCalls.filter((call) => forbidden.test(call.command)),
+      [],
+    );
+  }
+
+  assertEvidenceLimits(): void {
+    assert.equal(this.#separateRustAuthorityAcknowledged, true);
+    assert.equal(this.#requirementId, APPLY_REQUIREMENT_ID);
+    assert.equal(this.#context !== undefined, true);
+    assert.equal(this.#browser !== undefined, true);
+  }
+
   async assertDiscardedAndClosed(name: string): Promise<void> {
     assert.equal(name, "New XCOM 2 Project");
     await this.#requirePage()
@@ -483,7 +982,7 @@ export class Xcom2ProjectFoundryHarness {
     await this.#assertSourceIdentity();
     const sourceRoot = this.#requireSourceRoot();
     assert.equal(
-      await readFile(join(sourceRoot, "tracked-canary.txt"), "utf8"),
+      await readFile(join(sourceRoot, ".gitignore"), "utf8"),
       "dirty-tracked-working-tree-bytes\n",
     );
     assert.equal(
@@ -513,7 +1012,7 @@ export class Xcom2ProjectFoundryHarness {
 
   evidence(): Readonly<Record<string, unknown>> {
     return {
-      requirementId: REQUIREMENT_ID,
+      requirementId: this.#requirementId,
       target: "desktop/tauri-harness",
       rendering: "production apps/desktop/src/App.tsx in a standalone Vite/Chromium composition",
       nativeGui: false,
@@ -524,6 +1023,10 @@ export class Xcom2ProjectFoundryHarness {
       destinationIdentity: this.#destinationBaseline,
       objectDatabaseIdentity: this.#objectBaseline,
       sourceObjectReads: this.#objectReads,
+      applyRequests: this.#applyCalls,
+      applyTranscript: this.#applyTranscript,
+      createdReceipt: this.#createdReceipt,
+      separateRustAuthorityAcknowledged: this.#separateRustAuthorityAcknowledged,
       productionTauriCalls: this.#tauriCalls,
       productionExecutableTranscript: this.#tauriCalls.filter((call) =>
         /(?:process|shell|terminal|git|network|powershell|batch|execute|spawn)/iu.test(
@@ -588,22 +1091,19 @@ export class Xcom2ProjectFoundryHarness {
         identity: SOURCE_GRANT_IDENTITY,
       });
       assert.equal(this.#activeGrants.has(SOURCE_GRANT_IDENTITY), true);
-      const commitPath = join(
-        this.#requireSourceRoot(),
-        ".git",
-        "objects",
-        SOURCE_COMMIT.slice(0, 2),
-        SOURCE_COMMIT.slice(2),
+      const packRoot = join(this.#requireSourceRoot(), ".git", "objects", "pack");
+      const packFiles = (await readdir(packRoot))
+        .filter((path) => path.endsWith(".pack") || path.endsWith(".idx"))
+        .sort();
+      assert.equal(
+        packFiles.some((path) => path.endsWith(".pack")),
+        true,
       );
-      const treePath = join(
-        this.#requireSourceRoot(),
-        ".git",
-        "objects",
-        SOURCE_TREE.slice(0, 2),
-        SOURCE_TREE.slice(2),
+      assert.equal(
+        packFiles.some((path) => path.endsWith(".idx")),
+        true,
       );
-      await readFile(commitPath);
-      await readFile(treePath);
+      for (const path of packFiles) await readFile(join(packRoot, path));
       assert.deepEqual(
         await fingerprintTree(join(this.#requireSourceRoot(), ".git", "objects")),
         this.#objectBaseline,
@@ -611,10 +1111,7 @@ export class Xcom2ProjectFoundryHarness {
       this.#objectReads.push({
         commit: SOURCE_COMMIT,
         tree: SOURCE_TREE,
-        objectPaths: [
-          `.git/objects/${SOURCE_COMMIT.slice(0, 2)}/${SOURCE_COMMIT.slice(2)}`,
-          `.git/objects/${SOURCE_TREE.slice(0, 2)}/${SOURCE_TREE.slice(2)}`,
-        ],
+        objectPaths: packFiles.map((path) => `.git/objects/pack/${path}`),
       });
       const evidence: Xcom2ProjectFoundrySourceObjectEvidence = {
         commit: SOURCE_COMMIT,
@@ -639,6 +1136,30 @@ export class Xcom2ProjectFoundryHarness {
         await this.#assertDestinationIdentity();
         await this.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
         return "absent";
+      },
+    );
+    await context.exposeBinding(
+      "__storyFoundryApply",
+      async (source, request: unknown): Promise<Xcom2ProjectFoundryApplyResult> => {
+        assert.equal(
+          this.#pendingApply,
+          undefined,
+          "A deterministic Apply call is already pending",
+        );
+        assert.equal(this.#applyCalls.length, 0, "Apply authority is one-shot");
+        const snapshot = structuredClone(request) as Xcom2ProjectFoundryApplyRequest;
+        this.#applyCalls.push(snapshot);
+        this.#applyTranscript.push({ event: "called", request: snapshot });
+        this.#applyControlDisabledAtCall = await source.page
+          .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
+          .getByRole("button", { name: "Create project", exact: true })
+          .isDisabled();
+        let resolveApply!: (result: Xcom2ProjectFoundryApplyResult) => void;
+        const promise = new Promise<Xcom2ProjectFoundryApplyResult>((resolvePending) => {
+          resolveApply = resolvePending;
+        });
+        this.#pendingApply = { request: snapshot, promise, resolve: resolveApply };
+        return promise;
       },
     );
     await context.exposeBinding("__storyFoundryRevokeGrants", async () => {
