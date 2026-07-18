@@ -69,6 +69,32 @@ function requirementIds(selected) {
   return [...selected.tags].filter((tag) => tag.startsWith("@REQ-")).sort();
 }
 
+function dryRunSummary(profile) {
+  const cucumberEntry = path.join(process.cwd(), "node_modules/@cucumber/cucumber/bin/cucumber.js");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      cucumberEntry,
+      "--config",
+      "cucumber.js",
+      "--profile",
+      profile,
+      "--dry-run",
+      "--format",
+      "summary",
+    ],
+    { cwd: process.cwd(), encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 30_000 },
+  );
+  assert.equal(
+    result.status,
+    0,
+    result.error?.message ?? result.stderr ?? `Cucumber dry-run failed: ${profile}`,
+  );
+  return result.stdout;
+}
+
 test("profiles keep default and focused routing while declaring exact aggregate evidence", () => {
   assert.deepEqual(cucumberProfiles.default.worldParameters, {
     target: { name: "unselected", driver: "unselected" },
@@ -153,6 +179,24 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   assert.doesNotMatch(
     cucumberProfiles.xcom2MachineSettingsTauriHarness.tags,
     /implemented|partial|not-implemented/,
+  );
+
+  assert.deepEqual(cucumberProfiles.xcom2ProjectFoundryTauriHarness.worldParameters, {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
+  });
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryTauriHarness.tags,
+    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2ProjectFoundryTauriHarness.tags,
+    /implemented|partial|not-implemented|native-gui|web/,
   );
 
   assert.deepEqual(
@@ -246,6 +290,39 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   assert.doesNotMatch(command, /native|webdriver|build|package|bundle/i);
   assert.equal(
     cucumberProfiles.xcom2MachineSettingsTauriHarness.worldParameters.evidence.artifactKind,
+    undefined,
+  );
+});
+
+test("focused XCOM Project Foundry profile selects only its parked desktop harness requirement", () => {
+  const selected = selectedScenarios("xcom2ProjectFoundryTauriHarness");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
+  assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@desktop"));
+  assert.ok(selected[0].tags.has("@tauri-harness"));
+  assert.equal(selected[0].tags.has("@web"), false);
+  assert.equal(selected[0].tags.has("@native-gui"), false);
+  assert.match(
+    dryRunSummary("xcom2ProjectFoundryTauriHarness"),
+    /1 scenario \(1 undefined\)[\s\S]*35 steps \(3 skipped, 32 undefined\)/,
+  );
+});
+
+test("focused XCOM Project Foundry command declares only deterministic harness evidence", async () => {
+  const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts["test:story:req-xcom2-project-foundry-001"];
+
+  assert.equal(
+    command,
+    "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryTauriHarness",
+  );
+  assert.match(command, /^IDE_STORY_TARGET=desktop\/tauri-harness\b/);
+  assert.doesNotMatch(command, /native|webdriver|playwright|implementedWeb|build|package|bundle/i);
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryTauriHarness.worldParameters.evidence.artifactKind,
     undefined,
   );
 });
@@ -372,7 +449,31 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("declared routes and parked inventory stay exact after missing-Steam machine Settings promotion", () => {
+test("XCOM Project Foundry stays parked and can promote only to deterministic harness evidence", () => {
+  const [parked] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
+
+  const before = evaluateDeclaredStoryRouting([parked]);
+  assert.deepEqual(before.failures, []);
+  assert.deepEqual(before.expectedWeb, []);
+  assert.deepEqual(before.expectedDesktopTauriHarness, []);
+  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
+
+  const promoted = {
+    ...parked,
+    tags: new Set(
+      [...parked.tags, "@implemented-not-e2e-validated"].filter(
+        (tag) => tag !== "@not-implemented",
+      ),
+    ),
+  };
+  const after = evaluateDeclaredStoryRouting([promoted]);
+  assert.deepEqual(after.failures, []);
+  assert.deepEqual(after.expectedWeb, []);
+  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
+});
+
+test("declared routes and parked inventory stay exact with Project Foundry parked", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -398,10 +499,24 @@ test("declared routes and parked inventory stay exact after missing-Steam machin
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
   ]);
+  assert.equal(parked.length, 3);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 2);
   assert.equal(nativeGui.length, 7);
+  assert.match(
+    dryRunSummary("implementedWeb"),
+    /2 scenarios \(2 skipped\)[\s\S]*16 steps \(16 skipped\)/,
+  );
+  assert.match(
+    dryRunSummary("implementedDesktopTauriHarness"),
+    /2 scenarios \(2 skipped\)[\s\S]*49 steps \(49 skipped\)/,
+  );
+  assert.match(
+    dryRunSummary("implementedDesktopTauriWebdriver"),
+    /7 scenarios \(7 skipped\)[\s\S]*198 steps \(198 skipped\)/,
+  );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 2);
