@@ -1,117 +1,55 @@
 import { createHash } from "node:crypto";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import {
-  XCOM2_PROJECT_FOUNDRY_PACK_ID,
-  XCOM2_PROJECT_FOUNDRY_PLAN_SCHEMA_VERSION,
-  XCOM2_PROJECT_FOUNDRY_PLATFORM,
-  XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS,
-  XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-  XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-  type Xcom2ProjectFoundryDigestBoundPlan,
-  type Xcom2ProjectFoundryPreviewRequest,
+import type {
+  Xcom2ProjectFoundryDestinationParentSelectionGrant,
+  Xcom2ProjectFoundryDigestBoundPlan,
+  Xcom2ProjectFoundryOperationGrant,
+  Xcom2ProjectFoundryPreviewPlan,
+  Xcom2ProjectFoundrySourceSelectionGrant,
 } from "../../packages/contracts/src/domain/xcom2-project-foundry";
+import * as foundryCore from "../../packages/web-core/src/xcom2/project-foundry";
 import {
-  canonicalizeJsonRfc8785,
-  createXcom2ProjectFoundryPreviewRequest,
-  deriveXcom2ProjectFoundryProjectGuid,
-  digestXcom2ProjectFoundryPlan,
-  previewXcom2ProjectFoundry,
-  sha1,
-  sha256Hex,
-  uuidV5,
-  validateXcom2ProjectFoundryModId,
-} from "../../packages/web-core/src/xcom2/project-foundry";
-import {
-  APPROVED_FOUNDRY_ABSENCES,
-  APPROVED_FOUNDRY_DIRECTORIES,
-  APPROVED_FOUNDRY_FILES,
-  APPROVED_FOUNDRY_WARNINGS,
-  APPROVED_SOLUTION_ESCAPED_PREVIEW,
-  APPROVED_X2PROJ_ESCAPED_PREVIEW,
-} from "./support/xcom2-project-foundry-approved-fixture";
+  FOUNDRY_PREVIEW_FIXTURE_BODY,
+  MOD_1_BODY,
+  RENDERED_FIXTURES,
+} from "./support/xcom2-project-foundry-rendered-fixtures";
 
-const expectedBoundPlan = {
-  schemaVersion: 1,
-  canonicalization: "RFC 8785",
-  digestAlgorithm: "SHA-256",
-  packId: "ide.xcom2.empt-v1_4",
-  platform: "Linux desktop only",
-  publicationStatus: "Non-publishable",
-  source: {
-    repository: "/scenario/empt-v1_4",
-    grantIdentity: "source-grant-foundry-preview-001",
-    commit: "d968be3c32b250376723563a743a120770ec5c95",
-    tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
-    fingerprintResult: "Verified",
-    policy:
-      "Committed Git objects only; working-tree modifications and untracked files are ignored",
-  },
-  project: {
-    modId: "FoundryPreviewFixture",
-    guid: "{30DF67AA-2360-5109-80CF-02CB38BED26F}",
-  },
-  destination: {
-    parent: "/scenario/foundry-output",
-    parentGrantIdentity: "destination-parent-grant-foundry-preview-001",
-    derivedAbsentDestination: "/scenario/foundry-output/FoundryPreviewFixture",
-    operationGrantIdentity: "operation-grant-foundry-preview-001",
-  },
-  symlinks: "none",
-  directories: APPROVED_FOUNDRY_DIRECTORIES,
-  files: APPROVED_FOUNDRY_FILES,
-  generatedPreviews: [
-    {
-      path: "FoundryPreviewFixture/FoundryPreviewFixture.x2proj",
-      encoding: "UTF-8",
-      byteOrderMark: "present",
-      lineEndings: "LF",
-      escapedBytePreview: APPROVED_X2PROJ_ESCAPED_PREVIEW,
-    },
-    {
-      path: "FoundryPreviewFixture.XCOM_sln",
-      encoding: "UTF-8",
-      byteOrderMark: "absent",
-      lineEndings: "LF",
-      escapedBytePreview: APPROVED_SOLUTION_ESCAPED_PREVIEW,
-    },
-  ],
-  absences: APPROVED_FOUNDRY_ABSENCES,
-  warnings: APPROVED_FOUNDRY_WARNINGS,
-} as const satisfies Xcom2ProjectFoundryDigestBoundPlan;
+const SAFE_RENDERED_PLAN_INVALID_SUMMARY = "The project preview could not be validated.";
 
-function mutableRequestInput() {
-  return {
-    sourceGrant: {
-      kind: "source-repository" as const,
-      repository: "/scenario/empt-v1_4",
-      identity: "source-grant-foundry-preview-001",
-    },
-    destinationParentGrant: {
-      kind: "destination-parent" as const,
-      parent: "/scenario/foundry-output",
-      identity: "destination-parent-grant-foundry-preview-001",
-    },
-    operationGrant: {
-      kind: "preview-operation" as const,
-      derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
-      identity: "operation-grant-foundry-preview-001",
-    },
-    sourceObject: {
-      commit: "d968be3c32b250376723563a743a120770ec5c95",
-      tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
-      fingerprintResult: "Verified" as const,
-    },
-    destinationState: "absent" as const,
-    modId: "FoundryPreviewFixture",
-  };
+interface ExpectedRenderRequest {
+  readonly sourceGrant: Readonly<Xcom2ProjectFoundrySourceSelectionGrant>;
+  readonly destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
+  readonly modId: string;
 }
 
-function assertDeepFrozen(value: unknown): void {
-  if (value === null || typeof value !== "object") return;
-  expect(Object.isFrozen(value)).toBe(true);
-  for (const child of Object.values(value)) assertDeepFrozen(child);
+interface ExpectedNativeRenderedPlan {
+  readonly kind: "rendered";
+  readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
+  readonly planBody: Readonly<Xcom2ProjectFoundryDigestBoundPlan>;
 }
+
+type ExpectedValidationResult =
+  | {
+      readonly kind: "ready";
+      readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
+      readonly plan: Readonly<Xcom2ProjectFoundryPreviewPlan>;
+    }
+  | {
+      readonly kind: "refused";
+      readonly code: "rendered-plan-invalid";
+      readonly summary: typeof SAFE_RENDERED_PLAN_INVALID_SUMMARY;
+    };
+
+const correctionCore = foundryCore as typeof foundryCore & {
+  createXcom2ProjectFoundryRenderRequest(
+    input: ExpectedRenderRequest,
+  ): Readonly<ExpectedRenderRequest>;
+  validateAndDigestXcom2ProjectFoundryRenderedPlan(
+    request: Readonly<ExpectedRenderRequest>,
+    rendered: unknown,
+  ): ExpectedValidationResult;
+};
 
 function canonicalizeRfc8785(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
@@ -121,58 +59,23 @@ function canonicalizeRfc8785(value: unknown): string {
     if (!Number.isFinite(value)) throw new TypeError("RFC 8785 excludes non-finite numbers");
     return JSON.stringify(value);
   }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalizeRfc8785).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalizeRfc8785(record[key])}`)
-      .join(",")}}`;
-  }
-  throw new TypeError("RFC 8785 input must be JSON data");
+  if (Array.isArray(value)) return `[${value.map(canonicalizeRfc8785).join(",")}]`;
+  if (typeof value !== "object") throw new TypeError("RFC 8785 input must be JSON data");
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalizeRfc8785(record[key])}`)
+    .join(",")}}`;
 }
 
 function independentlyDigest(value: unknown): string {
   return createHash("sha256").update(canonicalizeRfc8785(value), "utf8").digest("hex");
 }
 
-function reverseObjectInsertionOrder(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(reverseObjectInsertionOrder);
-  if (value === null || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .reverse()
-      .map(([key, child]) => [key, reverseObjectInsertionOrder(child)]),
-  );
-}
-
-type JsonPath = readonly (string | number)[];
-
-function leafPaths(value: unknown, parent: JsonPath = []): JsonPath[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((child, index) => leafPaths(child, [...parent, index]));
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
-      leafPaths(child, [...parent, key]),
-    );
-  }
-  return [parent];
-}
-
-function changeLeaf(root: unknown, path: JsonPath): void {
-  let owner = root as Record<string | number, unknown>;
-  for (const segment of path.slice(0, -1)) {
-    owner = owner[segment] as Record<string | number, unknown>;
-  }
-  const key = path.at(-1)!;
-  const current = owner[key];
-  if (typeof current === "string") owner[key] = `${current}#changed`;
-  else if (typeof current === "number") owner[key] = current + 1;
-  else if (typeof current === "boolean") owner[key] = !current;
-  else owner[key] = "changed";
+function assertDeepFrozen(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const child of Object.values(value)) assertDeepFrozen(child);
 }
 
 function collectKeys(value: unknown): string[] {
@@ -184,343 +87,397 @@ function collectKeys(value: unknown): string[] {
   ]);
 }
 
-function readyPlan() {
-  const request = createXcom2ProjectFoundryPreviewRequest(mutableRequestInput());
-  const result = previewXcom2ProjectFoundry(request);
-  if (result.kind !== "ready") throw new Error(`Expected ready preview, received ${result.code}`);
-  return { request, plan: result.plan };
-}
+type ObjectPath = readonly (string | number)[];
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function refusedPreview(
-  change: (request: ReturnType<typeof mutableRequestInput>) => void,
-): ReturnType<typeof previewXcom2ProjectFoundry> {
-  const request = mutableRequestInput();
-  change(request);
-  return previewXcom2ProjectFoundry(
-    createXcom2ProjectFoundryPreviewRequest(request as Xcom2ProjectFoundryPreviewRequest),
-  );
-}
-
-describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 pure deterministic Project Foundry preview", () => {
-  it.each(["A", "a", "A0", "Mod_1", "FoundryPreviewFixture", `A${"z".repeat(47)}`])(
-    "accepts exact case-preserved ASCII ModId %s",
-    (candidate) => {
-      expect(validateXcom2ProjectFoundryModId(candidate)).toEqual({
-        kind: "accepted",
-        modId: candidate,
-      });
-    },
-  );
-
-  it.each([
-    "",
-    "1Alpha",
-    "_Alpha",
-    "Alpha-Beta",
-    "Alpha.Beta",
-    " Alpha",
-    "Alpha ",
-    "Alpha/Beta",
-    "Alpha\\Beta",
-    "Mód",
-    "A\nB",
-    `A${"z".repeat(48)}`,
-  ])("refuses invalid ModId without trimming, normalizing, or sanitizing %j", (candidate) => {
-    expect(validateXcom2ProjectFoundryModId(candidate)).toEqual({
-      kind: "refused",
-      code: "mod-id-invalid",
-    });
-  });
-
-  it.each([
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    ...Array.from({ length: 9 }, (_, index) => `COM${index + 1}`),
-    ...Array.from({ length: 9 }, (_, index) => `LPT${index + 1}`),
-  ])("refuses Windows device ModId %s case-insensitively", (deviceName) => {
-    for (const candidate of [deviceName, deviceName.toLowerCase(), deviceName.toUpperCase()]) {
-      expect(validateXcom2ProjectFoundryModId(candidate)).toEqual({
-        kind: "refused",
-        code: "mod-id-windows-device",
-      });
-    }
-  });
-
-  it.each(["CONSOLE", "CON_", "COM0", "COM10", "LPT0", "LPT10"])(
-    "does not over-refuse non-device ModId %s",
-    (candidate) => {
-      expect(validateXcom2ProjectFoundryModId(candidate)).toEqual({
-        kind: "accepted",
-        modId: candidate,
-      });
-    },
-  );
-
-  it("derives the exact uppercase-braced UUIDv5 fixture from the approved URL namespace name", () => {
-    expect(deriveXcom2ProjectFoundryProjectGuid("FoundryPreviewFixture")).toBe(
-      "{30DF67AA-2360-5109-80CF-02CB38BED26F}",
-    );
-    expect(deriveXcom2ProjectFoundryProjectGuid("foundryPreviewFixture")).not.toBe(
-      "{30DF67AA-2360-5109-80CF-02CB38BED26F}",
-    );
-  });
-
-  it("matches browser-compatible synchronous SHA and UUIDv5 standard vectors", () => {
-    expect(bytesToHex(sha1(new TextEncoder().encode("")))).toBe(
-      "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-    );
-    expect(bytesToHex(sha1(new TextEncoder().encode("abc")))).toBe(
-      "a9993e364706816aba3e25717850c26c9cd0d89d",
-    );
-    expect(sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    expect(sha256Hex("abc")).toBe(
-      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-    );
-    expect(uuidV5("6ba7b810-9dad-11d1-80b4-00c04fd430c8", "www.widgets.com")).toBe(
-      "21f7f8de-8051-5b89-8680-0195ef798b6a",
-    );
-  });
-
-  it("uses RFC 8785 JSON primitives, UTF-16 property order, and exact escaping", () => {
-    expect(canonicalizeJsonRfc8785({ b: 1, a: "line\nfeed", z: -0 })).toBe(
-      '{"a":"line\\nfeed","b":1,"z":0}',
-    );
-    expect(canonicalizeJsonRfc8785({ "😀": 1, דּ: 2, "€": 3, "\r": 4, "1": 5 })).toBe(
-      '{"\\r":4,"1":5,"€":3,"😀":1,"דּ":2}',
-    );
-    expect(() => canonicalizeJsonRfc8785("\ud800")).toThrow(TypeError);
-  });
-
-  it.each([
-    [
-      "mod-id-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string => (request.modId = "1Bad"),
-    ],
-    [
-      "mod-id-windows-device",
-      (request: ReturnType<typeof mutableRequestInput>): string => (request.modId = "con"),
-    ],
-    [
-      "source-commit-missing",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceObject.commit = ""),
-    ],
-    [
-      "source-commit-unreadable",
-      (request: ReturnType<typeof mutableRequestInput>): null =>
-        ((request.sourceObject as { commit: unknown }).commit = null),
-    ],
-    [
-      "source-commit-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceObject.commit = "0000000000000000000000000000000000000000"),
-    ],
-    [
-      "source-commit-fingerprint-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceObject.commit = "not-a-git-object-id"),
-    ],
-    [
-      "source-tree-missing",
-      (request: ReturnType<typeof mutableRequestInput>): string => (request.sourceObject.tree = ""),
-    ],
-    [
-      "source-tree-unreadable",
-      (request: ReturnType<typeof mutableRequestInput>): null =>
-        ((request.sourceObject as { tree: unknown }).tree = null),
-    ],
-    [
-      "source-tree-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceObject.tree = "0000000000000000000000000000000000000000"),
-    ],
-    [
-      "source-tree-fingerprint-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceObject.tree = "not-a-git-object-id"),
-    ],
-    ...(
-      [
-        "source-blob-missing",
-        "source-blob-unreadable",
-        "source-blob-mismatched",
-        "source-blob-fingerprint-invalid",
-      ] as const
-    ).map(
-      (code) =>
-        [
-          code,
-          (request: ReturnType<typeof mutableRequestInput>) =>
-            ((request.sourceObject as { fingerprintResult: string }).fingerprintResult = code),
-        ] as const,
+function objectPaths(value: unknown, parent: ObjectPath = []): ObjectPath[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((child, index) => objectPaths(child, [...parent, index]));
+  }
+  if (value === null || typeof value !== "object") return [];
+  return [
+    parent,
+    ...Object.entries(value as Record<string, unknown>).flatMap(([key, child]) =>
+      objectPaths(child, [...parent, key]),
     ),
-    [
-      "source-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.sourceGrant.repository = "relative/source"),
-    ],
-    [
-      "destination-parent-unavailable",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        ((request as { destinationState: string }).destinationState = "parent-unavailable"),
-    ],
-    [
-      "destination-parent-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.destinationParentGrant.parent = "relative/parent"),
-    ],
-    [
-      "derived-destination-present",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        ((request as { destinationState: string }).destinationState = "present"),
-    ],
-    [
-      "derived-destination-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        (request.operationGrant.derivedDestination = "/scenario/foundry-output/Other"),
-    ],
-    [
-      "operation-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>): string =>
-        ((request.operationGrant as { kind: string }).kind = "apply-operation"),
-    ],
-  ] as const)("refuses exact fail-closed boundary %s", (code, change) => {
-    expect(refusedPreview(change)).toEqual({ kind: "refused", code });
+  ];
+}
+
+function recordAt(root: unknown, path: ObjectPath): Record<string, unknown> {
+  let current = root;
+  for (const segment of path) current = (current as Record<string | number, unknown>)[segment];
+  return current as Record<string, unknown>;
+}
+
+function matchingInput(index: number) {
+  const fixture = RENDERED_FIXTURES[index];
+  return {
+    request: structuredClone(fixture.request) as ExpectedRenderRequest,
+    rendered: structuredClone(fixture.rendered) as unknown as ExpectedNativeRenderedPlan,
+  };
+}
+
+function validate(index: number): ExpectedValidationResult {
+  const { request, rendered } = matchingInput(index);
+  return correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered);
+}
+
+function expectReady(result: ExpectedValidationResult) {
+  expect(result.kind).toBe("ready");
+  if (result.kind !== "ready") throw new Error(`Unexpected refusal: ${result.code}`);
+  return result;
+}
+
+function expectSafeInvalid(result: ExpectedValidationResult): void {
+  expect(result).toEqual({
+    kind: "refused",
+    code: "rendered-plan-invalid",
+    summary: SAFE_RENDERED_PLAN_INVALID_SUMMARY,
   });
+  expect(JSON.stringify(result)).not.toMatch(/renderer|parser|raw|internal|secret/iu);
+  assertDeepFrozen(result);
+}
 
-  it("copies mutable selector results into an isolated deeply immutable provider-neutral request", () => {
-    const input = mutableRequestInput();
-    const before = structuredClone(input);
+function renderedPreviewBytes(preview: {
+  readonly byteOrderMark: "present" | "absent";
+  readonly escapedBytePreview: string;
+}): Buffer {
+  const content = `${preview.escapedBytePreview
+    .replaceAll("\\t", "\t")
+    .replaceAll("\\u0020", " ")}\n`;
+  return Buffer.concat([
+    preview.byteOrderMark === "present" ? Buffer.from([0xef, 0xbb, 0xbf]) : Buffer.alloc(0),
+    Buffer.from(content, "utf8"),
+  ]);
+}
 
-    const request = createXcom2ProjectFoundryPreviewRequest(input);
+/**
+ * Focused Spec BDD complements AT-X2-029 by specifying the corrected pure TypeScript
+ * custody boundary. Rendering and operation-grant minting remain native responsibilities.
+ */
+describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 ADR0010@0f1fcd5 rendered-plan custody", () => {
+  it("creates only the provider-neutral source-grant, destination-parent-grant, and exact-ModId request", () => {
+    const mutable = structuredClone(RENDERED_FIXTURES[0].request) as ExpectedRenderRequest;
+    const before = structuredClone(mutable);
+    const request = correctionCore.createXcom2ProjectFoundryRenderRequest(mutable);
 
-    expect(input).toEqual(before);
-    expect(request).not.toBe(input);
-    expect(request.sourceGrant).not.toBe(input.sourceGrant);
-    expect(request.destinationParentGrant).not.toBe(input.destinationParentGrant);
-    expect(request.operationGrant).not.toBe(input.operationGrant);
+    expect(request).toEqual(before);
+    expect(Object.keys(request)).toEqual(["sourceGrant", "destinationParentGrant", "modId"]);
+    expect(collectKeys(request)).not.toContain("operationGrant");
+    expect(collectKeys(request)).not.toContain("sourceObject");
+    expect(collectKeys(request)).not.toContain("destinationState");
+    expect(request).not.toBe(mutable);
+    expect(request.sourceGrant).not.toBe(mutable.sourceGrant);
+    expect(request.destinationParentGrant).not.toBe(mutable.destinationParentGrant);
     assertDeepFrozen(request);
+    expectTypeOf(request).toEqualTypeOf<Readonly<ExpectedRenderRequest>>();
 
-    input.sourceGrant.repository = "/changed/source";
-    input.destinationParentGrant.parent = "/changed/parent";
-    input.operationGrant.identity = "changed-operation";
-    input.sourceObject.commit = "changed-commit";
-    input.modId = "Changed";
-
+    (mutable.sourceGrant as { repository: string }).repository = "/changed/source";
+    (mutable.destinationParentGrant as { parent: string }).parent = "/changed/parent";
+    (mutable as { modId: string }).modId = "Changed";
     expect(request).toEqual(before);
     expect(() => {
-      (request.sourceGrant as { repository: string }).repository = "/mutation/refused";
+      (request as { modId: string }).modId = "MutationRefused";
     }).toThrow(TypeError);
-    expectTypeOf(request).toEqualTypeOf<Readonly<Xcom2ProjectFoundryPreviewRequest>>();
   });
 
-  it("returns the complete display-safe immutable 12-directory and 27-file exact preview", () => {
-    const requestInput = mutableRequestInput();
-    const request = createXcom2ProjectFoundryPreviewRequest(requestInput);
-    const before = structuredClone(request);
+  it.each(RENDERED_FIXTURES)(
+    "accepts independent complete native $label metadata and returns its full digest-bound frozen plan",
+    (fixture) => {
+      const request = structuredClone(fixture.request) as ExpectedRenderRequest;
+      const rendered = structuredClone(fixture.rendered) as unknown as ExpectedNativeRenderedPlan;
+      const requestBefore = structuredClone(request);
+      const renderedBefore = structuredClone(rendered);
 
-    const result = previewXcom2ProjectFoundry(request);
+      const ready = expectReady(
+        correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered),
+      );
+      const expectedDigest = independentlyDigest(fixture.rendered.planBody);
 
-    expect(request).toEqual(before);
-    expect(result.kind).toBe("ready");
-    if (result.kind !== "ready") throw new Error(`Unexpected refusal: ${result.code}`);
+      expect(request).toEqual(requestBefore);
+      expect(rendered).toEqual(renderedBefore);
+      expect(ready.operationGrant).toEqual(fixture.rendered.operationGrant);
+      expect(ready.plan).toEqual({ ...fixture.rendered.planBody, planDigest: expectedDigest });
+      expect(ready.plan.planDigest).toMatch(/^[0-9a-f]{64}$/u);
+      expect(ready.plan.directories).toHaveLength(12);
+      expect(ready.plan.files).toHaveLength(27);
+      expect(ready.plan.generatedPreviews).toHaveLength(2);
+      assertDeepFrozen(ready);
 
-    const expectedDigest = independentlyDigest(expectedBoundPlan);
-    expect(result.plan).toEqual({ ...expectedBoundPlan, planDigest: expectedDigest });
-    expect(result.plan.directories).toHaveLength(12);
-    expect(
-      result.plan.directories.filter(({ state }: { readonly state: string }) => state === "empty"),
-    ).toEqual([
-      { path: "FoundryPreviewFixture/Content", mode: "0755", state: "empty" },
-      { path: "FoundryPreviewFixture/ContentForCook", mode: "0755", state: "empty" },
-    ]);
-    expect(result.plan.files).toHaveLength(27);
-    expect(result.plan.files.every(({ mode }: { readonly mode: string }) => mode === "0644")).toBe(
-      true,
+      (request.sourceGrant as { identity: string }).identity = "caller-mutated-source";
+      (rendered.operationGrant as { identity: string }).identity = "native-buffer-mutated";
+      (rendered.planBody.files as unknown as unknown[]).pop();
+      expect(ready.plan).toEqual({ ...fixture.rendered.planBody, planDigest: expectedDigest });
+      expect(() => {
+        (ready.plan.files as unknown as unknown[]).push({});
+      }).toThrow(TypeError);
+    },
+  );
+
+  it("computes the exact full RFC 8785/SHA-256 fixture digests without trusting a native claimed digest", () => {
+    const foundry = expectReady(validate(0));
+    const mod1 = expectReady(validate(1));
+
+    expect(foundry.plan.planDigest).toBe(
+      "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6",
     );
-    expect(
-      result.plan.files.every(({ sha256 }: { readonly sha256: string }) =>
-        /^[0-9a-f]{64}$/u.test(sha256),
-      ),
-    ).toBe(true);
-    expect(result.plan.generatedPreviews).toEqual(expectedBoundPlan.generatedPreviews);
-    expect(result.plan.absences).toEqual(APPROVED_FOUNDRY_ABSENCES);
-    expect(result.plan.warnings).toEqual(APPROVED_FOUNDRY_WARNINGS);
-    expect(result.plan.planDigest).toMatch(/^[0-9a-f]{64}$/u);
-    assertDeepFrozen(result);
+    expect(mod1.plan.planDigest).toBe(
+      "8a17773f057361183d953ab2aea492a5d23398336da99bb71821d9b39eb81779",
+    );
+    expect(foundry.plan.planDigest).not.toBe(mod1.plan.planDigest);
 
-    requestInput.sourceGrant.identity = "changed-after-preview";
-    expect(result.plan.source.grantIdentity).toBe("source-grant-foundry-preview-001");
-    expect(() => {
-      (result.plan.files as unknown as unknown[]).push({});
-    }).toThrow(TypeError);
-  });
-
-  it("binds all exact identities and approved pack constants into the displayed digest payload", () => {
-    const { plan } = readyPlan();
-
-    expect(plan).toMatchObject({
-      schemaVersion: XCOM2_PROJECT_FOUNDRY_PLAN_SCHEMA_VERSION,
-      packId: XCOM2_PROJECT_FOUNDRY_PACK_ID,
-      platform: XCOM2_PROJECT_FOUNDRY_PLATFORM,
-      publicationStatus: XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS,
-      source: {
-        repository: "/scenario/empt-v1_4",
-        grantIdentity: "source-grant-foundry-preview-001",
-        commit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-        tree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-      },
-      project: {
-        modId: "FoundryPreviewFixture",
-        guid: "{30DF67AA-2360-5109-80CF-02CB38BED26F}",
-      },
-      destination: {
-        parent: "/scenario/foundry-output",
-        parentGrantIdentity: "destination-parent-grant-foundry-preview-001",
-        derivedAbsentDestination: "/scenario/foundry-output/FoundryPreviewFixture",
-        operationGrantIdentity: "operation-grant-foundry-preview-001",
-      },
-    });
-  });
-
-  it("uses SHA-256 over RFC 8785 canonical JSON and ignores object insertion order", () => {
-    const { plan } = readyPlan();
-    const { planDigest: _displayedDigest, ...boundPlan } = plan;
-    const reordered = reverseObjectInsertionOrder(boundPlan) as Xcom2ProjectFoundryDigestBoundPlan;
-
-    expect(digestXcom2ProjectFoundryPlan(boundPlan)).toBe(independentlyDigest(boundPlan));
-    expect(digestXcom2ProjectFoundryPlan(reordered)).toBe(plan.planDigest);
-    expect(canonicalizeRfc8785(reordered)).toBe(canonicalizeRfc8785(boundPlan));
-  });
-
-  it("changes the canonical digest when any individual bound leaf value changes", () => {
-    const { plan } = readyPlan();
-    const { planDigest, ...boundPlan } = plan;
-    const paths = leafPaths(boundPlan);
-
-    expect(paths.length).toBeGreaterThan(150);
-    for (const path of paths) {
-      const changed = structuredClone(boundPlan) as Xcom2ProjectFoundryDigestBoundPlan;
-      changeLeaf(changed, path);
-      expect(digestXcom2ProjectFoundryPlan(changed), path.join(".")).not.toBe(planDigest);
+    for (const index of [0, 1]) {
+      const { request, rendered } = matchingInput(index);
+      (rendered as unknown as Record<string, unknown>).planDigest = "0".repeat(64);
+      expectSafeInvalid(
+        correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered),
+      );
     }
   });
 
-  it("contains no Apply, write, process, build action, or later-lifecycle field", () => {
-    const { request, plan } = readyPlan();
-    const forbiddenField =
-      /^(?:apply|write|process|build|execute|command|stage|journal|recovery|remove|launch|deploy|cook|package|network|shell)$/iu;
+  it.each(RENDERED_FIXTURES)(
+    "rejects every unknown field at every object depth of the $label native result",
+    (fixture) => {
+      const paths = objectPaths(fixture.rendered);
+      expect(paths.length).toBeGreaterThan(40);
 
-    expect(collectKeys(request).filter((key) => forbiddenField.test(key))).toEqual([]);
-    expect(collectKeys(plan).filter((key) => forbiddenField.test(key))).toEqual([]);
-    expectTypeOf(previewXcom2ProjectFoundry).parameters.toEqualTypeOf<
-      [Readonly<Xcom2ProjectFoundryPreviewRequest>]
-    >();
+      for (const path of paths) {
+        const request = structuredClone(fixture.request) as ExpectedRenderRequest;
+        const rendered = structuredClone(fixture.rendered) as unknown as ExpectedNativeRenderedPlan;
+        recordAt(rendered, path).unknownNativeField = "must fail closed";
+        expectSafeInvalid(
+          correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered),
+        );
+      }
+    },
+  );
+
+  it.each(RENDERED_FIXTURES)(
+    "rejects every missing field at every object depth of the $label native result",
+    (fixture) => {
+      const paths = objectPaths(fixture.rendered);
+      let removedFields = 0;
+
+      for (const path of paths) {
+        const original = recordAt(fixture.rendered, path);
+        for (const key of Object.keys(original)) {
+          const request = structuredClone(fixture.request) as ExpectedRenderRequest;
+          const rendered = structuredClone(
+            fixture.rendered,
+          ) as unknown as ExpectedNativeRenderedPlan;
+          delete recordAt(rendered, path)[key];
+          removedFields += 1;
+          expectSafeInvalid(
+            correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered),
+          );
+        }
+      }
+      expect(removedFields).toBeGreaterThan(180);
+    },
+  );
+
+  it("rejects changed schema, pack, platform, publication, source, mode, encoding, and topology constants", () => {
+    const changes: readonly ((rendered: ExpectedNativeRenderedPlan) => void)[] = [
+      (rendered) => ((rendered.planBody as { schemaVersion: number }).schemaVersion = 2),
+      (rendered) => ((rendered.planBody as { canonicalization: string }).canonicalization = "JSON"),
+      (rendered) => ((rendered.planBody as { digestAlgorithm: string }).digestAlgorithm = "SHA-1"),
+      (rendered) => ((rendered.planBody as { packId: string }).packId = "other-pack"),
+      (rendered) => ((rendered.planBody as { platform: string }).platform = "Windows"),
+      (rendered) =>
+        ((rendered.planBody as { publicationStatus: string }).publicationStatus = "Publishable"),
+      (rendered) => ((rendered.planBody.source as { commit: string }).commit = "0".repeat(40)),
+      (rendered) => ((rendered.planBody.source as { tree: string }).tree = "0".repeat(40)),
+      (rendered) =>
+        ((rendered.planBody.source as { fingerprintResult: string }).fingerprintResult = "Unknown"),
+      (rendered) => ((rendered.planBody as { symlinks: string }).symlinks = "present"),
+      (rendered) => ((rendered.planBody.directories[0] as { mode: string }).mode = "0777"),
+      (rendered) => ((rendered.planBody.files[0] as { mode: string }).mode = "0755"),
+      (rendered) => ((rendered.planBody.files[0] as { bytes: number }).bytes = -1),
+      (rendered) => ((rendered.planBody.files[0] as { sha256: string }).sha256 = "0".repeat(64)),
+      (rendered) =>
+        ((rendered.planBody.generatedPreviews[0] as { encoding: string }).encoding = "UTF-16"),
+      (rendered) =>
+        ((rendered.planBody.generatedPreviews[0] as { lineEndings: string }).lineEndings = "CRLF"),
+      (rendered) =>
+        ((rendered.planBody.directories as unknown as unknown[])[0] =
+          rendered.planBody.directories[1]),
+      (rendered) =>
+        ((rendered.planBody.files as unknown as unknown[])[0] = rendered.planBody.files[1]),
+    ];
+
+    for (const change of changes) {
+      const { request, rendered } = matchingInput(1);
+      change(rendered);
+      expectSafeInvalid(
+        correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(request, rendered),
+      );
+    }
+  });
+
+  it("binds the request grants and exact ModId to the native body and newly minted operation grant", () => {
+    const changes: readonly ((input: {
+      request: ExpectedRenderRequest;
+      rendered: ExpectedNativeRenderedPlan;
+    }) => void)[] = [
+      ({ request }) => ((request.sourceGrant as { repository: string }).repository = "/other"),
+      ({ request }) => ((request.sourceGrant as { identity: string }).identity = "other-source"),
+      ({ request }) =>
+        ((request.destinationParentGrant as { parent: string }).parent = "/other-parent"),
+      ({ request }) =>
+        ((request.destinationParentGrant as { identity: string }).identity = "other-parent-grant"),
+      ({ request }) => ((request as { modId: string }).modId = "OtherMod"),
+      ({ rendered }) =>
+        ((rendered.operationGrant as { derivedDestination: string }).derivedDestination =
+          "/scenario/foundry-output/OtherMod"),
+      ({ rendered }) =>
+        ((rendered.operationGrant as { identity: string }).identity = "other-operation"),
+      ({ rendered }) =>
+        ((rendered.planBody.source as { repository: string }).repository = "/other"),
+      ({ rendered }) =>
+        ((rendered.planBody.source as { grantIdentity: string }).grantIdentity = "other-source"),
+      ({ rendered }) =>
+        ((rendered.planBody.destination as { parent: string }).parent = "/other-parent"),
+      ({ rendered }) =>
+        ((rendered.planBody.destination as { parentGrantIdentity: string }).parentGrantIdentity =
+          "other-parent-grant"),
+      ({ rendered }) =>
+        ((
+          rendered.planBody.destination as { derivedAbsentDestination: string }
+        ).derivedAbsentDestination = "/scenario/foundry-output/OtherMod"),
+      ({ rendered }) =>
+        ((
+          rendered.planBody.destination as { operationGrantIdentity: string }
+        ).operationGrantIdentity = "other-operation"),
+      ({ rendered }) => ((rendered.planBody.project as { modId: string }).modId = "OtherMod"),
+    ];
+
+    for (const change of changes) {
+      const input = matchingInput(1);
+      change(input);
+      expectSafeInvalid(
+        correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(
+          input.request,
+          input.rendered,
+        ),
+      );
+    }
+  });
+
+  it("accepts representative valid ModIds only when native supplies their corresponding complete body", () => {
+    for (const candidate of ["A", "Mod_1", "FoundryPreviewFixture", `A${"z".repeat(47)}`]) {
+      expect(foundryCore.validateXcom2ProjectFoundryModId(candidate)).toEqual({
+        kind: "accepted",
+        modId: candidate,
+      });
+    }
+
+    expect(validate(0).kind).toBe("ready");
+    expect(validate(1).kind).toBe("ready");
+
+    const foundryRequest = structuredClone(RENDERED_FIXTURES[0].request) as ExpectedRenderRequest;
+    const mod1Request = structuredClone(RENDERED_FIXTURES[1].request) as ExpectedRenderRequest;
+    expectSafeInvalid(
+      correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(
+        foundryRequest,
+        structuredClone(RENDERED_FIXTURES[1].rendered),
+      ),
+    );
+    expectSafeInvalid(
+      correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(
+        mod1Request,
+        structuredClone(RENDERED_FIXTURES[0].rendered),
+      ),
+    );
+
+    for (const candidate of ["A", `A${"z".repeat(47)}`]) {
+      const request = { ...structuredClone(foundryRequest), modId: candidate };
+      for (const fixture of RENDERED_FIXTURES) {
+        expectSafeInvalid(
+          correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(
+            request,
+            structuredClone(fixture.rendered),
+          ),
+        );
+      }
+    }
+  });
+
+  it("uses exact independent Gherkin topology, metadata, paths, absences, and generated previews", () => {
+    const foundry = expectReady(validate(0)).plan;
+    const mod1 = expectReady(validate(1)).plan;
+
+    expect(foundry).toMatchObject(FOUNDRY_PREVIEW_FIXTURE_BODY);
+    expect(mod1).toMatchObject(MOD_1_BODY);
+    expect(mod1.project).toEqual({
+      modId: "Mod_1",
+      guid: "{CC1DEF9C-4BBB-5DDD-9F27-E21521D1747C}",
+    });
+    expect(mod1.destination).toEqual({
+      parent: "/scenario/foundry-output",
+      parentGrantIdentity: "destination-parent-grant-foundry-preview-001",
+      derivedAbsentDestination: "/scenario/foundry-output/Mod_1",
+      operationGrantIdentity: "operation-grant-foundry-preview-002",
+    });
+    expect(mod1.directories.map(({ path }) => path)).toEqual(
+      MOD_1_BODY.directories.map(({ path }) => path),
+    );
+    expect(mod1.files).toEqual(MOD_1_BODY.files);
+    expect(mod1.absences).toEqual(MOD_1_BODY.absences);
+    expect(mod1.warnings).toEqual(FOUNDRY_PREVIEW_FIXTURE_BODY.warnings);
+
+    const serializedMod1 = JSON.stringify(mod1);
+    expect(serializedMod1).not.toContain("FoundryPreviewFixture");
+    expect(serializedMod1).toContain("Mod_1/Mod_1.x2proj");
+    expect(serializedMod1).toContain("Mod_1.XCOM_sln");
+    expect(serializedMod1).toContain("Mod_1/Src/Mod_1/Classes/X2DLCInfo_Mod_1.uc");
+    expect(serializedMod1).toContain("every .XComMod file, including Mod_1/Mod_1.XComMod");
+  });
+
+  it.each(RENDERED_FIXTURES)(
+    "keeps $label generated preview encoding, full size, and SHA-256 consistent with file metadata",
+    (fixture) => {
+      for (const preview of fixture.rendered.planBody.generatedPreviews) {
+        const bytes = renderedPreviewBytes(preview);
+        const file = fixture.rendered.planBody.files.find(({ path }) => path === preview.path);
+        expect(file, preview.path).toBeDefined();
+        expect(bytes.byteLength, preview.path).toBe(file?.bytes);
+        expect(createHash("sha256").update(bytes).digest("hex"), preview.path).toBe(file?.sha256);
+      }
+    },
+  );
+
+  it("returns only the safe rendered-plan-invalid code and summary for malformed native data", () => {
+    const malformedValues: readonly unknown[] = [
+      null,
+      [],
+      "raw renderer parser secret",
+      { kind: "rendered", rawReason: "internal native parser secret" },
+      { ...structuredClone(RENDERED_FIXTURES[0].rendered), kind: "failed" },
+    ];
+    for (const rendered of malformedValues) {
+      expectSafeInvalid(
+        correctionCore.validateAndDigestXcom2ProjectFoundryRenderedPlan(
+          structuredClone(RENDERED_FIXTURES[0].request),
+          rendered,
+        ),
+      );
+    }
+  });
+
+  it("removes frontend rendering and fixture-metadata authority from the production core API", () => {
+    for (const forbiddenExport of [
+      "createXcom2ProjectFoundryPreviewRequest",
+      "previewXcom2ProjectFoundry",
+      "deriveXcom2ProjectFoundryProjectGuid",
+      "APPROVED_FOUNDRY_DIRECTORIES",
+      "APPROVED_FOUNDRY_FILES",
+      "APPROVED_FOUNDRY_ABSENCES",
+      "APPROVED_FOUNDRY_WARNINGS",
+      "APPROVED_X2PROJ_ESCAPED_PREVIEW",
+      "APPROVED_SOLUTION_ESCAPED_PREVIEW",
+    ]) {
+      expect(foundryCore, forbiddenExport).not.toHaveProperty(forbiddenExport);
+    }
+    expect(foundryCore).toHaveProperty("createXcom2ProjectFoundryRenderRequest");
+    expect(foundryCore).toHaveProperty("validateAndDigestXcom2ProjectFoundryRenderedPlan");
   });
 });

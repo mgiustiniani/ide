@@ -1,12 +1,9 @@
 import {
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-  type Xcom2ProjectFoundryPreviewRequest,
+  type Xcom2ProjectFoundryPreviewResult,
 } from "../../../packages/contracts/src/domain/xcom2-project-foundry";
-import {
-  createXcom2ProjectFoundryPreviewRequest,
-  previewXcom2ProjectFoundry,
-} from "../../../packages/web-core/src/xcom2/project-foundry";
+import { FOUNDRY_PREVIEW_FIXTURE_BODY } from "./xcom2-project-foundry-rendered-fixtures";
 
 export const APPROVED_FOUNDRY_APPLY_DIGEST =
   "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6";
@@ -32,23 +29,23 @@ export function mutableFoundryApplySelection() {
   };
 }
 
-export function readyFoundryApplyPreview() {
-  const current = mutableFoundryApplySelection();
-  const request: Xcom2ProjectFoundryPreviewRequest = {
-    ...current,
-    sourceObject: {
-      commit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-      tree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-      fingerprintResult: "Verified",
-    },
-    destinationState: "absent",
-  };
-  const result = previewXcom2ProjectFoundry(createXcom2ProjectFoundryPreviewRequest(request));
-  if (result.kind !== "ready") throw new Error(`Expected ready preview, received ${result.code}`);
-  if (result.plan.planDigest !== APPROVED_FOUNDRY_APPLY_DIGEST) {
-    throw new Error(`Unexpected approved fixture digest ${result.plan.planDigest}`);
+function deepFreeze<T>(value: T): Readonly<T> {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
   }
-  return result;
+  return value;
+}
+
+export function readyFoundryApplyPreview() {
+  const result: Xcom2ProjectFoundryPreviewResult = {
+    kind: "ready",
+    plan: {
+      ...structuredClone(FOUNDRY_PREVIEW_FIXTURE_BODY),
+      planDigest: APPROVED_FOUNDRY_APPLY_DIGEST,
+    },
+  };
+  return deepFreeze(result) as Extract<Xcom2ProjectFoundryPreviewResult, { kind: "ready" }>;
 }
 
 export function mutableFoundryCreatedReceipt() {
