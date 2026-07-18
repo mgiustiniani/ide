@@ -300,48 +300,49 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 pure deterministic Project Foundry prev
   it.each([
     [
       "mod-id-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) => (request.modId = "1Bad"),
+      (request: ReturnType<typeof mutableRequestInput>): string => (request.modId = "1Bad"),
     ],
     [
       "mod-id-windows-device",
-      (request: ReturnType<typeof mutableRequestInput>) => (request.modId = "con"),
+      (request: ReturnType<typeof mutableRequestInput>): string => (request.modId = "con"),
     ],
     [
       "source-commit-missing",
-      (request: ReturnType<typeof mutableRequestInput>) => (request.sourceObject.commit = ""),
+      (request: ReturnType<typeof mutableRequestInput>): string =>
+        (request.sourceObject.commit = ""),
     ],
     [
       "source-commit-unreadable",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): null =>
         ((request.sourceObject as { commit: unknown }).commit = null),
     ],
     [
       "source-commit-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.sourceObject.commit = "0000000000000000000000000000000000000000"),
     ],
     [
       "source-commit-fingerprint-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.sourceObject.commit = "not-a-git-object-id"),
     ],
     [
       "source-tree-missing",
-      (request: ReturnType<typeof mutableRequestInput>) => (request.sourceObject.tree = ""),
+      (request: ReturnType<typeof mutableRequestInput>): string => (request.sourceObject.tree = ""),
     ],
     [
       "source-tree-unreadable",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): null =>
         ((request.sourceObject as { tree: unknown }).tree = null),
     ],
     [
       "source-tree-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.sourceObject.tree = "0000000000000000000000000000000000000000"),
     ],
     [
       "source-tree-fingerprint-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.sourceObject.tree = "not-a-git-object-id"),
     ],
     ...(
@@ -361,32 +362,32 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 pure deterministic Project Foundry prev
     ),
     [
       "source-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.sourceGrant.repository = "relative/source"),
     ],
     [
       "destination-parent-unavailable",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         ((request as { destinationState: string }).destinationState = "parent-unavailable"),
     ],
     [
       "destination-parent-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.destinationParentGrant.parent = "relative/parent"),
     ],
     [
       "derived-destination-present",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         ((request as { destinationState: string }).destinationState = "present"),
     ],
     [
       "derived-destination-mismatched",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         (request.operationGrant.derivedDestination = "/scenario/foundry-output/Other"),
     ],
     [
       "operation-grant-invalid",
-      (request: ReturnType<typeof mutableRequestInput>) =>
+      (request: ReturnType<typeof mutableRequestInput>): string =>
         ((request.operationGrant as { kind: string }).kind = "apply-operation"),
     ],
   ] as const)("refuses exact fail-closed boundary %s", (code, change) => {
