@@ -29,6 +29,7 @@ export const XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS = Object.freeze({
   authorizeDestinationParentSelection:
     "authorize_xcom2_project_foundry_destination_parent_selection",
   renderPreview: "render_xcom2_project_foundry_preview",
+  revokeOperation: "revoke_xcom2_project_foundry_operation_grants",
 } as const);
 
 const DIALOG_COMMAND = "plugin:dialog|open";
@@ -100,6 +101,7 @@ export interface TauriXcom2ProjectFoundryRendererComposition {
     ): Promise<TauriXcom2ProjectFoundryNativeRenderResult>;
   };
   readonly grants: {
+    revokeOperation(): Promise<void>;
     revokeAll(): Promise<void>;
   };
 }
@@ -776,7 +778,10 @@ export class TauriXcom2ProjectFoundryRendererAdapter implements TauriXcom2Projec
     ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> => this.renderPreview(request),
   });
 
-  readonly grants = Object.freeze({ revokeAll: (): Promise<void> => this.revokeAll() });
+  readonly grants = Object.freeze({
+    revokeOperation: (): Promise<void> => this.revokeOperation(),
+    revokeAll: (): Promise<void> => this.revokeAll(),
+  });
 
   selectSourceRepository(): Promise<Xcom2ProjectFoundrySourceSelectionGrant> {
     return this.bridge.selectSourceRepository();
@@ -790,6 +795,14 @@ export class TauriXcom2ProjectFoundryRendererAdapter implements TauriXcom2Projec
     request: Readonly<Xcom2ProjectFoundryRenderRequest>,
   ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> {
     return this.bridge.renderPreview(request);
+  }
+
+  async revokeOperation(): Promise<void> {
+    const command = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS.revokeOperation;
+    const response = await invokeFoundry(command);
+    if (response !== null && response !== undefined) {
+      throw protocolError(command, "response", "revocation acknowledgement must be empty");
+    }
   }
 
   revokeAll(): Promise<void> {
