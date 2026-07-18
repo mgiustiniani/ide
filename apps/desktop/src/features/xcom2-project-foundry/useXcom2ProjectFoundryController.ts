@@ -12,6 +12,7 @@ import {
   validateXcom2ProjectFoundryModId,
 } from "@ide/web-core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 export interface ProjectFoundryComposition {
   readonly selectors: {
@@ -277,7 +278,7 @@ export function useXcom2ProjectFoundryController(
         return;
       }
       sourceGrantRef.current = grant;
-      setSourceRepository(grant.repository);
+      flushSync(() => setSourceRepository(grant.repository));
     });
   }, [clearGrantMemory, clearRenderedGrants, enqueueAuthority, revokeSafely]);
 
@@ -339,7 +340,7 @@ export function useXcom2ProjectFoundryController(
         return;
       }
       destinationSelectionRef.current = selection;
-      setDestinationParent(selection.destinationParentGrant.parent);
+      flushSync(() => setDestinationParent(selection.destinationParentGrant.parent));
     });
   }, [clearGrantMemory, clearRenderedGrants, enqueueAuthority, revokeSafely]);
 

@@ -210,6 +210,38 @@ describe("useXcom2ProjectFoundryController", () => {
     expect(harness.revokeAll).toHaveBeenCalledOnce();
   });
 
+  it("serializes back-to-back selectors under StrictMode without prematurely revoking their grants", async () => {
+    const sourceGate = deferred<Xcom2ProjectFoundrySourceSelectionGrant>();
+    const harness = createComposition();
+    harness.selectSourceRepository.mockImplementationOnce(() => sourceGate.promise);
+    const wrapper = ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode>;
+    const controller = renderHook(() => useXcom2ProjectFoundryController(harness.composition), {
+      wrapper,
+    });
+    await waitFor(() => expect(harness.revokeAll).toHaveBeenCalledOnce());
+    const strictModeRevocations = harness.revokeAll.mock.calls.length;
+    act(() => controller.result.current.open());
+
+    let sourceSelection!: Promise<void>;
+    let destinationSelection!: Promise<void>;
+    act(() => {
+      sourceSelection = controller.result.current.selectSourceRepository();
+      destinationSelection = controller.result.current.selectDestinationParent();
+    });
+    await waitFor(() => expect(harness.selectSourceRepository).toHaveBeenCalledOnce());
+    expect(harness.selectDestinationParent).not.toHaveBeenCalled();
+
+    sourceGate.resolve(sourceGrant);
+    await act(async () => Promise.all([sourceSelection, destinationSelection]));
+
+    expect(harness.selectDestinationParent).toHaveBeenCalledExactlyOnceWith("");
+    expect(controller.result.current).toMatchObject({
+      sourceRepository: sourceGrant.repository,
+      destinationParent: destinationParentGrant.parent,
+    });
+    expect(harness.revokeAll).toHaveBeenCalledTimes(strictModeRevocations);
+  });
+
   it("invalidates stale preview completion when the exact ModId changes", async () => {
     const sourceGate = deferred<Xcom2ProjectFoundrySourceObjectEvidence>();
     const harness = createComposition();

@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 
 const testHarness = vi.hoisted(() => {
   const harness: any = {};
@@ -2015,6 +2015,86 @@ describe("App", () => {
       "",
     );
     expect((within(reopened).getByLabelText("ModId") as HTMLInputElement).value).toBe("");
+  });
+
+  it("keeps back-to-back Foundry selectors serialized and rendered under StrictMode", async () => {
+    const sourceSelection = createDeferred<{
+      kind: "source-repository";
+      repository: string;
+      identity: string;
+    }>();
+    const destinationSelection = createDeferred<{
+      destinationParentGrant: {
+        kind: "destination-parent";
+        parent: string;
+        identity: string;
+      };
+      operationGrant: {
+        kind: "preview-operation";
+        derivedDestination: string;
+        identity: string;
+      };
+    }>();
+    const selectSourceRepository = vi.fn(() => sourceSelection.promise);
+    const selectDestinationParent = vi.fn(() => destinationSelection.promise);
+    const revokeAll = vi.fn(async () => undefined);
+    const composition = {
+      selectors: { selectSourceRepository, selectDestinationParent },
+      source: { resolvePinnedObject: vi.fn() },
+      destination: { inspectDerivedDestination: vi.fn() },
+      grants: { revokeAll },
+    };
+    const { App } = await import("../App");
+    render(
+      <StrictMode>
+        <App projectFoundry={composition} />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(revokeAll).toHaveBeenCalledOnce());
+    const strictModeRevocations = revokeAll.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "New XCOM 2 Project" }));
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select EMPT repository" }));
+    await waitFor(() => expect(selectSourceRepository).toHaveBeenCalledOnce());
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select Destination parent" }));
+    expect(selectDestinationParent).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sourceSelection.resolve({
+        kind: "source-repository",
+        repository: "/scenario/empt-v1_4",
+        identity: "source-grant-foundry-preview-001",
+      });
+      await sourceSelection.promise;
+    });
+    expect((within(dialog).getByLabelText("EMPT repository") as HTMLInputElement).value).toBe(
+      "/scenario/empt-v1_4",
+    );
+    await waitFor(() => expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith(""));
+    await act(async () => {
+      destinationSelection.resolve({
+        destinationParentGrant: {
+          kind: "destination-parent",
+          parent: "/scenario/foundry-output",
+          identity: "destination-parent-grant-foundry-preview-001",
+        },
+        operationGrant: {
+          kind: "preview-operation",
+          derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
+          identity: "operation-grant-foundry-preview-001",
+        },
+      });
+      await destinationSelection.promise;
+    });
+    expect((within(dialog).getByLabelText("Destination parent") as HTMLInputElement).value).toBe(
+      "/scenario/foundry-output",
+    );
+
+    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith("");
+    expect(revokeAll).toHaveBeenCalledTimes(strictModeRevocations);
+    expect(screen.getByTestId("PanelLayout")).toBeDefined();
+    expect(screen.getAllByRole("button", { name: "New XCOM 2 Project" })).toHaveLength(1);
   });
 
   it("composes persistent panel controls while retaining the sidebar collapse control", async () => {
