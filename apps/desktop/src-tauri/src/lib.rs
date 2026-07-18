@@ -8,6 +8,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(commands::java_language::JavaLanguageServiceState::default())
         .manage(commands::refactorkit_daemon::RefactorKitDaemonState::default())
         .manage(commands::refactorkit_daemon::SavedSnapshotSemanticState::default())
