@@ -327,7 +327,7 @@ test("focused XCOM Project Foundry profile retains its partial deterministic har
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*58 steps \(32 skipped, 26 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*58 steps \(58 skipped\)/,
   );
 });
 
@@ -361,7 +361,7 @@ test("focused XCOM Project Foundry Apply profile retains its non-implemented har
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryApplyTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*39 steps \(32 skipped, 7 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*39 steps \(39 skipped\)/,
   );
 });
 
