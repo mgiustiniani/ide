@@ -868,6 +868,48 @@ vi.mock("@ide/ui", () => ({
       </section>
     );
   },
+  Xcom2ProjectFoundryDialog: (props: any) => (
+    <div
+      role="dialog"
+      aria-label="New XCOM 2 Project"
+      data-testid="Xcom2ProjectFoundryDialog"
+      data-view-state={props.viewState.kind}
+    >
+      <label>
+        EMPT repository
+        <input value={props.sourceRepository} readOnly />
+      </label>
+      <button type="button" onClick={() => void props.onSelectSourceRepository()}>
+        Select EMPT repository
+      </button>
+      <label>
+        Destination parent
+        <input value={props.destinationParent} readOnly />
+      </label>
+      <button type="button" onClick={() => void props.onSelectDestinationParent()}>
+        Select Destination parent
+      </button>
+      <label>
+        ModId
+        <input value={props.modId} onChange={(event) => props.onModIdChange(event.target.value)} />
+      </label>
+      {props.viewState.kind === "ready" ? (
+        <output>{props.viewState.plan.planDigest}</output>
+      ) : props.viewState.kind === "refused" ? (
+        <div role="alert">{props.viewState.code}</div>
+      ) : null}
+      <button type="button" onClick={() => void props.onCancel()}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        disabled={!props.sourceRepository || !props.destinationParent || !props.modId}
+        onClick={() => void props.onPreview(props.modId)}
+      >
+        Preview
+      </button>
+    </div>
+  ),
   LeftSidebar: ({ children, workspaceContent, isVisible, onToggle }: any) => {
     const [filesExpanded, setFilesExpanded] = useState(true);
     const [workspacesExpanded, setWorkspacesExpanded] = useState(true);
@@ -1890,6 +1932,89 @@ describe("App", () => {
     expect(screen.getByTestId("Editor").dataset.hasTabClose).toBe("true");
     expect(screen.getByTestId("Terminal").dataset.hasClear).toBe("true");
     expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  });
+
+  it("renders one global Project Foundry control and disables preview honestly without a composition", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    const controls = screen.getAllByRole("button", { name: "New XCOM 2 Project" });
+    expect(controls).toHaveLength(1);
+    expect((controls[0] as HTMLButtonElement).disabled).toBe(false);
+    expect(controls[0]?.getAttribute("title")).toContain("unavailable");
+    fireEvent.click(controls[0]!);
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    expect(
+      (within(dialog).getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("wires the provider-neutral Project Foundry flow independently of project activation and discards it", async () => {
+    const revokeAll = vi.fn(async () => undefined);
+    const selectSourceRepository = vi.fn(async () => ({
+      kind: "source-repository" as const,
+      repository: "/scenario/empt-v1_4",
+      identity: "source-grant-foundry-preview-001",
+    }));
+    const selectDestinationParent = vi.fn(async () => ({
+      destinationParentGrant: {
+        kind: "destination-parent" as const,
+        parent: "/scenario/foundry-output",
+        identity: "destination-parent-grant-foundry-preview-001",
+      },
+      operationGrant: {
+        kind: "preview-operation" as const,
+        derivedDestination: "/scenario/foundry-output/FoundryPreviewFixture",
+        identity: "operation-grant-foundry-preview-001",
+      },
+    }));
+    const composition = {
+      selectors: { selectSourceRepository, selectDestinationParent },
+      source: {
+        resolvePinnedObject: vi.fn(async () => ({
+          commit: "d968be3c32b250376723563a743a120770ec5c95",
+          tree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
+          fingerprintResult: "Verified" as const,
+        })),
+      },
+      destination: {
+        inspectDerivedDestination: vi.fn(async () => "absent" as const),
+      },
+      grants: { revokeAll },
+    };
+    const { App } = await import("../App");
+    render(<App projectFoundry={composition} />);
+
+    expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New XCOM 2 Project" }));
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select EMPT repository" }));
+    await within(dialog).findByDisplayValue("/scenario/empt-v1_4");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select Destination parent" }));
+    await within(dialog).findByDisplayValue("/scenario/foundry-output");
+    fireEvent.change(within(dialog).getByLabelText("ModId"), {
+      target: { value: "FoundryPreviewFixture" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("Xcom2ProjectFoundryDialog").dataset.viewState).toBe("ready");
+    });
+    expect(selectDestinationParent).toHaveBeenCalledExactlyOnceWith("");
+    expect(screen.getByText(/^[0-9a-f]{64}$/u)).toBeDefined();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(revokeAll).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog", { name: "New XCOM 2 Project" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "New XCOM 2 Project" }));
+    const reopened = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    expect((within(reopened).getByLabelText("EMPT repository") as HTMLInputElement).value).toBe("");
+    expect((within(reopened).getByLabelText("Destination parent") as HTMLInputElement).value).toBe(
+      "",
+    );
+    expect((within(reopened).getByLabelText("ModId") as HTMLInputElement).value).toBe("");
   });
 
   it("composes persistent panel controls while retaining the sidebar collapse control", async () => {

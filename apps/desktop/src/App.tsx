@@ -50,6 +50,10 @@ import {
   useXcom2SetupController,
   type Xcom2SetupEventSources,
 } from "./features/xcom2-setup/useXcom2SetupController";
+import {
+  useXcom2ProjectFoundryController,
+  type ProjectFoundryComposition,
+} from "./features/xcom2-project-foundry/useXcom2ProjectFoundryController";
 
 // ── UI Components ────────────────────────────────────────────────────────
 import { PanelLayout } from "@ide/ui";
@@ -68,6 +72,7 @@ import { ProblemsPanel } from "@ide/ui";
 import { ExternalJavaImportPreviewDialog } from "@ide/ui";
 import { SemanticSymbolSearchPanel } from "@ide/ui";
 import { Xcom2ProjectRecognitionPanel } from "@ide/ui";
+import { Xcom2ProjectFoundryDialog } from "@ide/ui";
 
 // ── Store hooks ──────────────────────────────────────────────────────────
 // Zustand stores are created once and exposed as singletons for the app.
@@ -171,7 +176,13 @@ function usePanelState() {
 
 // ── App Component ────────────────────────────────────────────────────────
 
-export function App(): JSX.Element {
+export interface AppProps {
+  readonly projectFoundry?: ProjectFoundryComposition;
+}
+
+export type { ProjectFoundryComposition } from "./features/xcom2-project-foundry/useXcom2ProjectFoundryController";
+
+export function App({ projectFoundry }: AppProps = {}): JSX.Element {
   // Subscribe to stores.
   const fileTreeState = useFileTreeState();
   const editorState = useEditorState();
@@ -180,6 +191,7 @@ export function App(): JSX.Element {
   const workspaceCollaboratorsRef = useRef<WorkspaceControllerCollaborators | null>(null);
   const [activeActivity, setActiveActivity] = useState<PanelLayoutActivity>("explorer");
   const settings = useSettingsController();
+  const projectFoundryController = useXcom2ProjectFoundryController(projectFoundry);
 
   const refactorKitStatus = useRefactorKitStatusController({
     refactorKit: refactorKitAdapter,
@@ -533,6 +545,18 @@ export function App(): JSX.Element {
           <button
             type="button"
             className="rounded-sm px-2 py-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--highlight-bg)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+            title={
+              projectFoundry
+                ? undefined
+                : "Project Foundry is unavailable in this desktop composition"
+            }
+            onClick={projectFoundryController.open}
+          >
+            New XCOM 2 Project
+          </button>
+          <button
+            type="button"
+            className="rounded-sm px-2 py-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--highlight-bg)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
             onClick={handleOpenSettings}
           >
             Settings
@@ -739,6 +763,19 @@ export function App(): JSX.Element {
           }
         />
       </div>
+      {projectFoundryController.isOpen ? (
+        <Xcom2ProjectFoundryDialog
+          sourceRepository={projectFoundryController.sourceRepository}
+          destinationParent={projectFoundryController.destinationParent}
+          modId={projectFoundryController.modId}
+          viewState={projectFoundryController.viewState}
+          onSelectSourceRepository={projectFoundryController.selectSourceRepository}
+          onSelectDestinationParent={projectFoundryController.selectDestinationParent}
+          onModIdChange={projectFoundryController.setModId}
+          onPreview={projectFoundryController.preview}
+          onCancel={projectFoundryController.cancel}
+        />
+      ) : null}
       {refactorKitImport.dialog ? (
         <ExternalJavaImportPreviewDialog
           status={refactorKitImport.dialog.status}
