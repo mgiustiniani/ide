@@ -7,6 +7,7 @@ export {
   mapXcom2ModuleConfigurationDiagnosticPresentation,
   XCOM2_MODULE_CONFIGURATION_DIAGNOSTIC_PRESENTATIONS,
 } from "./module-configuration-diagnostics";
+export * from "./project-foundry";
 export { createXcom2SetupPlan } from "./setup-planner";
 export {
   canApplyXcom2SetupTransaction,
