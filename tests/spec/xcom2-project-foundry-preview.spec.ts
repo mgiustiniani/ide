@@ -12,10 +12,14 @@ import {
   type Xcom2ProjectFoundryPreviewRequest,
 } from "../../packages/contracts/src/domain/xcom2-project-foundry";
 import {
+  canonicalizeJsonRfc8785,
   createXcom2ProjectFoundryPreviewRequest,
   deriveXcom2ProjectFoundryProjectGuid,
   digestXcom2ProjectFoundryPlan,
   previewXcom2ProjectFoundry,
+  sha1,
+  sha256Hex,
+  uuidV5,
   validateXcom2ProjectFoundryModId,
 } from "../../packages/web-core/src/xcom2/project-foundry";
 import {
@@ -187,6 +191,20 @@ function readyPlan() {
   return { request, plan: result.plan };
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function refusedPreview(
+  change: (request: ReturnType<typeof mutableRequestInput>) => void,
+): ReturnType<typeof previewXcom2ProjectFoundry> {
+  const request = mutableRequestInput();
+  change(request);
+  return previewXcom2ProjectFoundry(
+    createXcom2ProjectFoundryPreviewRequest(request as Xcom2ProjectFoundryPreviewRequest),
+  );
+}
+
 describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 pure deterministic Project Foundry preview", () => {
   it.each(["A", "a", "A0", "Mod_1", "FoundryPreviewFixture", `A${"z".repeat(47)}`])(
     "accepts exact case-preserved ASCII ModId %s",
@@ -251,6 +269,128 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-001 pure deterministic Project Foundry prev
     expect(deriveXcom2ProjectFoundryProjectGuid("foundryPreviewFixture")).not.toBe(
       "{30DF67AA-2360-5109-80CF-02CB38BED26F}",
     );
+  });
+
+  it("matches browser-compatible synchronous SHA and UUIDv5 standard vectors", () => {
+    expect(bytesToHex(sha1(new TextEncoder().encode("")))).toBe(
+      "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+    );
+    expect(bytesToHex(sha1(new TextEncoder().encode("abc")))).toBe(
+      "a9993e364706816aba3e25717850c26c9cd0d89d",
+    );
+    expect(sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(sha256Hex("abc")).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    expect(uuidV5("6ba7b810-9dad-11d1-80b4-00c04fd430c8", "www.widgets.com")).toBe(
+      "21f7f8de-8051-5b89-8680-0195ef798b6a",
+    );
+  });
+
+  it("uses RFC 8785 JSON primitives, UTF-16 property order, and exact escaping", () => {
+    expect(canonicalizeJsonRfc8785({ b: 1, a: "line\nfeed", z: -0 })).toBe(
+      '{"a":"line\\nfeed","b":1,"z":0}',
+    );
+    expect(canonicalizeJsonRfc8785({ "😀": 1, דּ: 2, "€": 3, "\r": 4, "1": 5 })).toBe(
+      '{"\\r":4,"1":5,"€":3,"😀":1,"דּ":2}',
+    );
+    expect(() => canonicalizeJsonRfc8785("\ud800")).toThrow(TypeError);
+  });
+
+  it.each([
+    [
+      "mod-id-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) => (request.modId = "1Bad"),
+    ],
+    [
+      "mod-id-windows-device",
+      (request: ReturnType<typeof mutableRequestInput>) => (request.modId = "con"),
+    ],
+    [
+      "source-commit-missing",
+      (request: ReturnType<typeof mutableRequestInput>) => (request.sourceObject.commit = ""),
+    ],
+    [
+      "source-commit-unreadable",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        ((request.sourceObject as { commit: unknown }).commit = null),
+    ],
+    [
+      "source-commit-mismatched",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.sourceObject.commit = "0000000000000000000000000000000000000000"),
+    ],
+    [
+      "source-commit-fingerprint-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.sourceObject.commit = "not-a-git-object-id"),
+    ],
+    [
+      "source-tree-missing",
+      (request: ReturnType<typeof mutableRequestInput>) => (request.sourceObject.tree = ""),
+    ],
+    [
+      "source-tree-unreadable",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        ((request.sourceObject as { tree: unknown }).tree = null),
+    ],
+    [
+      "source-tree-mismatched",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.sourceObject.tree = "0000000000000000000000000000000000000000"),
+    ],
+    [
+      "source-tree-fingerprint-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.sourceObject.tree = "not-a-git-object-id"),
+    ],
+    ...(
+      [
+        "source-blob-missing",
+        "source-blob-unreadable",
+        "source-blob-mismatched",
+        "source-blob-fingerprint-invalid",
+      ] as const
+    ).map(
+      (code) =>
+        [
+          code,
+          (request: ReturnType<typeof mutableRequestInput>) =>
+            ((request.sourceObject as { fingerprintResult: string }).fingerprintResult = code),
+        ] as const,
+    ),
+    [
+      "source-grant-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.sourceGrant.repository = "relative/source"),
+    ],
+    [
+      "destination-parent-unavailable",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        ((request as { destinationState: string }).destinationState = "parent-unavailable"),
+    ],
+    [
+      "destination-parent-grant-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.destinationParentGrant.parent = "relative/parent"),
+    ],
+    [
+      "derived-destination-present",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        ((request as { destinationState: string }).destinationState = "present"),
+    ],
+    [
+      "derived-destination-mismatched",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        (request.operationGrant.derivedDestination = "/scenario/foundry-output/Other"),
+    ],
+    [
+      "operation-grant-invalid",
+      (request: ReturnType<typeof mutableRequestInput>) =>
+        ((request.operationGrant as { kind: string }).kind = "apply-operation"),
+    ],
+  ] as const)("refuses exact fail-closed boundary %s", (code, change) => {
+    expect(refusedPreview(change)).toEqual({ kind: "refused", code });
   });
 
   it("copies mutable selector results into an isolated deeply immutable provider-neutral request", () => {
