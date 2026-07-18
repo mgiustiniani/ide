@@ -4,6 +4,7 @@ import type {
 } from "@ide/contracts";
 import { useEffect, useId, useRef } from "react";
 import { Button } from "../ui/Button";
+import { ModalLayer } from "../ui/ModalLayer";
 
 export type Xcom2ProjectFoundryDialogViewState =
   | { readonly kind: "editing" }
@@ -286,7 +287,7 @@ export function Xcom2ProjectFoundryDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <ModalLayer className="flex items-center justify-center bg-black/60 p-4">
       <div
         ref={dialogRef}
         role="dialog"
@@ -452,6 +453,6 @@ export function Xcom2ProjectFoundryDialog({
           </footer>
         </form>
       </div>
-    </div>
+    </ModalLayer>
   );
 }

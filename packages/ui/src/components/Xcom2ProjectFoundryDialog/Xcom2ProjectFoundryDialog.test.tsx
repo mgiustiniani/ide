@@ -272,7 +272,7 @@ describe("Xcom2ProjectFoundryDialog", () => {
   });
 
   it("shows only the two approved exact escaped generated previews with encoding facts", () => {
-    const { container } = render(
+    render(
       <Xcom2ProjectFoundryDialog
         {...baseProps({ viewState: { kind: "ready", plan: readyPlan() } })}
       />,
@@ -293,7 +293,9 @@ describe("Xcom2ProjectFoundryDialog", () => {
       expect(within(region).getByText(bom, { exact: true })).toBeDefined();
       expect(region.querySelector("pre")?.textContent).toBe(exactPreview);
     }
-    expect(container.querySelectorAll("pre")).toHaveLength(2);
+    expect(
+      screen.getByRole("dialog", { name: "New XCOM 2 Project" }).querySelectorAll("pre"),
+    ).toHaveLength(2);
   });
 
   it("renders exact absences, warnings, and canonical digest integrity", () => {
@@ -345,6 +347,53 @@ describe("Xcom2ProjectFoundryDialog", () => {
     expect(props.viewState.kind === "ready" && props.viewState.plan).toBe(plan);
   });
 
+  it("portals above a hostile background, isolates pointer events, and restores ownership on unmount", async () => {
+    const onBackgroundClick = vi.fn();
+    const onSelectSourceRepository = vi.fn();
+
+    function HostileApp({ open }: { readonly open: boolean }): JSX.Element {
+      return (
+        <div onClick={onBackgroundClick}>
+          <button
+            type="button"
+            className="xterm-screen"
+            style={{ position: "fixed", inset: 0, zIndex: 2_147_483_646 }}
+          >
+            Hostile terminal background
+          </button>
+          {open ? <Xcom2ProjectFoundryDialog {...baseProps({ onSelectSourceRepository })} /> : null}
+        </div>
+      );
+    }
+
+    const { container, rerender } = render(<HostileApp open={false} />);
+    const background = screen.getByRole("button", { name: "Hostile terminal background" });
+    background.focus();
+
+    rerender(<HostileApp open />);
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    const layer = dialog.parentElement;
+    expect(layer?.parentElement).toBe(document.body);
+    expect(layer?.className).toContain("isolate");
+    expect(layer?.className).toContain("z-[2147483647]");
+    expect(container.hasAttribute("inert")).toBe(true);
+
+    await userEvent.click(background);
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Select EMPT repository" }));
+    expect(onSelectSourceRepository).toHaveBeenCalledTimes(1);
+    expect(onBackgroundClick).not.toHaveBeenCalled();
+
+    rerender(<HostileApp open={false} />);
+    expect(document.querySelector('[data-dialog-layer="modal"]')).toBeNull();
+    expect(container.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(background);
+
+    await userEvent.click(background);
+    expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+  });
+
   it("traps keyboard focus, maps Escape and the visible Cancel control to onCancel", async () => {
     const onCancel = vi.fn();
     render(<Xcom2ProjectFoundryDialog {...baseProps({ onCancel })} />);
@@ -385,7 +434,7 @@ describe("Xcom2ProjectFoundryDialog", () => {
   });
 
   it("keeps large plan content vertically scrollable and tables and exact code horizontally safe", () => {
-    const { container } = render(
+    render(
       <Xcom2ProjectFoundryDialog
         {...baseProps({ viewState: { kind: "ready", plan: readyPlan() } })}
       />,
@@ -396,7 +445,7 @@ describe("Xcom2ProjectFoundryDialog", () => {
     for (const table of screen.getAllByRole("table")) {
       expect(table.parentElement?.className).toContain("overflow-x-auto");
     }
-    for (const preview of container.querySelectorAll("pre")) {
+    for (const preview of screen.getByRole("dialog").querySelectorAll("pre")) {
       expect(preview.parentElement?.className).toContain("overflow-auto");
       expect(preview.className).toContain("whitespace-pre");
     }
