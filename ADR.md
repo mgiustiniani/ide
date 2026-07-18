@@ -483,7 +483,7 @@ Implement the XCOM setup mutation foundation as a native, durable transaction en
 
 ## ADR 0010 — Deterministic Project Foundry v1 for XCOM 2
 
-**Status:** Accepted. The deterministic preview-and-discard slice is CURRENT/AS-BUILT and `REQ-XCOM2-PROJECT-FOUNDRY-001` is declared `@implemented-not-e2e-validated` at repository HEAD `159b59b`. Native chooser GUI/E2E acceptance and the complete creation lifecycle remain FUTURE/TARGET; this status grants no licensing clearance, packaging, publication, release, or distribution claim.
+**Status:** Accepted target architecture; implementation promotion suspended. At clean repository HEAD `9d1214d`, the exact deterministic evidence from `c88198f` establishes only the exact `FoundryPreviewFixture` fixture path and data. It does not establish correct rendering for an arbitrary valid `ModId`. Promotion of `REQ-XCOM2-PROJECT-FOUNDRY-001` is suspended pending the renderer correction below; this ADR makes no broad CURRENT/AS-BUILT or `@implemented-not-e2e-validated` claim. `REQ-XCOM2-PROJECT-FOUNDRY-002` remains `@not-implemented` and unwired despite Apply scaffolding and production code now being present. Native chooser GUI/E2E acceptance and the complete creation lifecycle remain FUTURE/TARGET; this status grants no licensing clearance, packaging, publication, release, or distribution claim.
 
 ### Context
 
@@ -491,13 +491,13 @@ Project Foundry v1 needs a deterministic plan for creating an XCOM 2 mod project
 
 The desired output is the semantic project topology after the template's `RUN_THIS` processing, not its wizard inputs or intermediate files. The plan must therefore define exact identity, transformations, generated content, topology, absences, fingerprints, and non-execution boundaries. The extraction-ready pack must not become a second source of template bytes, and structural separability alone cannot satisfy the licensing and publication boundary.
 
-The first bounded increment is narrower than project creation: it is approved to provide deterministic preview and discard only through production use cases and a separate test composition. Native selection, output mutation, Apply, staging, journaling, recovery, and native acceptance remain later target work. The complete creation lifecycle is retained below only as an explicitly later architectural boundary.
+The first bounded increment was approved as narrower than project creation: deterministic preview and discard only through production use cases and a separate test composition. A clean-HEAD review at `9d1214d` found that the implementation does not satisfy the approved rendering authority for arbitrary valid `ModId` values: `packages/web-core` owns fixture-hardcoded approved output metadata and previews, so a non-fixture valid `ModId` can produce an internally inconsistent plan. The exact fixture evidence remains useful but cannot support a general implementation promotion. Native selection, corrected rendering, output mutation, Apply, staging, journaling, recovery, and native acceptance remain target work unless separately and honestly validated.
 
 The approved target is Linux native desktop only. Windows implementation, evidence, and parity are postponed until the end of the project. There is no web route.
 
 ### Decision
 
-Adopt **Project Foundry v1**. The policy below retains the originally accepted full target; the explicit 2026-07-18 lifecycle amendment promotes only the bounded preview-and-discard slice and leaves every later lifecycle boundary FUTURE/TARGET.
+Adopt **Project Foundry v1**. The policy below retains the accepted target architecture. The 2026-07-18 authority/evidence correction explicitly supersedes the earlier preview promotion language: no Foundry requirement is promoted by this ADR while the renderer defect remains.
 
 #### Platform, packaging, and licensing boundary
 
@@ -606,11 +606,20 @@ The topology explicitly excludes `.XComMod`, `.ide/xcom2.json`, Git initializati
   https://github.com/Iridar/EnhancedModProjectTemplate
   ```
 
-- Every untouched mapped source blob is copied byte-identically from the exact Git object.
+- Every untouched mapped source blob is copied byte-identically from the exact Git object by the authoritative Rust renderer.
+
+#### Authoritative Rust renderer and TypeScript custody boundary
+
+- One shared Rust in-process `git2` renderer is the sole output authority for both Preview and Apply. For the exact validated `ModId`, it reopens the pinned commit, tree, and required blobs from the granted local object database, verifies every expected fingerprint, dynamically performs the approved transformations and generation, and returns the complete rendered plan body together with the internal bytes for every output file.
+- Preview and Apply must invoke that same renderer implementation. Neither path may reconstruct output from a parallel manifest, fixture, cached frontend plan, or separately maintained transformation implementation.
+- `packages/web-core` contains no EMPT or other template-derived bytes and no fixture-hardcoded approved output paths, sizes, hashes, generated previews, or other output metadata. It must not infer authoritative output from the recipe alone.
+- TypeScript receives a renderer DTO, validates its complete closed schema strictly, computes the plan digest as SHA-256 over the RFC 8785 canonical JSON plan body, and deep-freezes, retains, and displays the immutable preview. TypeScript owns validation, digest custody, approval state, and presentation; it is not output authority and cannot repair, supplement, substitute, or reinterpret renderer output.
+- Apply submits only the expected digest and bound identities, including the exact `ModId` and source, parent, destination, and operation-grant identities. It sends no authoritative manifest or rendered file bytes. Rust reopens the pinned blobs, reruns the same renderer, recomputes and authoritatively verifies the complete rendered result and expected digest, and only then may enter the separately approved write transaction.
+- Any malformed, incomplete, contradictory, unexpected, or non-canonical rendered plan or internal-byte result stops as `rendered-plan-invalid`. Its presentation-safe summary is **The project preview could not be validated.** Only that code and safe summary may cross the native boundary or be rendered or retained; no raw renderer, parser, validation, or other internal reason may cross, be rendered, or be retained.
 
 #### Preview contract
 
-Preview is a complete immutable plan, not proof that output was created. It shows and digest-binds:
+Preview is the strictly validated, deep-frozen complete plan returned by the shared Rust renderer, not proof that output was created. It shows and digest-binds:
 
 - pack ID `ide.xcom2.empt-v1_4`, Linux-only scope, and non-publishable status;
 - selected source repository and grant identity, full commit and tree IDs, source fingerprint result, and the statement that working-tree and untracked content are ignored;
@@ -621,7 +630,7 @@ Preview is a complete immutable plan, not proof that output was created. It show
 - the four default absences and all other explicit topology absences above; and
 - warnings that there is no `.XComMod`, build, deployment, cooking, SDK/game validation, collision validation, or Windows support, and that changed or unexpected output will be preserved rather than rolled back or removed.
 
-The plan digest is SHA-256 over a versioned RFC 8785 canonical JSON representation of all bound plan data. Any change to source, fingerprints, grants, identities, GUID, destination, topology, mode, size, content hash, classification, generated content, warning, absence, option, or canonical-schema version produces a different plan or a refusal.
+After strict DTO validation, TypeScript computes the plan digest as SHA-256 over a versioned RFC 8785 canonical JSON representation of all bound plan data. Rust independently recomputes and verifies that digest from the same shared renderer during Apply. Any change to source, fingerprints, grants, identities, GUID, destination, topology, mode, size, content hash, classification, generated content, warning, absence, option, or canonical-schema version produces a different plan or a refusal.
 
 Copied PowerShell and C# files are inert output only. Preview must say that Foundry never executes them.
 
@@ -633,43 +642,42 @@ Foundry never executes anything. It must not invoke Visual Studio, the template 
 
 The first increment is limited to **preview and discard an exact EMPT v1.4 creation plan**:
 
-- A separate test-only deterministic composition must supply fake source and destination selector grants and a development-local external EMPT repository while invoking the unchanged production use cases.
-- No query parameter, environment switch, hidden command, test branch, production backdoor, or alternate test-only use case may be added to production.
-- The increment must cover one valid exact `ModId`, exact local object resolution, the complete 27-file/two-empty-directory preview, fingerprints, generated content, warnings, classifications, and explicit absences.
-- Cancel before or after preview writes nothing, discards the plan, and revokes the supplied grants.
+- A separate test-only deterministic composition may supply fake native-chooser results for the source repository and selected existing parent plus a development-local external EMPT repository, while invoking the unchanged production use cases. It must not supply fixture output metadata, rendered bytes, or an operation grant: Preview must still use the shared Rust renderer, which mints the exact operation grant only after a successful exact render.
+- No query parameter, environment switch, hidden command, test branch, production backdoor, alternate test-only use case, or frontend output authority may be added to production.
+- The increment must cover dynamic rendering for accepted exact `ModId` values, exact local object resolution, the complete 27-file/two-empty-directory preview, fingerprints, generated content, warnings, classifications, explicit absences, and internally consistent identities, paths, bytes, sizes, and hashes.
+- Cancel before or after preview writes nothing, discards the plan, and revokes the source grant, selected-parent grant, and any operation grant minted after a successful render.
 - The increment has no real native source or destination selection, no native chooser acceptance, no Apply, no staging, no journal, no recovery, no filesystem output, and no execution claim.
 
 This deterministic test tier does not establish native acceptance, completed creation, implementation of later lifecycle boundaries, or complete requirement status.
 
-#### 2026-07-18 preview lifecycle and evidence amendment
+#### 2026-07-18 authority and evidence correction
 
-The preceding approval-only and first-increment language is retained as the historical target record. At repository HEAD `159b59b`, the bounded preview-and-discard slice is CURRENT/AS-BUILT and `REQ-XCOM2-PROJECT-FOUNDRY-001` is promoted only to `@implemented-not-e2e-validated`. The accepted full decision remains active, while native acceptance and all creation behavior remain FUTURE/TARGET.
+The preceding first-increment language remains the historical target record, but the earlier broad preview lifecycle promotion is explicitly superseded. This correction records the discovery at clean repository HEAD `9d1214d` without rewriting the original rationale.
 
-- The deterministic `desktop/tauri-harness` Story passed 1 scenario/35 steps at exact clean validation baseline `c88198f`. It exercised the production desktop `App`, globally available **New XCOM 2 Project** control, controller, shared dialog UI, and pure preview/discard plan through a separate deterministic composition. That composition supplied fake selectors and a development-local source adapter; it was not a native chooser, native WebView GUI, real IPC, packaged-application, or E2E run.
-- The production desktop composition separately includes a strict typed Tauri adapter that invokes the native directory-dialog plugin and fail-closed Foundry commands. The Rust boundary uses in-process `git2` to attest the selected repository's exact commit `d968be3c32b250376723563a743a120770ec5c95` and tree `cc8823fa99c0d292c4fe48a8b9463ff790176371` from its local Git object database, ignoring working-tree and untracked content. Focused adapter and Rust tests cover this composition and authority boundary, but their existence does not promote a native chooser GUI/E2E claim.
-- The validated preview contains exactly 12 mode-`0755` directories and 27 mode-`0644` regular files, including two explicitly empty directories and no symlink. It derives the uppercase-braced UUIDv5 identity and binds the complete versioned plan with SHA-256 over RFC 8785 canonical JSON. The recipe carries expected fingerprints only; no EMPT template blob or other template byte is bundled.
-- Cancel discards the plan, leaves the recorded source and destination trees unchanged, keeps the derived destination absent, performs zero filesystem/project-state writes and zero process invocations, and revokes the supplied source, destination-parent, and operation grants without retained authority.
-- This promotion establishes no Apply, project creation, filesystem output, staging, journal, recovery, removal, build, deployment, cooking, package, bundle, installer, release, distribution, extracted-module, licensing-clearance, SDK/game validation, Windows implementation/parity, or native chooser GUI/E2E behavior. Linux remains the only platform; Windows remains end-of-project work.
-- The global Foundry dialog is neither machine Settings nor an activated XCOM project contribution. It does not activate, switch, or replace the current workspace, and it does not merge machine Settings with project recognition or contextual project tools. Existing RefactorKit provider authority and package-isolation policies remain unchanged: shared UI, contracts, and web-core planning do not acquire Tauri, Git, process, or template-byte authority; native dialog and Git-object authority stay behind the Tauri/Rust boundary.
-- Publication remains fail-closed until the XCOM capability is explicitly extracted as a separately distributable module and the applicable licensing, attribution, notices, and redistribution policy is approved. Implementation and local deterministic evidence do not satisfy that gate.
+- The deterministic `desktop/tauri-harness` Story passed 1 scenario/35 steps at exact clean validation baseline `c88198f`. Its valid evidence is limited to the exact `FoundryPreviewFixture` fixture path and data exercised through the production desktop `App`, global **New XCOM 2 Project** control, controller, shared dialog UI, and separate deterministic composition. It was not a native chooser, native WebView GUI, real IPC, packaged-application, or E2E run.
+- That exact fixture shows a 12-directory/27-file preview, two empty directories, no symlink, the fixture UUIDv5 identity, the fixture generated previews and metadata, digest custody, zero-write discard, and revocation for the supplied fake grants. These observations remain evidence only for those exact fixture values.
+- The current `packages/web-core` approved metadata is hardcoded to `FoundryPreviewFixture`, including output paths, byte sizes, hashes, and generated previews. For an arbitrary other valid `ModId`, the current planner changes some bound identities while retaining fixture-owned paths, previews, and metadata, producing an internally inconsistent plan. Therefore `c88198f` is not evidence of arbitrary valid-`ModId` correctness, and it cannot justify a broad CURRENT/AS-BUILT or `@implemented-not-e2e-validated` claim.
+- Current Rust `git2` code attests pinned local objects and current frontend/controller code provides Preview and Apply scaffolding, but the production path does not yet implement the shared authoritative Rust renderer specified above. Presence of scaffolding, focused tests, UI/controller state, adapters, or production code is not completion evidence.
+- Promotion of `REQ-XCOM2-PROJECT-FOUNDRY-001` is suspended pending correction and new applicable evidence. `REQ-XCOM2-PROJECT-FOUNDRY-002` remains `@not-implemented` and unwired; there is no Apply validation, status promotion, filesystem-creation evidence, or native acceptance at clean HEAD `9d1214d`.
+- The global Foundry dialog remains neither machine Settings nor an activated XCOM project contribution. Linux remains the only target, Windows remains end-of-project work, and there is no web route. Publication, packaging, extraction, licensing, attribution, notices, redistribution, release, and distribution remain fail-closed exactly as stated above.
 
-#### Later native selection and grant target
+#### Native selection and grant target
 
-The following selection policy is retained as the original later acceptance boundary; it is not part of the promoted deterministic increment. The current strict Tauri adapter and Rust support recorded above do not by themselves establish native chooser GUI/E2E behavior:
+This target policy is not established by the exact fixture evidence. Current adapter or Rust scaffolding does not by itself establish its native chooser, renderer, grant-lifecycle, GUI/E2E, or Apply behavior:
 
 - The current-workspace source option is available only under the exact commit/tree condition above. Otherwise a native repository chooser obtains a source grant without switching the workspace.
 - The source grant authorizes only the selected repository's local object database and the exact pinned objects required by the recipe. It grants no working-tree, repository-mutation, network, process, or ambient external-root authority.
-- A native existing-parent folder chooser selects the destination parent. The only destination is the derived `<selected-parent>/<ModId>`; there is no independent destination basename.
-- Each operation receives explicit authority for the exact absent destination root and only its operation-specific same-parent staging and journal siblings. There is no remembered silent default or ambient external-root authority.
-- Preview binds source, parent, derived destination, and grant identities. Changed or replaced identities cannot inherit approval.
-- Grants are non-persistent and are revoked or consumed on cancel, discard, refusal, replacement, failure, or completion as appropriate.
-- Opening the created project is a separate explicit action after successful completion.
+- The native destination chooser grants only the selected existing parent. It does not mint an exact-destination or write-operation grant. The only candidate destination remains the derived `<selected-parent>/<ModId>`; there is no independent destination basename.
+- Only after the shared Rust renderer succeeds for the exact validated `ModId`, verifies the pinned fingerprints, and confirms the exact derived destination is absent may Rust mint an operation grant for that exact destination and its operation-specific same-parent stage/journal names. Rust binds that newly minted identity into the complete plan DTO before returning Preview. A successful new render atomically replaces and revokes any previous operation grant before its plan can be approved.
+- Any `ModId` change synchronously revokes the operation grant and clears the preview plan, digest, approval, and Apply authority before further asynchronous work. The selected-parent grant may remain because it authorizes only the existing parent; it cannot authorize a derived destination until a new exact render succeeds. Source or parent replacement likewise invalidates the plan and affected grants.
+- Preview binds source, selected parent, exact derived destination, and all grant identities. Apply uses the same renderer and can consume only the matching live operation grant. Changed or replaced identities cannot inherit approval.
+- Grants are non-persistent and are revoked or consumed on cancel, discard, refusal, replacement, failure, or completion as appropriate. Opening the created project is a separate explicit action after successful completion.
 
 #### Later Apply, staging, journal, removal, and recovery target
 
 The following lifecycle is also reserved for later stories and decisions and makes no claim about increment 1:
 
-- Apply is one-shot and repeat submission is disabled. Before mutation it revalidates every source object and fingerprint, grant and parent identity, destination absence, plan digest, and bound plan field. Any stale, changed, unreadable, absent, unexpected, or mismatched condition refuses Apply and requires a new preview.
+- Apply is one-shot and repeat submission is disabled. Before mutation Rust uses the same shared renderer as Preview to reopen every required source blob, verify expected fingerprints, dynamically rerender the complete plan and internal file bytes for the exact `ModId`, and revalidate every grant, parent, destination, digest, and bound plan field. Any stale, changed, unreadable, absent, unexpected, malformed, internally inconsistent, or mismatched condition refuses Apply and requires a new preview; an invalid renderer result stops safely as `rendered-plan-invalid`.
 - Apply stages on the same filesystem at `.<ModId>.foundry-stage-<full-plan-digest>` and records a private mode-`0600` sibling journal at `.<ModId>.foundry-journal-<full-plan-digest>.json`.
 - It verifies the complete staged topology, modes, bytes, and fingerprints before atomically renaming the stage to the still-absent destination. Rename is the commit point; no merge or copy-over is permitted.
 - Before rename, failure triggers cleanup only after verifying the exact operation-owned stage. Anything unverified is preserved.
@@ -679,15 +687,15 @@ The following lifecycle is also reserved for later stories and decisions and mak
 
 #### Next exact-preview Apply slice — FUTURE/TARGET only
 
-The domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` to the next approved Foundry slice. This is approval of a FUTURE/TARGET architectural boundary only: it does not change the status or wording of the CURRENT/AS-BUILT preview amendment above and records no Apply implementation, test, native-acceptance, or completion evidence.
+The domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` to the next approved Foundry slice. This is approval of a FUTURE/TARGET architectural boundary only. It does not reinstate the suspended `REQ-XCOM2-PROJECT-FOUNDRY-001` promotion and records no Apply implementation, wiring, validation, native acceptance, status promotion, or completion evidence.
 
 This slice is one-shot **Apply the exact preview**:
 
 - Apply is available only for one still-live preview and is bound to that preview's exact full SHA-256 plan digest. Plain-language helper text must show the exact derived destination path and explain that Foundry will create that project once. The first submission consumes the Apply authority and disables repeat submission; success, refusal, or failure requires a new preview before any later Apply attempt.
-- The frontend submits the expected preview digest and bound operation identities, not authoritative output. Rust independently reopens the pinned local Git objects, revalidates the recipe inputs and fingerprints, renders the complete post-`RUN_THIS` plan and file bytes, validates the `ModId`, grants, selected parent, derived destination absence, topology, modes, sizes, hashes, classifications, generated content, warnings, absences, and canonical-schema version, and recomputes the RFC 8785 digest. A frontend DTO, manifest, claimed digest, path, rendered byte sequence, or success assertion is never trusted as filesystem-write authority. Any mismatch refuses before destination commit.
+- The frontend submits only the expected preview digest and bound identities, including the exact `ModId` and grant identities, never authoritative output. Rust invokes the same shared in-process `git2` renderer used by Preview: it reopens the pinned local blobs, revalidates every expected fingerprint, dynamically renders the complete post-`RUN_THIS` plan and internal file bytes, validates the grants, selected parent, exact derived destination absence, topology, modes, sizes, hashes, classifications, generated content, warnings, absences, and canonical-schema version, and independently recomputes and verifies the RFC 8785/SHA-256 digest. A frontend DTO, manifest, claimed digest, path, rendered byte sequence, or success assertion is never trusted as filesystem-write authority. Any mismatch refuses before staging or destination commit.
 - Rust keeps the selected source repository read-only and starts no process. It creates the private mode-`0600` journal and same-parent stage under the digest-bound names `.<ModId>.foundry-journal-<full-plan-digest>.json` and `.<ModId>.foundry-stage-<full-plan-digest>` with exclusive, no-follow semantics. The stage contains exactly the previewed 12 mode-`0755` destination directories, counting the destination root, and 27 mode-`0644` regular files; the sibling stage and journal mechanics are not additional destination topology.
 - Durability is explicit: Rust fsyncs every completed file, the staged directories after their entries are complete, the journal at each durable phase transition, and the selected parent when sibling entries change. After exact staged revalidation, Linux `renameat2(..., RENAME_NOREPLACE)` atomically commits the stage to the still-absent destination; no check-then-replace rename, merge, copy-over, non-atomic fallback, or destination adoption is permitted. Rust then fsyncs the parent, durably completes and removes the journal, fsyncs the parent again, and only then reports success.
-- A pre-commit refusal leaves the destination absent. Ordinary in-process cleanup may remove only an exact operation-owned stage that has been reverified under the existing policy; interrupted, stale, mismatched, or unverified staging/journal state is preserved. A post-rename durability failure reports **created; recovery required** rather than success or rollback.
+- A pre-commit refusal leaves the destination absent. A malformed, incomplete, contradictory, unexpected, or non-canonical renderer DTO or internal-byte result returns only `rendered-plan-invalid` with the safe summary **The project preview could not be validated.** No raw renderer, parser, validation, or other internal reason crosses the native boundary or is rendered or retained. Ordinary in-process cleanup may remove only an exact operation-owned stage that has been reverified under the existing policy; interrupted, stale, mismatched, or unverified staging/journal state is preserved. A post-rename durability failure reports **created; recovery required** rather than success or rollback.
 - Successful completion returns an immutable in-memory receipt containing the exact plan digest, derived destination, source commit/tree identities, and the `12`-directory/`27`-file committed counts. The receipt creates no durable project, workspace, Settings, machine, or recent-project configuration and grants no later authority.
 
 The slice has no repeat Apply, source-repository write, working-tree write, process execution, auto-open, project/workspace/machine configuration, build, deployment, cooking, launch, SDK/game mutation or validation, native chooser or native GUI/E2E acceptance, Windows implementation/parity, package, bundle, installer, extracted-module, licensing-clearance, publication, release, or distribution claim. The previewed template-owned files under `Config/` remain inert creation output and do not constitute IDE or tool configuration authority.
@@ -696,11 +704,11 @@ Stale-preview and interrupted staging/journal discovery and recovery, post-commi
 
 #### Requirements and acceptance handoff
 
-The requirements owner assigns stable requirement identifiers and statuses; this ADR does not originate or independently promote them. The lifecycle amendment above late-reconciles the current `REQ-XCOM2-PROJECT-FOUNDRY-001` declaration and its bounded evidence; the domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` only to the approved FUTURE/TARGET Apply boundary above. Requirement and acceptance work must preserve the following split without treating broader target approval as implementation or evidence.
+The requirements owner assigns stable requirement identifiers and statuses; this ADR does not originate or independently promote them. The authority/evidence correction suspends promotion of `REQ-XCOM2-PROJECT-FOUNDRY-001` pending the shared Rust renderer and applicable new evidence. The domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` only to the approved FUTURE/TARGET Apply boundary above. Requirement and acceptance work must preserve this split without treating target approval, scaffolding, production code, focused tests, or exact-fixture evidence as general implementation or validation.
 
-The first bounded story covers deterministic preview and discard only: the exact source commit/tree and dirty-worktree independence; exact `ModId` and GUID; direct post-`RUN_THIS` transformations; complete topology, bytes, modes, sizes, hashes, classifications, generated content, warnings, and absences; strict no-execution; and cancel/discard with zero mutation and grant revocation through the separate fake-selector composition over unchanged production use cases.
+The first bounded story targets deterministic preview and discard: the exact source commit/tree and dirty-worktree independence; dynamic correctness for every accepted exact `ModId`; one shared Rust renderer returning the complete plan body and internal file bytes; strict TypeScript DTO validation, RFC 8785/SHA-256 digest custody, deep-freeze and display; exact topology, modes, sizes, hashes, classifications, generated content, warnings, and absences; strict no-execution; and cancel/discard with zero mutation and correct grant revocation. At `9d1214d`, `c88198f` establishes only the exact `FoundryPreviewFixture` fixture path/data subset, not this complete target.
 
-The next approved FUTURE/TARGET Story, `REQ-XCOM2-PROJECT-FOUNDRY-002`, covers only the digest-bound one-shot Apply path specified above: plain-language destination helper, independent Rust rendering and revalidation, exact staged and journaled Linux no-replace commit with explicit fsync durability, and an in-memory receipt.
+The next approved FUTURE/TARGET Story, `REQ-XCOM2-PROJECT-FOUNDRY-002`, remains `@not-implemented` and unwired despite current Apply scaffolding and production code. It covers only the digest-bound one-shot Apply path specified above: plain-language destination helper, rerendering and authoritative revalidation through the same Rust renderer as Preview, exact staged and journaled Linux no-replace commit with explicit fsync durability, and an in-memory receipt. No Apply validation or status promotion is recorded.
 
 Still-later stories cover, independently:
 
@@ -718,13 +726,15 @@ Still-later stories cover, independently:
 - One exact commit and tree, one exact `ModId`, deterministic UUIDv5 identity, and a complete canonical preview make the proposed project independently inspectable without executing template tooling.
 - The pack remains structurally extractable without embedding a second copy of EMPT source bytes.
 - Direct post-`RUN_THIS` data semantics exclude wizard intermediates and define one exact 27-file destination.
-- The first increment can validate deterministic production planning and zero-mutation discard without pretending fake selectors are native chooser evidence.
-- Later exact-root grants, staged atomic commit, journals, conflict refusal, and explicit recovery have clear architectural boundaries without being claimed as increment-1 behavior.
+- The corrected boundary gives Preview and Apply one native rendering authority while keeping TypeScript responsible only for strict DTO validation, digest custody, immutable approval state, and presentation.
+- Exact-fixture evidence can remain useful without being overgeneralized to arbitrary valid `ModId` rendering or native chooser evidence.
+- Later exact-root grants, staged atomic commit, journals, conflict refusal, and explicit recovery have clear architectural boundaries without being claimed as current behavior.
 - Linux-only and no-web boundaries prevent premature Windows, native-acceptance, and browser claims.
 
 **Negative:**
 
-- The first increment creates no project; native selection, Apply, staging, journal, recovery, removal, and filesystem output remain later work.
+- At clean HEAD `9d1214d`, fixture-hardcoded web-core metadata makes arbitrary valid-`ModId` plans internally inconsistent, so preview promotion remains suspended until the shared Rust renderer is implemented and newly evidenced.
+- `REQ-XCOM2-PROJECT-FOUNDRY-002` remains unwired and not implemented; current scaffolding and production code provide no Apply validation or status.
 - Users will need the exact local commit and tree; missing or mismatched object evidence stops planning rather than falling back.
 - The conservative `ModId` grammar and device-name refusal reject names that broader filesystems might accept, and Foundry cannot validate SDK/game collisions.
 - Exact plan binding means any relevant source, grant, destination, identity, topology, warning, or content change requires a new preview.
