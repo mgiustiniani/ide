@@ -40,6 +40,15 @@ export { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
 export type { Xcom2SetupMonitorPollOptions } from "./xcom2-setup-monitor-tauri";
 export { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
 export type { Xcom2SetupPollOptions } from "./xcom2-setup-tauri";
+export {
+  TauriXcom2ProjectFoundryAdapter,
+  TauriProjectFoundryAdapter,
+  TauriProjectFoundrySelectionCancelledError,
+  XCOM2_PROJECT_FOUNDRY_COMMANDS,
+  createTauriXcom2ProjectFoundryComposition,
+  createTauriProjectFoundryComposition,
+} from "./xcom2-project-foundry-tauri";
+export type { TauriXcom2ProjectFoundryComposition } from "./xcom2-project-foundry-tauri";
 export { TauriAdapterError, toTauriAdapterError } from "./errors";
 
 /**

@@ -224,6 +224,9 @@ importers:
       "@tauri-apps/api":
         specifier: ^2.0.0
         version: 2.11.1
+      "@tauri-apps/plugin-dialog":
+        specifier: ^2.7.1
+        version: 2.7.1
     devDependencies:
       eslint:
         specifier: ^9.10.0
@@ -1598,6 +1601,12 @@ packages:
     resolution:
       {
         integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==,
+      }
+
+  "@tauri-apps/plugin-dialog@2.7.1":
+    resolution:
+      {
+        integrity: sha512-OK1UBXYt+ojcmxMktzzuyonYIFta8CmAASpX+CA+DTGK24KlHjhYI6x2iOJ/TjZF4N7/ACK1oFmEOjIY9IhzOQ==,
       }
 
   "@tauri-apps/cli-darwin-arm64@2.11.4":
@@ -6336,6 +6345,10 @@ snapshots:
     optional: true
 
   "@tauri-apps/api@2.11.1": {}
+
+  "@tauri-apps/plugin-dialog@2.7.1":
+    dependencies:
+      "@tauri-apps/api": 2.11.1
 
   "@tauri-apps/cli-darwin-arm64@2.11.4":
     optional: true

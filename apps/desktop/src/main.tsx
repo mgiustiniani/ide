@@ -6,6 +6,7 @@
 
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { createTauriXcom2ProjectFoundryComposition } from "@ide/tauri-adapters";
 
 import "@ide/ui/styles/globals.css";
 import { App } from "./App";
@@ -18,8 +19,10 @@ if (!rootElement) {
   );
 }
 
+const projectFoundry = createTauriXcom2ProjectFoundryComposition();
+
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
+    <App projectFoundry={projectFoundry} />
   </React.StrictMode>,
 );
