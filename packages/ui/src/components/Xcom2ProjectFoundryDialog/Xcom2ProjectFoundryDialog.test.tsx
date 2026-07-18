@@ -1,5 +1,6 @@
 import {
   XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
+  type Xcom2ProjectFoundryCreatedReceipt,
   type Xcom2ProjectFoundryPreviewPlan,
 } from "@ide/contracts";
 import { fireEvent, render, screen, within } from "@testing-library/react";
@@ -19,6 +20,7 @@ import {
 } from "./Xcom2ProjectFoundryDialog";
 
 const PLAN_DIGEST = "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6";
+const FINAL_PROJECT_LOCATION = "/scenario/foundry-output/FoundryPreviewFixture";
 
 function readyPlan(): Xcom2ProjectFoundryPreviewPlan {
   return {
@@ -72,6 +74,18 @@ function readyPlan(): Xcom2ProjectFoundryPreviewPlan {
   };
 }
 
+function createdReceipt(): Xcom2ProjectFoundryCreatedReceipt {
+  return {
+    result: "created",
+    planDigest: PLAN_DIGEST,
+    finalProjectLocation: FINAL_PROJECT_LOCATION,
+    sourceCommit: "d968be3c32b250376723563a743a120770ec5c95",
+    sourceTree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
+    committedDirectories: 12,
+    committedFiles: 27,
+  };
+}
+
 function baseProps(
   overrides: Partial<Xcom2ProjectFoundryDialogProps> = {},
 ): Xcom2ProjectFoundryDialogProps {
@@ -79,6 +93,7 @@ function baseProps(
     sourceRepository: "/scenario/empt-v1_4",
     destinationParent: "/scenario/foundry-output",
     modId: "FoundryPreviewFixture",
+    finalProjectLocation: FINAL_PROJECT_LOCATION,
     viewState: { kind: "editing" },
     onSelectSourceRepository: vi.fn(),
     onSelectDestinationParent: vi.fn(),
@@ -118,6 +133,9 @@ describe("Xcom2ProjectFoundryDialog", () => {
     const source = within(form).getByLabelText("EMPT repository") as HTMLInputElement;
     const destination = within(form).getByLabelText("Destination parent") as HTMLInputElement;
     const modId = within(form).getByLabelText("ModId") as HTMLInputElement;
+    const finalProjectLocation = within(form).getByLabelText(
+      "Final project location",
+    ) as HTMLInputElement;
 
     expect(source.readOnly).toBe(true);
     expect(source.value).toBe("/scenario/empt-v1_4");
@@ -125,8 +143,61 @@ describe("Xcom2ProjectFoundryDialog", () => {
     expect(destination.value).toBe("/scenario/foundry-output");
     expect(modId.readOnly).toBe(false);
     expect(modId.value).toBe("FoundryPreviewFixture");
+    expect(finalProjectLocation.readOnly).toBe(true);
+    expect(finalProjectLocation.value).toBe(FINAL_PROJECT_LOCATION);
     expect(within(form).getByRole("button", { name: "Preview" })).toBeDefined();
     expect(within(form).getByRole("button", { name: "Cancel" })).toBeDefined();
+  });
+
+  it("exposes the exact Gherkin helper descriptions through each field's accessibility tree", () => {
+    render(<Xcom2ProjectFoundryDialog {...baseProps()} />);
+
+    const cases = [
+      [
+        "EMPT repository",
+        "Choose the local EMPT v1.4 repository. Foundry reads only its pinned committed Git objects and ignores working-tree changes and untracked files.",
+      ],
+      [
+        "Destination parent",
+        "Choose the existing folder that will contain the new project. Foundry will not change its other entries.",
+      ],
+      [
+        "ModId",
+        "Use 1–48 ASCII letters, digits, or underscores, beginning with a letter. Windows device names are refused. Foundry uses this ModId for the generated project.",
+      ],
+      [
+        "Final project location",
+        "Foundry will create this exact project location once after you approve the preview.",
+      ],
+    ] as const;
+
+    for (const [name, description] of cases) {
+      const field = screen.getByRole("textbox", { name, description });
+      const describedBy = field.getAttribute("aria-describedby");
+      expect(describedBy).not.toBeNull();
+      expect(document.getElementById(describedBy ?? "")?.textContent).toBe(description);
+    }
+  });
+
+  it("renders Final project location only from its controlled prop", () => {
+    const { rerender } = render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({ finalProjectLocation: "/controlled/exact/location" })}
+      />,
+    );
+    const field = screen.getByLabelText("Final project location") as HTMLInputElement;
+    expect(field.value).toBe("/controlled/exact/location");
+
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          destinationParent: "/different/parent",
+          modId: "DifferentMod",
+          finalProjectLocation: "/second/controlled/location",
+        })}
+      />,
+    );
+    expect(field.value).toBe("/second/controlled/location");
   });
 
   it("reports source, destination, and exact case-preserved ModId interactions only through callbacks", async () => {
@@ -327,6 +398,118 @@ describe("Xcom2ProjectFoundryDialog", () => {
     ).toBeDefined();
   });
 
+  it("offers exact-plan creation only for a current ready preview and immediately disables stale props", () => {
+    const onCreateProject = vi.fn();
+    const plan = readyPlan();
+    const current = baseProps({
+      viewState: { kind: "ready", plan },
+      creationState: { kind: "ready" },
+      onCreateProject,
+    });
+    const { rerender } = render(<Xcom2ProjectFoundryDialog {...current} />);
+    const create = screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+
+    for (const stale of [
+      { sourceRepository: "/replacement/source" },
+      { destinationParent: "/replacement/destination" },
+      { modId: "ReplacementMod" },
+      { finalProjectLocation: "/replacement/final-location" },
+    ]) {
+      rerender(<Xcom2ProjectFoundryDialog {...current} {...stale} />);
+      expect(create.disabled).toBe(true);
+      fireEvent.click(create);
+    }
+    expect(onCreateProject).not.toHaveBeenCalled();
+
+    rerender(<Xcom2ProjectFoundryDialog {...current} />);
+    expect(create.disabled).toBe(false);
+    rerender(
+      <Xcom2ProjectFoundryDialog
+        {...current}
+        viewState={{ kind: "editing" }}
+        creationState={{ kind: "unavailable" }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
+  });
+
+  it("submits the displayed digest once and disables synchronously and from creating/consumed props", () => {
+    const onCreateProject = vi.fn();
+    const plan = readyPlan();
+    const props = baseProps({
+      viewState: { kind: "ready", plan },
+      creationState: { kind: "ready" },
+      onCreateProject,
+    });
+    const { rerender } = render(<Xcom2ProjectFoundryDialog {...props} />);
+    const create = screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement;
+
+    fireEvent.click(create);
+    expect(onCreateProject).toHaveBeenCalledExactlyOnceWith(PLAN_DIGEST);
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    expect(onCreateProject).toHaveBeenCalledTimes(1);
+
+    rerender(<Xcom2ProjectFoundryDialog {...props} creationState={{ kind: "creating" }} />);
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    rerender(<Xcom2ProjectFoundryDialog {...props} creationState={{ kind: "consumed" }} />);
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    expect(onCreateProject).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces the exact creating status while retaining one disabled creation control", () => {
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: { kind: "creating" },
+          onCreateProject: vi.fn(),
+        })}
+      />,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toBe("Creating project…");
+    const controls = screen.getAllByRole("button", { name: "Create project" });
+    expect(controls).toHaveLength(1);
+    expect((controls[0] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("announces creation and renders the exact immutable contract receipt", () => {
+    const receipt = deepFreeze(createdReceipt());
+    const before = structuredClone(receipt);
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: { kind: "created", receipt },
+          onCreateProject: vi.fn(),
+        })}
+      />,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toBe("Project created");
+    expect(tableRows("Project Foundry creation receipt")).toEqual([
+      ["result", "created"],
+      ["plan digest", PLAN_DIGEST],
+      ["final project location", FINAL_PROJECT_LOCATION],
+      ["source commit", "d968be3c32b250376723563a743a120770ec5c95"],
+      ["source tree", "cc8823fa99c0d292c4fe48a8b9463ff790176371"],
+      ["committed directories", "12"],
+      ["committed files", "27"],
+    ]);
+    expect(receipt).toEqual(before);
+    expect(
+      (screen.getByRole("button", { name: "Create project" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it("never mutates controlled inputs or a deeply frozen ready plan", async () => {
     const plan = deepFreeze(readyPlan());
     const before = structuredClone(plan);
@@ -412,13 +595,18 @@ describe("Xcom2ProjectFoundryDialog", () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
-  it("offers no Apply, write, process, build, execution, or project-creation control", () => {
+  it("offers exactly one creation control without Apply, auto-open, or extra action wording", () => {
     render(
       <Xcom2ProjectFoundryDialog
-        {...baseProps({ viewState: { kind: "ready", plan: readyPlan() } })}
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: { kind: "ready" },
+          onCreateProject: vi.fn(),
+        })}
       />,
     );
-    const buttonNames = screen
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    const buttonNames = within(dialog)
       .getAllByRole("button")
       .map((button) => button.textContent?.trim() ?? "");
 
@@ -427,10 +615,14 @@ describe("Xcom2ProjectFoundryDialog", () => {
       "Select Destination parent",
       "Cancel",
       "Preview",
+      "Create project",
     ]);
-    expect(
-      buttonNames.some((name) => /apply|write|process|build|execute|create/iu.test(name)),
-    ).toBe(false);
+    expect(buttonNames.filter((name) => name === "Create project")).toHaveLength(1);
+    expect(buttonNames.some((name) => /apply|open|write|process|build|execute/iu.test(name))).toBe(
+      false,
+    );
+    expect(dialog.textContent).not.toMatch(/\bApply\b/u);
+    expect(dialog.textContent).not.toMatch(/auto-open|open project/iu);
   });
 
   it("keeps large plan content vertically scrollable and tables and exact code horizontally safe", () => {

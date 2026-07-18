@@ -1,8 +1,9 @@
 import type {
+  Xcom2ProjectFoundryCreatedReceipt,
   Xcom2ProjectFoundryPreviewPlan,
   Xcom2ProjectFoundryPreviewRefusalCode,
 } from "@ide/contracts";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { ModalLayer } from "../ui/ModalLayer";
 
@@ -18,15 +19,29 @@ export type Xcom2ProjectFoundryDialogViewState =
       readonly plan: Readonly<Xcom2ProjectFoundryPreviewPlan>;
     };
 
+export type Xcom2ProjectFoundryDialogCreationState =
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "ready" }
+  | { readonly kind: "creating" }
+  | { readonly kind: "consumed" }
+  | {
+      readonly kind: "created";
+      readonly receipt: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
+    };
+
 export interface Xcom2ProjectFoundryDialogProps {
   readonly sourceRepository: string;
   readonly destinationParent: string;
   readonly modId: string;
+  /** Controlled derived destination. The dialog never constructs a path from other fields. */
+  readonly finalProjectLocation?: string;
   readonly viewState: Xcom2ProjectFoundryDialogViewState;
+  readonly creationState?: Xcom2ProjectFoundryDialogCreationState;
   readonly onSelectSourceRepository: () => void | Promise<void>;
   readonly onSelectDestinationParent: () => void | Promise<void>;
   readonly onModIdChange: (modId: string) => void;
   readonly onPreview: (modId: string) => void | Promise<void>;
+  readonly onCreateProject?: (approvedPlanDigest: string) => void | Promise<void>;
   readonly onCancel: () => void | Promise<void>;
 }
 
@@ -126,6 +141,37 @@ function Section({
         {title}
       </h3>
       {children}
+    </section>
+  );
+}
+
+function CreationReceipt({
+  receipt,
+}: {
+  readonly receipt: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
+}): JSX.Element {
+  return (
+    <section className="space-y-2" aria-label="Project Foundry creation result">
+      <p
+        role="status"
+        aria-live="polite"
+        className="rounded border border-green-500/40 bg-green-500/10 p-3 text-sm font-semibold"
+      >
+        Project created
+      </p>
+      <PlanTable
+        caption="Project Foundry creation receipt"
+        headings={["Receipt field", "Exact value"]}
+        rows={[
+          ["result", receipt.result],
+          ["plan digest", <code className="break-all">{receipt.planDigest}</code>],
+          ["final project location", receipt.finalProjectLocation],
+          ["source commit", receipt.sourceCommit],
+          ["source tree", receipt.sourceTree],
+          ["committed directories", receipt.committedDirectories],
+          ["committed files", receipt.committedFiles],
+        ]}
+      />
     </section>
   );
 }
@@ -259,21 +305,42 @@ export function Xcom2ProjectFoundryDialog({
   sourceRepository,
   destinationParent,
   modId,
+  finalProjectLocation = "",
   viewState,
+  creationState = { kind: "unavailable" },
   onSelectSourceRepository,
   onSelectDestinationParent,
   onModIdChange,
   onPreview,
+  onCreateProject,
   onCancel,
 }: Xcom2ProjectFoundryDialogProps): JSX.Element {
   const titleId = useId();
   const descriptionId = useId();
+  const sourceRepositoryHelpId = useId();
+  const destinationParentHelpId = useId();
   const modIdHelpId = useId();
+  const finalProjectLocationHelpId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const submittedPlanRef = useRef<Readonly<Xcom2ProjectFoundryPreviewPlan> | null>(null);
+  const previousCreationKindRef = useRef(creationState.kind);
+  const previousReadyPlanRef = useRef<Readonly<Xcom2ProjectFoundryPreviewPlan> | null>(null);
+  const [locallySubmitted, setLocallySubmitted] = useState(false);
   const busy = viewState.kind === "busy";
   const validModId = isValidModId(modId);
   const canPreview =
     !busy && sourceRepository.length > 0 && destinationParent.length > 0 && validModId;
+  const readyPlan = viewState.kind === "ready" ? viewState.plan : null;
+  const isCurrentReadyPlan =
+    readyPlan !== null &&
+    readyPlan.source.repository === sourceRepository &&
+    readyPlan.destination.parent === destinationParent &&
+    readyPlan.project.modId === modId &&
+    readyPlan.destination.derivedAbsentDestination === finalProjectLocation;
+  const showCreateProject =
+    readyPlan !== null && creationState.kind !== "unavailable" && onCreateProject !== undefined;
+  const createProjectDisabled =
+    !isCurrentReadyPlan || creationState.kind !== "ready" || locallySubmitted;
 
   useEffect(() => {
     const previouslyFocused =
@@ -281,6 +348,18 @@ export function Xcom2ProjectFoundryDialog({
     dialogRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
     return () => previouslyFocused?.focus();
   }, []);
+
+  useEffect(() => {
+    const enteredReady =
+      creationState.kind === "ready" && previousCreationKindRef.current !== "ready";
+    const receivedNewReadyPlan = readyPlan !== null && previousReadyPlanRef.current !== readyPlan;
+    if (enteredReady || receivedNewReadyPlan) {
+      submittedPlanRef.current = null;
+      setLocallySubmitted(false);
+    }
+    previousCreationKindRef.current = creationState.kind;
+    previousReadyPlanRef.current = readyPlan;
+  }, [creationState.kind, readyPlan]);
 
   const cancel = (): void => {
     void onCancel();
@@ -356,12 +435,22 @@ export function Xcom2ProjectFoundryDialog({
                 <label htmlFor="foundry-source-repository" className="text-xs font-medium sm:pb-2">
                   EMPT repository
                 </label>
-                <input
-                  id="foundry-source-repository"
-                  value={sourceRepository}
-                  readOnly
-                  className="min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
-                />
+                <div className="min-w-0">
+                  <input
+                    id="foundry-source-repository"
+                    value={sourceRepository}
+                    aria-describedby={sourceRepositoryHelpId}
+                    readOnly
+                    className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
+                  />
+                  <p
+                    id={sourceRepositoryHelpId}
+                    className="mt-1 text-xs text-[var(--text-secondary)]"
+                  >
+                    Choose the local EMPT v1.4 repository. Foundry reads only its pinned committed
+                    Git objects and ignores working-tree changes and untracked files.
+                  </p>
+                </div>
                 <Button
                   type="button"
                   variant="secondary"
@@ -376,12 +465,22 @@ export function Xcom2ProjectFoundryDialog({
                 <label htmlFor="foundry-destination-parent" className="text-xs font-medium sm:pb-2">
                   Destination parent
                 </label>
-                <input
-                  id="foundry-destination-parent"
-                  value={destinationParent}
-                  readOnly
-                  className="min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
-                />
+                <div className="min-w-0">
+                  <input
+                    id="foundry-destination-parent"
+                    value={destinationParent}
+                    aria-describedby={destinationParentHelpId}
+                    readOnly
+                    className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
+                  />
+                  <p
+                    id={destinationParentHelpId}
+                    className="mt-1 text-xs text-[var(--text-secondary)]"
+                  >
+                    Choose the existing folder that will contain the new project. Foundry will not
+                    change its other entries.
+                  </p>
+                </div>
                 <Button
                   type="button"
                   variant="secondary"
@@ -409,8 +508,34 @@ export function Xcom2ProjectFoundryDialog({
                     className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm aria-[invalid=true]:border-[var(--accent-red)]"
                   />
                   <p id={modIdHelpId} className="mt-1 text-xs text-[var(--text-secondary)]">
-                    1–48 ASCII letters, digits, or underscores; begin with a letter. Windows device
-                    names are refused.
+                    Use 1–48 ASCII letters, digits, or underscores, beginning with a letter. Windows
+                    device names are refused. Foundry uses this ModId for the generated project.
+                  </p>
+                </div>
+                <span aria-hidden="true" />
+              </div>
+
+              <div className="grid min-w-0 gap-1 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-start">
+                <label
+                  htmlFor="foundry-final-project-location"
+                  className="text-xs font-medium sm:pt-2"
+                >
+                  Final project location
+                </label>
+                <div className="min-w-0">
+                  <input
+                    id="foundry-final-project-location"
+                    value={finalProjectLocation}
+                    aria-describedby={finalProjectLocationHelpId}
+                    readOnly
+                    className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
+                  />
+                  <p
+                    id={finalProjectLocationHelpId}
+                    className="mt-1 text-xs text-[var(--text-secondary)]"
+                  >
+                    Foundry will create this exact project location once after you approve the
+                    preview.
                   </p>
                 </div>
                 <span aria-hidden="true" />
@@ -440,6 +565,20 @@ export function Xcom2ProjectFoundryDialog({
               </div>
             ) : null}
 
+            {creationState.kind === "creating" ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="rounded border border-blue-500/40 bg-blue-500/10 p-3 text-sm"
+              >
+                Creating project…
+              </p>
+            ) : null}
+
+            {creationState.kind === "created" ? (
+              <CreationReceipt receipt={creationState.receipt} />
+            ) : null}
+
             {viewState.kind === "ready" ? <ReadyPlan plan={viewState.plan} /> : null}
           </div>
 
@@ -450,6 +589,28 @@ export function Xcom2ProjectFoundryDialog({
             <Button type="submit" disabled={!canPreview} isLoading={busy}>
               Preview
             </Button>
+            {showCreateProject ? (
+              <Button
+                type="button"
+                disabled={createProjectDisabled}
+                onClick={(event) => {
+                  if (
+                    createProjectDisabled ||
+                    readyPlan === null ||
+                    onCreateProject === undefined ||
+                    submittedPlanRef.current === readyPlan
+                  ) {
+                    return;
+                  }
+                  submittedPlanRef.current = readyPlan;
+                  event.currentTarget.disabled = true;
+                  setLocallySubmitted(true);
+                  void onCreateProject(readyPlan.planDigest);
+                }}
+              >
+                Create project
+              </Button>
+            ) : null}
           </footer>
         </form>
       </div>
