@@ -108,6 +108,12 @@ const xcom2ProjectFoundryTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+const xcom2ProjectFoundryApplyTauriHarness = {
+  ...common,
+  tags: "@REQ-XCOM2-PROJECT-FOUNDRY-002",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const xcom2MachineSettingsMissingSteamNativeGui = {
   ...common,
   tags: "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 and @desktop and @native-gui and not @web",
@@ -158,6 +164,7 @@ export {
   desktopLayoutNativeGui,
   xcom2MachineSettingsTauriHarness,
   xcom2ProjectFoundryTauriHarness,
+  xcom2ProjectFoundryApplyTauriHarness,
   xcom2MachineSettingsMissingSteamNativeGui,
   xcom2ModuleActivationNativeGui,
   xcom2ModuleConfigurationActivationNativeGui,

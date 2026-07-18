@@ -34,6 +34,7 @@
     "test:story:req-xcom2-module-configuration-activation-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationActivationNativeGui",
     "test:story:req-xcom2-module-configuration-diagnostics-001:native": "node scripts/run-native-desktop-story.mjs --profile xcom2ModuleConfigurationDiagnosticsNativeGui",
     "test:story:req-xcom2-project-foundry-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryTauriHarness",
+    "test:story:req-xcom2-project-foundry-002": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryApplyTauriHarness",
     "test:story:req-desktop-file-open-001": "node scripts/run-native-desktop-story.mjs --profile desktopFileOpenNativeGui",
     "test:story:req-refactorkit-java-import-002": "node scripts/run-native-desktop-story.mjs --profile refactorKitJavaImportNativeGui",
     "test:spec": "vitest run --config vitest.spec.config.ts",

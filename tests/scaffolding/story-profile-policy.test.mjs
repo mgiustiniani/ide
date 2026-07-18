@@ -199,6 +199,24 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     /implemented|partial|not-implemented|native-gui|web/,
   );
 
+  assert.deepEqual(cucumberProfiles.xcom2ProjectFoundryApplyTauriHarness.worldParameters, {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: false,
+      e2e: false,
+      packagedApplication: false,
+    },
+  });
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryApplyTauriHarness.tags,
+    "@REQ-XCOM2-PROJECT-FOUNDRY-002",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2ProjectFoundryApplyTauriHarness.tags,
+    /implemented|partial|not-implemented|native-gui|web/,
+  );
+
   assert.deepEqual(
     cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.worldParameters,
     nativeGuiEvidence,
@@ -323,6 +341,39 @@ test("focused XCOM Project Foundry command declares only deterministic harness e
   assert.doesNotMatch(command, /native|webdriver|playwright|implementedWeb|build|package|bundle/i);
   assert.equal(
     cucumberProfiles.xcom2ProjectFoundryTauriHarness.worldParameters.evidence.artifactKind,
+    undefined,
+  );
+});
+
+test("focused XCOM Project Foundry Apply profile selects only its parked harness requirement", () => {
+  const selected = selectedScenarios("xcom2ProjectFoundryApplyTauriHarness");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-002"]);
+  assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@desktop"));
+  assert.ok(selected[0].tags.has("@tauri-harness"));
+  assert.equal(selected[0].tags.has("@web"), false);
+  assert.equal(selected[0].tags.has("@native-gui"), false);
+  assert.match(
+    dryRunSummary("xcom2ProjectFoundryApplyTauriHarness"),
+    /1 scenario \(1 undefined\)[\s\S]*36 steps \(9 skipped, 27 undefined\)/,
+  );
+});
+
+test("focused XCOM Project Foundry Apply command declares only deterministic harness evidence", async () => {
+  const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts["test:story:req-xcom2-project-foundry-002"];
+
+  assert.equal(
+    command,
+    "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryApplyTauriHarness",
+  );
+  assert.match(command, /^IDE_STORY_TARGET=desktop\/tauri-harness\b/);
+  assert.doesNotMatch(command, /native|webdriver|playwright|implementedWeb|build|package|bundle/i);
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryApplyTauriHarness.worldParameters.evidence.artifactKind,
     undefined,
   );
 });
@@ -459,7 +510,31 @@ test("promoted XCOM Project Foundry routes only to deterministic harness evidenc
   assert.deepEqual(routing.expectedDesktopTauriWebdriver, []);
 });
 
-test("declared routes and parked inventory stay exact after Project Foundry promotion", () => {
+test("parked XCOM Project Foundry Apply can promote only to deterministic harness evidence", () => {
+  const [parked] = selectedScenarios("xcom2ProjectFoundryApplyTauriHarness");
+
+  const before = evaluateDeclaredStoryRouting([parked]);
+  assert.deepEqual(before.failures, []);
+  assert.deepEqual(before.expectedWeb, []);
+  assert.deepEqual(before.expectedDesktopTauriHarness, []);
+  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
+
+  const promoted = {
+    ...parked,
+    tags: new Set(
+      [...parked.tags, "@implemented-not-e2e-validated"].filter(
+        (tag) => tag !== "@not-implemented",
+      ),
+    ),
+  };
+  const after = evaluateDeclaredStoryRouting([promoted]);
+  assert.deepEqual(after.failures, []);
+  assert.deepEqual(after.expectedWeb, []);
+  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
+});
+
+test("declared routes and parked inventory stay exact with Project Foundry Apply parked", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -486,8 +561,9 @@ test("declared routes and parked inventory stay exact after Project Foundry prom
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-PROJECT-FOUNDRY-002",
   ]);
-  assert.equal(parked.length, 2);
+  assert.equal(parked.length, 3);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 3);
   assert.equal(nativeGui.length, 7);
