@@ -491,6 +491,8 @@ Project Foundry v1 needs to create an XCOM 2 mod project from the canonical Enha
 
 The target therefore needs a reproducible final topology, an exact preview/apply boundary, conflict-safe cleanup, explicit native grants for the two external roots, and a first-party recipe that can later be extracted without implying a generic plugin ecosystem. The architecture must also remain acceptably testable through the production route when native chooser automation is initially unavailable.
 
+The approved target scope is intentionally platform-bounded. Project Foundry v1 and the subsequent currently contemplated XCOM template and Linux build increments are Linux-only. Windows implementation, evidence, and parity are postponed until the end of the project, and runtime web remains unavailable.
+
 ### Decision
 
 Adopt **Project Foundry v1** as a bounded, deterministic project-creation capability under the following target policy.
@@ -501,6 +503,13 @@ Adopt **Project Foundry v1** as a bounded, deterministic project-creation capabi
 - Local development may consume the user-selected local EnhancedModProjectTemplate v1.4 Git object at commit `d968be3`. Unresolved distribution licensing is not treated as a blocker to that local development use.
 - Distribution, bundling, release artifact or application packaging, and package or module publication containing this capability or template-derived material remain blocked until the XCOM 2/template capability is an explicit, separately distributable module and its applicable license, attribution, notices, and redistribution policy are resolved.
 - Development permission and distribution permission are separate decisions. This approval grants no permission or evidence for distribution.
+
+#### Platform and runtime scope
+
+- Project Foundry v1 and all subsequent XCOM template or Linux build increments currently contemplated by this decision are approved only as FUTURE/TARGET Linux-native desktop work.
+- Windows implementation, evidence, and parity are postponed until the end of the project. Before that end-of-project phase, requirements, designs, plans, documentation, acceptance material, and capability statements must not state or imply Windows implementation, evidence, validation, support, or parity.
+- Runtime web remains unavailable for this capability and those increments. No browser adapter, browser simulation, remote browser service, web application path, or other browser/web runtime route may be introduced or implied.
+- In this ADR, the unchanged production route and later native acceptance mean the target Linux native desktop route only. They are future handoff criteria and make no current, implemented, validated, or as-built claim.
 
 #### Foundry identity, final topology, and defaults
 
@@ -559,6 +568,7 @@ A requirements owner may introduce a stable identifier such as `REQ-PROJECT-FOUN
 - Conflict-safe cleanup and rollback preserve content that no longer matches the approved operation.
 - The first-party pack can be extracted later without prematurely claiming a generic extension runtime.
 - Deterministic harness evidence can start acceptance work without compromising the later real native path.
+- The explicit Linux-only target prevents future acceptance material from prematurely implying Windows parity or a browser/web runtime.
 
 **Negative:**
 
@@ -567,5 +577,6 @@ A requirements owner may introduce a stable identifier such as `REQ-PROJECT-FOUN
 - Refusal to delete changed or unverified content can leave staging or generated projects for manual review.
 - Exact `ModId` bounds and chooser mechanics still require requirements-level approval before implementation.
 - Distribution and publication remain blocked even if local development and validation succeed.
+- Windows implementation, evidence, and parity wait until the end of the project; runtime web remains unavailable.
 
 ---
