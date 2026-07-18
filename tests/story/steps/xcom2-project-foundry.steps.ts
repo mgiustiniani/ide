@@ -106,8 +106,8 @@ When<StoryWorld>("the person activates {string}", async function (name: string) 
 
 Then<StoryWorld>(
   "the source adapter resolves only the pinned commit and tree from the selected local Git object database",
-  function () {
-    session(this).assertPinnedObjectRead();
+  async function () {
+    await session(this).assertPinnedObjectRead();
   },
 );
 
@@ -244,6 +244,15 @@ Then<StoryWorld>(
   "the destination parent has exactly its recorded topology, modes, and bytes",
   async function () {
     await session(this).assertDestinationIdentity();
+  },
+);
+
+Then<StoryWorld>(
+  /^"\/scenario\/foundry-output\/FoundryPreviewFixture" remains absent$/u,
+  async function () {
+    await session(this).assertDerivedDestinationAbsent(
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
   },
 );
 

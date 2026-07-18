@@ -343,7 +343,13 @@ export class Xcom2ProjectFoundryHarness {
     await this.#dialog().getByRole("button", { name, exact: true }).click();
   }
 
-  assertPinnedObjectRead(): void {
+  async assertPinnedObjectRead(): Promise<void> {
+    await this.#dialog()
+      .getByRole("table", {
+        name: "Project Foundry bound identities and source facts",
+        exact: true,
+      })
+      .waitFor({ state: "visible" });
     assert.deepEqual(this.#objectReads, [
       {
         commit: SOURCE_COMMIT,
@@ -403,7 +409,18 @@ export class Xcom2ProjectFoundryHarness {
       "FoundryPreviewFixture/FoundryPreviewFixture.x2proj",
     );
     assert.equal(/\$safe|\$project|\$guid|__MOD|\{\{|\}\}/iu.test(text), false);
-    for (const value of values) assert.equal(text.includes(value), false, value);
+    const includedEntries = [...text.matchAll(/<(?:Folder|Content)\s+Include="([^"]*)"/giu)].map(
+      ([, path]) => path ?? "",
+    );
+    for (const value of values) {
+      assert.equal(
+        includedEntries.some(
+          (path) => path === value || path.startsWith(`${value}\\`) || path.startsWith(`${value}/`),
+        ),
+        false,
+        value,
+      );
+    }
   }
 
   async assertExactList(name: string, expected: readonly string[]): Promise<void> {

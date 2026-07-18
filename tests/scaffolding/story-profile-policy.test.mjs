@@ -294,7 +294,7 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
-test("focused XCOM Project Foundry profile selects only its parked desktop harness requirement", () => {
+test("focused XCOM Project Foundry profile selects its fully defined parked desktop harness requirement", () => {
   const selected = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
   assert.equal(selected.length, 1);
@@ -307,7 +307,7 @@ test("focused XCOM Project Foundry profile selects only its parked desktop harne
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*35 steps \(3 skipped, 32 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
   );
 });
 

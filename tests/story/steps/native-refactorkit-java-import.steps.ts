@@ -133,9 +133,14 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>("{string} remains absent", async function (relativePath: string) {
-  await this.nativeRefactorKitJavaImportSession().assertPathAbsent(relativePath);
-});
+Then<StoryWorld>(
+  /^"src\/main\/java\/example\/imports\/ClipboardImportProof\.java" remains absent$/u,
+  async function () {
+    await this.nativeRefactorKitJavaImportSession().assertPathAbsent(
+      "src/main/java/example/imports/ClipboardImportProof.java",
+    );
+  },
+);
 
 When<StoryWorld>(
   "the developer repeats the actual directory context-menu action",
