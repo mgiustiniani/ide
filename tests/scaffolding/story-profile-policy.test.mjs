@@ -294,13 +294,13 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
-test("focused XCOM Project Foundry profile selects its fully defined parked desktop harness requirement", () => {
+test("focused XCOM Project Foundry profile stays harness-only after promotion", () => {
   const selected = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
   assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
-  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
   assert.ok(selected[0].tags.has("@desktop"));
   assert.ok(selected[0].tags.has("@tauri-harness"));
   assert.equal(selected[0].tags.has("@web"), false);
@@ -449,31 +449,17 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("XCOM Project Foundry stays parked and can promote only to deterministic harness evidence", () => {
-  const [parked] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
+test("promoted XCOM Project Foundry routes only to deterministic harness evidence", () => {
+  const [promoted] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
-  const before = evaluateDeclaredStoryRouting([parked]);
-  assert.deepEqual(before.failures, []);
-  assert.deepEqual(before.expectedWeb, []);
-  assert.deepEqual(before.expectedDesktopTauriHarness, []);
-  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
-
-  const promoted = {
-    ...parked,
-    tags: new Set(
-      [...parked.tags, "@implemented-not-e2e-validated"].filter(
-        (tag) => tag !== "@not-implemented",
-      ),
-    ),
-  };
-  const after = evaluateDeclaredStoryRouting([promoted]);
-  assert.deepEqual(after.failures, []);
-  assert.deepEqual(after.expectedWeb, []);
-  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
-  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
+  const routing = evaluateDeclaredStoryRouting([promoted]);
+  assert.deepEqual(routing.failures, []);
+  assert.deepEqual(routing.expectedWeb, []);
+  assert.deepEqual(routing.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(routing.expectedDesktopTauriWebdriver, []);
 });
 
-test("declared routes and parked inventory stay exact with Project Foundry parked", () => {
+test("declared routes and parked inventory stay exact after Project Foundry promotion", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -494,16 +480,16 @@ test("declared routes and parked inventory stay exact with Project Foundry parke
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
+    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
-    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
   ]);
-  assert.equal(parked.length, 3);
+  assert.equal(parked.length, 2);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 2);
+  assert.equal(harness.length, 3);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -511,7 +497,7 @@ test("declared routes and parked inventory stay exact with Project Foundry parke
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /2 scenarios \(2 skipped\)[\s\S]*49 steps \(49 skipped\)/,
+    /3 scenarios \(3 skipped\)[\s\S]*84 steps \(84 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -519,7 +505,7 @@ test("declared routes and parked inventory stay exact with Project Foundry parke
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 2);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 3);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
