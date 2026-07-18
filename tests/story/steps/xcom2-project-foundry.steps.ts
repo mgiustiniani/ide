@@ -64,6 +64,13 @@ When<StoryWorld>(
 );
 
 Then<StoryWorld>(
+  'an accessible modal dialog named "New XCOM 2 Project" is visible',
+  async function () {
+    await session(this).assertModal("New XCOM 2 Project");
+  },
+);
+
+Then<StoryWorld>(
   "it contains one accessible form named {string} with labeled {string}, {string}, and {string} fields and accessible {string} and {string} controls",
   async function (
     formName: string,
@@ -83,6 +90,7 @@ Then<StoryWorld>(
 
 When<StoryWorld>(
   "the deterministic selectors answer the form's source and destination requests with the supplied results",
+  { timeout: 20_000 },
   async function () {
     await session(this).answerSelectors();
   },

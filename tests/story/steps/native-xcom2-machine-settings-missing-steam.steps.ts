@@ -53,12 +53,9 @@ When<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "an accessible modal dialog named {string} is visible",
-  async function (name: string) {
-    await session(this).assertSettingsDialog(name);
-  },
-);
+Then<StoryWorld>('an accessible modal dialog named "Settings" is visible', async function () {
+  await session(this).assertSettingsDialog("Settings");
+});
 
 When<StoryWorld>(
   "the person uses the {string} navigation and selects the tab with label {string} and description {string}",
