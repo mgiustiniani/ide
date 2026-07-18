@@ -24,9 +24,11 @@ The repository does not own a Structurizr container or image invocation. It ther
 
 The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Production startup injects the strict Tauri Foundry composition into the App; fake selectors remain confined to harness and adapter-test seams.
 
-The adapter uses only the Tauri allow-open directory capability, validates canonical Linux paths and exact DTO bindings, and delegates ephemeral grants to Rust. Rust revalidates directory identities and destination absence and uses `git2` to attest the pinned commit, tree, and reachable blobs from the selected local object database. Working-tree content is ignored and neither selected location is written. A pure TypeScript planner then returns a safe refusal or immutable digest-bound display plan for the accessible dialog.
+The adapter integrates the Tauri allow-open directory API, validates canonical Linux paths and complete renderer DTOs, and delegates ephemeral grants and rendering to Rust. One shared in-process Rust `git2` renderer is the sole output authority: it revalidates directory identities and destination absence, reads the pinned commit, tree, and reachable blobs, produces the complete plan body, and retains the corresponding internal output bytes. Working-tree content is ignored and neither selected location is written.
 
-This architecture records production responsibilities and composition, not native chooser GUI or end-to-end evidence. It provides no Apply, project creation, output, build, deploy, cooking, package, distribution, license-clearance, or publication capability. RefactorKit import mutation and its package policies remain separate and unchanged.
+TypeScript validates the complete native DTO and its internal consistency, computes the RFC 8785/SHA-256 digest, and deep-freezes the result. The controller and UI retain presentation and approval custody without becoming output authorities. `@ide/web-core` contains no embedded EMPT source/output metadata, generated preview implementation, pure renderer, planner, or parallel output authority.
+
+Native chooser acceptance and GUI/end-to-end execution are absent. Fake selectors are confined to harness and adapter-test seams and do not imply real native chooser execution. Production has no Project Foundry Apply filesystem transaction; a future Apply boundary must reuse the same Rust renderer authority rather than accept frontend bytes or metadata. Project creation, output writes, build, deploy, cooking, package, distribution, license-clearance, and publication are absent. RefactorKit import mutation and its package policies remain separate and unchanged.
 
 ## Self-contained rendering
 

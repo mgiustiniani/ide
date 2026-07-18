@@ -9,7 +9,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 browserAdapters = component "Browser Adapters" "Provides browser-safe ports; native RefactorKit and XCOM setup stay unavailable without deliberate simulation, and startup performs no XCOM work." "TypeScript" "Current"
             }
 
-            desktopApp = container "Desktop App" "Tauri WebView IDE with panel controls, managed Java tooling, XCOM settings and activation, and display-only Project Foundry preview." "React, Vite, Tauri WebView" {
+            desktopApp = container "Desktop App" "Tauri WebView IDE with panel controls, managed Java tooling, XCOM settings and activation, and renderer-backed Project Foundry preview." "React, Vite, Tauri WebView" {
                 desktopUi = component "Desktop Composition Root and IDE UI State" "Composes controllers and the production Project Foundry adapter, derives props, and renders the shell without owning feature orchestration." "React, Monaco, Zustand" "Current"
                 workspaceController = component "Workspace Controller" "Owns registry, authorized-root transitions, and monotonic WorkspaceGeneration; coordinates activation revocation/start and setup correlation." "TypeScript, React" "Current"
                 desktopEditorController = component "Desktop Editor Controller" "Coordinates guarded file open/create, tab lifecycle, authorized restore/reset, and readiness; rejects completions from stale workspace generations." "TypeScript, React" "Current"
@@ -50,10 +50,10 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomConfigurationDiagnosticMapper = component "Pure XCOM Configuration Diagnostic Mapper" "Maps exactly eight bounded codes to fixed, non-interpolated title, file label, summary, remediation, and support identifier." "TypeScript" "Current"
                 xcomConfigurationDiagnosticAlert = component "Atomic XCOM Configuration Warning" "Renders one shared atomic alert in Workspace Settings and mirrors it only in an independently recognized project activity." "React" "Current"
                 xcomProjectRecognitionPanel = component "XCOM 2 Project Activity" "Shows active roots and confidence; strong independent recognition can mirror the complete warning without gaining authority." "React" "Current"
-                xcomFoundryController = component "Project Foundry Preview Controller" "Owns dialog sessions, serialized selection authority, stale-result rejection, preview orchestration, and grant revocation." "TypeScript, React" "Current"
-                xcomFoundryDialog = component "Project Foundry Preview Dialog" "Presents source and destination selection, ModId entry, safe refusals, and a complete digest-bound display plan without Apply." "React" "Current"
-                xcomFoundryPlanner = component "Pure Project Foundry Preview Planner" "Validates bound evidence, derives deterministic project data, and returns an immutable display plan or safe refusal without I/O." "TypeScript" "Current"
-                tauriXcomFoundryAdapter = component "Strict Project Foundry Tauri Adapter" "Uses single-directory open dialogs, validates exact Linux paths and DTOs, and invokes bounded native preview commands." "TypeScript, Tauri API" "Current"
+                xcomFoundryController = component "Project Foundry Preview Controller" "Owns dialog sessions, serialized selection authority, stale-result rejection, and presentation and approval custody." "TypeScript, React" "Current"
+                xcomFoundryDialog = component "Project Foundry Preview Dialog" "Presents selection, ModId entry, safe refusals, and the complete digest-bound native plan without exposing Apply." "React" "Current"
+                xcomFoundryCustody = component "Project Foundry Rendered-plan Custody" "Validates complete native plan consistency, computes its digest, and returns deeply immutable presentation data." "TypeScript" "Current"
+                tauriXcomFoundryAdapter = component "Strict Project Foundry Tauri Adapter" "Validates exact Linux paths and complete renderer DTOs, then invokes bounded native grant, render, and revocation commands." "TypeScript, Tauri API" "Current"
 
                 xcomConfirmationAndExternalRoots = component "XCOM Confirmation and External-root Grants" "Adds manual confirmation and separately authorized external roots without weakening project-contained activation." "TypeScript, React" "Target"
                 xcomContributionCoordinator = component "Contextual XCOM Contribution Coordinator" "Scopes Problems, Build, Tests, Logs, and XCOM tools to modules authorized beyond recognition-only mode." "TypeScript, React" "Target"
@@ -84,8 +84,9 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomProductionOperations = component "Concrete WOTC SDK Operations" "Builds the allowlisted reversible vanilla SDK operation set and verifies its exact preconditions." "Rust" "Current"
                 xcomModuleConfigurationReader = component "XCOM Module Configuration Reader" "Reads fixed .ide/xcom2.json and contained roots without XCOM input writes; returns safe codes without path, content, or native-error disclosure." "Rust" "Current"
                 xcomModuleEvidenceScanner = component "XCOM Module Filesystem Evidence Scanner" "Reads only authorized-root entry metadata and exact names; it does not parse content, follow symlinks, write, or accept external roots." "Rust" "Current"
-                tauriDirectoryDialog = component "Tauri Directory Dialog Plugin" "Exposes only single-directory open selection to the desktop adapter under the allow-open capability." "Rust, Tauri Plugin" "Current"
-                xcomFoundryAttestation = component "Native Project Foundry Attestation and Grants" "Mints ephemeral grants, revalidates directories and destination absence, and attests pinned local Git objects through git2." "Rust, git2" "Current"
+                tauriDirectoryDialog = component "Directory Selection API Boundary" "Provides the allow-open single-directory API used by the strict desktop adapter." "Rust, Tauri Plugin" "Current"
+                xcomFoundryAuthority = component "Native Project Foundry Authority and Grants" "Mints grants, revalidates directory identities and destination absence, and retains renderer output bytes by operation." "Rust" "Current"
+                xcomFoundryRenderer = component "Shared Project Foundry git2 Renderer" "Sole output authority that reads pinned Git objects and produces the complete plan body and internal output bytes." "Rust, git2" "Current"
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
                 javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
                 javaAdvancedBridge = component "Broader Java Semantic Bridge" "Transports definition, references, symbols, hierarchy, code actions, formatting, and rename over bounded LSP requests." "Rust, JSON-RPC/LSP" "Frozen"
@@ -205,12 +206,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         developer -> xcomFoundryDialog "Selects directories, enters a ModId, and reviews the display plan"
         xcomFoundryDialog -> xcomFoundryController "Submits selection, preview, and cancel gestures"
         xcomFoundryController -> xcomFeatureContracts "Uses provider-neutral Foundry grants, evidence, plans, and refusals"
-        xcomFoundryController -> tauriXcomFoundryAdapter "Uses injected selection, attestation, destination, and revocation ports"
-        xcomFoundryController -> xcomFoundryPlanner "Requests a pure display-only preview"
-        xcomFoundryPlanner -> xcomFeatureContracts "Uses fixed Foundry contracts and approved plan metadata"
+        xcomFoundryController -> tauriXcomFoundryAdapter "Requests selection, authoritative rendering, and grant revocation"
+        xcomFoundryController -> xcomFoundryCustody "Validates and takes digest custody of the complete native plan"
+        xcomFoundryCustody -> xcomFeatureContracts "Uses fixed plan, digest, and approval contracts"
         tauriXcomFoundryAdapter -> tauriDirectoryDialog "Requests one directory selection" "Tauri plugin command"
-        tauriXcomFoundryAdapter -> xcomFoundryAttestation "Invokes grant, attestation, destination, and revocation commands" "Tauri invoke"
-        xcomFoundryAttestation -> filesystem "Reads granted Git objects and destination metadata without writes" "git2 and bounded filesystem reads"
+        tauriXcomFoundryAdapter -> xcomFoundryAuthority "Invokes bounded grant, render, and revocation commands" "Tauri invoke"
+        xcomFoundryAuthority -> xcomFoundryRenderer "Requests one complete authoritative render"
+        xcomFoundryAuthority -> filesystem "Revalidates selected directories and destination absence" "Bounded filesystem metadata"
+        xcomFoundryRenderer -> filesystem "Reads pinned Git objects without working-tree access" "git2"
         developer -> xcomMonitorPanel "Inspects machine health and requests a descriptive dry run"
         xcomMonitorPanel -> xcomSetupController "Renders monitor evidence and setup planning state"
         xcomSetupController -> xcomFeatureContracts "Uses generation-bound monitor evidence and export-safe records"
@@ -290,14 +293,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         component desktopApp "DesktopAppComponents" {
             title "Desktop App Components"
             description "Composition wires guarded controllers, XCOM settings and activation, and the global display-only Project Foundry preview."
-            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomFoundryController xcomFoundryDialog xcomFoundryPlanner tauriXcomFoundryAdapter rustBackend
+            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "RustBackendComponents" {
             title "Rust Backend Components"
-            description "Native services include guarded Java, RefactorKit transactions, XCOM setup and activation inputs, directory selection, and local Git attestation."
-            include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner tauriDirectoryDialog xcomFoundryAttestation filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            description "Native services include guarded Java, RefactorKit transactions, XCOM setup and activation inputs, selection APIs, and authoritative Git rendering."
+            include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
 
@@ -317,15 +320,15 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component desktopApp "Xcom2FoundryDesktopComponents" {
             title "XCOM 2 Project Foundry Preview — Desktop Components"
-            description "The global dialog delegates serialized authority and native checks before a pure planner returns a display-only digest-bound plan."
-            include developer desktopUi xcomFeatureContracts xcomFoundryController xcomFoundryDialog xcomFoundryPlanner tauriXcomFoundryAdapter rustBackend
+            description "The controller requests native rendering, validates the complete plan, computes its digest, and retains presentation and approval custody."
+            include developer desktopUi xcomFeatureContracts xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "Xcom2FoundryRustComponents" {
             title "XCOM 2 Project Foundry Preview — Rust Components"
-            description "The allow-open dialog boundary feeds ephemeral grants; git2 attests pinned local objects and destination absence without writes."
-            include desktopApp tauriDirectoryDialog xcomFoundryAttestation filesystem
+            description "Native grant authority invokes one git2 renderer for the complete plan and internal output bytes while writing no project paths."
+            include desktopApp tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer filesystem
             autoLayout lr
         }
 
