@@ -1,12 +1,5 @@
 import {
   XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
-  XCOM2_PROJECT_FOUNDRY_PACK_ID,
-  XCOM2_PROJECT_FOUNDRY_PLAN_SCHEMA_VERSION,
-  XCOM2_PROJECT_FOUNDRY_PLATFORM,
-  XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS,
-  XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
-  XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-  XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
   type Xcom2ProjectFoundryApplyCurrentSelection,
   type Xcom2ProjectFoundryApplyEvent,
   type Xcom2ProjectFoundryApplyPreparation,
@@ -21,38 +14,19 @@ import {
   type Xcom2ProjectFoundryReadyApplyState,
   type Xcom2ProjectFoundryDigestBoundPlan,
   type Xcom2ProjectFoundryModIdValidationResult,
-  type Xcom2ProjectFoundryPreviewPlan,
-  type Xcom2ProjectFoundryPreviewRefusalCode,
-  type Xcom2ProjectFoundryPreviewRequest,
   type Xcom2ProjectFoundryPreviewResult,
 } from "@ide/contracts";
 
-import {
-  APPROVED_FOUNDRY_ABSENCES,
-  APPROVED_FOUNDRY_DIRECTORIES,
-  APPROVED_FOUNDRY_FILES,
-  APPROVED_FOUNDRY_WARNINGS,
-  APPROVED_SOLUTION_ESCAPED_PREVIEW,
-  APPROVED_X2PROJ_ESCAPED_PREVIEW,
-} from "./approved-preview-metadata";
-import { canonicalizeJsonRfc8785, sha256Hex, uuidV5 } from "./deterministic-data";
+import { canonicalizeJsonRfc8785, sha256Hex } from "./deterministic-data";
 
 export {
   createXcom2ProjectFoundryRenderRequest,
   validateAndDigestXcom2ProjectFoundryRenderedPlan,
 } from "./rendered-plan-custody";
 
-const URL_NAMESPACE = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
 const MOD_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/u;
 const WINDOWS_DEVICE_PATTERN = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu;
-const GIT_OBJECT_ID_PATTERN = /^[0-9a-f]{40}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
-const GRANT_IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const SOURCE_REFUSALS = new Set<Xcom2ProjectFoundryPreviewRefusalCode>(
-  XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES.filter(
-    (code) => code.startsWith("source-") && code !== "source-grant-invalid",
-  ),
-);
 
 function deepFreeze<T>(value: T, seen = new Set<object>()): Readonly<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
@@ -96,33 +70,6 @@ function cloneJsonData<T>(value: T, active = new Set<object>()): T {
   }
 }
 
-function refused(code: Xcom2ProjectFoundryPreviewRefusalCode): Xcom2ProjectFoundryPreviewResult {
-  return Object.freeze({ kind: "refused", code });
-}
-
-function isCanonicalAbsolutePath(value: unknown): value is string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.includes("\\")) return false;
-  if (value.length > 1 && value.endsWith("/")) return false;
-  const segments = value.split("/").slice(1);
-  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
-}
-
-function validIdentity(value: unknown): value is string {
-  return typeof value === "string" && GRANT_IDENTITY_PATTERN.test(value);
-}
-
-function validateObjectId(
-  value: unknown,
-  expected: string,
-  object: "commit" | "tree",
-): Xcom2ProjectFoundryPreviewRefusalCode | undefined {
-  if (value === "") return `source-${object}-missing`;
-  if (typeof value !== "string") return `source-${object}-unreadable`;
-  if (!GIT_OBJECT_ID_PATTERN.test(value)) return `source-${object}-fingerprint-invalid`;
-  if (value !== expected) return `source-${object}-mismatched`;
-  return undefined;
-}
-
 /** Validate the exact case-preserved portable ModId grammar without normalization. */
 export function validateXcom2ProjectFoundryModId(
   candidate: string,
@@ -135,145 +82,9 @@ export function validateXcom2ProjectFoundryModId(
   return Object.freeze({ kind: "accepted", modId: candidate });
 }
 
-/** Derive the legacy generator's deterministic project identity during App migration. */
-function deriveXcom2ProjectFoundryProjectGuid(modId: string): string {
-  if (validateXcom2ProjectFoundryModId(modId).kind !== "accepted") {
-    throw new TypeError("A valid Project Foundry ModId is required");
-  }
-  const name = `urn:ide:project-foundry:${XCOM2_PROJECT_FOUNDRY_PACK_ID}:${XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT}:${modId}`;
-  return `{${uuidV5(URL_NAMESPACE, name).toUpperCase()}}`;
-}
-
-/**
- * @deprecated Transitional frontend render request retained only until the current App uses the
- * native renderer port and createXcom2ProjectFoundryRenderRequest.
- */
-export function createXcom2ProjectFoundryPreviewRequest(
-  input: Xcom2ProjectFoundryPreviewRequest,
-): Readonly<Xcom2ProjectFoundryPreviewRequest> {
-  return deepFreeze(cloneJsonData(input));
-}
-
 /** Digest JSON plan data with SHA-256 over its RFC 8785 canonical representation. */
 export function digestXcom2ProjectFoundryPlan(plan: Xcom2ProjectFoundryDigestBoundPlan): string {
   return sha256Hex(canonicalizeJsonRfc8785(plan));
-}
-
-/**
- * @deprecated Transitional frontend output generator retained solely so the current App compiles.
- * Native rendering is the only target output authority.
- */
-export function previewXcom2ProjectFoundry(
-  request: Readonly<Xcom2ProjectFoundryPreviewRequest>,
-): Xcom2ProjectFoundryPreviewResult {
-  const modValidation = validateXcom2ProjectFoundryModId(request.modId);
-  if (modValidation.kind === "refused") return refused(modValidation.code);
-
-  const sourceGrant = request.sourceGrant as unknown as Record<string, unknown>;
-  if (
-    sourceGrant?.kind !== "source-repository" ||
-    !isCanonicalAbsolutePath(sourceGrant.repository) ||
-    !validIdentity(sourceGrant.identity)
-  ) {
-    return refused("source-grant-invalid");
-  }
-
-  const sourceObject = request.sourceObject as unknown as Record<string, unknown>;
-  const commitRefusal = validateObjectId(
-    sourceObject?.commit,
-    XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-    "commit",
-  );
-  if (commitRefusal) return refused(commitRefusal);
-  const treeRefusal = validateObjectId(
-    sourceObject?.tree,
-    XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-    "tree",
-  );
-  if (treeRefusal) return refused(treeRefusal);
-  if (sourceObject?.fingerprintResult !== "Verified") {
-    if (
-      SOURCE_REFUSALS.has(sourceObject?.fingerprintResult as Xcom2ProjectFoundryPreviewRefusalCode)
-    ) {
-      return refused(sourceObject.fingerprintResult as Xcom2ProjectFoundryPreviewRefusalCode);
-    }
-    return refused("source-commit-fingerprint-invalid");
-  }
-
-  const destinationGrant = request.destinationParentGrant as unknown as Record<string, unknown>;
-  if (request.destinationState === "parent-unavailable") {
-    return refused("destination-parent-unavailable");
-  }
-  if (
-    destinationGrant?.kind !== "destination-parent" ||
-    !isCanonicalAbsolutePath(destinationGrant.parent) ||
-    !validIdentity(destinationGrant.identity)
-  ) {
-    return refused("destination-parent-grant-invalid");
-  }
-  if (request.destinationState === "present") return refused("derived-destination-present");
-  if (request.destinationState !== "absent") return refused("derived-destination-mismatched");
-
-  const expectedDestination = `${destinationGrant.parent}/${request.modId}`;
-  const operationGrant = request.operationGrant as unknown as Record<string, unknown>;
-  if (operationGrant?.derivedDestination !== expectedDestination) {
-    return refused("derived-destination-mismatched");
-  }
-  if (operationGrant.kind !== "preview-operation" || !validIdentity(operationGrant.identity)) {
-    return refused("operation-grant-invalid");
-  }
-
-  const guid = deriveXcom2ProjectFoundryProjectGuid(request.modId);
-  const boundPlan: Xcom2ProjectFoundryDigestBoundPlan = {
-    schemaVersion: XCOM2_PROJECT_FOUNDRY_PLAN_SCHEMA_VERSION,
-    canonicalization: "RFC 8785",
-    digestAlgorithm: "SHA-256",
-    packId: XCOM2_PROJECT_FOUNDRY_PACK_ID,
-    platform: XCOM2_PROJECT_FOUNDRY_PLATFORM,
-    publicationStatus: XCOM2_PROJECT_FOUNDRY_PUBLICATION_STATUS,
-    source: {
-      repository: sourceGrant.repository,
-      grantIdentity: sourceGrant.identity,
-      commit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
-      tree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
-      fingerprintResult: "Verified",
-      policy:
-        "Committed Git objects only; working-tree modifications and untracked files are ignored",
-    },
-    project: { modId: request.modId, guid },
-    destination: {
-      parent: destinationGrant.parent,
-      parentGrantIdentity: destinationGrant.identity,
-      derivedAbsentDestination: operationGrant.derivedDestination,
-      operationGrantIdentity: operationGrant.identity,
-    },
-    symlinks: "none",
-    directories: cloneJsonData(APPROVED_FOUNDRY_DIRECTORIES),
-    files: cloneJsonData(APPROVED_FOUNDRY_FILES),
-    generatedPreviews: [
-      {
-        path: "FoundryPreviewFixture/FoundryPreviewFixture.x2proj",
-        encoding: "UTF-8",
-        byteOrderMark: "present",
-        lineEndings: "LF",
-        escapedBytePreview: APPROVED_X2PROJ_ESCAPED_PREVIEW,
-      },
-      {
-        path: "FoundryPreviewFixture.XCOM_sln",
-        encoding: "UTF-8",
-        byteOrderMark: "absent",
-        lineEndings: "LF",
-        escapedBytePreview: APPROVED_SOLUTION_ESCAPED_PREVIEW,
-      },
-    ],
-    absences: cloneJsonData(APPROVED_FOUNDRY_ABSENCES),
-    warnings: cloneJsonData(APPROVED_FOUNDRY_WARNINGS),
-  };
-  const plan: Xcom2ProjectFoundryPreviewPlan = {
-    ...boundPlan,
-    planDigest: digestXcom2ProjectFoundryPlan(boundPlan),
-  };
-  return deepFreeze({ kind: "ready", plan });
 }
 
 type ReadyFoundryPreview = Extract<Xcom2ProjectFoundryPreviewResult, { readonly kind: "ready" }>;

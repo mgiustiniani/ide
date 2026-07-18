@@ -35,8 +35,6 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const GRANT_IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SOURCE_POLICY =
   "Committed Git objects only; working-tree modifications and untracked files are ignored";
-const LEGACY_FIXTURE_IDENTIFIER_PATTERN =
-  /(?:^|[^A-Za-z0-9_])FoundryPreviewFixture(?=$|[^A-Za-z0-9_])/u;
 
 const SAFE_INVALID = Object.freeze({
   kind: "refused",
@@ -410,16 +408,7 @@ function validatePlanBody(
     return false;
   }
 
-  const outputMetadata = {
-    directories: plan.directories,
-    files: plan.files,
-    generatedPreviews: plan.generatedPreviews,
-    absences: plan.absences,
-  };
-  return !(
-    request.modId !== "FoundryPreviewFixture" &&
-    LEGACY_FIXTURE_IDENTIFIER_PATTERN.test(JSON.stringify(outputMetadata))
-  );
+  return true;
 }
 
 /** Copy the provider-neutral selector input into a closed, deeply immutable render request. */
