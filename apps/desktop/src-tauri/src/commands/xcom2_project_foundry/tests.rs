@@ -601,6 +601,93 @@ fn parent_only_selection_precedes_mod_id_render_mints_operation_and_revoke_inval
 }
 
 #[test]
+fn narrow_operation_revocation_retains_selectors_clears_bytes_and_allows_replacement() {
+    let fixture = RendererRepositoryFixture::new("narrow-operation-revoke", None, false);
+    let parent = TestDirectory::new("narrow-operation-revoke-parent");
+    let state = fixture.state();
+    let source = authorize_source_repository(&state, fixture.source_request())
+        .expect("authorize renderer source");
+    let destination = authorize_destination_parent_selection(
+        &state,
+        AuthorizeFoundryDestinationParentSelectionRequest {
+            selected_root: parent.string(),
+        },
+    )
+    .expect("authorize destination parent");
+    let (old_operation, _) = expect_rendered(render_preview(
+        &state,
+        render_request(source.clone(), destination.clone(), "LifecycleMod"),
+    ));
+
+    {
+        let grants = state.grants.lock().expect("read rendered grant store");
+        assert_eq!(grants.source_grants.len(), 1);
+        assert_eq!(grants.destination_grants.len(), 1);
+        assert_eq!(grants.operation_to_destination.len(), 1);
+        assert_eq!(
+            grants.rendered_files_by_operation[&old_operation.identity].len(),
+            27
+        );
+    }
+    let source_before_revoke = snapshot(&fixture.root.0);
+    let parent_before_revoke = snapshot(&parent.0);
+
+    revoke_operations(&state).expect("revoke only operation authority");
+    revoke_operations(&state).expect("repeat narrow revocation idempotently");
+
+    assert_eq!(snapshot(&fixture.root.0), source_before_revoke);
+    assert_eq!(snapshot(&parent.0), parent_before_revoke);
+    {
+        let grants = state.grants.lock().expect("read narrowly revoked store");
+        assert!(grants.source_grants.contains_key(&source.identity));
+        let retained_parent = grants
+            .destination_grants
+            .get(&destination.identity)
+            .expect("destination-parent grant remains");
+        assert!(retained_parent.operation.is_none());
+        assert!(grants.operation_to_destination.is_empty());
+        assert!(grants.rendered_files_by_operation.is_empty());
+    }
+    assert_eq!(
+        inspect_destination(
+            &state,
+            InspectFoundryDestinationRequest {
+                destination_parent_grant: destination.clone(),
+                operation_grant: old_operation.clone(),
+            }
+        ),
+        Err("operation-grant-invalid".to_string()),
+        "the revoked operation cannot supply destination/apply authority"
+    );
+    assert_eq!(
+        resolve_source_object(
+            &state,
+            ResolveFoundrySourceObjectRequest {
+                grant: source.clone(),
+            }
+        )
+        .expect("retained source grant resolves")
+        .fingerprint_result,
+        "Verified"
+    );
+
+    let (replacement, _) = expect_rendered(render_preview(
+        &state,
+        render_request(source, destination, "LifecycleMod"),
+    ));
+    assert_ne!(replacement.identity, old_operation.identity);
+    let grants = state.grants.lock().expect("read replacement operation");
+    assert_eq!(grants.operation_to_destination.len(), 1);
+    assert!(!grants
+        .rendered_files_by_operation
+        .contains_key(&old_operation.identity));
+    assert_eq!(
+        grants.rendered_files_by_operation[&replacement.identity].len(),
+        27
+    );
+}
+
+#[test]
 fn destination_authorization_derives_exact_absent_child_and_revalidates_it() {
     let parent = TestDirectory::new("destination-happy");
     fs::write(parent.0.join("sibling.canary"), b"unchanged").expect("write destination sibling");

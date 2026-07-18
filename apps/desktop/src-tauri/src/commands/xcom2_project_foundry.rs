@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 mod renderer;
 
 pub use renderer::FoundryRenderedPlanBody;
-use renderer::{bind_rendered_plan, render_from_git_objects, FoundryPlanBinding, RenderFailure};
+use renderer::{
+    bind_rendered_plan, render_from_git_objects, FoundryPlanBinding, FoundryRenderedOutputFile,
+    RenderFailure,
+};
 
 pub(crate) const EXPECTED_COMMIT: &str = "d968be3c32b250376723563a743a120770ec5c95";
 const EXPECTED_TREE: &str = "cc8823fa99c0d292c4fe48a8b9463ff790176371";
@@ -188,6 +191,7 @@ struct FoundryGrantStore {
     source_grants: HashMap<String, SourceGrantRecord>,
     destination_grants: HashMap<String, DestinationGrantRecord>,
     operation_to_destination: HashMap<String, String>,
+    rendered_files_by_operation: HashMap<String, Vec<FoundryRenderedOutputFile>>,
 }
 
 pub struct Xcom2ProjectFoundryState {
@@ -281,6 +285,16 @@ pub fn inspect_xcom2_project_foundry_destination(
 ) -> Result<FoundryDestinationState, String> {
     require_linux()?;
     inspect_destination(&state, request)
+}
+
+/// Synchronously revokes only operation authority and its rendered-byte caches. Source and
+/// destination-parent grants remain available for a replacement render. No filesystem access occurs.
+#[tauri::command]
+pub fn revoke_xcom2_project_foundry_operation_grants(
+    state: tauri::State<'_, Xcom2ProjectFoundryState>,
+) -> Result<(), String> {
+    require_linux()?;
+    revoke_operations(&state)
 }
 
 /// Revokes every in-memory Foundry preview authority. There is no journal or persisted grant.
@@ -399,10 +413,7 @@ fn render_preview(
         if record.destination_grant != request.destination_parent_grant {
             return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
         }
-        for record in grants.destination_grants.values_mut() {
-            record.operation = None;
-        }
-        grants.operation_to_destination.clear();
+        clear_operation_grants(&mut grants);
 
         if validate_source_grant_shape(&request.source_grant).is_err() {
             return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
@@ -534,6 +545,8 @@ fn render_preview(
     if rendered.output_files.len() != 27 {
         return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid);
     }
+    let plan_body = Box::new(rendered.plan_body);
+    let rendered_output_files = rendered.output_files;
 
     let Some(record) = grants
         .destination_grants
@@ -548,6 +561,9 @@ fn render_preview(
         mod_id: request.mod_id,
         operation_grant: operation_grant.clone(),
     });
+    grants
+        .rendered_files_by_operation
+        .insert(operation_identity.clone(), rendered_output_files);
     grants.operation_to_destination.insert(
         operation_identity,
         request.destination_parent_grant.identity,
@@ -555,7 +571,7 @@ fn render_preview(
 
     RenderFoundryPreviewResult::Rendered {
         operation_grant,
-        plan_body: Box::new(rendered.plan_body),
+        plan_body,
     }
 }
 
@@ -761,14 +777,31 @@ fn inspect_destination(
     Ok(state_result)
 }
 
+fn revoke_operations(state: &Xcom2ProjectFoundryState) -> Result<(), String> {
+    let mut grants = state
+        .grants
+        .lock()
+        .map_err(|_| "foundry-grant-revocation-failed".to_string())?;
+    clear_operation_grants(&mut grants);
+    Ok(())
+}
+
+fn clear_operation_grants(grants: &mut FoundryGrantStore) {
+    for record in grants.destination_grants.values_mut() {
+        record.operation = None;
+    }
+    grants.operation_to_destination.clear();
+    grants.rendered_files_by_operation.clear();
+}
+
 fn revoke_all(state: &Xcom2ProjectFoundryState) -> Result<(), String> {
     let mut grants = state
         .grants
         .lock()
         .map_err(|_| "foundry-grant-revocation-failed".to_string())?;
+    clear_operation_grants(&mut grants);
     grants.source_grants.clear();
     grants.destination_grants.clear();
-    grants.operation_to_destination.clear();
     Ok(())
 }
 
@@ -797,6 +830,7 @@ fn mint_unique_identity(
             && !grants.source_grants.contains_key(&identity)
             && !grants.destination_grants.contains_key(&identity)
             && !grants.operation_to_destination.contains_key(&identity)
+            && !grants.rendered_files_by_operation.contains_key(&identity)
         {
             return Ok(identity);
         }

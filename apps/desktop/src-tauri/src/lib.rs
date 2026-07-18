@@ -66,6 +66,7 @@ pub fn run() {
             commands::xcom2_project_foundry::authorize_xcom2_project_foundry_destination_parent_selection,
             commands::xcom2_project_foundry::authorize_xcom2_project_foundry_destination_parent,
             commands::xcom2_project_foundry::inspect_xcom2_project_foundry_destination,
+            commands::xcom2_project_foundry::revoke_xcom2_project_foundry_operation_grants,
             commands::xcom2_project_foundry::revoke_all_xcom2_project_foundry_preview_grants,
             commands::xcom2_setup_monitor::get_xcom2_setup_monitor_snapshot,
             commands::xcom2_setup_monitor::refresh_xcom2_setup_monitor_snapshot,
