@@ -677,23 +677,39 @@ The following lifecycle is also reserved for later stories and decisions and mak
 - Post-commit removal is a separate explicit operation requiring a fresh grant. It removes the destination only after exact inventory and content verification; changed, unexpected, or unverified output is refused and preserved.
 - Recovery starts only after explicit parent selection and never scans ambient paths. A valid journal may offer only: discard an exact incomplete stage; acknowledge an exact committed destination and clean the journal; or preserve and report a mismatch or orphan. Recovery never silently resumes Apply or deletes an unverified path.
 
+#### Next exact-preview Apply slice — FUTURE/TARGET only
+
+The domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` to the next approved Foundry slice. This is approval of a FUTURE/TARGET architectural boundary only: it does not change the status or wording of the CURRENT/AS-BUILT preview amendment above and records no Apply implementation, test, native-acceptance, or completion evidence.
+
+This slice is one-shot **Apply the exact preview**:
+
+- Apply is available only for one still-live preview and is bound to that preview's exact full SHA-256 plan digest. Plain-language helper text must show the exact derived destination path and explain that Foundry will create that project once. The first submission consumes the Apply authority and disables repeat submission; success, refusal, or failure requires a new preview before any later Apply attempt.
+- The frontend submits the expected preview digest and bound operation identities, not authoritative output. Rust independently reopens the pinned local Git objects, revalidates the recipe inputs and fingerprints, renders the complete post-`RUN_THIS` plan and file bytes, validates the `ModId`, grants, selected parent, derived destination absence, topology, modes, sizes, hashes, classifications, generated content, warnings, absences, and canonical-schema version, and recomputes the RFC 8785 digest. A frontend DTO, manifest, claimed digest, path, rendered byte sequence, or success assertion is never trusted as filesystem-write authority. Any mismatch refuses before destination commit.
+- Rust keeps the selected source repository read-only and starts no process. It creates the private mode-`0600` journal and same-parent stage under the digest-bound names `.<ModId>.foundry-journal-<full-plan-digest>.json` and `.<ModId>.foundry-stage-<full-plan-digest>` with exclusive, no-follow semantics. The stage contains exactly the previewed 12 mode-`0755` destination directories, counting the destination root, and 27 mode-`0644` regular files; the sibling stage and journal mechanics are not additional destination topology.
+- Durability is explicit: Rust fsyncs every completed file, the staged directories after their entries are complete, the journal at each durable phase transition, and the selected parent when sibling entries change. After exact staged revalidation, Linux `renameat2(..., RENAME_NOREPLACE)` atomically commits the stage to the still-absent destination; no check-then-replace rename, merge, copy-over, non-atomic fallback, or destination adoption is permitted. Rust then fsyncs the parent, durably completes and removes the journal, fsyncs the parent again, and only then reports success.
+- A pre-commit refusal leaves the destination absent. Ordinary in-process cleanup may remove only an exact operation-owned stage that has been reverified under the existing policy; interrupted, stale, mismatched, or unverified staging/journal state is preserved. A post-rename durability failure reports **created; recovery required** rather than success or rollback.
+- Successful completion returns an immutable in-memory receipt containing the exact plan digest, derived destination, source commit/tree identities, and the `12`-directory/`27`-file committed counts. The receipt creates no durable project, workspace, Settings, machine, or recent-project configuration and grants no later authority.
+
+The slice has no repeat Apply, source-repository write, working-tree write, process execution, auto-open, project/workspace/machine configuration, build, deployment, cooking, launch, SDK/game mutation or validation, native chooser or native GUI/E2E acceptance, Windows implementation/parity, package, bundle, installer, extracted-module, licensing-clearance, publication, release, or distribution claim. The previewed template-owned files under `Config/` remain inert creation output and do not constitute IDE or tool configuration authority.
+
+Stale-preview and interrupted staging/journal discovery and recovery, post-commit removal, and real Linux native chooser acquisition and acceptance are three separate later Stories. None is included in `REQ-XCOM2-PROJECT-FOUNDRY-002`, and the existence of the journal, removal policy, current dialog adapter, or native chooser plugin must not imply otherwise.
+
 #### Requirements and acceptance handoff
 
-The requirements owner assigns stable requirement identifiers and statuses; this ADR does not originate or independently promote them. The lifecycle amendment above late-reconciles the current `REQ-XCOM2-PROJECT-FOUNDRY-001` declaration and its bounded evidence. Requirement and acceptance work must preserve the following split without treating broader target approval as implementation or evidence.
+The requirements owner assigns stable requirement identifiers and statuses; this ADR does not originate or independently promote them. The lifecycle amendment above late-reconciles the current `REQ-XCOM2-PROJECT-FOUNDRY-001` declaration and its bounded evidence; the domain handoff assigns `REQ-XCOM2-PROJECT-FOUNDRY-002` only to the approved FUTURE/TARGET Apply boundary above. Requirement and acceptance work must preserve the following split without treating broader target approval as implementation or evidence.
 
 The first bounded story covers deterministic preview and discard only: the exact source commit/tree and dirty-worktree independence; exact `ModId` and GUID; direct post-`RUN_THIS` transformations; complete topology, bytes, modes, sizes, hashes, classifications, generated content, warnings, and absences; strict no-execution; and cancel/discard with zero mutation and grant revocation through the separate fake-selector composition over unchanged production use cases.
 
-Later stories cover, independently:
+The next approved FUTURE/TARGET Story, `REQ-XCOM2-PROJECT-FOUNDRY-002`, covers only the digest-bound one-shot Apply path specified above: plain-language destination helper, independent Rust rendering and revalidation, exact staged and journaled Linux no-replace commit with explicit fsync durability, and an in-memory receipt.
 
-1. real Linux native source and existing-parent destination chooser grants and lifecycle revocation;
-2. missing/mismatched object and invalid `ModId` refusals;
-3. one-shot staged Apply and atomic commit;
-4. stale source/grant/destination/plan refusal matrices;
-5. verified pre-commit cleanup and conflict-refusing post-commit removal;
-6. explicit-parent journal recovery;
-7. the extraction boundary and fail-closed package/publication/release gate;
-8. real Linux native chooser acceptance through the unchanged production route; and
-9. Windows implementation and parity at the end of the project only.
+Still-later stories cover, independently:
+
+1. stale source, grant, parent, destination, plan, and digest refusal matrices together with explicit-parent interrupted staging/journal discovery and recovery;
+2. conflict-refusing post-commit removal under a fresh exact grant;
+3. real Linux native source and existing-parent chooser acquisition, grant lifecycle, and native GUI/E2E acceptance through the unchanged production route;
+4. remaining missing/mismatched object and invalid `ModId` refusal coverage not assigned to the Apply slice;
+5. the extraction boundary and fail-closed package/publication/release gate; and
+6. Windows implementation and parity at the end of the project only.
 
 ### Consequences
 
