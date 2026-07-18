@@ -694,7 +694,7 @@ test("focused missing-Steam machine Settings fresh-builds with empty native-only
     assert.ok(
       manifest.selectedScenarios[0].tags.includes("@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001"),
     );
-    assert.ok(manifest.selectedScenarios[0].tags.includes("@not-implemented"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"));
     assert.equal(manifest.executables.IDE_STORY_NATIVE_GUI_PYTHON_PATH, undefined);
   } finally {
     await rm(artifactRoot, { recursive: true, force: true });
@@ -1351,7 +1351,7 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
 
 test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 6);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 7);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2MachineSettingsMissingSteamNativeGui"), 1);
@@ -1375,14 +1375,14 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(missingSteamSelection.scenarios.length, 1);
   assert.match(
     dryRunSummary("xcom2MachineSettingsMissingSteamNativeGui"),
-    /1 scenario \(1 undefined\)[\s\S]*22 steps \(2 skipped, 20 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*22 steps \(22 skipped\)/,
   );
   assert.ok(
     missingSteamSelection.scenarios[0].tags.includes(
       "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
     ),
   );
-  assert.ok(missingSteamSelection.scenarios[0].tags.includes("@not-implemented"));
+  assert.ok(missingSteamSelection.scenarios[0].tags.includes("@implemented-and-validated"));
 
   const diagnosticSelection = discoverNativeDesktopSelection(
     "xcom2ModuleConfigurationDiagnosticsNativeGui",
@@ -1436,10 +1436,10 @@ test("implemented desktop discovery selects the exact harness and native require
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 6);
+  assert.equal(selection.scenarios.length, 7);
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /6 scenarios \(6 skipped\)[\s\S]*176 steps \(176 skipped\)/,
+    /7 scenarios \(7 skipped\)[\s\S]*198 steps \(198 skipped\)/,
   );
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
@@ -1447,6 +1447,7 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-DESKTOP-FILE-OPEN-001",
       "@REQ-LAYOUT-DESKTOP-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-002",
+      "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
       "@REQ-XCOM2-MODULE-ACTIVATION-001",
       "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
       "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",

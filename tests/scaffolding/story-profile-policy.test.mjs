@@ -250,13 +250,13 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
-test("focused missing-Steam XCOM machine Settings profile is native-only and status-independent before promotion", () => {
+test("focused missing-Steam XCOM machine Settings profile is native-only and status-independent after promotion", () => {
   const selected = selectedScenarios("xcom2MachineSettingsMissingSteamNativeGui");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001"]);
   assert.equal(selected[0].uri, "features/xcom2/machine-settings-missing-steam.feature");
-  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.ok(selected[0].tags.has("@implemented-and-validated"));
   assert.ok(selected[0].tags.has("@desktop"));
   assert.ok(selected[0].tags.has("@native-gui"));
   assert.equal(selected[0].tags.has("@web"), false);
@@ -372,7 +372,7 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("declared routes stay exact while missing-Steam machine Settings remains parked", () => {
+test("declared routes and parked inventory stay exact after missing-Steam machine Settings promotion", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const parked = declared.filter(({ tags }) => tags.has("@not-implemented"));
   const web = selectedScenarios("implementedWeb");
@@ -383,6 +383,7 @@ test("declared routes stay exact while missing-Steam machine Settings remains pa
     "@REQ-DESKTOP-FILE-OPEN-001",
     "@REQ-LAYOUT-DESKTOP-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-002",
+    "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
     "@REQ-XCOM2-MODULE-ACTIVATION-001",
     "@REQ-XCOM2-MODULE-CONFIGURATION-ACTIVATION-001",
     "@REQ-XCOM2-MODULE-CONFIGURATION-DIAGNOSTICS-001",
@@ -397,15 +398,14 @@ test("declared routes stay exact while missing-Steam machine Settings remains pa
   assert.deepEqual(parked.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
-    "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
   ]);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 2);
-  assert.equal(nativeGui.length, 6);
+  assert.equal(nativeGui.length, 7);
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 2);
-  assert.equal(routing.expectedDesktopTauriWebdriver.length, 6);
+  assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
     currentNativeRequirements,
