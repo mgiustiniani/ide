@@ -171,6 +171,113 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
     }>();
   });
 
+  it("defines the exact immutable preparation, state, event, and decision lifecycle", () => {
+    type ReadyPreview = Extract<
+      foundryContracts.Xcom2ProjectFoundryPreviewResult,
+      { readonly kind: "ready" }
+    >;
+    type ApplyingState = Extract<Xcom2ProjectFoundryApplyState, { readonly status: "applying" }>;
+
+    expectTypeOf<Xcom2ProjectFoundryApplyCurrentSelection>().toEqualTypeOf<{
+      readonly sourceGrant: Readonly<foundryContracts.Xcom2ProjectFoundrySourceSelectionGrant>;
+      readonly destinationParentGrant: Readonly<foundryContracts.Xcom2ProjectFoundryDestinationParentSelectionGrant>;
+      readonly operationGrant: Readonly<foundryContracts.Xcom2ProjectFoundryOperationGrant>;
+      readonly modId: string;
+    }>();
+    expectTypeOf<Xcom2ProjectFoundryApplyPreparation>().toEqualTypeOf<{
+      readonly preview: Readonly<foundryContracts.Xcom2ProjectFoundryPreviewResult>;
+      readonly current: Readonly<Xcom2ProjectFoundryApplyCurrentSelection>;
+      readonly approvedPlanDigest: string;
+      readonly authority: "available" | "consumed";
+      readonly stale: boolean;
+    }>();
+    expectTypeOf<Xcom2ProjectFoundryApplyPreparationResult>().toEqualTypeOf<
+      | { readonly kind: "ready"; readonly request: Readonly<Xcom2ProjectFoundryApplyRequest> }
+      | { readonly kind: "refused"; readonly code: Xcom2ProjectFoundryApplyRefusalCode }
+    >();
+
+    expectTypeOf<Xcom2ProjectFoundryApplyState>().toEqualTypeOf<
+      | {
+          readonly status: "editing";
+          readonly authority: "available";
+          readonly current: Readonly<Xcom2ProjectFoundryApplyCurrentSelection>;
+          readonly invalidatedBy: "source" | "destination" | "mod-id";
+        }
+      | {
+          readonly status: "ready";
+          readonly authority: "available";
+          readonly current: Readonly<Xcom2ProjectFoundryApplyCurrentSelection>;
+          readonly preview: Readonly<ReadyPreview>;
+        }
+      | {
+          readonly status: "applying";
+          readonly authority: "consumed";
+          readonly preview: Readonly<ReadyPreview>;
+          readonly request: Readonly<Xcom2ProjectFoundryApplyRequest>;
+        }
+      | {
+          readonly status: "created";
+          readonly authority: "consumed";
+          readonly receipt: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
+        }
+      | {
+          readonly status: "refused";
+          readonly authority: "consumed";
+          readonly refusal: Readonly<
+            Extract<Xcom2ProjectFoundryApplyResult, { readonly result: "refused" }>
+          >;
+        }
+      | {
+          readonly status: "failed";
+          readonly authority: "consumed";
+          readonly failure: Readonly<
+            Extract<Xcom2ProjectFoundryApplyResult, { readonly result: "failed" }>
+          >;
+        }
+      | {
+          readonly status: "created-recovery-required";
+          readonly authority: "consumed";
+          readonly failure: Readonly<
+            Extract<
+              Xcom2ProjectFoundryApplyResult,
+              { readonly result: "created-recovery-required" }
+            >
+          >;
+        }
+    >();
+
+    expectTypeOf<Xcom2ProjectFoundryApplyEvent>().toEqualTypeOf<
+      | {
+          readonly kind: "source-selection-changed";
+          readonly sourceGrant: Readonly<foundryContracts.Xcom2ProjectFoundrySourceSelectionGrant>;
+        }
+      | {
+          readonly kind: "destination-selection-changed";
+          readonly destinationParentGrant: Readonly<foundryContracts.Xcom2ProjectFoundryDestinationParentSelectionGrant>;
+          readonly operationGrant: Readonly<foundryContracts.Xcom2ProjectFoundryOperationGrant>;
+        }
+      | { readonly kind: "mod-id-changed"; readonly modId: string }
+      | { readonly kind: "apply-requested"; readonly approvedPlanDigest: string }
+      | {
+          readonly kind: "apply-completed";
+          readonly result: Readonly<Xcom2ProjectFoundryApplyResult>;
+        }
+    >();
+    expectTypeOf<Xcom2ProjectFoundryApplyStateDecision>().toEqualTypeOf<
+      | { readonly kind: "transitioned"; readonly state: Xcom2ProjectFoundryApplyState }
+      | {
+          readonly kind: "prepared";
+          readonly state: ApplyingState;
+          readonly request: Readonly<Xcom2ProjectFoundryApplyRequest>;
+        }
+      | {
+          readonly kind: "refused";
+          readonly code: Xcom2ProjectFoundryApplyRefusalCode;
+          readonly state: Xcom2ProjectFoundryApplyState;
+        }
+    >();
+  });
+
   it("prepares only the exact Gherkin request and isolates it from mutable caller data", () => {
     const preparation = matchingPreparation();
     const mutableCurrent = preparation.current as ReturnType<typeof mutableFoundryApplySelection>;
@@ -381,13 +488,14 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
 
     receiptInput.finalProjectLocation = "/mutated/after-completion";
     receiptInput.committedFiles = 99;
-    if (completed.state.status !== "created") throw new Error("Expected created state");
-    expect(completed.state.receipt.finalProjectLocation).toBe(
+    const createdState = completed.state;
+    if (createdState.status !== "created") throw new Error("Expected created state");
+    expect(createdState.receipt.finalProjectLocation).toBe(
       "/scenario/foundry-output/FoundryPreviewFixture",
     );
-    expect(completed.state.receipt.committedFiles).toBe(27);
+    expect(createdState.receipt.committedFiles).toBe(27);
     expect(() => {
-      (completed.state.receipt as { committedFiles: number }).committedFiles = 28;
+      (createdState.receipt as { committedFiles: number }).committedFiles = 28;
     }).toThrow(TypeError);
 
     const repeated = applyCore.reduceXcom2ProjectFoundryApplyState(completed.state, {
@@ -418,7 +526,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
 
       const decision = applyCore.reduceXcom2ProjectFoundryApplyState(applying, {
         kind: "apply-completed",
-        result: receipt as Xcom2ProjectFoundryApplyResult,
+        result: receipt as unknown as Xcom2ProjectFoundryApplyResult,
       });
       expect(decision).toEqual({
         kind: "refused",
