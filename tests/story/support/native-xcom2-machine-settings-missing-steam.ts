@@ -545,7 +545,10 @@ export class NativeXcom2MachineSettingsMissingSteamSession {
   }
 
   async assertExactMissingSteamNote(text: string): Promise<void> {
-    assert.equal(text, "Steam products were not found. Install them through Steam, then refresh.");
+    assert.equal(
+      text,
+      "Steam products not found. Steam may be unavailable, or no monitored app manifests were discovered.",
+    );
     const details = await this.detailsRegion();
     const firstNote = await details.$('[role="note"]');
     await firstNote.waitForDisplayed({ timeout: 15_000, interval: 50 });
@@ -860,7 +863,11 @@ export class NativeXcom2MachineSettingsMissingSteamSession {
     const details = await this.detailsRegion();
     const matches: StoryElement[] = [];
     for (const section of await details.$$("section").getElements()) {
-      if ((await exactTextElements(section, "h1,h2,h3,h4,h5,h6", name)).length === 1) {
+      const heading = await section.$(":scope > div:first-child > h3");
+      if (
+        (await heading.isExisting()) &&
+        normalizeText(String(await heading.getProperty("textContent"))) === name
+      ) {
         matches.push(section);
       }
     }
