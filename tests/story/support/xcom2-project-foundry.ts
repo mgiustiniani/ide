@@ -734,9 +734,18 @@ export class Xcom2ProjectFoundryHarness {
     if (name === "Project Foundry warnings") this.#expectedWarnings = [...expected];
   }
 
-  assertRendererMintedInitialGrant(operationIdentity: string, destination: string): void {
+  async assertRendererMintedInitialGrant(
+    operationIdentity: string,
+    destination: string,
+  ): Promise<void> {
     assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
     assert.equal(destination, DERIVED_DESTINATION);
+    const readyPreview = this.#dialog().locator('[aria-label="Complete Project Foundry preview"]');
+    await readyPreview.waitFor({ state: "visible" });
+    await readyPreview
+      .getByText(PLAN_DIGEST, { exact: true })
+      .first()
+      .waitFor({ state: "visible" });
     assert.equal(this.#renderCalls.length, 1);
     assert.equal(this.#renderCalls[0]?.modId, "FoundryPreviewFixture");
     assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), true);
@@ -801,8 +810,13 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(this.#activeGrants.has(REPLACEMENT_OPERATION_GRANT_IDENTITY), false);
   }
 
-  assertReplacementRendererRead(modId: string): void {
+  async assertReplacementRendererRead(modId: string): Promise<void> {
     assert.equal(modId, REPLACEMENT_MOD_ID);
+    const readyPreview = this.#dialog().locator('[aria-label="Complete Project Foundry preview"]');
+    await readyPreview.waitFor({ state: "visible" });
+    const digest = this.#renderedDigests.get(modId);
+    assert.ok(digest, "Replacement renderer completed without recording its digest");
+    await readyPreview.getByText(digest, { exact: true }).first().waitFor({ state: "visible" });
     assert.equal(this.#renderCalls.length, 2);
     assert.equal(this.#renderCalls[1]?.modId, modId);
     assert.equal(this.#objectReads.length, 2);

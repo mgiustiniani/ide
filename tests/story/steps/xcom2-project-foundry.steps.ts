@@ -63,8 +63,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "the shared Rust renderer returns the complete plan body and internal file bytes and mints operation grant {string} only after exact rendering and destination-absence validation succeed",
-  function (operationIdentity: string) {
-    session(this).assertRendererMintedInitialGrant(
+  async function (operationIdentity: string) {
+    await session(this).assertRendererMintedInitialGrant(
       operationIdentity,
       "/scenario/foundry-output/FoundryPreviewFixture",
     );
@@ -376,8 +376,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "only after exact rendering succeeds and {string} is confirmed absent, Rust mints operation grant {string} for only that exact destination and its operation-specific same-parent stage and journal names",
-  function (destination: string, operationIdentity: string) {
-    session(this).assertRendererMintedInitialGrant(operationIdentity, destination);
+  async function (destination: string, operationIdentity: string) {
+    await session(this).assertRendererMintedInitialGrant(operationIdentity, destination);
   },
 );
 
@@ -512,8 +512,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "the same shared Rust renderer reopens the pinned blobs and dynamically renders exact ModId {string}",
-  function (modId: string) {
-    session(this).assertReplacementRendererRead(modId);
+  async function (modId: string) {
+    await session(this).assertReplacementRendererRead(modId);
   },
 );
 
