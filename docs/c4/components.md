@@ -1,6 +1,6 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
@@ -255,8 +255,12 @@ Machine evidence, monitor polling, and transactions remain independently XCOM-ma
 
 ## Global XCOM Machine Settings
 
+The machine monitor presents the exact accessible missing-Steam state through the normal application composition, typed Tauri monitor adapter, and Rust monitor when the desktop starts from isolated empty directories. This focused native presentation boundary does not reclassify the broader machine Settings lifecycle requirement, whose evidence remains harness-only.
+
 ```text
 Desktop Settings / XCOM 2
+  ├─ exact accessible missing-Steam state
+  │    └─ App composition → typed Tauri monitor adapter → Rust monitor
   ├─ Settings closed
   │    └─ no monitor/history/detail reads, polling, or subscriptions
   ├─ Settings open

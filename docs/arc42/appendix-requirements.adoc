@@ -2,7 +2,7 @@
 
 [IMPORTANT]
 ====
-Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was late-reconciled on 2026-07-17 from every configured `features/**/*.feature` file at exact repository baseline `2ecbb29`. The feature sources declare `REQ-WEB-001`, both layout requirements, `REQ-DESKTOP-FILE-OPEN-001`, `REQ-REFACTORKIT-JAVA-IMPORT-002`, and all three XCOM project requirements as `@implemented-and-validated`; `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` as `@implemented-not-e2e-validated`; and both TypeScript/JavaScript RefactorKit requirements as `@not-implemented`. Dated target-specific results remain separate observed evidence. Convention, configured activation, and safe configuration diagnostics are current only for bounded recognition: activation-only `.ide/xcom2.json` v1 and Option A inputs are project-owned/read-only and grant no contextual tooling authority. The diagnostic is current under explicit-refresh authority, with one atomic Settings warning, neutral checking, independent strong Option A survival, mirrored warning, and strict no-disclosure/no-project-input-write boundaries. Normal application-owned `.ide/workspace.json` marker/registry metadata is outside that XCOM input assertion. The RefactorKit option-A freeze and packaging postponement are unchanged.
+Status: *implementation-informed; Chapter 1 goals, quality goals, and stakeholders confirmed on 2026-07-14; confirmed layout amendment CURRENT/AS-BUILT*. This appendix was late-reconciled on 2026-07-18 from every configured `features/**/*.feature` file at exact repository baseline `af0b858`. The feature sources declare `REQ-WEB-001`, both layout requirements, `REQ-DESKTOP-FILE-OPEN-001`, `REQ-REFACTORKIT-JAVA-IMPORT-002`, the UI-only `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001`, and all three XCOM project requirements as `@implemented-and-validated`; `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` as `@implemented-not-e2e-validated`; and both TypeScript/JavaScript RefactorKit requirements as `@not-implemented`. Dated target-specific results remain separate observed evidence. Convention, configured activation, and safe configuration diagnostics are current only for bounded recognition: activation-only `.ide/xcom2.json` v1 and Option A inputs are project-owned/read-only and grant no contextual tooling authority. The diagnostic is current under explicit-refresh authority, with one atomic Settings warning, neutral checking, independent strong Option A survival, mirrored warning, and strict no-disclosure/no-project-input-write boundaries. Normal application-owned `.ide/workspace.json` marker/registry metadata is outside that XCOM input assertion. The RefactorKit option-A freeze and packaging postponement are unchanged.
 ====
 
 == Governance
@@ -32,7 +32,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |Honest native XCOM machine Settings when Steam products are missing
 |1
 |`REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001`
-|`@not-implemented`
+|`@implemented-and-validated`
 
 |link:../../features/xcom2/module-activation.feature[`features/xcom2/module-activation.feature`]
 |Conservative recognition-only XCOM module activation
@@ -95,7 +95,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated`
 |===
 
-NOTE: The configured inventory contains twelve feature files, thirteen scenarios, and thirteen repository-unique stable requirement IDs: eight validated, two harness-only, and three not implemented. The status values above are copied from Gherkin, not inferred from observed evidence. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` remains a FUTURE/TARGET declaration pending promotion and does not change current evidence or implemented aggregate routing.
+NOTE: The configured inventory contains twelve feature files, thirteen scenarios, and thirteen repository-unique stable requirement IDs: nine validated, two harness-only, and two not implemented. The status values above are copied from Gherkin, not inferred from observed evidence. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`.
 
 == Requirement Catalogue
 
@@ -151,6 +151,61 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |`synapse-ide-desktop` packaging remains postponed until the full-build milestone and must use repository-only runtime dependencies. The harness produces no package evidence.
 |===
 
+=== REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001]]`REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001`
+
+|Classification
+|Functional and non-functional requirement (`@functional-requirement`, `@non-functional-requirement`); the scenario also carries `@security` and `@accessibility`.
+
+|Source traceability
+|`FR-X2UI-000`, `FR-X2ARCH-007`, and `AT-X2-028`
+
+|Actor / stakeholder
+|A desktop user who needs an honest, presentation-safe explanation when monitored Steam products are unavailable.
+
+|Capability
+|Present the exact accessible missing-Steam XCOM 2 machine monitor through visible Settings navigation and the natural native application path, without exposing local paths or claiming behavior outside the rendered UI.
+
+|Scenario
+|_Present a safe complete missing-Steam state in native XCOM machine Settings_
+
+|Feature path and exact declaration
+|link:../../features/xcom2/machine-settings-missing-steam.feature[`features/xcom2/machine-settings-missing-steam.feature`], status-tag declaration at line 16 and scenario beginning at line 17.
+
+|Tags
+|`@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001`, `@desktop`, `@native-gui`, `@functional-requirement`, `@non-functional-requirement`, `@security`, `@accessibility`, `@implemented-and-validated`
+
+|Declared status
+|`@implemented-and-validated` — copied exactly from the feature source after promotion commit `c4a9644`. It remains separate from the focused native result below.
+
+|Focused native mode
+|`pnpm test:story:req-xcom2-machine-settings-missing-steam-001:native` freshly builds and directly launches the production Linux X11 Tauri release/no-bundle executable. Before launch, one scenario-owned sandbox supplies distinct empty `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`, `IDE_HOME`, and authorized generic-workspace locations. WebDriver observes only the rendered accessible WebKit DOM at an asserted 1440×900 viewport.
+
+|Dated focused native evidence
+|On 2026-07-18 at exact clean HEAD `958fc0a`, the focused route passed 1 scenario/22 reported steps; promotion followed at `c4a9644`. The person reached the section only through the visible *Settings* control and *Settings sections* navigation. The unmodified production path was the real App → typed Tauri adapter/invoke → Rust monitor path. Exit, Linux X11 resource release, sandbox removal, and the runner no-survivor check passed.
+
+|Exact accessible frame and aggregate
+|The rendered modal is named *Settings*; the selected *XCOM 2* tab is described as *Global machine setup*; the section presents heading *XCOM 2 WOTC Setup*, badge *Built-in · Experimental*, and focusable region *XCOM 2 setup monitor details*. Its note is exactly *Steam products not found. Steam may be unavailable, or no monitored app manifests were discovered.* *Aggregate setup state* presents *Overall state — Not Found*, *Warnings — No warnings reported*, and *Steam discovery provenance — Unknown (path redacted)*. The four ordered blockers state that XCOM 2 and the WOTC Development Tools are each incomplete and not stable.
+
+|Exact product presentation
+|*Monitored Steam products* contains exactly three *Not Found* cards: *XCOM 2* / AppID `268500` / *Required*; *XCOM 2: War of the Chosen Development Tools* / AppID `602410` / *Required*; and *XCOM 2 Development Tools* / AppID `299990` / *Related / optional evidence*. Each presents unknown progress/bytes/staging/size, *StateFlags — Not reported*, absent install/download directories, *No manifest found*, *Incomplete* because *Steam appmanifest was not found*, *Unstable* because *Product state is unavailable*, and text-only *Mutation — Blocked*. Ordered reasons are *Product is unavailable* and *This built-in monitor is read-only*. No card presents manifest provenance or a manifest, install, download, or other local filesystem path.
+
+|Evidence boundary
+|Acceptance used no IPC interception, monkeypatch, hook, instrumentation, transcript, payload or call-count assertion, fake timer, or supplied Steam fixture. It establishes no monitor lifecycle, polling, subscription, refresh, reopen, *Plan Setup*, `canPlan`, dry-run planner, transaction UI or behavior, project activation/activity/tool, mutation, post-launch filesystem identity or behavior, live Steam, machine correctness, browser, package/bundle/installer, Wayland, other-operating-system, or other-DPI claim. *Blocked* is rendered text only, not mutation evidence.
+
+|Separate lifecycle requirement
+|This UI-only result neither supersedes nor reclassifies `REQ-XCOM2-MACHINE-SETTINGS-001`, which remains exclusively `@implemented-not-e2e-validated` through a deterministic fake-backend/fake-time harness.
+
+|Packaging status
+|A direct release/no-bundle executable is not package evidence. `synapse-ide-desktop` packaging remains postponed until the full-build milestone.
+|===
+
 === REQ-XCOM2-MODULE-ACTIVATION-001
 
 [cols="1,4",options="header"]
@@ -191,7 +246,7 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |On 2026-07-16 against promotion baseline `903cb1a`, the requirement passed 1 scenario/26 reported steps: 25 authored steps plus cleanup. A generic workspace and a one-kind `Config/XComEngine.ini` workspace produced no project contribution even while machine evidence remained visible in Settings. The exact credible fixture produced one keyboard-focusable accessible **XCOM 2 Project** activity, the expected recognition-only panel and four ordered reasons. Switching back removed activity and panel synchronously before generic content, and no late contribution reappeared for five seconds.
 
 |Current contribution and routing status
-|The implemented native aggregate and `test:e2e` select this scenario with layout, native file opening, deterministic-fixture Java import, configured activation, and configuration diagnostics. The native route reports six scenarios/176 reported steps; the canonical aggregate remains two web scenarios, two desktop-harness scenarios/49 steps, and six native GUI scenarios.
+|The implemented native aggregate and `test:e2e` select this scenario with layout, native file opening, deterministic-fixture Java import, UI-only missing-Steam Settings, configured activation, and configuration diagnostics. The native route reports seven scenarios/198 reported steps; the canonical aggregate remains two web scenarios, two desktop-harness scenarios/49 steps, and seven native GUI scenarios.
 
 |Option A architecture boundary
 |The current first slice implements link:../../ADR.md#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions[ADR 0007] Option A. A dedicated read-only Rust metadata/name scanner receives no caller-selected root or policy and scans exactly the current authorized Linux workspace. It accepts exact-case regular, non-symlink entries; never traverses or accepts symlinks; excludes `.git`, `node_modules`, `target`, `dist`, `build`, `coverage`, `.turbo`, and `.vite`; and enforces depth 8 plus 20,000 encountered entries with explicit completeness/issues. A strict Tauri adapter validates correlation, fixed limits, enums, canonical relative paths, ordering, and duplicates. A pure evaluator groups five ordered evidence kinds—`x2proj`, `xcommod`, `x2mbc-script-pair`, `engine-config`, and `unrealscript-layout`—under inferred module roots. One kind means `needs-confirmation` with no contribution; at least two distinct kinds mean `active`. One controller scan occurs per workspace generation with no polling; workspace identity/generation plus scan identity/generation reject stale results.
@@ -249,7 +304,7 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |On 2026-07-17 at `34d5a5e`, the route passed 1 scenario/37 reported steps against the actual sandbox filesystem and fresh production Linux X11 release/no-bundle Tauri WebKit DOM at 1440×900. The exact activation fixture was 63 UTF-8 bytes with SHA-256 `53d92f8cd91d90f49a98a133b5de3ef3862b5472805248780d561e2c9b765dfb`. It activated `mods/IntentOnly` as configured/explicit with recognition confidence `none`; external removal had no effect before refresh; refresh synchronously revoked and suppressed stale restoration; external exact-byte restoration plus refresh restored the contribution; switch-away revoked synchronously; and the final file bytes remained unchanged.
 
 |Current routing and aggregate status
-|The implemented native route now selects this scenario with layout, native file opening, deterministic-fixture Java import, convention recognition, and configuration diagnostics. The native route reports six scenarios/176 reported steps; the canonical aggregate is two web scenarios, two desktop-harness scenarios/49 steps, and six native GUI scenarios.
+|The implemented native route now selects this scenario with layout, native file opening, deterministic-fixture Java import, UI-only missing-Steam Settings, convention recognition, and configuration diagnostics. The native route reports seven scenarios/198 reported steps; the canonical aggregate is two web scenarios, two desktop-harness scenarios/49 steps, and seven native GUI scenarios.
 
 |Evidence limits
 |The run proves only the bounded activation fixture and environment. It proves no package/installer, Git synchronization, configuration watcher, proprietary-content compatibility, external-root support, machine/tool correctness, Build/Problems/Logs/language/actions/bottom contributions, Wayland/other OS, or other DPI behavior. Browser composition remains unchanged and was not exercised by this native Story.
@@ -304,7 +359,7 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |The application never changed `.ide/xcom2.json` or the two Option A descriptor inputs; only the scenario owner's declared external replacements/creations changed them. Normal application-owned `.ide/workspace.json` marker/registry metadata updates were separately observed and explicitly excluded because they are not XCOM configuration or evidence writes.
 
 |Current routing and evidence limits
-|The implemented native route selects this scenario and reports 6 scenarios/176 reported steps; the canonical aggregate is 2 web, 2 deterministic desktop-harness scenarios/49 steps, and 6 native GUI scenarios. This Story proves no browser behavior, package/bundle/installer, Git synchronization, configuration/evidence watcher or poll, Wayland, other OS/DPI behavior, proprietary compatibility/content, module-content parsing, external roots, machine correctness, broader process/mutation authority, or contextual XCOM tools.
+|The implemented native route selects this scenario and reports 7 scenarios/198 reported steps; the canonical aggregate is 2 web, 2 deterministic desktop-harness scenarios/49 steps, and 7 native GUI scenarios. This Story proves no browser behavior, package/bundle/installer, Git synchronization, configuration/evidence watcher or poll, Wayland, other OS/DPI behavior, proprietary compatibility/content, module-content parsing, external roots, machine correctness, broader process/mutation authority, or contextual XCOM tools.
 |===
 
 === REQ-REFACTORKIT-JAVA-IMPORT-001
@@ -341,7 +396,7 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |Deterministic `desktop/tauri-harness` execution under jsdom with evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`. It imports the real desktop `App`, opens the actual FileTree context menu, renders the production review dialog, and exercises the production RefactorKit Import controller and typed Tauri adapters through a fake in-process Tauri invoke boundary. The story loader replaces Monaco with a read-only textarea.
 
 |Dated deterministic Story evidence
-|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement passed 1 scenario and 22/22 steps. After XCOM machine Settings promotion, the canonical desktop-harness selection passes this scenario plus `REQ-XCOM2-MACHINE-SETTINGS-001`: 2 scenarios/49 steps. The full aggregate routes two web, two harness, and six native GUI scenarios.
+|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement passed 1 scenario and 22/22 steps. After XCOM machine Settings promotion, the canonical desktop-harness selection passes this scenario plus `REQ-XCOM2-MACHINE-SETTINGS-001`: 2 scenarios/49 steps. The full aggregate routes two web, two harness, and seven native GUI scenarios.
 
 |Capability and clipboard evidence
 |The production composition accepted API `0.2`; `java.importExternalClass` with `targetDirectory`, preview, apply, discard, and rollback; `refactor.apply`; `refactor.discard`; and `patch.rollback` before exactly one `read_clipboard_text` invocation. The accepted capability event precedes that one read, which precedes preview. Rollback capability is required provider authority, but the current import UI exposes no rollback action.
@@ -408,7 +463,7 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 |Focused real Linux X11 native GUI/E2E through `desktop/tauri-webdriver`. The runner freshly executes `pnpm --filter @ide/desktop tauri build --no-bundle --ci`, directly launches the resulting production release executable under isolated D-Bus/Xvfb, drives the real Tauri WebKit document through WebKitWebDriver/WebdriverIO, and reports `packagedApplication: false`. The RefactorKit peer is a scenario-owned executable deterministic API-0.2 fixture daemon, not a developer-installed or released provider.
 
 |Dated independent native evidence
-|On 2026-07-16 at repository revision `5146221`, the focused route passed 1 scenario/36 Cucumber markers. The current implemented native aggregate passes this scenario with native file opening, promoted layout, convention recognition, configured activation, and configuration diagnostics: 6 scenarios and 176 reported steps against one fresh release/no-bundle executable. The canonical declared aggregate therefore routes 2 web, 2 deterministic desktop-harness, and 6 native GUI scenarios.
+|On 2026-07-16 at repository revision `5146221`, the focused route passed 1 scenario/36 Cucumber markers. The current implemented native aggregate passes this scenario with native file opening, promoted layout, UI-only missing-Steam Settings, convention recognition, configured activation, and configuration diagnostics: 7 scenarios and 198 reported steps against one fresh release/no-bundle executable. The canonical declared aggregate therefore routes 2 web, 2 deterministic desktop-harness, and 7 native GUI scenarios.
 
 |Actual native UI and clipboard boundary
 |The real WebKit document exposed the actual File Explorer, expanded `src/main/java/example/imports`, opened its directory context menu, chose the production **Paste Java Class from Clipboard** action, rendered the actual review dialog, refreshed the actual tree/tab, and displayed the exact fixture in real Monaco rather than the Story textarea mock. A GTK-owned Linux X11 OS clipboard supplied the 147-byte fixture through the production native clipboard command. This path-to-preview evidence does not capture raw IPC and does not establish the number of underlying native clipboard reads.
@@ -758,10 +813,10 @@ NOTE: The configured inventory contains twelve feature files, thirteen scenarios
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` remains real-Playwright Chromium GREEN, and `REQ-LAYOUT-DESKTOP-001` remains independently Linux X11 release/no-bundle WebView DOM 1440×900 native GREEN. Its earlier deterministic 9/9 harness result remains bounded history. `REQ-WEB-001` remains independently passing in web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` and `REQ-XCOM2-MACHINE-SETTINGS-001` are the two `@implemented-not-e2e-validated` desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, convention XCOM activation, activation-only configured XCOM activation, and safe XCOM configuration diagnostics remain separately validated under their own limits. Both TypeScript/JavaScript RefactorKit requirements remain `@not-implemented` under their unchanged option-A policies.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. `REQ-LAYOUT-WEB-001` remains real-Playwright Chromium GREEN, and `REQ-LAYOUT-DESKTOP-001` remains independently Linux X11 release/no-bundle WebView DOM 1440×900 native GREEN. Its earlier deterministic 9/9 harness result remains bounded history. `REQ-WEB-001` remains independently passing in web/Playwright mode. `REQ-REFACTORKIT-JAVA-IMPORT-001` and lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001` are the two `@implemented-not-e2e-validated` desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, and safe XCOM configuration diagnostics remain separately validated under their own limits. Both TypeScript/JavaScript RefactorKit requirements remain `@not-implemented` under their unchanged option-A policies.
 
-The canonical migration aggregate is two declared web scenarios, two deterministic desktop-harness scenarios/49 steps, and six native GUI scenarios/176 reported steps. The configured inventory is eight `@implemented-and-validated`, two `@implemented-not-e2e-validated`, and two `@not-implemented`. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 6 native scenarios/176 reported steps. XCOM machine Settings remains harness-only. Convention, configured activation, and diagnostics use actual scenario sandboxes and native Linux X11 release/no-bundle WebKit, but add no browser, machine-correctness, package, Git/watch, external-root, proprietary, process/tool, Wayland, or other OS/DPI claim. The diagnostic additionally proves the exact safe-warning/checking lifecycle, independent Option A survival, complete warning mirroring, disclosure exclusions, and scoped XCOM input preservation while excluding normal `.ide/workspace.json` marker/registry metadata. Layout and Java import retain their separate evidence boundaries. No requirement is promoted from legacy code, supporting tests, route scaffolding, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
+The canonical migration aggregate is two declared web scenarios, two deterministic desktop-harness scenarios/49 steps, and seven native GUI scenarios/198 reported steps. The configured inventory is nine `@implemented-and-validated`, two `@implemented-not-e2e-validated`, and two `@not-implemented`. The native route freshly builds before running and remains non-packaged evidence; `test:e2e` reports 2 web scenarios/16 steps plus 7 native scenarios/198 reported steps. The broader XCOM machine Settings lifecycle remains harness-only; the separately promoted missing-Steam requirement establishes only exact accessible native presentation. Convention, configured activation, and diagnostics use actual scenario sandboxes and native Linux X11 release/no-bundle WebKit, but add no browser, machine-correctness, package, Git/watch, external-root, proprietary, process/tool, Wayland, or other OS/DPI claim. The diagnostic additionally proves the exact safe-warning/checking lifecycle, independent Option A survival, complete warning mirroring, disclosure exclusions, and scoped XCOM input preservation while excluding normal `.ide/workspace.json` marker/registry metadata. Layout and Java import retain their separate evidence boundaries. No requirement is promoted from legacy code, supporting tests, route scaffolding, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
 
 == Reconciliation Checks
 
-The 2026-07-17 late reconciliation at repository baseline `2ecbb29` checked all eleven configured feature paths, twelve scenarios, stable IDs, classifications, exact effective declared statuses, implemented aggregate routing (2 web, 2 harness, 6 native), target-specific observed evidence, relative links, and AsciiDoc delimiters. The focused convention route remains 1 scenario/26 reported steps; configured activation passed 1 scenario/37 reported steps; configuration diagnostics passed 1 scenario/52 reported steps; and the broader native route reports 6 scenarios/176 reported steps. The XCOM machine Settings harness remains 27/27 steps and the combined harness route remains 2 scenarios/49 steps. The full Vitest baseline is 1160/1160 at `2ecbb29`, with 86.61% statements/lines, 82.96% branches, and 87.22% functions; the Spec suite has 157 cases and the Rust default suite reports 204 passed plus 8 ignored. V8, Story, Spec, native, and Rust evidence remain separate. Strict documentation, canonical migration, links, direct Structurizr validation/exports, mutable-description audit, both Prettier gates, strict lint, and docs-only diff checks passed. The RefactorKit option-A freeze, the earlier `.refactorkit/workspace.lock` no-write finding, Settings-machine separation, package-manager policy, and packaging postponement remain unchanged.
+The 2026-07-18 late reconciliation at repository baseline `af0b858` checked all twelve configured feature paths, thirteen scenarios, stable IDs, classifications, exact effective declared statuses, implemented aggregate routing (2 web, 2 harness, 7 native), target-specific observed evidence, relative links, and AsciiDoc delimiters. The focused missing-Steam route passed 1 scenario/22 reported steps at exact clean `958fc0a` before promotion at `c4a9644`; convention remains 1 scenario/26 reported steps; configured activation passed 1 scenario/37 reported steps; configuration diagnostics passed 1 scenario/52 reported steps; and the broader native route reports 7 scenarios/198 reported steps. The XCOM machine Settings lifecycle harness remains 27/27 steps and the combined harness route remains 2 scenarios/49 steps. The full Vitest baseline is 1160/1160 at `2ecbb29`, with 86.61% statements/lines, 82.96% branches, and 87.22% functions; the Spec suite has 157 cases and the Rust default suite reports 204 passed plus 8 ignored. V8, Story, Spec, native, and Rust evidence remain separate. Strict documentation, canonical migration, links, direct Structurizr validation/exports, mutable-description audit, both Prettier gates, strict lint, and docs-only diff checks passed. The RefactorKit option-A freeze, the earlier `.refactorkit/workspace.lock` no-write finding, Settings-machine separation, package-manager policy, and packaging postponement remain unchanged.

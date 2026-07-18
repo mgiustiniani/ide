@@ -35,9 +35,9 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 javaLanguageController = component "Java Language Controller" "Owns Java sessions, versioned document sync, diagnostics, Problems projection, semantics, and cancellation with comprehensive identity guards." "TypeScript, React" "Current"
                 javaMonacoSemantics = component "Guarded Monaco Java Providers" "Registers guarded Java semantics for the exact synchronized model; limits completion edits and renders untrusted Markdown without HTML." "React, Monaco" "Current"
                 xcomFeatureContracts = component "Fixed XCOM 2 Feature Descriptor and Contracts" "Defines first-party machine setup and project activation data without creating a plugin runtime or execution grant." "TypeScript" "Current"
-                xcomMonitorPanel = component "XCOM 2 Machine Settings Monitor" "Shows machine evidence only while Settings owns the monitor lifecycle; it never activates a project." "React" "Current"
+                xcomMonitorPanel = component "XCOM 2 Machine Settings Monitor" "Presents accessible machine evidence, including the exact safe missing-Steam state, without activating a project." "React" "Current"
                 xcomDryRunPlanner = component "Pure XCOM 2 Setup Planner" "Returns export-safe descriptive steps without execution or mutation authority." "TypeScript" "Current"
-                tauriXcomMonitorAdapter = component "Tauri XCOM 2 Monitor Adapter" "Validates product identity and redaction; its Settings-owned subscription polls bounded events and clears its timer on unsubscribe." "TypeScript, Tauri API" "Current"
+                tauriXcomMonitorAdapter = component "Tauri XCOM 2 Monitor Adapter" "Validates product identity, missing-product states, and redaction at the typed desktop boundary." "TypeScript, Tauri API" "Current"
                 tauriXcomTransactionAdapter = component "Tauri XCOM 2 Transaction Adapter" "Validates workspace and generation identity for bounded transaction reads, actions, events, and stale-result rejection." "TypeScript, Tauri API" "Current"
                 xcomSetupPresentation = component "XCOM 2 Transaction Settings UI" "Shows transaction state, reviewed operations and digest, exact approval, rollback, and recovery; exports omit paths and content." "React" "Current"
                 xcomSetupController = component "XCOM Setup Controller" "Owns monitor and transaction adapter lifecycles only while Settings is open; transaction authority stays workspace-correlated." "TypeScript, React" "Current"
@@ -75,7 +75,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 javaLanguageFacade = component "Java Language Tauri Facade" "Exposes bounded Tauri commands and delegates lifecycle, events, document sync, semantics, and cancellation to the application service." "Rust, Tauri" "Current"
                 javaLanguageBoundaryPolicy = component "Java Language Contract and Path Policy" "Defines language DTOs and validates workspace, path, URI, generation, version, request, and cancellation identity." "Rust" "Current"
                 javaLifecycleOrchestrator = component "Java Language Application Service" "Owns Java session lifecycle, process and document state, event queues, correlation, cancellation, and language-module orchestration." "Rust" "Current"
-                xcomSteamMonitor = component "Native XCOM 2 Steam Monitor" "Reads bounded Steam metadata, derives conservative machine status, redacts paths, and queues bounded events without project activation." "Rust, Tauri" "Current"
+                xcomSteamMonitor = component "Native XCOM 2 Steam Monitor" "Reads bounded Steam metadata and derives redacted conservative machine and missing-product states without project activation." "Rust, Tauri" "Current"
                 xcomSetupWorkflow = component "Rollbackable XCOM Setup Transaction Engine" "Journals an approved SDK transaction with content-addressed backups; restore is conflict-safe and exports omit paths and content." "Rust" "Current"
                 xcomProductionOperations = component "Concrete WOTC SDK Operations" "Builds the allowlisted reversible vanilla SDK operation set and verifies its exact preconditions." "Rust" "Current"
                 xcomModuleConfigurationReader = component "XCOM Module Configuration Reader" "Reads fixed .ide/xcom2.json and contained roots without XCOM input writes; returns safe codes without path, content, or native-error disclosure." "Rust" "Current"
@@ -272,14 +272,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component desktopApp "DesktopAppComponents" {
             title "Desktop App Components"
-            description "Composition wires guarded controllers, Settings-owned machine setup, and read-only configured or recognized project activation."
+            description "Composition wires guarded controllers, accessible missing-Steam monitoring, machine setup, and read-only configured or recognized project activation."
             include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter tauriXcomModuleScannerAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel rustBackend
             autoLayout lr
         }
 
         component rustBackend "RustBackendComponents" {
             title "Rust Backend Components"
-            description "Native services include guarded Java, RefactorKit transactions, XCOM machine setup, and bounded read-only project activation inputs."
+            description "Native services include guarded Java, RefactorKit transactions, redacted missing-product monitoring, machine setup, and bounded read-only project activation inputs."
             include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }

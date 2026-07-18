@@ -16,6 +16,8 @@ Workspace transitions and explicit full **Workspace Refresh** clear prior decisi
 
 The accessible **XCOM 2 Project** activity remains recognition-only. XCOM machine Settings lifecycle and browser behavior remain independent and unchanged. Manual confirmation, external roots, Build, Problems, Logs, language support, tools, actions, and bottom contributions remain future boundaries.
 
+Separately, the native desktop path presents the exact accessible missing-Steam monitor state through the normal App/Tauri/Rust integration from isolated empty directories. This focused presentation does not broaden the harness-only machine Settings lifecycle requirement.
+
 The repository does not own a Structurizr container or image invocation. It therefore does not pin an image tag or digest. The version above is the validated CLI compatibility boundary; installation and acquisition of that CLI remain external to this repository.
 
 ## Self-contained rendering

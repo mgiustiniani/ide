@@ -94,6 +94,8 @@ Configured activation and convention recognition remain independent inputs. Remo
 
 ## Current Machine Settings and SDK Transaction
 
+Native acceptance for `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` covers only the exact accessible missing-Steam monitor presentation reached through the real App/Tauri/Rust path from isolated empty directories. The broader `REQ-XCOM2-MACHINE-SETTINGS-001` lifecycle remains harness-only.
+
 Machine setup is not an activation or diagnostic input. Open XCOM machine Settings owns its monitor and transaction adapter lifecycles; closed machine Settings performs no monitor/history/detail reads, polling, or subscriptions. Workspace authorization, project activation, and the Workspace diagnostic do not start or extend those lifecycles. Passive machine Settings refresh remains distinct from explicit full Workspace Refresh and its neutral project-configuration checking state.
 
 Prepare validates a vanilla WOTC SDK installation identified by Steam AppID `602410` and produces a stable allowlisted set of reversible operations:

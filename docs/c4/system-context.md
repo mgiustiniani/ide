@@ -1,6 +1,6 @@
 # System Context Diagram (C1)
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only and bundles its Java language contribution locally. Guarded Java semantics do not imply Java module activation. **Paste Java Class from Clipboard** is a separate managed RefactorKit transaction. Desktop XCOM 2 project activation combines a read-only project configuration with independent convention recognition. Invalid configuration is presented as one atomic warning under Workspace Settings and never creates activity authority; machine Settings remains independent. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence. See the [frozen Java inventory](target-java-intelligence.md) and mixed-boundary [XCOM 2](target-xcom2-setup.md) views.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only and bundles its Java language contribution locally. Guarded Java semantics do not imply Java module activation. **Paste Java Class from Clipboard** is a separate managed RefactorKit transaction. Desktop XCOM 2 project activation combines a read-only project configuration with independent convention recognition. Invalid configuration is presented as one atomic warning under Workspace Settings and never creates activity authority; machine Settings remains independent. Focused native evidence covers the exact accessible missing-Steam monitor presentation from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only. See the [frozen Java inventory](target-java-intelligence.md) and mixed-boundary [XCOM 2](target-xcom2-setup.md) views.
 
 ```text
 Developer ──uses──> IDE Application
@@ -18,7 +18,9 @@ Developer ──uses──> IDE Application
                             │    └─ recognition only; mirrors a complete warning only when still active
                             └─ Settings
                                ├─ Workspace > Current workspace: neutral checking or one atomic warning
-                               └─ separate XCOM machine health + Prepare/Apply/Restore/rollback/recovery
+                               └─ separate XCOM machine Settings
+                                  ├─ exact accessible missing-Steam monitor state
+                                  └─ Prepare/Apply/Restore/rollback/recovery
 ```
 
 ## External Systems
@@ -54,7 +56,7 @@ Developer ──uses──> IDE Application
 - **Web BottomPanel:** the same host contract, currently with core **Terminal** only.
 - **No global technology tabs:** neither Java nor XCOM is a global BottomPanel technology tab; current Problems is a guarded diagnostic projection rather than a Java technology tab.
 - **Global Java Settings:** owns JDK/JDT LS lifecycle/status and RefactorKit availability/version/path/capability discovery. Interactive completion, hover, and signature help live in the exact synchronized Monaco Java model rather than Settings. Settings does not expose Java workspace scan, definition/references, symbols, results, navigation, or refactoring.
-- **Global XCOM Settings:** open Settings exclusively owns exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle. Transaction authority remains correlated to the current workspace/generation. Closed Settings—including cold start and workspace switching—performs no monitor snapshot/refresh, transaction history/detail, poll, or subscription work. Close invalidates requests, unsubscribes both adapters, and clears their timers; reopen creates one fresh lifecycle of each. The surface also owns the descriptive non-executable plan and concrete transaction controls, but does not activate a workspace or module.
+- **Global XCOM Settings:** presents the exact accessible missing-Steam monitor state through the native desktop path when started from isolated empty directories. The broader open/close machine Settings lifecycle remains implemented with harness-only evidence and stays separate from project activation.
 - **Current concrete setup:** stable Prepare validates vanilla AppID `602410` and emits exactly 15 reversible operations: two Day0 INI removals, one SourceControl/GameAssetDatabase INI patch, eleven exact DLC_3 TLE quarantines, and one allowlisted CookedPCConsole symlink to the installed game.
 - **Current transaction engine:** journals Steam build/manifest/root fingerprint and preserves original bytes, hashes, modes, directory inventory, and symlink absence in content-addressed backups. Apply requires exact-digest external approval scoped to one transaction. Restore returns to the exact captured baseline; conflicts never overwrite, and rollback precedes Prepare Again.
 - **Future exclusion:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain FUTURE/TARGET and non-executable.

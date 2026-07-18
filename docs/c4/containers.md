@@ -1,6 +1,6 @@
 # Container Diagram (C2)
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation combines a fixed read-only project configuration with independent convention recognition and produces only a workspace-scoped activity. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation combines a fixed read-only project configuration with independent convention recognition and produces only a workspace-scoped activity. Focused native evidence covers the exact accessible missing-Steam state through the normal Desktop App/Tauri/Rust path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ```text
 Web App ──> Web Browser
@@ -27,8 +27,9 @@ Desktop App ──typed Tauri boundary──> Rust Backend
   │    └─ neutral refresh checking or one complete atomic configuration warning
   ├─ Settings / Java: JDK + JDT LS lifecycle/status,
   │                   RefactorKit availability/version/path
-  └─ Settings / XCOM machine: health + separate dry run
-                               + Prepare/Apply/Restore/Prepare Again
+  └─ Settings / XCOM machine
+       ├─ exact accessible missing-Steam monitor state through the native path
+       ├─ separate dry run + Prepare/Apply/Restore/Prepare Again
        ├─ open only: one monitor + one transaction adapter lifecycle
        └─ close: invalidate, unsubscribe, and clear both poll timers
 
@@ -55,11 +56,11 @@ Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
 
 ## Runtime Containers
 
-| Container        | Technology                    | Current responsibility                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                                                                                               |
-| **Desktop App**  | React + Vite in Tauri WebView | Owns jointly correlated configured and convention activation, synchronous revocation, neutral checking, exhaustive safe-code mapping, and shared atomic warning presentation under Workspace Settings. A diagnostic grants no activity; strong independent Option A recognition may preserve the activity and mirror the warning. XCOM machine Settings remains separate. |
-| **Rust Backend** | Rust + Tauri commands         | Exposes a fixed read-only `.ide/xcom2.json` reader and Option A metadata scanner. They do not follow symlinks, write XCOM project inputs, accept external roots, parse module content, or disclose raw paths/content/errors. Normal application-owned `.ide/workspace.json` marker/registry writes are a separate workspace responsibility.                               |
+| Container        | Technology                    | Current responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                                                                                                                                                                                           |
+| **Desktop App**  | React + Vite in Tauri WebView | Owns jointly correlated configured and convention activation, synchronous revocation, neutral checking, exhaustive safe-code mapping, and shared atomic warning presentation under Workspace Settings. A diagnostic grants no activity; strong independent Option A recognition may preserve the activity and mirror the warning. The separate machine Settings monitor presents the exact accessible missing-Steam state received through the typed native boundary. |
+| **Rust Backend** | Rust + Tauri commands         | Exposes a bounded Steam monitor that derives a redacted missing-product state, plus a fixed read-only `.ide/xcom2.json` reader and Option A metadata scanner. The reader and scanner do not follow symlinks, write XCOM project inputs, accept external roots, parse module content, or disclose raw paths, content, or errors. Normal application-owned marker and registry writes remain a separate workspace responsibility.                                       |
 
 JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
