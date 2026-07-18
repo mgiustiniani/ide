@@ -16,6 +16,7 @@ import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js"
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
 import { Xcom2MachineSettingsHarness } from "./xcom2-machine-settings.js";
+import { Xcom2ProjectFoundryHarness } from "./xcom2-project-foundry.js";
 import {
   createTargetProfileSeam,
   resolveTargetProfile,
@@ -50,6 +51,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #standaloneWebApp?: StandaloneWebApp;
   #xcom2MachineSettingsSession?: Xcom2MachineSettingsHarness;
   #xcom2MachineSettingsEvidenceAttached = false;
+  #xcom2ProjectFoundrySession?: Xcom2ProjectFoundryHarness;
 
   constructor(options: IWorldOptions<StoryWorldParameters>) {
     super(options);
@@ -229,6 +231,37 @@ export class StoryWorld extends World<StoryWorldParameters> {
       throw new Error("The XCOM machine Settings Story session has not been created");
     }
     return this.#xcom2MachineSettingsSession;
+  }
+
+  async createXcom2ProjectFoundrySession(): Promise<void> {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The Project Foundry Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The Project Foundry Story requires explicit non-native, non-E2E tauri-harness evidence",
+      );
+    }
+    if (this.#xcom2ProjectFoundrySession) {
+      throw new Error("The Project Foundry Story session has already been created");
+    }
+    const session = new Xcom2ProjectFoundryHarness();
+    this.#xcom2ProjectFoundrySession = session;
+    await session.start();
+  }
+
+  xcom2ProjectFoundrySession(): Xcom2ProjectFoundryHarness {
+    if (!this.#xcom2ProjectFoundrySession) {
+      throw new Error("The Project Foundry Story session has not been created");
+    }
+    return this.#xcom2ProjectFoundrySession;
   }
 
   createNativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
@@ -513,6 +546,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
+    const xcom2ProjectFoundrySession = this.#xcom2ProjectFoundrySession;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
     this.#nativeApplicationContentLayoutSession = undefined;
@@ -526,6 +560,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
     this.#xcom2MachineSettingsSession = undefined;
+    this.#xcom2ProjectFoundrySession = undefined;
     try {
       if (nativeApplicationContentLayoutSession) {
         try {
@@ -645,6 +680,16 @@ export class StoryWorld extends World<StoryWorldParameters> {
           }
         } finally {
           await xcom2MachineSettingsSession.dispose();
+        }
+      }
+      if (xcom2ProjectFoundrySession) {
+        try {
+          await this.attach(
+            JSON.stringify(xcom2ProjectFoundrySession.evidence()),
+            "application/json",
+          );
+        } finally {
+          await xcom2ProjectFoundrySession.dispose();
         }
       }
     } finally {
