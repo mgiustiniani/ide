@@ -21,6 +21,7 @@ export * from "./components/ProblemsPanel";
 export * from "./components/Xcom2SetupPanel";
 export * from "./components/Xcom2ModuleConfigurationDiagnosticAlert";
 export * from "./components/Xcom2ProjectRecognitionPanel";
+export * from "./components/Xcom2ProjectFoundryDialog";
 export * from "./components/WorkspaceExplorer";
 export * from "./components/SemanticSymbolSearchPanel";
 export type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
