@@ -388,6 +388,7 @@ export function renderFoundryPlan(
       sha256: createHash("sha256").update(bytes).digest("hex"),
     });
   }
+  files.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
 
   const x2projPath = `${modId}/${modId}.x2proj`;
   const solutionPath = `${modId}.XCOM_sln`;

@@ -819,7 +819,9 @@ export class Xcom2ProjectFoundryHarness {
     assert.ok(digest);
     assert.notEqual(digest, PLAN_DIGEST);
     assert.match(digest, /^[0-9a-f]{64}$/u);
-    assert.equal(await this.#dialog().getByText(digest, { exact: true }).count(), 2);
+    const displayedDigest = this.#dialog().getByText(digest, { exact: true });
+    await displayedDigest.first().waitFor({ state: "visible" });
+    assert.equal(await displayedDigest.count(), 2);
   }
 
   async assertReplacementFacts(rows: readonly Readonly<Record<string, string>>[]): Promise<void> {
