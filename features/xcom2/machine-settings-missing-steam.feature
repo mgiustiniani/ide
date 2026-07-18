@@ -11,7 +11,7 @@ Business Need: Honest native XCOM machine Settings when Steam products are missi
   It also makes no refresh or reopen, Plan Setup or canPlan, transaction, project activity or tool, polling or subscription lifecycle, post-launch filesystem identity, or mutation claim.
   After launch the scenario performs no filesystem mutation before ordinary post-exit sandbox cleanup.
 
-  @REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @accessibility @not-implemented
+  @REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 @desktop @native-gui @functional-requirement @non-functional-requirement @security @accessibility @implemented-and-validated
   Scenario: Present a safe complete missing-Steam state in native XCOM machine Settings
     Given one scenario-owned sandbox contains these distinct empty locations before application launch:
       | environment binding or resource | empty scenario-owned location |
