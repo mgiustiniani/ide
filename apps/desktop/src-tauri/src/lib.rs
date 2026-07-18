@@ -62,6 +62,7 @@ pub fn run() {
             commands::xcom2_module_evidence::scan_xcom2_module_evidence,
             commands::xcom2_project_foundry::authorize_xcom2_project_foundry_source_repository,
             commands::xcom2_project_foundry::resolve_xcom2_project_foundry_source_object,
+            commands::xcom2_project_foundry::render_xcom2_project_foundry_preview,
             commands::xcom2_project_foundry::authorize_xcom2_project_foundry_destination_parent,
             commands::xcom2_project_foundry::inspect_xcom2_project_foundry_destination,
             commands::xcom2_project_foundry::revoke_all_xcom2_project_foundry_preview_grants,

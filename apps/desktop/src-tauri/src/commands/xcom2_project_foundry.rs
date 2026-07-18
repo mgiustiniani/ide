@@ -7,7 +7,12 @@ use git2::{ErrorCode, ObjectType, Oid, Repository};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-const EXPECTED_COMMIT: &str = "d968be3c32b250376723563a743a120770ec5c95";
+mod renderer;
+
+pub use renderer::FoundryRenderedPlanBody;
+use renderer::{bind_rendered_plan, render_from_git_objects, FoundryPlanBinding, RenderFailure};
+
+pub(crate) const EXPECTED_COMMIT: &str = "d968be3c32b250376723563a743a120770ec5c95";
 const EXPECTED_TREE: &str = "cc8823fa99c0d292c4fe48a8b9463ff790176371";
 const MAXIMUM_PATH_BYTES: usize = 4096;
 const MAXIMUM_GRANT_IDENTITY_BYTES: usize = 128;
@@ -67,6 +72,54 @@ pub struct FoundryOperationGrant {
     pub identity: String,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenderFoundryPreviewRequest {
+    pub source_grant: FoundrySourceSelectionGrant,
+    pub destination_parent_grant: FoundryDestinationParentSelectionGrant,
+    pub mod_id: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FoundryRenderRefusalCode {
+    ModIdInvalid,
+    ModIdWindowsDevice,
+    SourceCommitMissing,
+    SourceCommitUnreadable,
+    SourceCommitMismatched,
+    SourceCommitFingerprintInvalid,
+    SourceTreeMissing,
+    SourceTreeUnreadable,
+    SourceTreeMismatched,
+    SourceTreeFingerprintInvalid,
+    SourceBlobMissing,
+    SourceBlobUnreadable,
+    SourceBlobMismatched,
+    SourceBlobFingerprintInvalid,
+    SourceGrantInvalid,
+    DestinationParentUnavailable,
+    DestinationParentGrantInvalid,
+    DerivedDestinationPresent,
+    DerivedDestinationMismatched,
+    OperationGrantInvalid,
+    RenderedPlanInvalid,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum RenderFoundryPreviewResult {
+    Rendered {
+        #[serde(rename = "operationGrant")]
+        operation_grant: FoundryOperationGrant,
+        #[serde(rename = "planBody")]
+        plan_body: Box<FoundryRenderedPlanBody>,
+    },
+    Refused {
+        code: FoundryRenderRefusalCode,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FoundryDestinationSelection {
@@ -91,9 +144,9 @@ pub enum FoundryDestinationState {
 }
 
 #[derive(Debug, Clone)]
-struct ExpectedRepositoryIdentity {
-    commit: Oid,
-    tree: Oid,
+pub(crate) struct ExpectedRepositoryIdentity {
+    pub(crate) commit: Oid,
+    pub(crate) tree: Oid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,8 +167,13 @@ struct SourceGrantRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DestinationGrantRecord {
     parent: DirectoryIdentity,
-    mod_id: String,
     destination_grant: FoundryDestinationParentSelectionGrant,
+    operation: Option<DestinationOperationRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DestinationOperationRecord {
+    mod_id: String,
     operation_grant: FoundryOperationGrant,
 }
 
@@ -172,7 +230,22 @@ pub fn resolve_xcom2_project_foundry_source_object(
     resolve_source_object(&state, request)
 }
 
+/// Revalidates both selector grants, renders only pinned Git objects, and returns a complete plan.
+/// It never reads the working tree, writes a destination, or starts a process.
+#[tauri::command]
+pub fn render_xcom2_project_foundry_preview(
+    state: tauri::State<'_, Xcom2ProjectFoundryState>,
+    request: RenderFoundryPreviewRequest,
+) -> RenderFoundryPreviewResult {
+    if require_linux().is_err() {
+        return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid);
+    }
+    render_preview(&state, request)
+}
+
 /// Authorizes one selected existing parent and derives one absent child for the exact ModId.
+/// The operation grant in this legacy response is retained temporarily for adapter migration;
+/// the renderer always revokes it and is the sole authority for its replacement.
 #[tauri::command]
 pub fn authorize_xcom2_project_foundry_destination_parent(
     state: tauri::State<'_, Xcom2ProjectFoundryState>,
@@ -286,6 +359,237 @@ fn resolve_source_object(
     Ok(result)
 }
 
+fn render_preview(
+    state: &Xcom2ProjectFoundryState,
+    request: RenderFoundryPreviewRequest,
+) -> RenderFoundryPreviewResult {
+    if validate_destination_grant_shape(&request.destination_parent_grant).is_err() {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+    }
+
+    // Rendering or changing ModId synchronously consumes every previous preview-operation
+    // authority before source validation or asynchronous object work can continue.
+    let (source_record, destination_record) = {
+        let mut grants = match state.grants.lock() {
+            Ok(grants) => grants,
+            Err(_) => return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid),
+        };
+        let destination_identity = request.destination_parent_grant.identity.clone();
+        let Some(record) = grants.destination_grants.get(&destination_identity) else {
+            return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+        };
+        if record.destination_grant != request.destination_parent_grant {
+            return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+        }
+        for record in grants.destination_grants.values_mut() {
+            record.operation = None;
+        }
+        grants.operation_to_destination.clear();
+
+        if validate_source_grant_shape(&request.source_grant).is_err() {
+            return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+        }
+        let Some(source) = grants
+            .source_grants
+            .get(&request.source_grant.identity)
+            .cloned()
+        else {
+            return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+        };
+        if source.grant != request.source_grant {
+            return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+        }
+        let destination = grants
+            .destination_grants
+            .get(&destination_identity)
+            .expect("validated destination grant remains present")
+            .clone();
+        (source, destination)
+    };
+
+    if let Err(code) = validate_mod_id_for_render(&request.mod_id) {
+        return refused_render(code);
+    }
+    if revalidate_source_record(&source_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+    }
+    if revalidate_destination_parent_record(&destination_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentUnavailable);
+    }
+    if let Err(code) =
+        destination_absence_for_render(&destination_record.parent.canonical_path, &request.mod_id)
+    {
+        return refused_render(code);
+    }
+
+    let repository = match open_exact_repository(&source_record.git_directory) {
+        Ok(repository) => repository,
+        Err(_) => return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid),
+    };
+    let output = match render_from_git_objects(&repository, &state.expected, &request.mod_id) {
+        Ok(output) => output,
+        Err(failure) => return refused_render(render_failure_code(failure)),
+    };
+    drop(repository);
+
+    // Revalidate every live identity after rendering and immediately before minting. The plan is
+    // built from the just-rendered internal bytes; no frontend or fixture metadata participates.
+    if revalidate_source_record(&source_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+    }
+    if revalidate_destination_parent_record(&destination_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentUnavailable);
+    }
+    if let Err(code) =
+        destination_absence_for_render(&destination_record.parent.canonical_path, &request.mod_id)
+    {
+        return refused_render(code);
+    }
+
+    let parent = request.destination_parent_grant.parent.clone();
+    let derived_destination = match canonical_path_string(
+        &destination_record
+            .parent
+            .canonical_path
+            .join(&request.mod_id),
+    ) {
+        Ok(path) if path.len() <= MAXIMUM_PATH_BYTES => path,
+        _ => return refused_render(FoundryRenderRefusalCode::DerivedDestinationMismatched),
+    };
+    let mut grants = match state.grants.lock() {
+        Ok(grants) => grants,
+        Err(_) => return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid),
+    };
+    if grants.source_grants.get(&request.source_grant.identity) != Some(&source_record) {
+        return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+    }
+    if grants
+        .destination_grants
+        .get(&request.destination_parent_grant.identity)
+        != Some(&destination_record)
+    {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+    }
+    if revalidate_source_record(&source_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::SourceGrantInvalid);
+    }
+    if revalidate_destination_parent_record(&destination_record).is_err() {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentUnavailable);
+    }
+    if let Err(code) =
+        destination_absence_for_render(&destination_record.parent.canonical_path, &request.mod_id)
+    {
+        return refused_render(code);
+    }
+    if total_grants(&grants) + 1 > MAXIMUM_ACTIVE_GRANTS {
+        return refused_render(FoundryRenderRefusalCode::OperationGrantInvalid);
+    }
+    let operation_identity = match mint_unique_identity(
+        "foundry-operation",
+        &grants,
+        Some(request.destination_parent_grant.identity.as_str()),
+    ) {
+        Ok(identity) => identity,
+        Err(_) => return refused_render(FoundryRenderRefusalCode::OperationGrantInvalid),
+    };
+    let operation_grant = FoundryOperationGrant {
+        kind: "preview-operation".to_string(),
+        derived_destination: derived_destination.clone(),
+        identity: operation_identity.clone(),
+    };
+    let rendered = match bind_rendered_plan(
+        &state.expected,
+        &request.mod_id,
+        output,
+        FoundryPlanBinding {
+            repository: &request.source_grant.repository,
+            source_grant_identity: &request.source_grant.identity,
+            parent: &parent,
+            parent_grant_identity: &request.destination_parent_grant.identity,
+            derived_destination: &derived_destination,
+            operation_grant: &operation_grant,
+        },
+    ) {
+        Ok(rendered) => rendered,
+        Err(_) => return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid),
+    };
+    if rendered.output_files.len() != 27 {
+        return refused_render(FoundryRenderRefusalCode::RenderedPlanInvalid);
+    }
+
+    let Some(record) = grants
+        .destination_grants
+        .get_mut(&request.destination_parent_grant.identity)
+    else {
+        return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+    };
+    if record.operation.is_some() {
+        return refused_render(FoundryRenderRefusalCode::OperationGrantInvalid);
+    }
+    record.operation = Some(DestinationOperationRecord {
+        mod_id: request.mod_id,
+        operation_grant: operation_grant.clone(),
+    });
+    grants.operation_to_destination.insert(
+        operation_identity,
+        request.destination_parent_grant.identity,
+    );
+
+    RenderFoundryPreviewResult::Rendered {
+        operation_grant,
+        plan_body: Box::new(rendered.plan_body),
+    }
+}
+
+fn refused_render(code: FoundryRenderRefusalCode) -> RenderFoundryPreviewResult {
+    RenderFoundryPreviewResult::Refused { code }
+}
+
+fn validate_mod_id_for_render(mod_id: &str) -> Result<(), FoundryRenderRefusalCode> {
+    match validate_mod_id(mod_id) {
+        Ok(()) => Ok(()),
+        Err(code) if code == "mod-id-windows-device" => {
+            Err(FoundryRenderRefusalCode::ModIdWindowsDevice)
+        }
+        Err(_) => Err(FoundryRenderRefusalCode::ModIdInvalid),
+    }
+}
+
+fn destination_absence_for_render(
+    parent: &Path,
+    mod_id: &str,
+) -> Result<(), FoundryRenderRefusalCode> {
+    match derived_entry_state(parent, mod_id) {
+        Ok(false) => Ok(()),
+        Ok(true) => Err(FoundryRenderRefusalCode::DerivedDestinationPresent),
+        Err(_) => Err(FoundryRenderRefusalCode::DestinationParentUnavailable),
+    }
+}
+
+fn render_failure_code(failure: RenderFailure) -> FoundryRenderRefusalCode {
+    match failure {
+        RenderFailure::CommitMissing => FoundryRenderRefusalCode::SourceCommitMissing,
+        RenderFailure::CommitUnreadable => FoundryRenderRefusalCode::SourceCommitUnreadable,
+        RenderFailure::CommitMismatched => FoundryRenderRefusalCode::SourceCommitMismatched,
+        RenderFailure::CommitFingerprintInvalid => {
+            FoundryRenderRefusalCode::SourceCommitFingerprintInvalid
+        }
+        RenderFailure::TreeMissing => FoundryRenderRefusalCode::SourceTreeMissing,
+        RenderFailure::TreeUnreadable => FoundryRenderRefusalCode::SourceTreeUnreadable,
+        RenderFailure::TreeMismatched => FoundryRenderRefusalCode::SourceTreeMismatched,
+        RenderFailure::TreeFingerprintInvalid => {
+            FoundryRenderRefusalCode::SourceTreeFingerprintInvalid
+        }
+        RenderFailure::BlobMissing => FoundryRenderRefusalCode::SourceBlobMissing,
+        RenderFailure::BlobUnreadable => FoundryRenderRefusalCode::SourceBlobUnreadable,
+        RenderFailure::BlobMismatched => FoundryRenderRefusalCode::SourceBlobMismatched,
+        RenderFailure::BlobFingerprintInvalid => {
+            FoundryRenderRefusalCode::SourceBlobFingerprintInvalid
+        }
+        RenderFailure::RenderedPlanInvalid => FoundryRenderRefusalCode::RenderedPlanInvalid,
+    }
+}
+
 fn authorize_destination_parent(
     state: &Xcom2ProjectFoundryState,
     request: AuthorizeFoundryDestinationParentRequest,
@@ -327,11 +631,14 @@ fn authorize_destination_parent(
     };
     let record = DestinationGrantRecord {
         parent,
-        mod_id: request.mod_id,
         destination_grant: destination_grant.clone(),
-        operation_grant: operation_grant.clone(),
+        operation: Some(DestinationOperationRecord {
+            mod_id: request.mod_id.clone(),
+            operation_grant: operation_grant.clone(),
+        }),
     };
-    revalidate_destination_record(&record)?;
+    revalidate_destination_parent_record(&record)?;
+    ensure_derived_absent(&record.parent.canonical_path, &request.mod_id)?;
     grants
         .operation_to_destination
         .insert(operation_identity, destination_identity.clone());
@@ -369,14 +676,19 @@ fn inspect_destination(
         if record.destination_grant != request.destination_parent_grant {
             return Err("destination-parent-grant-invalid".to_string());
         }
-        if record.operation_grant != request.operation_grant {
+        let operation = record
+            .operation
+            .as_ref()
+            .ok_or_else(|| "operation-grant-invalid".to_string())?;
+        if operation.operation_grant != request.operation_grant {
             return Err("operation-grant-invalid".to_string());
         }
-        record.clone()
+        (record.clone(), operation.mod_id.clone())
     };
 
+    let (record, mod_id) = record;
     let state_result = match inspect_directory_again(&record.parent) {
-        Ok(()) => match derived_entry_state(&record.parent.canonical_path, &record.mod_id) {
+        Ok(()) => match derived_entry_state(&record.parent.canonical_path, &mod_id) {
             Ok(false) => FoundryDestinationState::Absent,
             Ok(true) => FoundryDestinationState::Present,
             Err(_) => FoundryDestinationState::ParentUnavailable,
@@ -410,7 +722,9 @@ fn revoke_all(state: &Xcom2ProjectFoundryState) -> Result<(), String> {
 }
 
 fn total_grants(grants: &FoundryGrantStore) -> usize {
-    grants.source_grants.len() + grants.destination_grants.len() * 2
+    grants.source_grants.len()
+        + grants.destination_grants.len()
+        + grants.operation_to_destination.len()
 }
 
 fn mint_unique_identity(
@@ -644,10 +958,13 @@ fn revalidate_source_record(record: &SourceGrantRecord) -> Result<(), String> {
     Ok(())
 }
 
-fn revalidate_destination_record(record: &DestinationGrantRecord) -> Result<(), String> {
+fn revalidate_destination_parent_record(record: &DestinationGrantRecord) -> Result<(), String> {
     inspect_directory_again(&record.parent)
         .map_err(|_| "destination-parent-unavailable".to_string())?;
-    ensure_derived_absent(&record.parent.canonical_path, &record.mod_id)
+    if canonical_path_string(&record.parent.canonical_path)? != record.destination_grant.parent {
+        return Err("destination-parent-grant-invalid".to_string());
+    }
+    Ok(())
 }
 
 fn reject_object_alternates(objects: &Path) -> Result<(), String> {
@@ -800,595 +1117,5 @@ fn derived_entry_state(parent: &Path, mod_id: &str) -> Result<bool, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::BTreeMap;
-    use std::fs::File;
-    use std::io::Read;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    struct TestDirectory(PathBuf);
-
-    impl TestDirectory {
-        fn new(label: &str) -> Self {
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "ide-foundry-native-{label}-{nonce}-{}",
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir(&path).expect("create test directory");
-            Self(path.canonicalize().expect("canonical test directory"))
-        }
-
-        fn string(&self) -> String {
-            self.0.to_str().expect("UTF-8 test path").to_string()
-        }
-    }
-
-    impl Drop for TestDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    struct RepositoryFixture {
-        root: TestDirectory,
-        commit: Oid,
-        tree: Oid,
-        blob: Oid,
-    }
-
-    impl RepositoryFixture {
-        fn new(label: &str) -> Self {
-            let root = TestDirectory::new(label);
-            let repository = Repository::init(&root.0).expect("initialize fixture repository");
-            fs::create_dir(root.0.join("nested")).expect("create nested source");
-            fs::write(root.0.join("tracked.txt"), b"committed bytes\n")
-                .expect("write tracked fixture");
-            fs::write(root.0.join("nested/blob.bin"), b"blob bytes").expect("write nested fixture");
-            let mut index = repository.index().expect("open fixture index");
-            index
-                .add_path(Path::new("tracked.txt"))
-                .expect("add tracked fixture");
-            index
-                .add_path(Path::new("nested/blob.bin"))
-                .expect("add nested fixture");
-            index.write().expect("write fixture index");
-            let tree_oid = index.write_tree().expect("write fixture tree");
-            let tree = repository.find_tree(tree_oid).expect("find fixture tree");
-            let nested = repository
-                .find_tree(tree.get_name("nested").expect("nested tree").id())
-                .expect("find nested tree");
-            let blob = nested.get_name("blob.bin").expect("fixture blob").id();
-            let signature = git2::Signature::new(
-                "Foundry Test",
-                "foundry@example.invalid",
-                &git2::Time::new(1, 0),
-            )
-            .expect("fixture signature");
-            let commit = repository
-                .commit(Some("HEAD"), &signature, &signature, "fixture", &tree, &[])
-                .expect("commit fixture");
-            drop(nested);
-            drop(tree);
-            drop(repository);
-            Self {
-                root,
-                commit,
-                tree: tree_oid,
-                blob,
-            }
-        }
-
-        fn state(&self) -> Xcom2ProjectFoundryState {
-            Xcom2ProjectFoundryState::with_expected_object_ids(
-                &self.commit.to_string(),
-                &self.tree.to_string(),
-            )
-            .expect("fixture expected identity")
-        }
-
-        fn source_request(&self) -> AuthorizeFoundrySourceRepositoryRequest {
-            AuthorizeFoundrySourceRepositoryRequest {
-                selected_root: self.root.string(),
-            }
-        }
-    }
-
-    fn authorize_source(
-        state: &Xcom2ProjectFoundryState,
-        fixture: &RepositoryFixture,
-    ) -> FoundrySourceSelectionGrant {
-        authorize_source_repository(state, fixture.source_request()).expect("authorize source")
-    }
-
-    fn destination_request(
-        directory: &TestDirectory,
-        mod_id: &str,
-    ) -> AuthorizeFoundryDestinationParentRequest {
-        AuthorizeFoundryDestinationParentRequest {
-            selected_root: directory.string(),
-            mod_id: mod_id.to_string(),
-        }
-    }
-
-    #[test]
-    fn command_dtos_are_exact_camel_case_and_reject_unknown_fields() {
-        let source: AuthorizeFoundrySourceRepositoryRequest =
-            serde_json::from_value(serde_json::json!({"selectedRoot": "/tmp/repository"}))
-                .expect("camelCase source request");
-        assert_eq!(source.selected_root, "/tmp/repository");
-        assert!(
-            serde_json::from_value::<AuthorizeFoundrySourceRepositoryRequest>(
-                serde_json::json!({"selectedRoot": "/tmp/repository", "scan": true})
-            )
-            .is_err()
-        );
-
-        let destination: AuthorizeFoundryDestinationParentRequest = serde_json::from_value(
-            serde_json::json!({"selectedRoot": "/tmp/parent", "modId": "ExactMod"}),
-        )
-        .expect("camelCase destination request");
-        assert_eq!(destination.mod_id, "ExactMod");
-
-        let default_state = Xcom2ProjectFoundryState::default();
-        assert_eq!(default_state.expected.commit.to_string(), EXPECTED_COMMIT);
-        assert_eq!(default_state.expected.tree.to_string(), EXPECTED_TREE);
-    }
-
-    #[test]
-    fn source_resolution_reads_only_committed_objects_and_ignores_dirty_worktree() {
-        let fixture = RepositoryFixture::new("dirty-source");
-        fs::write(fixture.root.0.join("tracked.txt"), b"dirty tracked bytes\n")
-            .expect("dirty tracked fixture");
-        fs::write(fixture.root.0.join("untracked.canary"), b"untracked bytes")
-            .expect("write untracked fixture");
-        let before = snapshot(&fixture.root.0);
-        let state = fixture.state();
-        let grant = authorize_source(&state, &fixture);
-
-        let evidence = resolve_source_object(&state, ResolveFoundrySourceObjectRequest { grant })
-            .expect("resolve fixture objects");
-
-        assert_eq!(evidence.commit, fixture.commit.to_string());
-        assert_eq!(evidence.tree, fixture.tree.to_string());
-        assert_eq!(evidence.fingerprint_result, "Verified");
-        assert_eq!(snapshot(&fixture.root.0), before);
-    }
-
-    #[test]
-    fn missing_commit_tree_mismatch_and_missing_blob_are_refused_precisely() {
-        let fixture = RepositoryFixture::new("object-refusals");
-        let missing_state = Xcom2ProjectFoundryState::with_expected_object_ids(
-            "0000000000000000000000000000000000000000",
-            &fixture.tree.to_string(),
-        )
-        .expect("missing expected identity");
-        let grant = authorize_source(&missing_state, &fixture);
-        assert_eq!(
-            resolve_source_object(&missing_state, ResolveFoundrySourceObjectRequest { grant })
-                .expect("missing commit evidence")
-                .fingerprint_result,
-            "source-commit-missing"
-        );
-
-        let mismatch_state = Xcom2ProjectFoundryState::with_expected_object_ids(
-            &fixture.commit.to_string(),
-            "0000000000000000000000000000000000000000",
-        )
-        .expect("mismatched tree identity");
-        let grant = authorize_source(&mismatch_state, &fixture);
-        assert_eq!(
-            resolve_source_object(&mismatch_state, ResolveFoundrySourceObjectRequest { grant })
-                .expect("tree mismatch evidence")
-                .fingerprint_result,
-            "source-tree-mismatched"
-        );
-
-        let blob_path = fixture
-            .root
-            .0
-            .join(".git/objects")
-            .join(&fixture.blob.to_string()[..2])
-            .join(&fixture.blob.to_string()[2..]);
-        fs::remove_file(blob_path).expect("remove loose fixture blob");
-        let blob_state = fixture.state();
-        let grant = authorize_source(&blob_state, &fixture);
-        assert_eq!(
-            resolve_source_object(&blob_state, ResolveFoundrySourceObjectRequest { grant })
-                .expect("missing blob evidence")
-                .fingerprint_result,
-            "source-blob-missing"
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn source_root_git_and_object_directory_symlinks_are_rejected() {
-        use std::os::unix::fs::symlink;
-
-        let fixture = RepositoryFixture::new("source-symlink-target");
-        let linked_root_parent = TestDirectory::new("source-linked-root");
-        let linked_root = linked_root_parent.0.join("repository-link");
-        symlink(&fixture.root.0, &linked_root).expect("source root symlink");
-        let state = fixture.state();
-        assert_eq!(
-            authorize_source_repository(
-                &state,
-                AuthorizeFoundrySourceRepositoryRequest {
-                    selected_root: linked_root.to_str().expect("UTF-8 link").to_string(),
-                }
-            ),
-            Err("source-repository-unavailable".to_string())
-        );
-
-        let git_link_root = TestDirectory::new("git-link-root");
-        symlink(fixture.root.0.join(".git"), git_link_root.0.join(".git"))
-            .expect("git directory symlink");
-        assert!(authorize_source_repository(
-            &state,
-            AuthorizeFoundrySourceRepositoryRequest {
-                selected_root: git_link_root.string(),
-            }
-        )
-        .is_err());
-
-        let objects_link_root = TestDirectory::new("objects-link-root");
-        fs::create_dir(objects_link_root.0.join(".git")).expect("create fake git directory");
-        symlink(
-            fixture.root.0.join(".git/objects"),
-            objects_link_root.0.join(".git/objects"),
-        )
-        .expect("object directory symlink");
-        assert!(authorize_source_repository(
-            &state,
-            AuthorizeFoundrySourceRepositoryRequest {
-                selected_root: objects_link_root.string(),
-            }
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn object_alternates_and_wrong_source_entry_types_are_rejected() {
-        let fixture = RepositoryFixture::new("source-entry-refusals");
-        let state = fixture.state();
-        fs::create_dir_all(fixture.root.0.join(".git/objects/info"))
-            .expect("create object info directory");
-        fs::write(
-            fixture.root.0.join(".git/objects/info/alternates"),
-            b"/outside/object/database\n",
-        )
-        .expect("write forbidden alternates file");
-        assert_eq!(
-            authorize_source_repository(&state, fixture.source_request()),
-            Err("source-repository-unavailable".to_string())
-        );
-
-        let wrong_git = TestDirectory::new("wrong-git-entry");
-        fs::write(wrong_git.0.join(".git"), b"gitdir: elsewhere")
-            .expect("write git indirection file");
-        assert_eq!(
-            authorize_source_repository(
-                &state,
-                AuthorizeFoundrySourceRepositoryRequest {
-                    selected_root: wrong_git.string(),
-                },
-            ),
-            Err("source-repository-unavailable".to_string())
-        );
-    }
-
-    #[test]
-    fn source_grants_reject_field_mismatch_stale_identity_and_revocation() {
-        let fixture = RepositoryFixture::new("source-grant-lifecycle");
-        let state = fixture.state();
-        let grant = authorize_source(&state, &fixture);
-        let mut mismatched = grant.clone();
-        mismatched.repository.push_str("-other");
-        assert_eq!(
-            resolve_source_object(
-                &state,
-                ResolveFoundrySourceObjectRequest { grant: mismatched }
-            ),
-            Err("source-grant-invalid".to_string())
-        );
-
-        revoke_all(&state).expect("revoke source grants");
-        assert_eq!(
-            resolve_source_object(
-                &state,
-                ResolveFoundrySourceObjectRequest {
-                    grant: grant.clone()
-                }
-            ),
-            Err("source-grant-invalid".to_string())
-        );
-
-        let fresh = authorize_source(&state, &fixture);
-        assert_ne!(
-            fresh.identity, grant.identity,
-            "grant identity is lifecycle-opaque"
-        );
-        let displaced = fixture.root.0.with_extension("displaced");
-        fs::rename(&fixture.root.0, &displaced).expect("displace granted source");
-        fs::create_dir(&fixture.root.0).expect("replace source root");
-        assert_eq!(
-            resolve_source_object(&state, ResolveFoundrySourceObjectRequest { grant: fresh }),
-            Err("source-grant-invalid".to_string())
-        );
-        fs::remove_dir(&fixture.root.0).expect("remove replacement root");
-        fs::rename(displaced, &fixture.root.0).expect("restore fixture for drop");
-    }
-
-    #[test]
-    fn paths_must_be_bounded_absolute_canonical_utf8_strings() {
-        let state = Xcom2ProjectFoundryState::default();
-        for selected_root in [
-            "relative/repository".to_string(),
-            "/tmp/../tmp".to_string(),
-            "/tmp/./repository".to_string(),
-            "/tmp//repository".to_string(),
-            "/tmp/".to_string(),
-            "/tmp\\repository".to_string(),
-            format!("/{}", "a".repeat(MAXIMUM_PATH_BYTES)),
-        ] {
-            assert!(authorize_source_repository(
-                &state,
-                AuthorizeFoundrySourceRepositoryRequest { selected_root }
-            )
-            .is_err());
-        }
-    }
-
-    #[test]
-    fn destination_authorization_derives_exact_absent_child_and_revalidates_it() {
-        let parent = TestDirectory::new("destination-happy");
-        fs::write(parent.0.join("sibling.canary"), b"unchanged")
-            .expect("write destination sibling");
-        let before = snapshot(&parent.0);
-        let state = Xcom2ProjectFoundryState::default();
-        let selection = authorize_destination_parent(
-            &state,
-            destination_request(&parent, "FoundryPreviewFixture"),
-        )
-        .expect("authorize destination");
-
-        assert_eq!(
-            selection.destination_parent_grant.kind,
-            "destination-parent"
-        );
-        assert_eq!(selection.destination_parent_grant.parent, parent.string());
-        assert_eq!(selection.operation_grant.kind, "preview-operation");
-        assert_eq!(
-            selection.operation_grant.derived_destination,
-            parent
-                .0
-                .join("FoundryPreviewFixture")
-                .to_str()
-                .expect("UTF-8 child")
-        );
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: selection.destination_parent_grant,
-                    operation_grant: selection.operation_grant,
-                }
-            ),
-            Ok(FoundryDestinationState::Absent)
-        );
-        assert_eq!(snapshot(&parent.0), before);
-    }
-
-    #[test]
-    fn mod_id_regex_and_windows_devices_are_duplicated_fail_closed() {
-        let parent = TestDirectory::new("mod-id-refusal");
-        let state = Xcom2ProjectFoundryState::default();
-        for invalid in ["", "1Mod", "with-dash", "with space", "é", &"A".repeat(49)] {
-            assert_eq!(
-                authorize_destination_parent(&state, destination_request(&parent, invalid)),
-                Err("mod-id-invalid".to_string()),
-                "invalid ModId {invalid:?}"
-            );
-        }
-        for device in ["CON", "nul", "Com1", "lPt9"] {
-            assert_eq!(
-                authorize_destination_parent(&state, destination_request(&parent, device)),
-                Err("mod-id-windows-device".to_string()),
-                "device ModId {device:?}"
-            );
-        }
-        assert!(authorize_destination_parent(&state, destination_request(&parent, "COM0")).is_ok());
-        revoke_all(&state).expect("revoke destination grants");
-    }
-
-    #[test]
-    fn present_derived_destination_is_never_authorized_and_later_presence_is_reported() {
-        let parent = TestDirectory::new("destination-present");
-        let state = Xcom2ProjectFoundryState::default();
-        fs::create_dir(parent.0.join("AlreadyPresent")).expect("create present child");
-        assert_eq!(
-            authorize_destination_parent(&state, destination_request(&parent, "AlreadyPresent")),
-            Err("derived-destination-present".to_string())
-        );
-
-        let selection =
-            authorize_destination_parent(&state, destination_request(&parent, "AppearsLater"))
-                .expect("authorize absent child");
-        fs::write(parent.0.join("AppearsLater"), b"external file").expect("create derived child");
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: selection.destination_parent_grant,
-                    operation_grant: selection.operation_grant,
-                }
-            ),
-            Ok(FoundryDestinationState::Present)
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn symlink_destination_parent_and_dangling_derived_symlink_are_refused() {
-        use std::os::unix::fs::symlink;
-
-        let parent = TestDirectory::new("destination-symlink-target");
-        let links = TestDirectory::new("destination-symlinks");
-        let parent_link = links.0.join("parent-link");
-        symlink(&parent.0, &parent_link).expect("destination parent symlink");
-        let state = Xcom2ProjectFoundryState::default();
-        assert!(authorize_destination_parent(
-            &state,
-            AuthorizeFoundryDestinationParentRequest {
-                selected_root: parent_link.to_str().expect("UTF-8 link").to_string(),
-                mod_id: "ExactMod".to_string(),
-            }
-        )
-        .is_err());
-
-        symlink("missing-target", parent.0.join("DanglingChild"))
-            .expect("dangling destination child");
-        assert_eq!(
-            authorize_destination_parent(&state, destination_request(&parent, "DanglingChild")),
-            Err("derived-destination-present".to_string())
-        );
-    }
-
-    #[test]
-    fn destination_grants_reject_cross_pair_mismatch_and_revoke_all() {
-        let parent = TestDirectory::new("destination-grant-lifecycle");
-        let state = Xcom2ProjectFoundryState::default();
-        let first = authorize_destination_parent(&state, destination_request(&parent, "FirstMod"))
-            .expect("first destination grant");
-        let second =
-            authorize_destination_parent(&state, destination_request(&parent, "SecondMod"))
-                .expect("second destination grant");
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: first.destination_parent_grant.clone(),
-                    operation_grant: second.operation_grant,
-                }
-            ),
-            Err("operation-grant-invalid".to_string())
-        );
-        let mut altered_operation = first.operation_grant.clone();
-        altered_operation.derived_destination.push_str("Other");
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: first.destination_parent_grant.clone(),
-                    operation_grant: altered_operation,
-                }
-            ),
-            Err("operation-grant-invalid".to_string())
-        );
-
-        revoke_all(&state).expect("revoke all grants");
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: first.destination_parent_grant,
-                    operation_grant: first.operation_grant,
-                }
-            ),
-            Err("operation-grant-invalid".to_string())
-        );
-    }
-
-    #[test]
-    fn replacing_destination_parent_identity_is_reported_unavailable_without_mutation() {
-        let parent = TestDirectory::new("destination-stale");
-        let state = Xcom2ProjectFoundryState::default();
-        let selection =
-            authorize_destination_parent(&state, destination_request(&parent, "ExactMod"))
-                .expect("authorize destination");
-        let displaced = parent.0.with_extension("displaced");
-        fs::rename(&parent.0, &displaced).expect("displace destination parent");
-        fs::create_dir(&parent.0).expect("replace destination parent");
-        assert_eq!(
-            inspect_destination(
-                &state,
-                InspectFoundryDestinationRequest {
-                    destination_parent_grant: selection.destination_parent_grant,
-                    operation_grant: selection.operation_grant,
-                }
-            ),
-            Ok(FoundryDestinationState::ParentUnavailable)
-        );
-        assert!(fs::read_dir(&parent.0)
-            .expect("read replacement destination")
-            .next()
-            .is_none());
-        fs::remove_dir(&parent.0).expect("remove replacement parent");
-        fs::rename(displaced, &parent.0).expect("restore parent for drop");
-    }
-
-    fn snapshot(root: &Path) -> BTreeMap<String, (String, u32, Vec<u8>)> {
-        fn visit(
-            root: &Path,
-            directory: &Path,
-            output: &mut BTreeMap<String, (String, u32, Vec<u8>)>,
-        ) {
-            #[cfg(target_os = "linux")]
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut entries = fs::read_dir(directory)
-                .expect("read snapshot directory")
-                .collect::<Result<Vec<_>, _>>()
-                .expect("snapshot entries");
-            entries.sort_by_key(|entry| entry.file_name());
-            for entry in entries {
-                let path = entry.path();
-                let relative = path
-                    .strip_prefix(root)
-                    .expect("relative snapshot path")
-                    .to_string_lossy()
-                    .to_string();
-                let metadata = fs::symlink_metadata(&path).expect("snapshot metadata");
-                #[cfg(target_os = "linux")]
-                let mode = metadata.permissions().mode();
-                #[cfg(not(target_os = "linux"))]
-                let mode = 0;
-                if metadata.is_dir() {
-                    output.insert(relative, ("directory".to_string(), mode, Vec::new()));
-                    visit(root, &path, output);
-                } else if metadata.file_type().is_symlink() {
-                    output.insert(
-                        relative,
-                        (
-                            "symlink".to_string(),
-                            mode,
-                            fs::read_link(&path)
-                                .expect("read snapshot link")
-                                .to_string_lossy()
-                                .as_bytes()
-                                .to_vec(),
-                        ),
-                    );
-                } else {
-                    let mut bytes = Vec::new();
-                    File::open(&path)
-                        .expect("open snapshot file")
-                        .read_to_end(&mut bytes)
-                        .expect("read snapshot file");
-                    output.insert(relative, ("file".to_string(), mode, bytes));
-                }
-            }
-        }
-
-        let mut output = BTreeMap::new();
-        visit(root, root, &mut output);
-        output
-    }
-}
+#[path = "xcom2_project_foundry/tests.rs"]
+mod tests;
