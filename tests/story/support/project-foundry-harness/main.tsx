@@ -24,6 +24,7 @@ declare global {
     __storyFoundrySelectDestinationParent: StoryBinding;
     __storyFoundryRenderPreview: StoryBinding;
     __storyFoundryApply?: StoryBinding;
+    __storyFoundryRevokeOperation: StoryBinding;
     __storyFoundryRevokeGrants: StoryBinding;
     __storyRecordTauriCall: StoryBinding;
   }
@@ -41,6 +42,7 @@ interface ProjectFoundryHarnessComposition {
   };
   apply?(request: Xcom2ProjectFoundryApplyRequest): Promise<Xcom2ProjectFoundryApplyResult>;
   readonly grants: {
+    revokeOperation(): Promise<void>;
     revokeAll(): Promise<void>;
   };
 }
@@ -69,6 +71,9 @@ const composition: ProjectFoundryHarnessComposition = {
     return (await window.__storyFoundryApply(request)) as Xcom2ProjectFoundryApplyResult;
   },
   grants: {
+    revokeOperation: async () => {
+      await window.__storyFoundryRevokeOperation();
+    },
     revokeAll: async () => {
       await window.__storyFoundryRevokeGrants();
     },

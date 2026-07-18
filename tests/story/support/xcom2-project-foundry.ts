@@ -239,7 +239,10 @@ export class Xcom2ProjectFoundryHarness {
   #correctedRendererBoundaryAcknowledged = false;
   #tauriCalls: TauriCall[] = [];
   #activeGrants = new Set<string>();
+  #operationGrants = new Set<string>();
   #revokedGrants = new Set<string>();
+  #operationRevocations: string[][] = [];
+  #replacementRevocationBaseline?: number;
   #disposed = false;
 
   async start(): Promise<void> {
@@ -751,6 +754,7 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(to, REPLACEMENT_MOD_ID);
     const input = this.#dialog().getByLabel("ModId", { exact: true });
     assert.equal(await input.inputValue(), from);
+    this.#replacementRevocationBaseline = this.#operationRevocations.length;
     await input.fill(to);
   }
 
@@ -766,12 +770,26 @@ export class Xcom2ProjectFoundryHarness {
         .isDisabled(),
       true,
     );
+    assert.notEqual(
+      this.#replacementRevocationBaseline,
+      undefined,
+      "Replacement invalidation did not record its operation-revocation baseline",
+    );
+    assert.equal(
+      this.#operationRevocations.length,
+      this.#replacementRevocationBaseline! + 1,
+      "ModId change must synchronously invoke operation-only grant revocation once",
+    );
+    assert.deepEqual(this.#operationRevocations.at(-1), [OPERATION_GRANT_IDENTITY]);
     assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), false);
+    assert.equal(this.#activeGrants.has(SOURCE_GRANT_IDENTITY), true);
+    assert.equal(this.#activeGrants.has(DESTINATION_GRANT_IDENTITY), true);
   }
 
   assertInitialOperationRevoked(operationIdentity: string, replacementModId: string): void {
     assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
     assert.equal(replacementModId, REPLACEMENT_MOD_ID);
+    assert.deepEqual(this.#operationRevocations.at(-1), [operationIdentity]);
     assert.equal(this.#revokedGrants.has(OPERATION_GRANT_IDENTITY), true);
     assert.equal(this.#activeGrants.has(OPERATION_GRANT_IDENTITY), false);
   }
@@ -1230,6 +1248,7 @@ export class Xcom2ProjectFoundryHarness {
         ),
       ),
       activeGrantCount: this.#activeGrants.size,
+      operationRevocations: this.#operationRevocations,
       revokedGrantIdentities: [...this.#revokedGrants].sort(),
     };
   }
@@ -1238,6 +1257,7 @@ export class Xcom2ProjectFoundryHarness {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#activeGrants.clear();
+    this.#operationGrants.clear();
     const page = this.#page;
     const context = this.#context;
     const browser = this.#browser;
@@ -1328,14 +1348,8 @@ export class Xcom2ProjectFoundryHarness {
             ? REPLACEMENT_DERIVED_DESTINATION
             : DERIVED_DESTINATION,
         );
-        const previousOperation =
-          request.modId === REPLACEMENT_MOD_ID
-            ? OPERATION_GRANT_IDENTITY
-            : REPLACEMENT_OPERATION_GRANT_IDENTITY;
-        if (this.#activeGrants.delete(previousOperation)) {
-          this.#revokedGrants.add(previousOperation);
-        }
         this.#activeGrants.add(operationIdentity);
+        this.#operationGrants.add(operationIdentity);
         this.#renderCalls.push(request);
         this.#renderedByModId.set(request.modId, rendered);
         this.#renderedDigests.set(request.modId, sha256(canonicalJson(rendered.rendered.planBody)));
@@ -1383,9 +1397,21 @@ export class Xcom2ProjectFoundryHarness {
         return promise;
       },
     );
+    await context.exposeBinding("__storyFoundryRevokeOperation", () => {
+      const revoked: string[] = [];
+      for (const identity of this.#operationGrants) {
+        if (this.#activeGrants.delete(identity)) {
+          this.#revokedGrants.add(identity);
+          revoked.push(identity);
+        }
+      }
+      this.#operationGrants.clear();
+      this.#operationRevocations.push(revoked.sort());
+    });
     await context.exposeBinding("__storyFoundryRevokeGrants", async () => {
       for (const identity of this.#activeGrants) this.#revokedGrants.add(identity);
       this.#activeGrants.clear();
+      this.#operationGrants.clear();
     });
     await context.exposeBinding(
       "__storyRecordTauriCall",
