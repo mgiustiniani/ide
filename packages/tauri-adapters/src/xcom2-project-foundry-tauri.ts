@@ -1,9 +1,12 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
   type Xcom2ProjectFoundryDestinationParentSelectionGrant,
   type Xcom2ProjectFoundryDestinationState,
   type Xcom2ProjectFoundryOperationGrant,
+  type Xcom2ProjectFoundryPreviewRefusalCode,
+  type Xcom2ProjectFoundryRenderRequest,
   type Xcom2ProjectFoundrySourceObjectEvidence,
   type Xcom2ProjectFoundrySourceSelectionGrant,
 } from "@ide/contracts";
@@ -21,10 +24,24 @@ export const XCOM2_PROJECT_FOUNDRY_COMMANDS = Object.freeze({
   revokeAll: "revoke_all_xcom2_project_foundry_preview_grants",
 } as const);
 
+/** Corrected renderer commands kept separate so the legacy command vocabulary remains stable. */
+export const XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS = Object.freeze({
+  authorizeDestinationParentSelection:
+    "authorize_xcom2_project_foundry_destination_parent_selection",
+  renderPreview: "render_xcom2_project_foundry_preview",
+} as const);
+
 const DIALOG_COMMAND = "plugin:dialog|open";
 const DIRECTORY_DIALOG_OPTIONS = Object.freeze({ directory: true, multiple: false } as const);
 const MAXIMUM_PATH_BYTES = 4_096;
 const MAXIMUM_GRANT_IDENTITY_BYTES = 128;
+const MAXIMUM_RENDER_JSON_DEPTH = 32;
+const MAXIMUM_RENDER_JSON_NODES = 10_000;
+const MAXIMUM_RENDER_JSON_ARRAY_LENGTH = 4_096;
+const MAXIMUM_RENDER_JSON_OBJECT_FIELDS = 256;
+const MAXIMUM_RENDER_JSON_KEY_BYTES = 256;
+const MAXIMUM_RENDER_JSON_STRING_BYTES = 1_048_576;
+const MAXIMUM_RENDER_JSON_TOTAL_STRING_BYTES = 4_194_304;
 const GRANT_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u;
 const FINGERPRINT_RESULTS = new Set<string>([
@@ -41,6 +58,7 @@ const DESTINATION_STATES = new Set<Xcom2ProjectFoundryDestinationState>([
   "present",
   "mismatched",
 ]);
+const RENDER_REFUSAL_CODES = new Set<string>(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES);
 const SAFE_NATIVE_REJECTIONS = new Set([
   "foundry-linux-only",
   "foundry-grant-mint-failed",
@@ -50,12 +68,43 @@ const SAFE_NATIVE_REJECTIONS = new Set([
   "destination-parent-unavailable",
   "destination-parent-grant-invalid",
   "derived-destination-present",
+  "derived-destination-mismatched",
   "operation-grant-invalid",
+  "rendered-plan-invalid",
   "mod-id-invalid",
   "mod-id-windows-device",
   ...[...FINGERPRINT_RESULTS].filter((value) => value !== "Verified"),
 ]);
 
+export type TauriXcom2ProjectFoundryNativeRenderResult =
+  | Readonly<{
+      readonly kind: "rendered";
+      readonly operationGrant: Readonly<Xcom2ProjectFoundryOperationGrant>;
+      /** Deliberately unknown until web-core takes strict rendered-plan custody. */
+      readonly planBody: unknown;
+    }>
+  | Readonly<{
+      readonly kind: "refused";
+      readonly code: Xcom2ProjectFoundryPreviewRefusalCode;
+    }>;
+
+/** Corrected selector/renderer boundary for migration away from frontend rendering authority. */
+export interface TauriXcom2ProjectFoundryRendererComposition {
+  readonly selectors: {
+    selectSourceRepository(): Promise<Xcom2ProjectFoundrySourceSelectionGrant>;
+    selectDestinationParent(): Promise<Xcom2ProjectFoundryDestinationParentSelectionGrant>;
+  };
+  readonly renderer: {
+    renderPreview(
+      request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+    ): Promise<TauriXcom2ProjectFoundryNativeRenderResult>;
+  };
+  readonly grants: {
+    revokeAll(): Promise<void>;
+  };
+}
+
+/** Transitional composition retained unchanged until the desktop controller migrates. */
 export interface TauriXcom2ProjectFoundryComposition {
   readonly selectors: {
     selectSourceRepository(): Promise<Xcom2ProjectFoundrySourceSelectionGrant>;
@@ -260,8 +309,209 @@ function normalizeOperationGrant(
   });
 }
 
+interface RenderJsonBudget {
+  nodes: number;
+  stringBytes: number;
+  readonly active: Set<object>;
+}
+
+function copyBoundedRenderJson(
+  command: string,
+  value: unknown,
+  budget: RenderJsonBudget,
+  depth = 0,
+): unknown {
+  if (depth > MAXIMUM_RENDER_JSON_DEPTH) {
+    throw protocolError(command, "response", "rendered plan exceeds the JSON depth limit");
+  }
+  budget.nodes += 1;
+  if (budget.nodes > MAXIMUM_RENDER_JSON_NODES) {
+    throw protocolError(command, "response", "rendered plan exceeds the JSON node limit");
+  }
+
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw protocolError(command, "response", "rendered plan contains a non-JSON number");
+    }
+    return value;
+  }
+  if (typeof value === "string") {
+    if (!safeText(value)) {
+      throw protocolError(command, "response", "rendered plan contains unsafe text");
+    }
+    const bytes = new TextEncoder().encode(value).length;
+    budget.stringBytes += bytes;
+    if (
+      bytes > MAXIMUM_RENDER_JSON_STRING_BYTES ||
+      budget.stringBytes > MAXIMUM_RENDER_JSON_TOTAL_STRING_BYTES
+    ) {
+      throw protocolError(command, "response", "rendered plan exceeds the JSON string limit");
+    }
+    return value;
+  }
+  if (typeof value !== "object") {
+    throw protocolError(command, "response", "rendered plan contains a non-JSON value");
+  }
+  if (budget.active.has(value)) {
+    throw protocolError(command, "response", "rendered plan contains a cycle");
+  }
+
+  budget.active.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (
+        Object.getPrototypeOf(value) !== Array.prototype ||
+        value.length > MAXIMUM_RENDER_JSON_ARRAY_LENGTH
+      ) {
+        throw protocolError(command, "response", "rendered plan contains an invalid array");
+      }
+      const keys = Reflect.ownKeys(value);
+      if (
+        keys.length !== value.length + 1 ||
+        keys.some(
+          (key) =>
+            typeof key !== "string" || (key !== "length" && !/^(?:0|[1-9][0-9]*)$/u.test(key)),
+        )
+      ) {
+        throw protocolError(command, "response", "rendered plan contains an inexact array");
+      }
+      const output: unknown[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+          throw protocolError(command, "response", "rendered plan contains a sparse array");
+        }
+        output.push(copyBoundedRenderJson(command, descriptor.value, budget, depth + 1));
+      }
+      return Object.freeze(output);
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw protocolError(command, "response", "rendered plan contains a non-data object");
+    }
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > MAXIMUM_RENDER_JSON_OBJECT_FIELDS) {
+      throw protocolError(command, "response", "rendered plan exceeds the object field limit");
+    }
+    const output: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (typeof key !== "string" || !safeText(key)) {
+        throw protocolError(command, "response", "rendered plan contains an unsafe field name");
+      }
+      const keyBytes = new TextEncoder().encode(key).length;
+      budget.stringBytes += keyBytes;
+      if (
+        keyBytes > MAXIMUM_RENDER_JSON_KEY_BYTES ||
+        budget.stringBytes > MAXIMUM_RENDER_JSON_TOTAL_STRING_BYTES
+      ) {
+        throw protocolError(command, "response", "rendered plan exceeds the JSON string limit");
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        throw protocolError(command, "response", "rendered plan contains a non-data field");
+      }
+      Object.defineProperty(output, key, {
+        enumerable: true,
+        value: copyBoundedRenderJson(command, descriptor.value, budget, depth + 1),
+      });
+    }
+    return Object.freeze(output);
+  } finally {
+    budget.active.delete(value);
+  }
+}
+
 function expectedDerivedDestination(parent: string, modId: string): string {
   return parent === "/" ? `/${modId}` : `${parent}/${modId}`;
+}
+
+function normalizeRenderRequest(value: unknown): Readonly<Xcom2ProjectFoundryRenderRequest> {
+  const command = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS.renderPreview;
+  const record = exactDataRecord(
+    command,
+    "request",
+    value,
+    ["sourceGrant", "destinationParentGrant", "modId"],
+    "render request",
+  );
+  const sourceGrant = normalizeSourceGrant(command, "request", record.sourceGrant);
+  const destinationParentGrant = normalizeDestinationGrant(
+    command,
+    "request",
+    record.destinationParentGrant,
+  );
+  if (!validModId(record.modId) || sourceGrant.identity === destinationParentGrant.identity) {
+    throw protocolError(command, "request", "render request fields violate the native contract");
+  }
+  return Object.freeze({ sourceGrant, destinationParentGrant, modId: record.modId });
+}
+
+function normalizeNativeRenderResult(
+  value: unknown,
+  request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+): TauriXcom2ProjectFoundryNativeRenderResult {
+  const command = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS.renderPreview;
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw protocolError(command, "response", "render result must be an exact data object");
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw protocolError(command, "response", "render result must be a plain data object");
+    }
+    const kindDescriptor = Object.getOwnPropertyDescriptor(value, "kind");
+    if (!kindDescriptor || !("value" in kindDescriptor) || !kindDescriptor.enumerable) {
+      throw protocolError(command, "response", "render result kind must be an enumerable field");
+    }
+
+    if (kindDescriptor.value === "refused") {
+      const refusal = exactDataRecord(
+        command,
+        "response",
+        value,
+        ["kind", "code"],
+        "render refusal",
+      );
+      if (!safeText(refusal.code) || !RENDER_REFUSAL_CODES.has(refusal.code)) {
+        throw protocolError(command, "response", "render refusal code is unsupported");
+      }
+      return Object.freeze({
+        kind: "refused",
+        code: refusal.code as Xcom2ProjectFoundryPreviewRefusalCode,
+      });
+    }
+
+    const rendered = exactDataRecord(
+      command,
+      "response",
+      value,
+      ["kind", "operationGrant", "planBody"],
+      "render result",
+    );
+    if (rendered.kind !== "rendered") {
+      throw protocolError(command, "response", "render result kind is unsupported");
+    }
+    const operationGrant = normalizeOperationGrant(command, "response", rendered.operationGrant);
+    if (
+      operationGrant.derivedDestination !==
+        expectedDerivedDestination(request.destinationParentGrant.parent, request.modId) ||
+      operationGrant.identity === request.sourceGrant.identity ||
+      operationGrant.identity === request.destinationParentGrant.identity
+    ) {
+      throw protocolError(command, "response", "render operation grant bindings are inconsistent");
+    }
+    const planBody = copyBoundedRenderJson(command, rendered.planBody, {
+      active: new Set<object>(),
+      nodes: 0,
+      stringBytes: 0,
+    });
+    return Object.freeze({ kind: "rendered", operationGrant, planBody });
+  } catch {
+    // Provider objects and thrown proxy/accessor causes never cross the adapter boundary.
+    throw protocolError(command, "response", "render result could not be safely inspected");
+  }
 }
 
 function normalizeDestinationSelection(
@@ -424,6 +674,33 @@ export class TauriXcom2ProjectFoundryAdapter implements TauriXcom2ProjectFoundry
     return normalizeDestinationSelection(command, response, selectedRoot, modId);
   }
 
+  /** Selects and authorizes only the parent; no ModId or operation authority is sent. */
+  async selectDestinationParentSelection(): Promise<Xcom2ProjectFoundryDestinationParentSelectionGrant> {
+    const command = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS.authorizeDestinationParentSelection;
+    const selectedRoot = await selectDirectory("destination-parent");
+    const request = Object.freeze({ selectedRoot });
+    const response = await invokeFoundry(command, Object.freeze({ request }));
+    const grant = normalizeDestinationGrant(command, "response", response);
+    if (grant.parent !== selectedRoot) {
+      throw protocolError(
+        command,
+        "response",
+        "destination grant does not bind the selected parent",
+      );
+    }
+    return grant;
+  }
+
+  /** Invokes the authoritative renderer and returns only bounded provider-neutral JSON. */
+  async renderPreview(
+    request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+  ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> {
+    const command = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS.renderPreview;
+    const immutableRequest = normalizeRenderRequest(request);
+    const response = await invokeFoundry(command, Object.freeze({ request: immutableRequest }));
+    return normalizeNativeRenderResult(response, immutableRequest);
+  }
+
   async resolvePinnedObject(
     grant: Xcom2ProjectFoundrySourceSelectionGrant,
   ): Promise<Xcom2ProjectFoundrySourceObjectEvidence> {
@@ -482,8 +759,54 @@ export class TauriXcom2ProjectFoundryAdapter implements TauriXcom2ProjectFoundry
 
 export { TauriXcom2ProjectFoundryAdapter as TauriProjectFoundryAdapter };
 
+/** Renderer-capable composition exported for controller migration without changing App wiring. */
+export class TauriXcom2ProjectFoundryRendererAdapter implements TauriXcom2ProjectFoundryRendererComposition {
+  private readonly bridge = new TauriXcom2ProjectFoundryAdapter();
+
+  readonly selectors = Object.freeze({
+    selectSourceRepository: (): Promise<Xcom2ProjectFoundrySourceSelectionGrant> =>
+      this.selectSourceRepository(),
+    selectDestinationParent: (): Promise<Xcom2ProjectFoundryDestinationParentSelectionGrant> =>
+      this.selectDestinationParent(),
+  });
+
+  readonly renderer = Object.freeze({
+    renderPreview: (
+      request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+    ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> => this.renderPreview(request),
+  });
+
+  readonly grants = Object.freeze({ revokeAll: (): Promise<void> => this.revokeAll() });
+
+  selectSourceRepository(): Promise<Xcom2ProjectFoundrySourceSelectionGrant> {
+    return this.bridge.selectSourceRepository();
+  }
+
+  selectDestinationParent(): Promise<Xcom2ProjectFoundryDestinationParentSelectionGrant> {
+    return this.bridge.selectDestinationParentSelection();
+  }
+
+  renderPreview(
+    request: Readonly<Xcom2ProjectFoundryRenderRequest>,
+  ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> {
+    return this.bridge.renderPreview(request);
+  }
+
+  revokeAll(): Promise<void> {
+    return this.bridge.revokeAll();
+  }
+}
+
+export { TauriXcom2ProjectFoundryRendererAdapter as TauriProjectFoundryRendererAdapter };
+
 export function createTauriXcom2ProjectFoundryComposition(): TauriXcom2ProjectFoundryComposition {
   return new TauriXcom2ProjectFoundryAdapter();
 }
 
+export function createTauriXcom2ProjectFoundryRendererComposition(): TauriXcom2ProjectFoundryRendererComposition {
+  return new TauriXcom2ProjectFoundryRendererAdapter();
+}
+
 export const createTauriProjectFoundryComposition = createTauriXcom2ProjectFoundryComposition;
+export const createTauriProjectFoundryRendererComposition =
+  createTauriXcom2ProjectFoundryRendererComposition;

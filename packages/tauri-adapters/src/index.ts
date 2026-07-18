@@ -43,12 +43,21 @@ export type { Xcom2SetupPollOptions } from "./xcom2-setup-tauri";
 export {
   TauriXcom2ProjectFoundryAdapter,
   TauriProjectFoundryAdapter,
+  TauriXcom2ProjectFoundryRendererAdapter,
+  TauriProjectFoundryRendererAdapter,
   TauriProjectFoundrySelectionCancelledError,
   XCOM2_PROJECT_FOUNDRY_COMMANDS,
+  XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS,
   createTauriXcom2ProjectFoundryComposition,
   createTauriProjectFoundryComposition,
+  createTauriXcom2ProjectFoundryRendererComposition,
+  createTauriProjectFoundryRendererComposition,
 } from "./xcom2-project-foundry-tauri";
-export type { TauriXcom2ProjectFoundryComposition } from "./xcom2-project-foundry-tauri";
+export type {
+  TauriXcom2ProjectFoundryComposition,
+  TauriXcom2ProjectFoundryNativeRenderResult,
+  TauriXcom2ProjectFoundryRendererComposition,
+} from "./xcom2-project-foundry-tauri";
 export { TauriAdapterError, toTauriAdapterError } from "./errors";
 
 /**
