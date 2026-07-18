@@ -2003,6 +2003,9 @@ describe("App", () => {
     fireEvent.change(within(dialog).getByLabelText("ModId"), {
       target: { value: "FoundryPreviewFixture" },
     });
+    expect(
+      (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe("/scenario/foundry-output/FoundryPreviewFixture");
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
 
     await waitFor(() => {
@@ -2027,6 +2030,62 @@ describe("App", () => {
       "",
     );
     expect((within(reopened).getByLabelText("ModId") as HTMLInputElement).value).toBe("");
+    expect(
+      (within(reopened).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe("");
+  });
+
+  it("retains a Preview activation behind queued ModId operation revocation", async () => {
+    const revocation = createDeferred<undefined>();
+    const revokeOperation = vi.fn(async () => undefined);
+    const renderPreview = vi.fn(async (request: any) =>
+      structuredClone(
+        request.modId === "Mod_1" ? RENDERED_FIXTURES[1].rendered : RENDERED_FIXTURES[0].rendered,
+      ),
+    );
+    const composition = {
+      selectors: {
+        selectSourceRepository: vi.fn(async () => RENDERED_FIXTURES[0].request.sourceGrant),
+        selectDestinationParent: vi.fn(
+          async () => RENDERED_FIXTURES[0].request.destinationParentGrant,
+        ),
+      },
+      renderer: { renderPreview },
+      grants: { revokeOperation, revokeAll: vi.fn(async () => undefined) },
+    };
+    const { App } = await import("../App");
+    render(<App projectFoundry={composition} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New XCOM 2 Project" }));
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select EMPT repository" }));
+    await within(dialog).findByDisplayValue("/scenario/empt-v1_4");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select Destination parent" }));
+    await within(dialog).findByDisplayValue("/scenario/foundry-output");
+    fireEvent.change(within(dialog).getByLabelText("ModId"), {
+      target: { value: "FoundryPreviewFixture" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(renderPreview).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.getByTestId("Xcom2ProjectFoundryDialog").dataset.viewState).toBe("ready"),
+    );
+
+    revokeOperation.mockImplementationOnce(() => revocation.promise);
+    fireEvent.change(within(dialog).getByLabelText("ModId"), { target: { value: "Mod_1" } });
+    expect(
+      (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe("/scenario/foundry-output/Mod_1");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    await Promise.resolve();
+    expect(renderPreview).toHaveBeenCalledOnce();
+
+    revocation.resolve(undefined);
+    await waitFor(() => expect(renderPreview).toHaveBeenCalledTimes(2));
+    expect(renderPreview.mock.calls[1]?.[0]).toMatchObject({ modId: "Mod_1" });
+    await waitFor(() =>
+      expect(screen.getByTestId("Xcom2ProjectFoundryDialog").dataset.viewState).toBe("ready"),
+    );
   });
 
   it("wires one exact pending Foundry Apply, locks before entry, and retains the created receipt", async () => {
@@ -2096,6 +2155,9 @@ describe("App", () => {
     fireEvent.change(within(dialog).getByLabelText("ModId"), {
       target: { value: "FoundryPreviewFixture" },
     });
+    expect(
+      (within(dialog).getByLabelText("Final project location") as HTMLInputElement).value,
+    ).toBe(operation.derivedDestination);
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
     const create = await within(dialog).findByRole("button", { name: "Create project" });
     expect(

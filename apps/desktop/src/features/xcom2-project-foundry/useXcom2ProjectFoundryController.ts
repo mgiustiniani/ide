@@ -51,7 +51,10 @@ export interface Xcom2ProjectFoundryController {
   readonly sourceRepository: string;
   readonly destinationParent: string;
   readonly modId: string;
-  /** Exact value copied from the current operation grant; never reconstructed in the App or UI. */
+  /**
+   * Informational Linux path derived from the selected parent and accepted current ModId.
+   * This presentation value is never operation authority.
+   */
   readonly finalProjectLocation: string;
   readonly viewState: Xcom2ProjectFoundryDialogViewState;
   readonly creationState: Xcom2ProjectFoundryDialogCreationState;
@@ -74,11 +77,25 @@ const GRANT_IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 function canonicalAbsolutePath(value: unknown): value is string {
   if (typeof value !== "string" || !value.startsWith("/") || value.includes("\\")) return false;
-  if (value.length > 1 && value.endsWith("/")) return false;
+  if (value === "/") return true;
+  if (value.endsWith("/")) return false;
   return value
     .split("/")
     .slice(1)
     .every((component) => component.length > 0 && component !== "." && component !== "..");
+}
+
+/** Presentation-only path derivation. Native renderer authority remains grant based. */
+function informationalFinalProjectLocation(
+  destinationParentGrant: Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant> | null,
+  exactModId: string,
+): string {
+  if (!destinationParentGrant || validateXcom2ProjectFoundryModId(exactModId).kind === "refused") {
+    return "";
+  }
+  return destinationParentGrant.parent === "/"
+    ? `/${exactModId}`
+    : `${destinationParentGrant.parent}/${exactModId}`;
 }
 
 function snapshotSourceGrant(
@@ -279,11 +296,15 @@ export function useXcom2ProjectFoundryController(
   const destinationGenerationRef = useRef(0);
   const previewGenerationRef = useRef(0);
   const authorityQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const renderIdleRef = useRef(true);
   const operationRevocationRef = useRef<Promise<void>>(Promise.resolve());
+  const operationRevocationPendingRef = useRef(false);
   const sourceGrantRef = useRef<Readonly<Xcom2ProjectFoundrySourceSelectionGrant> | null>(null);
   const destinationGrantRef =
     useRef<Readonly<Xcom2ProjectFoundryDestinationParentSelectionGrant> | null>(null);
   const operationGrantRef = useRef<Readonly<Xcom2ProjectFoundryOperationGrant> | null>(null);
+  const nativeRenderCountRef = useRef(0);
   const modIdRef = useRef("");
   const applyStateRef = useRef<Readonly<Xcom2ProjectFoundryApplyState> | null>(null);
 
@@ -305,6 +326,29 @@ export function useXcom2ProjectFoundryController(
       () => undefined,
       () => undefined,
     );
+    return result;
+  }, []);
+
+  const enqueueRender = useCallback(<T>(operation: () => Promise<T>): Promise<T> => {
+    let result: Promise<T>;
+    if (renderIdleRef.current) {
+      renderIdleRef.current = false;
+      try {
+        result = Promise.resolve(operation());
+      } catch (error) {
+        result = Promise.reject(error);
+      }
+    } else {
+      result = renderQueueRef.current.then(operation, operation);
+    }
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    renderQueueRef.current = tail;
+    void tail.then(() => {
+      if (renderQueueRef.current === tail) renderIdleRef.current = true;
+    });
     return result;
   }, []);
 
@@ -330,7 +374,13 @@ export function useXcom2ProjectFoundryController(
       const safe = started.catch(() => undefined);
       const prior = operationRevocationRef.current;
       const barrier = Promise.all([prior, safe]).then(() => undefined);
+      operationRevocationPendingRef.current = true;
       operationRevocationRef.current = barrier;
+      void barrier.then(() => {
+        if (operationRevocationRef.current === barrier) {
+          operationRevocationPendingRef.current = false;
+        }
+      });
       return barrier;
     },
     [],
@@ -348,6 +398,14 @@ export function useXcom2ProjectFoundryController(
     setDestinationParent("");
     setFinalProjectLocation("");
   }, []);
+
+  const publishInformationalFinalProjectLocation = useCallback(
+    (destinationGrant = destinationGrantRef.current, exactModId = modIdRef.current): void => {
+      if (!mountedRef.current) return;
+      setFinalProjectLocation(informationalFinalProjectLocation(destinationGrant, exactModId));
+    },
+    [],
+  );
 
   const clearAuthorityMemory = useCallback((): void => {
     clearGrantMemory();
@@ -430,10 +488,7 @@ export function useXcom2ProjectFoundryController(
     }
     const session = sessionGenerationRef.current;
     const selectionGeneration = ++sourceGenerationRef.current;
-    const replacement =
-      sourceGrantRef.current !== null ||
-      destinationGrantRef.current !== null ||
-      operationGrantRef.current !== null;
+    const replacement = sourceGrantRef.current !== null || operationGrantRef.current !== null;
     clearPreviewAuthority();
     if (replacement) {
       clearGrantMemory();
@@ -477,7 +532,10 @@ export function useXcom2ProjectFoundryController(
         return;
       }
       sourceGrantRef.current = grant;
-      flushSync(() => setSourceRepository(grant.repository));
+      flushSync(() => {
+        setSourceRepository(grant.repository);
+        publishInformationalFinalProjectLocation();
+      });
     });
   }, [
     authorityConsumed,
@@ -486,6 +544,7 @@ export function useXcom2ProjectFoundryController(
     clearRenderedGrants,
     enqueueAuthority,
     prepareSelection,
+    publishInformationalFinalProjectLocation,
     revokeAllSafely,
   ]);
 
@@ -546,7 +605,10 @@ export function useXcom2ProjectFoundryController(
         return;
       }
       destinationGrantRef.current = grant;
-      flushSync(() => setDestinationParent(grant.parent));
+      flushSync(() => {
+        setDestinationParent(grant.parent);
+        publishInformationalFinalProjectLocation(grant);
+      });
     });
   }, [
     authorityConsumed,
@@ -555,6 +617,7 @@ export function useXcom2ProjectFoundryController(
     clearRenderedGrants,
     enqueueAuthority,
     prepareSelection,
+    publishInformationalFinalProjectLocation,
     revokeAllSafely,
   ]);
 
@@ -562,12 +625,20 @@ export function useXcom2ProjectFoundryController(
     (nextModId: string): void => {
       if (authorityConsumed() || nextModId === modIdRef.current) return;
       const owner = compositionRef.current;
+      const requiresOperationRevocation =
+        operationGrantRef.current !== null || nativeRenderCountRef.current > 0;
       modIdRef.current = nextModId;
       clearPreviewAuthority();
       setModIdState(nextModId);
-      void startOperationRevocation(owner);
+      publishInformationalFinalProjectLocation(destinationGrantRef.current, nextModId);
+      if (requiresOperationRevocation) void startOperationRevocation(owner);
     },
-    [authorityConsumed, clearPreviewAuthority, startOperationRevocation],
+    [
+      authorityConsumed,
+      clearPreviewAuthority,
+      publishInformationalFinalProjectLocation,
+      startOperationRevocation,
+    ],
   );
 
   const preview = useCallback(
@@ -575,10 +646,12 @@ export function useXcom2ProjectFoundryController(
       if (!openRef.current || authorityConsumed()) return;
       const owner = compositionRef.current;
       if (exactModId !== modIdRef.current) {
+        const requiresOperationRevocation =
+          operationGrantRef.current !== null || nativeRenderCountRef.current > 0;
         modIdRef.current = exactModId;
         clearPreviewAuthority();
         setModIdState(exactModId);
-        void startOperationRevocation(owner);
+        if (requiresOperationRevocation) void startOperationRevocation(owner);
       } else if (operationGrantRef.current !== null) {
         clearPreviewAuthority();
         void startOperationRevocation(owner);
@@ -589,9 +662,11 @@ export function useXcom2ProjectFoundryController(
       const validation = validateXcom2ProjectFoundryModId(exactModId);
       if (validation.kind === "refused") {
         previewGenerationRef.current += 1;
+        setFinalProjectLocation("");
         setViewState(validation);
         return;
       }
+      publishInformationalFinalProjectLocation(destinationGrantRef.current, exactModId);
 
       const sourceGrant = sourceGrantRef.current;
       const destinationParentGrant = destinationGrantRef.current;
@@ -628,16 +703,19 @@ export function useXcom2ProjectFoundryController(
         !authorityConsumed();
       setViewState({ kind: "busy" });
 
-      await enqueueAuthority(async () => {
-        await operationRevocationRef.current;
+      await enqueueRender(async () => {
+        if (operationRevocationPendingRef.current) await operationRevocationRef.current;
         if (!current()) return;
         let rendered: unknown;
+        nativeRenderCountRef.current += 1;
         try {
           rendered = await owner.renderer.renderPreview(request);
         } catch {
           if (current()) setViewState({ kind: "refused", code: "rendered-plan-invalid" });
           await startOperationRevocation(owner);
           return;
+        } finally {
+          nativeRenderCountRef.current -= 1;
         }
         if (!current()) {
           await startOperationRevocation(owner);
@@ -675,7 +753,6 @@ export function useXcom2ProjectFoundryController(
         });
         applyStateRef.current = readyApplyState;
         setApplyState(readyApplyState);
-        setFinalProjectLocation(operationGrant.derivedDestination);
         setCreationState(
           typeof owner.apply === "function" ? { kind: "ready" } : CREATION_UNAVAILABLE,
         );
@@ -685,8 +762,9 @@ export function useXcom2ProjectFoundryController(
     [
       authorityConsumed,
       clearPreviewAuthority,
-      enqueueAuthority,
+      enqueueRender,
       invalidateReadyApproval,
+      publishInformationalFinalProjectLocation,
       startOperationRevocation,
     ],
   );

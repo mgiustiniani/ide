@@ -200,7 +200,50 @@ describe("useXcom2ProjectFoundryController", () => {
       code: "mod-id-invalid",
     });
     expect(harness.renderPreview).not.toHaveBeenCalled();
-    expect(harness.revokeOperation).toHaveBeenCalledOnce();
+    expect(harness.revokeOperation).not.toHaveBeenCalled();
+  });
+
+  it("exposes only a parent-derived informational Linux location before preview and clears it on invalidation", async () => {
+    const destinationReplacement = deferred<Xcom2ProjectFoundryDestinationParentSelectionGrant>();
+    const harness = createComposition();
+    const controller = renderFoundryController(harness.composition);
+    await selectInputs(controller);
+
+    expect(controller.result.current.finalProjectLocation).toBe(
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
+    expect(controller.result.current.applyState).toBeNull();
+
+    act(() => controller.result.current.setModId(" invalid "));
+    expect(controller.result.current.finalProjectLocation).toBe("");
+
+    act(() => controller.result.current.setModId("FoundryPreviewFixture"));
+    expect(controller.result.current.finalProjectLocation).toBe(
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
+
+    harness.selectDestinationParent.mockImplementationOnce(() => destinationReplacement.promise);
+    let replacingDestination!: Promise<void>;
+    act(() => {
+      replacingDestination = controller.result.current.selectDestinationParent();
+    });
+    expect(controller.result.current.finalProjectLocation).toBe("");
+    await waitFor(() => expect(harness.selectDestinationParent).toHaveBeenCalledTimes(2));
+    destinationReplacement.resolve({ ...destinationParentGrant, parent: "/" });
+    await act(async () => replacingDestination);
+    expect(controller.result.current.finalProjectLocation).toBe("/FoundryPreviewFixture");
+
+    let replacingSource!: Promise<void>;
+    act(() => {
+      replacingSource = controller.result.current.selectSourceRepository();
+    });
+    expect(controller.result.current.finalProjectLocation).toBe("");
+    await act(async () => replacingSource);
+    expect(controller.result.current.destinationParent).toBe("/");
+    expect(controller.result.current.finalProjectLocation).toBe("/FoundryPreviewFixture");
+
+    await act(() => controller.result.current.cancel());
+    expect(controller.result.current.finalProjectLocation).toBe("");
   });
 
   it("passes closed native refusals through and maps thrown or malformed renders safely", async () => {
@@ -263,17 +306,17 @@ describe("useXcom2ProjectFoundryController", () => {
       kind: "refused",
       code: "rendered-plan-invalid",
     });
-    expect(controller.result.current.finalProjectLocation).toBe("");
+    expect(controller.result.current.finalProjectLocation).toBe(
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
     expect(controller.result.current.applyState).toBeNull();
-    expect(harness.revokeOperation.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(harness.revokeOperation.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("clears a ready operation synchronously on ModId change, retains selectors, and blocks rendering on narrow revocation", async () => {
+  it("awaits queued ModId revocation, executes the current render exactly once, and retains no old operation", async () => {
     const revocation = deferred<undefined>();
     const harness = createComposition();
-    harness.revokeOperation
-      .mockResolvedValueOnce(undefined)
-      .mockImplementationOnce(() => revocation.promise);
+    harness.revokeOperation.mockImplementationOnce(() => revocation.promise);
     const controller = renderFoundryController(harness.composition);
     await renderReady(controller);
     const revocationsBeforeChange = harness.revokeOperation.mock.calls.length;
@@ -285,7 +328,7 @@ describe("useXcom2ProjectFoundryController", () => {
       sourceRepository: sourceGrant.repository,
       destinationParent: destinationParentGrant.parent,
       modId: "Mod_1",
-      finalProjectLocation: "",
+      finalProjectLocation: "/scenario/foundry-output/Mod_1",
       viewState: { kind: "editing" },
       creationState: { kind: "consumed" },
       applyState: null,
@@ -305,6 +348,13 @@ describe("useXcom2ProjectFoundryController", () => {
     expect(controller.result.current.finalProjectLocation).toBe(
       replacementRendered.operationGrant.derivedDestination,
     );
+    expect(controller.result.current.applyState).toMatchObject({
+      status: "ready",
+      current: { operationGrant: replacementRendered.operationGrant },
+    });
+    expect(JSON.stringify(controller.result.current.applyState)).not.toContain(
+      initialRendered.operationGrant.identity,
+    );
   });
 
   it("narrowly revokes a current operation before rendering the same ModId again", async () => {
@@ -319,7 +369,9 @@ describe("useXcom2ProjectFoundryController", () => {
     act(() => {
       repeated = controller.result.current.preview("FoundryPreviewFixture");
     });
-    expect(controller.result.current.finalProjectLocation).toBe("");
+    expect(controller.result.current.finalProjectLocation).toBe(
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
     expect(harness.revokeOperation).toHaveBeenCalledTimes(baseline + 1);
     await Promise.resolve();
     expect(harness.renderPreview).toHaveBeenCalledOnce();
@@ -406,7 +458,9 @@ describe("useXcom2ProjectFoundryController", () => {
         expect(controller.result.current.sourceRepository).toBe("");
         expect(controller.result.current.destinationParent).toBe(destinationParentGrant.parent);
       }
-      expect(controller.result.current.finalProjectLocation).toBe("");
+      expect(controller.result.current.finalProjectLocation).toBe(
+        selection === "source" ? "" : "/scenario/foundry-output/FoundryPreviewFixture",
+      );
       expect(controller.result.current.applyState).toBeNull();
       expect(harness.revokeAll).toHaveBeenCalledTimes(revocations + 1);
     },
