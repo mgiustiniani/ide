@@ -13,7 +13,7 @@ import {
   APPROVED_FOUNDRY_WARNINGS,
   APPROVED_SOLUTION_ESCAPED_PREVIEW,
   APPROVED_X2PROJ_ESCAPED_PREVIEW,
-} from "../../../../../tests/spec/support/xcom2-project-foundry-approved-fixture";
+} from "../__tests__/Xcom2ProjectFoundryApprovedStoryOracle.fixture";
 import {
   Xcom2ProjectFoundryDialog,
   type Xcom2ProjectFoundryDialogProps,
