@@ -223,6 +223,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
       | {
           readonly status: "refused";
           readonly authority: "consumed";
+          readonly preview: Readonly<ReadyPreview>;
           readonly refusal: Readonly<
             Extract<Xcom2ProjectFoundryApplyResult, { readonly result: "refused" }>
           >;

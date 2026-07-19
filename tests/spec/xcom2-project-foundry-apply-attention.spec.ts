@@ -1,8 +1,12 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type {
-  Xcom2ProjectFoundryApplyResult,
-  Xcom2ProjectFoundryApplyState,
+import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+  type Xcom2ProjectFoundryApplyAttentionPresentation,
+  type Xcom2ProjectFoundryApplyResult,
+  type Xcom2ProjectFoundryApplyState,
+  type Xcom2ProjectFoundryApplyTerminalSessionDecision,
 } from "../../packages/contracts/src/domain/xcom2-project-foundry";
 import * as foundryCore from "../../packages/web-core/src/xcom2/project-foundry";
 import {
@@ -11,33 +15,7 @@ import {
   readyFoundryApplyPreview,
 } from "./support/xcom2-project-foundry-apply-fixture";
 
-type ApplyAttentionPresentation = Readonly<{
-  readonly title: string;
-  readonly summary: string;
-  readonly remediation: string;
-  readonly supportCode: string;
-}>;
-
-type RefusedApplyStateWithPreview = Extract<
-  Xcom2ProjectFoundryApplyState,
-  { readonly status: "refused" }
-> & {
-  readonly preview: Readonly<ReturnType<typeof readyFoundryApplyPreview>>;
-};
-
-type ApplyTerminalSessionDecision = Readonly<{
-  readonly kind: "terminal";
-  readonly authority: "consumed";
-  readonly preview: "retained-context";
-  readonly disabledControls: readonly [
-    "source-selection",
-    "destination-selection",
-    "mod-id",
-    "preview",
-    "create",
-  ];
-  readonly enabledControls: readonly ["cancel"];
-}>;
+type RefusedApplyState = Extract<Xcom2ProjectFoundryApplyState, { readonly status: "refused" }>;
 
 const destinationPresentPresentation = {
   title: "Project location conflict",
@@ -46,7 +24,7 @@ const destinationPresentPresentation = {
   remediation:
     "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
   supportCode: "foundry-apply-destination-present",
-} as const satisfies ApplyAttentionPresentation;
+} as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation;
 
 const genericAttentionPresentation = {
   title: "Project creation needs attention",
@@ -54,7 +32,7 @@ const genericAttentionPresentation = {
     "Foundry could not complete or safely confirm project creation. This approved preview cannot be retried.",
   remediation: "Cancel and leave the destination unchanged. Contact support before trying again.",
   supportCode: "foundry-apply-unavailable",
-} as const satisfies ApplyAttentionPresentation;
+} as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation;
 
 const strictOtherAttentionResults = [
   ...[
@@ -97,12 +75,12 @@ const strictOtherAttentionResults = [
 ] as const satisfies readonly Xcom2ProjectFoundryApplyResult[];
 
 const attentionCore = foundryCore as typeof foundryCore & {
-  readonly XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION: ApplyAttentionPresentation;
-  readonly XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION: ApplyAttentionPresentation;
-  mapXcom2ProjectFoundryApplyAttentionPresentation(result: unknown): ApplyAttentionPresentation;
+  mapXcom2ProjectFoundryApplyAttentionPresentation(
+    result: unknown,
+  ): Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>;
   decideXcom2ProjectFoundryApplyTerminalSession(
-    state: Readonly<RefusedApplyStateWithPreview>,
-  ): ApplyTerminalSessionDecision;
+    state: Readonly<RefusedApplyState>,
+  ): Readonly<Xcom2ProjectFoundryApplyTerminalSessionDecision>;
 };
 
 function assertDeepFrozen(value: unknown): void {
@@ -129,34 +107,66 @@ function applyingState() {
  * these examples pin the pure provider-neutral attention and terminal-session decisions.
  */
 describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => {
-  it("defines only the four atomic presentation fields and provider-neutral mapper API", () => {
-    expectTypeOf<ApplyAttentionPresentation>().toEqualTypeOf<{
+  it("defines readonly presentation, refused-state, and terminal-session contracts", () => {
+    type ReadyPreview = Extract<
+      Xcom2ProjectFoundryApplyState,
+      { readonly status: "ready" }
+    >["preview"];
+
+    expectTypeOf<Xcom2ProjectFoundryApplyAttentionPresentation>().toEqualTypeOf<{
       readonly title: string;
       readonly summary: string;
       readonly remediation: string;
       readonly supportCode: string;
+    }>();
+    expectTypeOf<RefusedApplyState>().toEqualTypeOf<{
+      readonly status: "refused";
+      readonly authority: "consumed";
+      readonly preview: Readonly<ReadyPreview>;
+      readonly refusal: Readonly<
+        Extract<Xcom2ProjectFoundryApplyResult, { readonly result: "refused" }>
+      >;
+    }>();
+    expectTypeOf<Xcom2ProjectFoundryApplyTerminalSessionDecision>().toEqualTypeOf<{
+      readonly kind: "terminal";
+      readonly authority: "consumed";
+      readonly preview: "retained-context";
+      readonly disabledControls: readonly [
+        "source-selection",
+        "destination-selection",
+        "mod-id",
+        "preview",
+        "create",
+      ];
+      readonly enabledControls: readonly ["cancel"];
     }>();
     expectTypeOf(
       attentionCore.mapXcom2ProjectFoundryApplyAttentionPresentation,
     ).parameters.toEqualTypeOf<[unknown]>();
     expectTypeOf(
       attentionCore.mapXcom2ProjectFoundryApplyAttentionPresentation,
-    ).returns.toEqualTypeOf<ApplyAttentionPresentation>();
+    ).returns.toEqualTypeOf<Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>>();
 
-    expect(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION).toEqual(
+    expect(XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION).toEqual(
       destinationPresentPresentation,
     );
-    expect(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION).toEqual(
+    expect(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION).toEqual(
       genericAttentionPresentation,
     );
-    expect(
-      Object.keys(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION),
-    ).toEqual(["title", "summary", "remediation", "supportCode"]);
-    expect(Object.keys(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION)).toEqual(
-      ["title", "summary", "remediation", "supportCode"],
-    );
-    assertDeepFrozen(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION);
-    assertDeepFrozen(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
+    expect(Object.keys(XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION)).toEqual([
+      "title",
+      "summary",
+      "remediation",
+      "supportCode",
+    ]);
+    expect(Object.keys(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION)).toEqual([
+      "title",
+      "summary",
+      "remediation",
+      "supportCode",
+    ]);
+    assertDeepFrozen(XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION);
+    assertDeepFrozen(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
   });
 
   it("maps only the exact destination-present refusal to the fixed conflict presentation", () => {
@@ -167,9 +177,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => 
     } as const;
     const presentation = attentionCore.mapXcom2ProjectFoundryApplyAttentionPresentation(result);
 
-    expect(presentation).toBe(
-      attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
-    );
+    expect(presentation).toBe(XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION);
     expect(presentation).toEqual(destinationPresentPresentation);
     assertDeepFrozen(presentation);
     expect(() => {
@@ -182,7 +190,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => 
     (result) => {
       const presentation = attentionCore.mapXcom2ProjectFoundryApplyAttentionPresentation(result);
 
-      expect(presentation).toBe(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
+      expect(presentation).toBe(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
       expect(presentation).toEqual(genericAttentionPresentation);
       expect(JSON.stringify(presentation)).not.toContain(result.reason);
     },
@@ -213,7 +221,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => 
     const presentation = attentionCore.mapXcom2ProjectFoundryApplyAttentionPresentation(result);
     const rendered = JSON.stringify(presentation);
 
-    expect(presentation).toBe(attentionCore.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
+    expect(presentation).toBe(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
     expect(presentation).toEqual(genericAttentionPresentation);
     expect(rendered).not.toMatch(
       /(?:unknown-provider-reason|raw-cause-canary|provider-secret|private-stage|private-destination|scenario-owner|errno|\/tmp\/|\/home\/)/u,
@@ -235,7 +243,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => 
       throw new Error("Expected terminal refused Apply state");
     }
 
-    const refused = completed.state as RefusedApplyStateWithPreview;
+    const refused = completed.state;
     const policy = attentionCore.decideXcom2ProjectFoundryApplyTerminalSession(refused);
 
     expect(refused).toEqual({

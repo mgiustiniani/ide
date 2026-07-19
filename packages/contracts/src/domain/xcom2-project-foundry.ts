@@ -216,6 +216,30 @@ export const XCOM2_PROJECT_FOUNDRY_APPLY_FAILURE_PHASES = Object.freeze([
   "post-commit",
 ] as const);
 
+export interface Xcom2ProjectFoundryApplyAttentionPresentation {
+  readonly title: string;
+  readonly summary: string;
+  readonly remediation: string;
+  readonly supportCode: string;
+}
+
+export const XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION = Object.freeze({
+  title: "Project location conflict",
+  summary:
+    "The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.",
+  remediation:
+    "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
+  supportCode: "foundry-apply-destination-present",
+} as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation);
+
+export const XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION = Object.freeze({
+  title: "Project creation needs attention",
+  summary:
+    "Foundry could not complete or safely confirm project creation. This approved preview cannot be retried.",
+  remediation: "Cancel and leave the destination unchanged. Contact support before trying again.",
+  supportCode: "foundry-apply-unavailable",
+} as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation);
+
 export type Xcom2ProjectFoundryApplyRefusalCode =
   (typeof XCOM2_PROJECT_FOUNDRY_APPLY_REFUSAL_CODES)[number];
 
@@ -321,7 +345,22 @@ export interface Xcom2ProjectFoundryCreatedState {
 export interface Xcom2ProjectFoundryRefusedApplyState {
   readonly status: "refused";
   readonly authority: "consumed";
+  readonly preview: Readonly<Xcom2ProjectFoundryReadyPreview>;
   readonly refusal: Readonly<Xcom2ProjectFoundryApplyRefusal>;
+}
+
+export interface Xcom2ProjectFoundryApplyTerminalSessionDecision {
+  readonly kind: "terminal";
+  readonly authority: "consumed";
+  readonly preview: "retained-context";
+  readonly disabledControls: readonly [
+    "source-selection",
+    "destination-selection",
+    "mod-id",
+    "preview",
+    "create",
+  ];
+  readonly enabledControls: readonly ["cancel"];
 }
 
 export interface Xcom2ProjectFoundryFailedApplyState {
