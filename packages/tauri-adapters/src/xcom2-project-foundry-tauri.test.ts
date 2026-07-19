@@ -71,6 +71,10 @@ const applyPostCommitFailureReasons = [
   "post-commit-parent-sync-failed",
   "post-commit-journal-failed",
 ] as const;
+const applyCleanupStatuses = ["verified-complete", "not-verified"] as const;
+const applyFailureFixtures = applyPreCommitFailureReasons.flatMap((reason) =>
+  applyCleanupStatuses.map((cleanupStatus) => [reason, cleanupStatus] as const),
+);
 
 function sourceGrant(
   overrides: Record<string, unknown> = {},
@@ -2169,17 +2173,22 @@ describe("Project Foundry Apply exact result vocabularies and immutable receipts
     expect(Reflect.ownKeys(result)).toEqual(["result", "phase", "reason"]);
   });
 
-  it.each(applyPreCommitFailureReasons)(
-    "accepts exact pre-commit failure reason %s",
-    async (reason) => {
-      const provider = { result: "failed", phase: "pre-commit", reason };
+  it.each(applyFailureFixtures)(
+    "accepts exact pre-commit failure reason %s with cleanup status %s",
+    async (reason, cleanupStatus) => {
+      const expected = { result: "failed", phase: "pre-commit", reason, cleanupStatus };
+      const provider: Record<string, unknown> = { ...expected };
       invokeMock.mockResolvedValueOnce(provider);
 
       const result = await new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest());
+      provider.reason = "provider-mutated";
+      provider.cleanupStatus = "provider-mutated";
 
-      expect(result).toEqual(provider);
+      expect(result).toEqual(expected);
       expect(result).not.toBe(provider);
       expect(Object.isFrozen(result)).toBe(true);
+      expect(Reflect.ownKeys(result)).toEqual(["result", "phase", "reason", "cleanupStatus"]);
+      expect(Reflect.set(result, "cleanupStatus", "provider-mutated")).toBe(false);
     },
   );
 
@@ -2316,15 +2325,95 @@ describe("Project Foundry Apply rejects malformed native results", () => {
       "refusal failure reason",
       { result: "refused", phase: "pre-commit", reason: "stage-write-failed" },
     ],
-    ["failure missing reason", { result: "failed", phase: "pre-commit" }],
+    [
+      "failure missing reason",
+      { result: "failed", phase: "pre-commit", cleanupStatus: "verified-complete" },
+    ],
+    [
+      "failure missing cleanup status",
+      { result: "failed", phase: "pre-commit", reason: "stage-write-failed" },
+    ],
+    [
+      "failure extra field",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "verified-complete",
+        detail: "SECRET",
+      },
+    ],
     [
       "failure wrong phase",
-      { result: "failed", phase: "post-commit", reason: "stage-write-failed" },
+      {
+        result: "failed",
+        phase: "post-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "verified-complete",
+      },
     ],
-    ["failure refusal reason", { result: "failed", phase: "pre-commit", reason: "source-stale" }],
+    [
+      "failure refusal reason",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "source-stale",
+        cleanupStatus: "verified-complete",
+      },
+    ],
     [
       "failure post-commit-only reason",
-      { result: "failed", phase: "pre-commit", reason: "post-commit-journal-failed" },
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "post-commit-journal-failed",
+        cleanupStatus: "verified-complete",
+      },
+    ],
+    [
+      "failure unknown cleanup status",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "cleanup-complete",
+      },
+    ],
+    [
+      "failure uppercase cleanup status",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "Verified-Complete",
+      },
+    ],
+    [
+      "failure cleanup status control",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "verified-complete\n",
+      },
+    ],
+    [
+      "failure cleanup status surrogate",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: "not-verified\ud800",
+      },
+    ],
+    [
+      "failure non-string cleanup status",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed",
+        cleanupStatus: null,
+      },
     ],
     [
       "recovery missing digest",
@@ -2375,12 +2464,44 @@ describe("Project Foundry Apply rejects malformed native results", () => {
         reason: "stage-write-failed",
       },
     ],
-    ["reason control", { result: "failed", phase: "pre-commit", reason: "stage-write-failed\n" }],
+    [
+      "recovery extra cleanup status",
+      {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: approvedPlanDigest,
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason: "post-commit-journal-failed",
+        cleanupStatus: "not-verified",
+      },
+    ],
+    [
+      "reason control",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed\n",
+        cleanupStatus: "verified-complete",
+      },
+    ],
     [
       "reason surrogate",
-      { result: "failed", phase: "pre-commit", reason: "stage-write-failed\ud800" },
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "stage-write-failed\ud800",
+        cleanupStatus: "verified-complete",
+      },
     ],
-    ["reason oversized", { result: "failed", phase: "pre-commit", reason: "x".repeat(1_049_000) }],
+    [
+      "reason oversized",
+      {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "x".repeat(1_049_000),
+        cleanupStatus: "verified-complete",
+      },
+    ],
   ])("rejects malformed Apply result: %s", async (_label, response) => {
     invokeMock.mockResolvedValueOnce(response);
     await expectProtocolRejection(
@@ -2390,10 +2511,41 @@ describe("Project Foundry Apply rejects malformed native results", () => {
     );
   });
 
+  it("sanitizes an invalid cleanup status without exposing the provider value", async () => {
+    invokeMock.mockResolvedValueOnce({
+      result: "failed",
+      phase: "pre-commit",
+      reason: "stage-write-failed",
+      cleanupStatus: "SECRET-CLEANUP:/private/provider",
+    });
+
+    const error = await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
+      XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      "response",
+    );
+    const exposed = `${error.message}\n${JSON.stringify(error)}\n${Reflect.ownKeys(error)
+      .map((key) => String(Reflect.get(error, key)))
+      .join("\n")}`;
+    expect(exposed).not.toContain("SECRET-CLEANUP");
+    expect(exposed).not.toContain("/private/provider");
+    expect(error.cause).toBeUndefined();
+  });
+
   it("rejects response accessors and proxies without executing or leaking provider data", async () => {
     const getter = vi.fn(() => "SECRET-ACCESSOR:/private/provider");
     const accessor = createdReceipt();
     Object.defineProperty(accessor, "finalProjectLocation", { enumerable: true, get: getter });
+    const cleanupGetter = vi.fn(() => "SECRET-CLEANUP:/private/provider");
+    const cleanupAccessor = {
+      result: "failed",
+      phase: "pre-commit",
+      reason: "stage-write-failed",
+    };
+    Object.defineProperty(cleanupAccessor, "cleanupStatus", {
+      enumerable: true,
+      get: cleanupGetter,
+    });
     const hidden = hiddenExtra(createdReceipt(), "providerPath");
     const symbol = createdReceipt();
     Object.defineProperty(symbol, Symbol("provider-secret"), { value: "SECRET" });
@@ -2404,7 +2556,7 @@ describe("Project Foundry Apply rejects malformed native results", () => {
       },
     });
 
-    for (const response of [accessor, hidden, symbol, proxy]) {
+    for (const response of [accessor, cleanupAccessor, hidden, symbol, proxy]) {
       invokeMock.mockResolvedValueOnce(response);
       const error = await expectProtocolRejection(
         new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
@@ -2416,6 +2568,7 @@ describe("Project Foundry Apply rejects malformed native results", () => {
       expect(error.cause).toBeUndefined();
     }
     expect(getter).not.toHaveBeenCalled();
+    expect(cleanupGetter).not.toHaveBeenCalled();
   });
 });
 
