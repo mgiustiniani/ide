@@ -5,10 +5,10 @@ use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-struct TestDirectory(PathBuf);
+pub(super) struct TestDirectory(PathBuf);
 
 impl TestDirectory {
-    fn new(label: &str) -> Self {
+    pub(super) fn new(label: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -22,8 +22,12 @@ impl TestDirectory {
         Self(path.canonicalize().expect("canonical test directory"))
     }
 
-    fn string(&self) -> String {
+    pub(super) fn string(&self) -> String {
         self.0.to_str().expect("UTF-8 test path").to_string()
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.0
     }
 }
 
@@ -96,7 +100,7 @@ impl RepositoryFixture {
     }
 }
 
-struct RendererRepositoryFixture {
+pub(super) struct RendererRepositoryFixture {
     root: TestDirectory,
     commit: Oid,
     tree: Oid,
@@ -104,7 +108,7 @@ struct RendererRepositoryFixture {
 }
 
 impl RendererRepositoryFixture {
-    fn new(label: &str, symlink_source: Option<&str>, malformed_project: bool) -> Self {
+    pub(super) fn new(label: &str, symlink_source: Option<&str>, malformed_project: bool) -> Self {
         let root = TestDirectory::new(label);
         let repository = Repository::init(&root.0).expect("initialize renderer repository");
         for path in renderer::required_source_paths() {
@@ -173,7 +177,7 @@ impl RendererRepositoryFixture {
         }
     }
 
-    fn state(&self) -> Xcom2ProjectFoundryState {
+    pub(super) fn state(&self) -> Xcom2ProjectFoundryState {
         Xcom2ProjectFoundryState::with_expected_object_ids(
             &self.commit.to_string(),
             &self.tree.to_string(),
@@ -181,10 +185,14 @@ impl RendererRepositoryFixture {
         .expect("renderer expected identity")
     }
 
-    fn source_request(&self) -> AuthorizeFoundrySourceRepositoryRequest {
+    pub(super) fn source_request(&self) -> AuthorizeFoundrySourceRepositoryRequest {
         AuthorizeFoundrySourceRepositoryRequest {
             selected_root: self.root.string(),
         }
+    }
+
+    pub(super) fn root_path(&self) -> &Path {
+        self.root.path()
     }
 }
 

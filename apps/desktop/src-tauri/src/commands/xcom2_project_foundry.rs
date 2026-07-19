@@ -7,8 +7,13 @@ use git2::{ErrorCode, ObjectType, Oid, Repository};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+mod apply;
 mod renderer;
 
+pub use apply::{
+    ApplyFoundryProjectRequest, ApplyFoundryProjectResult, FoundryApplyFailureReason,
+    FoundryApplyRefusalReason,
+};
 pub use renderer::FoundryRenderedPlanBody;
 use renderer::{
     bind_rendered_plan, render_from_git_objects, FoundryPlanBinding, FoundryRenderedOutputFile,
@@ -192,6 +197,8 @@ struct FoundryGrantStore {
     destination_grants: HashMap<String, DestinationGrantRecord>,
     operation_to_destination: HashMap<String, String>,
     rendered_files_by_operation: HashMap<String, Vec<FoundryRenderedOutputFile>>,
+    consumed_operations: std::collections::VecDeque<String>,
+    active_apply_destinations: HashSet<String>,
 }
 
 pub struct Xcom2ProjectFoundryState {
@@ -285,6 +292,23 @@ pub fn inspect_xcom2_project_foundry_destination(
 ) -> Result<FoundryDestinationState, String> {
     require_linux()?;
     inspect_destination(&state, request)
+}
+
+/// Consumes one exact preview operation and creates its independently rerendered project once.
+/// The Linux transaction uses private same-parent staging, a durable journal, and renameat2 with
+/// RENAME_NOREPLACE. It never executes template content or writes the selected source repository.
+#[tauri::command]
+pub fn apply_xcom2_project_foundry(
+    state: tauri::State<'_, Xcom2ProjectFoundryState>,
+    request: ApplyFoundryProjectRequest,
+) -> ApplyFoundryProjectResult {
+    if require_linux().is_err() {
+        return ApplyFoundryProjectResult::Refused {
+            phase: apply::FoundryApplyPhase::PreCommit,
+            reason: FoundryApplyRefusalReason::RenderedPlanInvalid,
+        };
+    }
+    apply::apply_foundry_project(&state, request)
 }
 
 /// Synchronously revokes only operation authority and its rendered-byte caches. Source and
@@ -412,6 +436,12 @@ fn render_preview(
         };
         if record.destination_grant != request.destination_parent_grant {
             return refused_render(FoundryRenderRefusalCode::DestinationParentGrantInvalid);
+        }
+        if grants
+            .active_apply_destinations
+            .contains(&destination_identity)
+        {
+            return refused_render(FoundryRenderRefusalCode::OperationGrantInvalid);
         }
         clear_operation_grants(&mut grants);
 
