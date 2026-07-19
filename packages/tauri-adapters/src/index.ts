@@ -46,6 +46,7 @@ export {
   TauriXcom2ProjectFoundryRendererAdapter,
   TauriProjectFoundryRendererAdapter,
   TauriProjectFoundrySelectionCancelledError,
+  XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
   XCOM2_PROJECT_FOUNDRY_COMMANDS,
   XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS,
   createTauriXcom2ProjectFoundryComposition,

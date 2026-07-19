@@ -1,7 +1,10 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
   XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+  type Xcom2ProjectFoundryApplyRequest,
+  type Xcom2ProjectFoundryApplyResult,
   type Xcom2ProjectFoundryDestinationParentSelectionGrant,
   type Xcom2ProjectFoundryDestinationState,
   type Xcom2ProjectFoundryOperationGrant,
@@ -32,6 +35,9 @@ export const XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS = Object.freeze({
   revokeOperation: "revoke_xcom2_project_foundry_operation_grants",
 } as const);
 
+/** One-shot mutation command kept outside the stable preview command vocabularies. */
+export const XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND = "apply_xcom2_project_foundry" as const;
+
 const DIALOG_COMMAND = "plugin:dialog|open";
 const DIRECTORY_DIALOG_OPTIONS = Object.freeze({ directory: true, multiple: false } as const);
 const MAXIMUM_PATH_BYTES = 4_096;
@@ -43,6 +49,8 @@ const MAXIMUM_RENDER_JSON_OBJECT_FIELDS = 256;
 const MAXIMUM_RENDER_JSON_KEY_BYTES = 256;
 const MAXIMUM_RENDER_JSON_STRING_BYTES = 1_048_576;
 const MAXIMUM_RENDER_JSON_TOTAL_STRING_BYTES = 4_194_304;
+const EXPECTED_COMMITTED_DIRECTORIES = 12;
+const EXPECTED_COMMITTED_FILES = 27;
 const GRANT_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u;
 const FINGERPRINT_RESULTS = new Set<string>([
@@ -60,6 +68,37 @@ const DESTINATION_STATES = new Set<Xcom2ProjectFoundryDestinationState>([
   "mismatched",
 ]);
 const RENDER_REFUSAL_CODES = new Set<string>(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES);
+const APPLY_REFUSAL_REASONS = new Set<string>([
+  "schema-version-invalid",
+  "source-grant-mismatched",
+  "destination-parent-grant-mismatched",
+  "operation-grant-mismatched",
+  "mod-id-invalid",
+  "mod-id-mismatched",
+  "approved-plan-digest-invalid",
+  "approved-plan-digest-mismatched",
+  "apply-authority-consumed",
+  "source-stale",
+  "destination-parent-stale",
+  "destination-present",
+  "rendered-plan-invalid",
+  "stage-conflict",
+  "journal-conflict",
+]);
+const APPLY_FAILURE_REASONS = new Set<string>([
+  "journal-create-failed",
+  "journal-sync-failed",
+  "stage-create-failed",
+  "stage-write-failed",
+  "stage-verify-failed",
+  "stage-sync-failed",
+  "parent-sync-failed",
+  "atomic-commit-failed",
+  "cleanup-failed",
+  "post-commit-parent-sync-failed",
+  "post-commit-journal-failed",
+]);
+const SHA256 = /^[0-9a-f]{64}$/u;
 const SAFE_NATIVE_REJECTIONS = new Set([
   "foundry-linux-only",
   "foundry-grant-mint-failed",
@@ -100,6 +139,9 @@ export interface TauriXcom2ProjectFoundryRendererComposition {
       request: Readonly<Xcom2ProjectFoundryRenderRequest>,
     ): Promise<TauriXcom2ProjectFoundryNativeRenderResult>;
   };
+  apply(
+    request: Readonly<Xcom2ProjectFoundryApplyRequest>,
+  ): Promise<Xcom2ProjectFoundryApplyResult>;
   readonly grants: {
     revokeOperation(): Promise<void>;
     revokeAll(): Promise<void>;
@@ -450,6 +492,189 @@ function normalizeRenderRequest(value: unknown): Readonly<Xcom2ProjectFoundryRen
   return Object.freeze({ sourceGrant, destinationParentGrant, modId: record.modId });
 }
 
+function normalizeApplyRequest(value: unknown): Readonly<Xcom2ProjectFoundryApplyRequest> {
+  const command = XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND;
+  const record = exactDataRecord(
+    command,
+    "request",
+    value,
+    [
+      "schemaVersion",
+      "sourceGrant",
+      "destinationParentGrant",
+      "operationGrant",
+      "modId",
+      "approvedPlanDigest",
+    ],
+    "apply request",
+  );
+  const sourceGrant = normalizeSourceGrant(command, "request", record.sourceGrant);
+  const destinationParentGrant = normalizeDestinationGrant(
+    command,
+    "request",
+    record.destinationParentGrant,
+  );
+  const operationGrant = normalizeOperationGrant(command, "request", record.operationGrant);
+  if (
+    record.schemaVersion !== XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION ||
+    !validModId(record.modId) ||
+    !safeText(record.approvedPlanDigest) ||
+    !SHA256.test(record.approvedPlanDigest) ||
+    operationGrant.derivedDestination !==
+      expectedDerivedDestination(destinationParentGrant.parent, record.modId) ||
+    new Set([sourceGrant.identity, destinationParentGrant.identity, operationGrant.identity])
+      .size !== 3
+  ) {
+    throw protocolError(command, "request", "apply request fields violate the native contract");
+  }
+  return Object.freeze({
+    schemaVersion: XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
+    sourceGrant,
+    destinationParentGrant,
+    operationGrant,
+    modId: record.modId,
+    approvedPlanDigest: record.approvedPlanDigest,
+  });
+}
+
+function normalizeNativeApplyResult(
+  value: unknown,
+  request: Readonly<Xcom2ProjectFoundryApplyRequest>,
+): Readonly<Xcom2ProjectFoundryApplyResult> {
+  const command = XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND;
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw protocolError(command, "response", "apply result must be an exact data object");
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw protocolError(command, "response", "apply result must be a plain data object");
+    }
+    const resultDescriptor = Object.getOwnPropertyDescriptor(value, "result");
+    if (!resultDescriptor || !("value" in resultDescriptor) || !resultDescriptor.enumerable) {
+      throw protocolError(command, "response", "apply result tag must be an enumerable field");
+    }
+
+    if (resultDescriptor.value === "created") {
+      const receipt = exactDataRecord(
+        command,
+        "response",
+        value,
+        [
+          "result",
+          "planDigest",
+          "finalProjectLocation",
+          "sourceCommit",
+          "sourceTree",
+          "committedDirectories",
+          "committedFiles",
+        ],
+        "created receipt",
+      );
+      if (
+        receipt.result !== "created" ||
+        receipt.planDigest !== request.approvedPlanDigest ||
+        receipt.finalProjectLocation !== request.operationGrant.derivedDestination ||
+        !canonicalLinuxPath(receipt.finalProjectLocation) ||
+        receipt.sourceCommit !== XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT ||
+        receipt.sourceTree !== XCOM2_PROJECT_FOUNDRY_SOURCE_TREE ||
+        receipt.committedDirectories !== EXPECTED_COMMITTED_DIRECTORIES ||
+        receipt.committedFiles !== EXPECTED_COMMITTED_FILES
+      ) {
+        throw protocolError(command, "response", "created receipt violates the apply contract");
+      }
+      return Object.freeze({
+        result: "created",
+        planDigest: request.approvedPlanDigest,
+        finalProjectLocation: request.operationGrant.derivedDestination,
+        sourceCommit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
+        sourceTree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+        committedDirectories: EXPECTED_COMMITTED_DIRECTORIES,
+        committedFiles: EXPECTED_COMMITTED_FILES,
+      });
+    }
+
+    if (resultDescriptor.value === "refused") {
+      const refusal = exactDataRecord(
+        command,
+        "response",
+        value,
+        ["result", "phase", "reason"],
+        "apply refusal",
+      );
+      if (
+        refusal.result !== "refused" ||
+        refusal.phase !== "pre-commit" ||
+        !safeText(refusal.reason) ||
+        !APPLY_REFUSAL_REASONS.has(refusal.reason)
+      ) {
+        throw protocolError(command, "response", "apply refusal violates the apply contract");
+      }
+      return Object.freeze({
+        result: "refused",
+        phase: "pre-commit",
+        reason: refusal.reason,
+      });
+    }
+
+    if (resultDescriptor.value === "failed") {
+      const failure = exactDataRecord(
+        command,
+        "response",
+        value,
+        ["result", "phase", "reason"],
+        "apply failure",
+      );
+      if (
+        failure.result !== "failed" ||
+        failure.phase !== "pre-commit" ||
+        !safeText(failure.reason) ||
+        !APPLY_FAILURE_REASONS.has(failure.reason)
+      ) {
+        throw protocolError(command, "response", "apply failure violates the apply contract");
+      }
+      return Object.freeze({ result: "failed", phase: "pre-commit", reason: failure.reason });
+    }
+
+    if (resultDescriptor.value === "created-recovery-required") {
+      const recovery = exactDataRecord(
+        command,
+        "response",
+        value,
+        ["result", "phase", "planDigest", "finalProjectLocation", "reason"],
+        "apply recovery receipt",
+      );
+      if (
+        recovery.result !== "created-recovery-required" ||
+        recovery.phase !== "post-commit" ||
+        recovery.planDigest !== request.approvedPlanDigest ||
+        recovery.finalProjectLocation !== request.operationGrant.derivedDestination ||
+        !canonicalLinuxPath(recovery.finalProjectLocation) ||
+        !safeText(recovery.reason) ||
+        !APPLY_FAILURE_REASONS.has(recovery.reason)
+      ) {
+        throw protocolError(
+          command,
+          "response",
+          "apply recovery receipt violates the apply contract",
+        );
+      }
+      return Object.freeze({
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: request.approvedPlanDigest,
+        finalProjectLocation: request.operationGrant.derivedDestination,
+        reason: recovery.reason,
+      });
+    }
+
+    throw protocolError(command, "response", "apply result tag is unsupported");
+  } catch {
+    // Native payloads, proxies, accessors, and inspection exceptions never cross this boundary.
+    throw protocolError(command, "response", "apply result could not be safely inspected");
+  }
+}
+
 function normalizeNativeRenderResult(
   value: unknown,
   request: Readonly<Xcom2ProjectFoundryRenderRequest>,
@@ -795,6 +1020,18 @@ export class TauriXcom2ProjectFoundryRendererAdapter implements TauriXcom2Projec
     request: Readonly<Xcom2ProjectFoundryRenderRequest>,
   ): Promise<TauriXcom2ProjectFoundryNativeRenderResult> {
     return this.bridge.renderPreview(request);
+  }
+
+  /** Consumes exactly one approved native preview operation. */
+  async apply(
+    request: Readonly<Xcom2ProjectFoundryApplyRequest>,
+  ): Promise<Xcom2ProjectFoundryApplyResult> {
+    const immutableRequest = normalizeApplyRequest(request);
+    const response = await invokeFoundry(
+      XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      Object.freeze({ request: immutableRequest }),
+    );
+    return normalizeNativeApplyResult(response, immutableRequest);
   }
 
   async revokeOperation(): Promise<void> {
