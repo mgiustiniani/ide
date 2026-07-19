@@ -1463,6 +1463,7 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-REFACTORKIT-JAVA-IMPORT-001",
       "@REQ-XCOM2-MACHINE-SETTINGS-001",
       "@REQ-XCOM2-PROJECT-FOUNDRY-001",
+      "@REQ-XCOM2-PROJECT-FOUNDRY-002",
     ],
   );
 });
