@@ -481,7 +481,7 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
     And creation performs no build, deployment, cooking, launch, SDK or game access or validation, package, bundle, installer, release, publication, or distribution
     And it provides no native chooser, native GUI or E2E, extracted-module, licensing-clearance, Windows implementation, support, or parity claim
 
-  @REQ-XCOM2-PROJECT-FOUNDRY-003 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-PROJECT-FOUNDRY-003 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Refuse a destination created after Foundry Preview without changing it
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition
     And the deterministic backend maps "/scenario/foundry-output" to a scenario-owned temporary destination parent
