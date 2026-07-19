@@ -53,13 +53,14 @@ Desktop App ──strict configuration/scanner adapters──> Rust Backend
   └─ exact joint correlation rejects stale results; no configuration/evidence watcher or poll
 
 Desktop App ──strict Foundry TypeScript boundary──> Rust Backend
-  ├─ selection API seam and exact Linux path validation
+  ├─ selection API seam and bounded provider-neutral contracts
   ├─ ephemeral source, destination-parent, and preview-operation grants
   ├─ shared in-process git2 renderer is the sole output authority
   ├─ Preview returns the complete plan body and retains native output bytes
-  ├─ TypeScript validates the plan and submits live grants + approved digest
-  └─ one-shot Apply consumes authority, re-renders, stages, journals, verifies,
-     and atomically publishes the complete output set without replacement
+  ├─ TypeScript consumes frontend authority before one immutable Apply call
+  └─ Rust consumes native authority before destination validation
+       ├─ present destination → bounded terminal refusal, no writes or residue
+       └─ absent destination → re-render, stage, journal, verify, and publish
 
 Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
                  Steam evidence + installed game/SDK + rollback state
@@ -67,15 +68,17 @@ Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
 
 ## Runtime Containers
 
-| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                                                                                                                                                                                                                                                                |
-| **Desktop App**  | React + Vite in Tauri WebView | Owns jointly correlated configured and convention activation, synchronous revocation, neutral checking, exhaustive safe-code mapping, and shared atomic warning presentation under Workspace Settings. A diagnostic grants no activity; strong independent Option A recognition may preserve the activity and mirror the warning. The separate machine Settings monitor remains independent. Project Foundry validates the native plan, holds its digest and live grants, and submits an immutable Apply request without output authority. |
-| **Rust Backend** | Rust + Tauri commands         | Exposes bounded XCOM monitoring and activation inputs. Project Foundry owns ephemeral grants, destination revalidation, and the shared `git2` renderer used by Preview and Apply. Apply consumes operation authority, re-renders, journals same-parent staging, verifies the complete output set, and publishes it atomically without replacement. It does not write the selected source repository or execute template content.                                                                                                           |
+| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Its XCOM setup adapter explicitly reports unavailable unless deliberate simulation is enabled; normal composition starts no hidden XCOM polling or simulated native state.                                                                                                                                                                                        |
+| **Desktop App**  | React + Vite in Tauri WebView | Owns jointly correlated configured and convention activation plus the separate machine Settings presentation. Project Foundry validates native plans, holds digest and grant custody, consumes frontend Apply authority, and maps bounded results to fixed accessible terminal outcomes without output authority or raw native disclosure.                                                         |
+| **Rust Backend** | Rust + Tauri commands         | Exposes bounded XCOM monitoring and activation inputs. Project Foundry owns ephemeral grants and the shared `git2` renderer. Apply consumes native authority before destination validation, refuses a present destination without writes, and remembers consumed operations; the absent-destination path re-renders, stages, journals, verifies, and atomically publishes the complete output set. |
 
 JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
-Preview and Apply share the deterministic desktop/Tauri harness acceptance boundary. The C2 model does not claim native chooser execution, WebKit GUI/end-to-end validation, packaged or distributed artifacts, Windows support, or automatic opening of a created project. Atomic destination visibility is local filesystem publication only; XCOM product publication remains separately gated by distributable-module extraction and license/notice approval. Foundry remains separate from Workspace Settings, XCOM machine Settings, activation, and SDK setup.
+For `destination-present`, the Desktop App renders the fixed atomic conflict presentation, clears grant memory, completes `revokeAll`, disables selection, Preview, retry, and Create, and leaves only Cancel with equivalent Escape dismissal. The Rust Backend preserves the conflict, source, destination-parent siblings, and existing state; creates no stage, journal, receipt, or other residue; and gives a reused consumed request no authority. Every other refusal, failure, or recovery value uses one fixed non-interpolating fallback, and neither mapping discloses paths, metadata, native identities, commands, or raw causes.
+
+The C2 model claims no native chooser or WebKit/native E2E behavior, other conflict/failure/recovery matrices, Windows support, or package, build, deploy, launch, auto-open, and product-publication capability. Local filesystem publication remains separate from XCOM module extraction and license/notice approval. Foundry remains separate from Workspace Settings, XCOM machine Settings, activation, and SDK setup.
 
 ## Current Java Clipboard Paste Boundary
 
@@ -97,13 +100,13 @@ Rust opens the canonical workspace and scopes one NDJSON daemon to its generatio
 
 ## Internal Package Boundaries
 
-| Package                     | Role                                                                                                                                                                                                                                                                                                     |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`@ide/contracts`**        | Defines provider-neutral language, RefactorKit, XCOM setup, project-activation, and Foundry DTOs. Foundry contracts bind selection and operation grants, the complete native plan, approved digest, one-shot request, and bounded outcomes without carrying internal output bytes.                       |
-| **`@ide/web-core`**         | Defines configuration/scanner ports, pure activation evaluators, and the exhaustive diagnostic mapper. For Foundry it validates complete native-plan consistency, computes the digest, freezes presentation data, and reduces one-shot Apply authority. It has no renderer or parallel output authority. |
-| **`@ide/browser-adapters`** | Keeps native integrations unavailable in browser mode without deliberate simulation; the web shell starts no project activation or Foundry work.                                                                                                                                                         |
-| **`@ide/tauri-adapters`**   | Strictly validates Foundry grants, render requests and responses, immutable Apply requests, and phase-bound outcomes before and after Tauri invocation. The selection API seam does not assert native chooser or WebKit GUI/E2E execution.                                                               |
-| **`@ide/ui`**               | Supplies the controlled shell, shared atomic diagnostic alert, read-only XCOM project activity, and Foundry dialog. Foundry renders immutable contract data and submits the reviewed digest through controller-owned authority.                                                                          |
+| Package                     | Role                                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@ide/contracts`**        | Defines provider-neutral language, RefactorKit, XCOM setup, project-activation, and Foundry DTOs. Foundry contracts bind grants, plans, one-shot approval, bounded results, fixed outcome copy, and terminal controls without internal output bytes. |
+| **`@ide/web-core`**         | Defines activation policies and Foundry custody. It validates plans, computes the digest, freezes presentation, reduces one-shot authority, maps only exact destination conflict specially, and applies the generic fallback otherwise.              |
+| **`@ide/browser-adapters`** | Keeps native integrations unavailable in browser mode without deliberate simulation; the web shell starts no project activation or Foundry work.                                                                                                     |
+| **`@ide/tauri-adapters`**   | Strictly validates Foundry grants, render DTOs, immutable Apply requests, and bounded phase-specific outcomes before and after Tauri invocation without exposing raw native causes.                                                                  |
+| **`@ide/ui`**               | Supplies the controlled shell, shared atomic configuration alert, read-only XCOM activity, and Foundry dialog. The dialog renders fixed terminal outcomes and the controller-owned Cancel/Escape lifecycle.                                          |
 
 ## Global Settings versus Project Contributions
 

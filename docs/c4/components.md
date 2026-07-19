@@ -54,7 +54,7 @@ The six additional extracted controllers keep shell, document, and editor coordi
 
 The Workspace Controller coordinates lifecycle ordering; normal feature interactions remain direct at the most specific C3 boundary. In particular, editor readiness feeds the Java Language Controller, the RefactorKit Import Controller opens only a backend-reported result through the Desktop Editor Controller, and the extracted command/navigation controllers reuse those boundaries rather than bypassing them.
 
-## Project Foundry Rendering and One-shot Apply
+## Project Foundry Rendering, Refusal, and One-shot Apply
 
 ```text
 Desktop main ──injects strict Foundry composition──> App.tsx
@@ -62,48 +62,50 @@ Desktop main ──injects strict Foundry composition──> App.tsx
                                                        ├─> Project Foundry Controller
                                                        └─> Project Foundry Dialog
 
-Project Foundry Dialog ──selection / preview / create / cancel──> Controller
+Project Foundry Dialog ──selection / Preview / Create / Cancel / Escape──> Controller
 Controller
-  ├─ serialized grant and one-shot Apply authority + stale-result guards
-  ├─> Project Foundry Plan Custody
-  │     ├─ complete native-plan validation
-  │     ├─ RFC 8785 / SHA-256 digest
-  │     └─ immutable request from live grants + exact approved digest
+  ├─ serialized grants, synchronous one-shot Apply consumption, stale guards
+  ├─> Project Foundry Plan and Outcome Custody
+  │     ├─ native-plan validation + RFC 8785 / SHA-256 digest
+  │     ├─ immutable request from live grants + exact approved digest
+  │     ├─ exact destination-present mapping; fixed fallback otherwise
+  │     └─ consumed terminal decision with only Cancel enabled
   └─> Strict Project Foundry Tauri Adapter
-         ├─ exact request and bounded response validation
-         ├─ Preview ──> Native Authority and Grants
-         │                ├─ revalidate source, parent, and destination absence
-         │                ├─ retain renderer bytes by operation identity
-         │                └─> Shared Project Foundry git2 Renderer
+         ├─ exact request and bounded provider-neutral result validation
+         ├─ Preview ──> Native Authority and Grants ──> shared git2 renderer
          └─ Apply ─────> Native Project Foundry Apply Transaction
-                           ├─ consume and revalidate live operation authority
-                           ├─> Shared Project Foundry git2 Renderer
-                           │     └─ re-render before staging and commit validation
-                           └─> OS File System
-                                 ├─ private same-parent stage + durable journal
-                                 ├─ complete-output-set verification + fsync
-                                 └─ atomic publication by non-replacing destination rename
+                           ├─ consume native operation before destination validation
+                           ├─ destination present
+                           │    └─ bounded refusal; no transaction writes or residue
+                           └─ destination absent
+                                ├─ re-render through the shared git2 renderer
+                                └─ stage + journal + verify + fsync
+                                     └─ non-replacing atomic publication
 ```
 
-| C3 component                                    | Stable structural responsibility                                                                                                                                |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Desktop Composition Root and IDE UI State**   | Receives one Foundry composition and passes controller state and callbacks to the dialog without becoming an output or transaction authority.                   |
-| **Project Foundry Controller**                  | Owns dialog sessions, serialized selector and Apply authority, generation guards, revocation, immutable presentation, and bounded creation outcomes.            |
-| **Project Foundry Dialog**                      | Presents selections, ModId, the complete contract-provided plan, creation progress, and bounded result states; it submits only the reviewed digest.             |
-| **Project Foundry Plan Custody**                | Validates native-plan consistency, computes its digest, freezes presentation, and prepares an exact request from the live grants and approved digest.           |
-| **Strict Project Foundry Tauri Adapter**        | Snapshots and validates exact Preview and Apply DTOs, invokes bounded commands, and validates phase-bound native outcomes without exposing raw causes.          |
-| **Directory Selection API Boundary**            | Supplies the single-directory API seam used by the adapter; it is not evidence of a native chooser, packaged application, or GUI/E2E execution.                 |
-| **Native Project Foundry Authority and Grants** | Owns in-memory operation authority, source and destination identity checks, destination-absence checks, and renderer-byte retention.                            |
-| **Shared Project Foundry git2 Renderer**        | Is the sole output authority for Preview and Apply. It reads pinned Git objects and produces the plan body and internal bytes without reading the working tree. |
-| **Native Project Foundry Apply Transaction**    | Re-renders through the shared renderer, binds the approved digest, stages and verifies the complete output set, then publishes it atomically.                   |
+| C3 component                                    | Stable structural responsibility                                                                                                                                  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop Composition Root and IDE UI State**   | Receives one Foundry composition and passes controller state and callbacks to the dialog without becoming an output or transaction authority.                     |
+| **Project Foundry Controller**                  | Owns sessions, serialized selection and one-shot Apply authority, stale guards, revocation, immutable presentation, and terminal dismissal lifecycle.             |
+| **Project Foundry Dialog**                      | Renders reviewed plans and fixed accessible terminal outcomes. A terminal refusal disables selection, Preview, and Create and leaves Cancel and Escape dismissal. |
+| **Project Foundry Plan and Outcome Custody**    | Validates native plans, computes their digest, prepares immutable Apply requests, maps bounded outcomes to fixed copy, and defines terminal control decisions.    |
+| **Strict Project Foundry Tauri Adapter**        | Snapshots and validates exact Preview and Apply DTOs, invokes bounded commands, and admits only provider-neutral phase-bound outcomes without raw causes.         |
+| **Directory Selection API Boundary**            | Supplies the single-directory API seam used by the adapter; it does not assert native chooser or WebKit/native E2E behavior.                                      |
+| **Native Project Foundry Authority and Grants** | Owns in-memory grants, consumes the operation before validation, remembers consumed identities, performs directory checks, and retains renderer bytes.            |
+| **Shared Project Foundry git2 Renderer**        | Is the sole output authority for Preview and Apply. It reads pinned Git objects and produces the plan body and internal bytes without reading the working tree.   |
+| **Native Project Foundry Apply Transaction**    | Refuses a present destination before transaction writes; otherwise re-renders, verifies, journals, synchronizes, and atomically publishes the complete set.       |
 
-The provider-neutral `ProjectFoundryComposition` is the injection seam. Preview and Apply share the deterministic desktop/Tauri harness acceptance boundary. The directory-selection API boundary is modeled without asserting native chooser execution, WebKit GUI/end-to-end validation, packaged or distributed artifacts, Windows support, or automatic opening of a created project.
+The provider-neutral `ProjectFoundryComposition` is the injection seam. The controller synchronously consumes frontend creation authority before making one immutable Apply call. Native Apply consumes the operation grant before destination validation. Reusing that consumed request has no authority.
 
-`@ide/web-core` has no embedded template output, renderer, planner, or parallel output authority. Its Foundry role is native-plan validation, digest and immutable presentation custody, and pure one-shot Apply-state reduction. The controller and UI never supply output bytes or authoritative output metadata.
+When destination validation finds an existing item, Apply returns only the bounded pre-commit `destination-present` refusal. It does not create a stage, journal, receipt, or destination output and does not write the conflict, source repository, destination-parent siblings, or other filesystem state. The conflict, source, parent entries, and sibling identities remain under their existing owners.
 
-Apply consumes operation authority before validation or filesystem work. Rust then revalidates the source and destination parent, confirms destination absence, re-renders from pinned Git objects, compares the canonical plan digest and retained bytes, and repeats render/authority checks before commit. The non-replacing rename atomically publishes the complete generated output set. Pre-commit failure removes only verified transaction-owned artifacts. Post-commit failure preserves the destination and recovery journal because the atomic publication is not rolled back.
+Plan and Outcome Custody maps only that exact refusal to the fixed atomic **Project location conflict** presentation and support code `foundry-apply-destination-present`. Every other refusal, failure, or recovery value maps to the non-interpolating **Project creation needs attention** fallback and support code `foundry-apply-unavailable`. Neither presentation includes conflict metadata, paths, sibling listings, transaction names, commands, provider/backend identity, raw causes, persisted diagnostics, or support bundles.
 
-Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. Local filesystem publication does not execute or auto-open template content and grants no build, deploy, cooking, packaging, distribution, license-clearance, or product-publication authority. XCOM product publication remains separately gated by distributable-module extraction and license/notice approval.
+The conflict outcome is terminal for the approved Preview. Publishing it clears controller grant memory and completes `revokeAll`. Source selection, destination selection, ModId, Preview, retry, and Create are disabled; reviewed Preview facts may remain only as non-authoritative context. Cancel is the only enabled action, Escape has identical dismissal semantics, and the modal focus boundary remains active. Dismissal closes the dialog, clears controlled values, Preview, outcome, digest, approval, and authority, preserves filesystem state, and returns focus to **New XCOM 2 Project**.
+
+When destination validation succeeds, Rust revalidates source and parent identities, re-renders from pinned Git objects, compares the canonical digest and retained bytes, and repeats checks before commit. A non-replacing rename atomically publishes the verified output set. Pre-commit failure removes only verified transaction-owned artifacts; post-commit failure preserves the destination and recovery journal.
+
+Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. This boundary claims no native chooser or WebKit/native E2E behavior, other conflict/failure/recovery matrices, Windows support, or package, build, deploy, launch, auto-open, and product-publication capability. It does not execute template content. XCOM publication remains separately gated by distributable-module extraction and license/notice approval.
 
 ## Controlled Desktop Panel Visibility
 

@@ -50,10 +50,10 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomConfigurationDiagnosticMapper = component "Pure XCOM Configuration Diagnostic Mapper" "Maps exactly eight bounded codes to fixed, non-interpolated title, file label, summary, remediation, and support identifier." "TypeScript" "Current"
                 xcomConfigurationDiagnosticAlert = component "Atomic XCOM Configuration Warning" "Renders one shared atomic alert in Workspace Settings and mirrors it only in an independently recognized project activity." "React" "Current"
                 xcomProjectRecognitionPanel = component "XCOM 2 Project Activity" "Shows active roots and confidence; strong independent recognition can mirror the complete warning without gaining authority." "React" "Current"
-                xcomFoundryController = component "Project Foundry Controller" "Owns dialog sessions, serialized selection and one-shot Apply authority, stale-result rejection, and immutable presentation custody." "TypeScript, React"
-                xcomFoundryDialog = component "Project Foundry Dialog" "Presents selection, ModId, the digest-bound native plan, creation progress, and a bounded outcome without opening the created project." "React"
-                xcomFoundryCustody = component "Project Foundry Plan Custody" "Validates native plan consistency, computes its digest, and prepares an exact immutable Apply request from live grants." "TypeScript"
-                tauriXcomFoundryAdapter = component "Strict Project Foundry Tauri Adapter" "Validates exact requests and responses for native grants, rendering, one-shot Apply, and revocation." "TypeScript, Tauri API"
+                xcomFoundryController = component "Project Foundry Controller" "Owns dialog sessions, serialized selection and one-shot Apply authority, stale-result rejection, and accessible terminal outcome lifecycle." "TypeScript, React"
+                xcomFoundryDialog = component "Project Foundry Dialog" "Renders reviewed plans and fixed accessible terminal outcomes; a terminal refusal leaves only Cancel and Escape dismissal." "React"
+                xcomFoundryCustody = component "Project Foundry Plan and Outcome Custody" "Validates native plans, computes their digest, maps Apply results to fixed presentations, and defines terminal decisions." "TypeScript"
+                tauriXcomFoundryAdapter = component "Strict Project Foundry Tauri Adapter" "Validates exact requests and bounded provider-neutral results for native grants, rendering, one-shot Apply, and revocation." "TypeScript, Tauri API"
 
                 xcomConfirmationAndExternalRoots = component "XCOM Confirmation and External-root Grants" "Adds manual confirmation and separately authorized external roots without weakening project-contained activation." "TypeScript, React" "Target"
                 xcomContributionCoordinator = component "Contextual XCOM Contribution Coordinator" "Scopes Problems, Build, Tests, Logs, and XCOM tools to modules authorized beyond recognition-only mode." "TypeScript, React" "Target"
@@ -85,9 +85,9 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomModuleConfigurationReader = component "XCOM Module Configuration Reader" "Reads fixed .ide/xcom2.json and contained roots without XCOM input writes; returns safe codes without path, content, or native-error disclosure." "Rust" "Current"
                 xcomModuleEvidenceScanner = component "XCOM Module Filesystem Evidence Scanner" "Reads only authorized-root entry metadata and exact names; it does not parse content, follow symlinks, write, or accept external roots." "Rust" "Current"
                 tauriDirectoryDialog = component "Directory Selection API Boundary" "Provides the allow-open single-directory API used by the strict desktop adapter." "Rust, Tauri Plugin" "Current"
-                xcomFoundryAuthority = component "Native Project Foundry Authority and Grants" "Owns operation grants, directory identity and destination-absence checks, and renderer-byte retention by operation." "Rust"
+                xcomFoundryAuthority = component "Native Project Foundry Authority and Grants" "Consumes one-shot operation authority before validation, tracks consumed operations, owns directory checks, and retains renderer bytes." "Rust"
                 xcomFoundryRenderer = component "Shared Project Foundry git2 Renderer" "Sole output authority that reads pinned Git objects and produces the plan body and internal output bytes for Preview and Apply." "Rust, git2"
-                xcomFoundryApply = component "Native Project Foundry Apply Transaction" "Re-renders approved output, stages and verifies the complete set, journals state, and atomically publishes the absent destination." "Rust"
+                xcomFoundryApply = component "Native Project Foundry Apply Transaction" "Refuses a present destination before transaction writes; otherwise re-renders, stages, journals, verifies, and publishes the complete set." "Rust"
                 // Local destination publication does not pass the separate XCOM module extraction and license/notice publication gate.
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
                 javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
@@ -205,20 +205,21 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         xcomConfigurationDiagnosticMapper -> xcomConfigurationDiagnosticAlert "Supplies the selected fixed presentation"
         xcomModuleActivationController -> xcomProjectRecognitionPanel "Publishes active decisions; diagnostics grant no activity authority"
         xcomProjectRecognitionPanel -> xcomConfigurationDiagnosticAlert "Mirrors the complete warning when recognition independently survives"
-        developer -> xcomFoundryDialog "Reviews the rendered plan and submits its exact digest for creation"
-        xcomFoundryDialog -> xcomFoundryController "Submits selection, preview, creation, and cancel gestures"
-        xcomFoundryController -> xcomFeatureContracts "Uses provider-neutral grants, plans, approval, and Apply results"
+        developer -> xcomFoundryDialog "Reviews plans or terminal outcomes and dismisses with Cancel or Escape"
+        xcomFoundryDialog -> xcomFoundryController "Submits selection, Preview, Create, Cancel, and Escape gestures"
+        xcomFoundryController -> xcomFeatureContracts "Uses provider-neutral grants, plans, approval, and terminal Apply outcomes"
         xcomFoundryController -> tauriXcomFoundryAdapter "Requests selection, rendering, one-shot Apply, and revocation"
-        xcomFoundryController -> xcomFoundryCustody "Validates and takes digest custody of the native plan"
-        xcomFoundryCustody -> xcomFeatureContracts "Uses fixed plan, digest, approval, and Apply contracts"
+        xcomFoundryController -> xcomFoundryCustody "Validates plans and maps Apply outcomes to fixed terminal presentations"
+        xcomFoundryController -> desktopUi "Exposes creation progress and fixed terminal outcome state" "React state"
+        xcomFoundryCustody -> xcomFeatureContracts "Uses fixed plan, destination-conflict, fallback, and terminal contracts"
         tauriXcomFoundryAdapter -> tauriDirectoryDialog "Requests one directory selection" "Tauri plugin command"
         tauriXcomFoundryAdapter -> xcomFoundryAuthority "Invokes bounded grant, render, and revocation commands" "Tauri invoke"
         tauriXcomFoundryAdapter -> xcomFoundryApply "Invokes one-shot Apply with live grants and approved digest" "Tauri invoke"
         xcomFoundryAuthority -> xcomFoundryRenderer "Requests the authoritative Preview render"
         xcomFoundryAuthority -> filesystem "Revalidates selected directories and destination absence" "Bounded filesystem metadata"
-        xcomFoundryApply -> xcomFoundryAuthority "Consumes and revalidates operation authority"
+        xcomFoundryApply -> xcomFoundryAuthority "Consumes operation authority before destination validation"
         xcomFoundryApply -> xcomFoundryRenderer "Re-renders authoritative output before staging and commit"
-        xcomFoundryApply -> filesystem "Stages, journals, verifies, and atomically publishes the complete output set" "Bounded filesystem writes"
+        xcomFoundryApply -> filesystem "Refuses a present destination; otherwise publishes the verified output set" "Bounded filesystem access"
         xcomFoundryRenderer -> filesystem "Reads pinned Git objects without working-tree access" "git2"
         developer -> xcomMonitorPanel "Inspects machine health and requests a descriptive dry run"
         xcomMonitorPanel -> xcomSetupController "Renders monitor evidence and setup planning state"
@@ -326,14 +327,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component desktopApp "Xcom2FoundryDesktopComponents" {
             title "XCOM 2 Project Foundry — Desktop Components"
-            description "The controller validates the native plan, holds its digest and live grants, and submits an immutable Apply request through the strict adapter."
+            description "The controller owns one-shot authority and fixed terminal outcomes; custody validates plans and maps bounded Apply results without raw disclosure."
             include developer desktopUi xcomFeatureContracts xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "Xcom2FoundryRustComponents" {
             title "XCOM 2 Project Foundry — Rust Components"
-            description "Grant authority and one-shot Apply share the git2 renderer; Apply revalidates and atomically publishes the complete generated output set."
+            description "Apply consumes authority before destination validation, refuses a present destination without writes, or publishes the verified output set."
             include desktopApp tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem
             autoLayout lr
         }
@@ -345,11 +346,29 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
             xcomFoundryDialog -> xcomFoundryController "Requests project creation"
             xcomFoundryController -> tauriXcomFoundryAdapter "Submits live grants and the approved digest"
             tauriXcomFoundryAdapter -> xcomFoundryApply "Invokes the strict one-shot command"
-            xcomFoundryApply -> xcomFoundryAuthority "Consumes and revalidates operation authority"
+            xcomFoundryApply -> xcomFoundryAuthority "Consumes operation authority before destination validation"
             xcomFoundryApply -> xcomFoundryRenderer "Re-renders before staging and before commit"
             xcomFoundryRenderer -> filesystem "Reads pinned Git objects without working-tree access"
             xcomFoundryApply -> filesystem "Stages and verifies the complete output set under a durable journal"
             xcomFoundryApply -> filesystem "Publishes the complete output set by non-replacing atomic rename"
+            autoLayout lr
+        }
+
+        dynamic rustBackend "Xcom2FoundryDestinationConflictRuntime" {
+            title "XCOM 2 Project Foundry Destination Conflict"
+            description "Apply consumes one-shot authority before destination validation; a present destination yields a terminal provider-neutral refusal without transaction writes."
+            developer -> xcomFoundryDialog "Submits the reviewed Create request"
+            xcomFoundryDialog -> xcomFoundryController "Consumes frontend authority and requests Apply"
+            xcomFoundryController -> tauriXcomFoundryAdapter "Submits one immutable Apply request"
+            tauriXcomFoundryAdapter -> xcomFoundryApply "Invokes the one-shot command"
+            xcomFoundryApply -> xcomFoundryAuthority "Consumes operation authority before destination validation"
+            xcomFoundryApply -> filesystem "Finds the destination present without writing"
+            xcomFoundryController -> xcomFoundryCustody "Maps the exact refusal to the fixed terminal presentation"
+            xcomFoundryController -> tauriXcomFoundryAdapter "Revokes every remaining grant"
+            xcomFoundryController -> desktopUi "Exposes consumed terminal state"
+            desktopUi -> xcomFoundryDialog "Renders the fixed accessible conflict outcome"
+            developer -> xcomFoundryDialog "Dismisses with Cancel or Escape"
+            xcomFoundryDialog -> xcomFoundryController "Clears controlled terminal session state"
             autoLayout lr
         }
 
