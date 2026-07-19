@@ -474,7 +474,7 @@ test("focused XCOM Project Foundry verified-cleanup profile selects only its par
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryVerifiedCleanupTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*66 steps \(31 skipped, 35 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*66 steps \(66 skipped\)/,
   );
 });
 

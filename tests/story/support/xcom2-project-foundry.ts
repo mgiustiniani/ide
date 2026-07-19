@@ -7,9 +7,12 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rm,
+  rmdir,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
@@ -39,6 +42,7 @@ import {
 const PREVIEW_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-001";
 const APPLY_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-002";
 const DESTINATION_CONFLICT_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-003";
+const VERIFIED_CLEANUP_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-004";
 const SOURCE_REPOSITORY = "/scenario/empt-v1_4";
 const SOURCE_GRANT_IDENTITY = "source-grant-foundry-preview-001";
 const DESTINATION_PARENT = "/scenario/foundry-output";
@@ -54,6 +58,10 @@ const PLAN_DIGEST = "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dc
 const CONFLICT_HEX = "7363656e6172696f2d6f776e65722d636f6e666c6963740a";
 const CONFLICT_SHA256 = "492ba4c27678918c09572ce6be8cf2fec44f70f5033d29fc1b7f4230d5e0a1fb";
 const CONFLICT_BYTES = Buffer.from(CONFLICT_HEX, "hex");
+const FIRST_STAGED_OUTPUT = ".gitignore";
+const SECOND_STAGED_OUTPUT = ".scripts/X2ModBuildCommon/CHANGELOG.md";
+const FIRST_STAGED_OUTPUT_SHA256 =
+  "1a0a301b6ced334acafddaf76181e4ac1b46692c04627fe335a60182d7f1f9b8";
 const LOOPBACK_HOST = "127.0.0.1";
 const START_TIMEOUT_MS = 15_000;
 const UI_TIMEOUT_MS = 10_000;
@@ -117,6 +125,21 @@ interface SelectionValues {
   readonly destinationGrantIdentity: string;
 }
 
+interface VerifiedCleanupTransactionEvidence {
+  readonly journal: FingerprintEntry;
+  readonly stage: TreeFingerprint;
+  readonly directorySyncs: readonly string[];
+  readonly firstOutput: FingerprintEntry;
+  readonly secondOutput: string;
+  readonly fileCreateOccurrences: number;
+  readonly injectionReason: "stage-write-failed";
+  readonly topologyRevalidated: boolean;
+  readonly removalOrder: readonly string[];
+  readonly journalRevalidated: boolean;
+  readonly absentAfterCleanup: Readonly<Record<"stage" | "journal" | "destination", true>>;
+  readonly finalParentSync: boolean;
+}
+
 function canonicalJson(value: unknown): string {
   if (
     value === null ||
@@ -144,6 +167,25 @@ function gitBlobOid(bytes: Uint8Array): string {
 
 function modeOf(mode: number): string {
   return (mode & 0o7777).toString(8).padStart(4, "0");
+}
+
+async function fingerprintEntry(path: string, displayPath: string): Promise<FingerprintEntry> {
+  const stat = await lstat(path);
+  assert.equal(stat.isSymbolicLink(), false, `Unexpected symlink: ${displayPath}`);
+  const base = {
+    path: displayPath,
+    mode: modeOf(stat.mode),
+    objectIdentity: `${stat.dev}:${stat.ino}`,
+  };
+  if (stat.isDirectory()) return { ...base, kind: "directory" };
+  assert.equal(stat.isFile(), true, `Unexpected node kind: ${displayPath}`);
+  const bytes = await readFile(path);
+  return {
+    ...base,
+    kind: "file",
+    bytes: bytes.byteLength,
+    sha256: sha256(bytes),
+  };
 }
 
 async function fingerprintTree(root: string): Promise<TreeFingerprint> {
@@ -254,6 +296,11 @@ export class Xcom2ProjectFoundryHarness {
   #creationAuthorityConsumedBeforeCall = false;
   #nativeOperationConsumedBeforeValidation = false;
   #destinationConflictScenario = false;
+  #verifiedCleanupScenario = false;
+  #verifiedCleanupEvidence?: VerifiedCleanupTransactionEvidence;
+  #strictCleanupContractAcknowledged = false;
+  #strictCleanupRejectionAcknowledged = false;
+  #cleanupAttestationBoundaryAcknowledged = false;
   #applyRerendered = false;
   #separateRustAuthorityAcknowledged = false;
   #correctedRendererBoundaryAcknowledged = false;
@@ -304,6 +351,27 @@ export class Xcom2ProjectFoundryHarness {
   configureDestinationConflictScenario(): void {
     this.#requirementId = DESTINATION_CONFLICT_REQUIREMENT_ID;
     this.#destinationConflictScenario = true;
+  }
+
+  configureVerifiedCleanupScenario(): void {
+    this.#requirementId = VERIFIED_CLEANUP_REQUIREMENT_ID;
+    this.#verifiedCleanupScenario = true;
+    this.assertDestinationMapping(DESTINATION_PARENT);
+  }
+
+  acknowledgeStrictCleanupContract(): void {
+    this.#strictCleanupContractAcknowledged = true;
+  }
+
+  acknowledgeStrictCleanupRejection(): void {
+    assert.equal(this.#strictCleanupContractAcknowledged, true);
+    this.#strictCleanupRejectionAcknowledged = true;
+  }
+
+  acknowledgeCleanupAttestationBoundary(): void {
+    assert.equal(this.#strictCleanupContractAcknowledged, true);
+    assert.equal(this.#strictCleanupRejectionAcknowledged, true);
+    this.#cleanupAttestationBoundaryAcknowledged = true;
   }
 
   configureConflictSource(repository: string, grantIdentity: string): void {
@@ -517,6 +585,347 @@ export class Xcom2ProjectFoundryHarness {
       directoryCount,
     );
     assert.equal((await this.#tableRows("Project Foundry regular files")).length, fileCount);
+  }
+
+  async assertVerifiedCleanupPreviewBindings(
+    projectGuid: string,
+    directoryCount: number,
+    fileCount: number,
+    destination: string,
+  ): Promise<void> {
+    assert.equal(this.#verifiedCleanupScenario, true);
+    await this.assertConflictPreviewBindings(projectGuid, directoryCount, fileCount, destination);
+    const rendered = this.#renderedByModId.get("FoundryPreviewFixture");
+    assert.ok(rendered, "Verified-cleanup Preview render is unavailable");
+    assert.deepEqual(
+      rendered.rendered.planBody.files.slice(0, 2).map((file) => file.path),
+      [FIRST_STAGED_OUTPUT, SECOND_STAGED_OUTPUT],
+    );
+  }
+
+  assertCleanupRequestHasNoClaims(): void {
+    this.assertApplyRequestHasNoClaims();
+    const serialized = JSON.stringify(this.#applyCalls[0]);
+    assert.equal(serialized.includes("cleanup"), false);
+  }
+
+  assertOperationConsumedBeforeTransaction(operationIdentity: string): void {
+    assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
+    assert.equal(this.#verifiedCleanupScenario, true);
+    assert.equal(this.#nativeOperationConsumedBeforeValidation, true);
+    assert.equal(this.#consumedGrants.has(operationIdentity), true);
+    assert.equal(this.#activeGrants.has(operationIdentity), false);
+    assert.ok(this.#verifiedCleanupEvidence, "The deterministic transaction did not run");
+  }
+
+  assertExactSecondFileFault(occurrence: number): void {
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(occurrence, 2);
+    assert.equal(evidence.fileCreateOccurrences, occurrence);
+    assert.equal(evidence.injectionReason, "stage-write-failed");
+  }
+
+  assertFaultInjectorIsEvidenceOnly(): void {
+    assert.equal(this.#verifiedCleanupScenario, true);
+    assert.equal(this.#separateRustAuthorityAcknowledged, true);
+    assert.deepEqual(
+      this.#tauriCalls.filter((call) =>
+        /(?:fault|inject|stage|journal|cleanup)/iu.test(call.command),
+      ),
+      [],
+    );
+  }
+
+  assertStagedDirectories(count: number): void {
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(count, 11);
+    const directories = evidence.stage.entries.filter((entry) => entry.kind === "directory");
+    assert.equal(directories.length, count + 1);
+    assert.equal(directories.filter((entry) => entry.path !== ".").length, count);
+    assert.equal(directories.find((entry) => entry.path === ".")?.mode, "0700");
+    assert.equal(evidence.directorySyncs.length, count + 1);
+    assert.deepEqual(
+      [...evidence.directorySyncs].sort(),
+      directories.map((entry) => entry.path).sort(),
+    );
+    for (const directory of directories) assert.match(directory.objectIdentity, /^\d+:\d+$/u);
+  }
+
+  assertFirstStagedOutput(path: string, rows: readonly Readonly<Record<string, string>>[]): void {
+    assert.equal(path, FIRST_STAGED_OUTPUT);
+    assert.deepEqual(
+      Object.fromEntries(rows.map((row) => [row.property ?? "", row["exact value"] ?? ""])),
+      {
+        type: "regular file, not a symlink",
+        mode: "0644",
+        "byte length": "17",
+        "SHA-256": FIRST_STAGED_OUTPUT_SHA256,
+      },
+    );
+    const output = this.#requireVerifiedCleanupEvidence().firstOutput;
+    assert.deepEqual(
+      {
+        path: output.path,
+        kind: output.kind,
+        mode: output.mode,
+        bytes: output.bytes,
+        sha256: output.sha256,
+      },
+      {
+        path,
+        kind: "file",
+        mode: "0644",
+        bytes: 17,
+        sha256: FIRST_STAGED_OUTPUT_SHA256,
+      },
+    );
+    assert.match(output.objectIdentity, /^\d+:\d+$/u);
+  }
+
+  assertSecondStagedOutputAbsent(path: string): void {
+    assert.equal(path, SECOND_STAGED_OUTPUT);
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(evidence.secondOutput, path);
+    assert.equal(
+      evidence.stage.entries.some((entry) => entry.path === path),
+      false,
+    );
+  }
+
+  assertOwnedStageCleanupVerified(): void {
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(evidence.topologyRevalidated, true);
+    assert.equal(evidence.stage.entries.length, 13);
+    assert.equal(evidence.removalOrder.length, 13);
+    assert.equal(evidence.removalOrder.at(-1), ".");
+    const depths = evidence.removalOrder.slice(0, -1).map((path) => path.split("/").length);
+    assert.deepEqual(
+      depths,
+      [...depths].sort((left, right) => right - left),
+    );
+  }
+
+  assertOwnedJournalCleanupVerified(): void {
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(evidence.journal.kind, "file");
+    assert.equal(evidence.journal.mode, "0600");
+    assert.match(evidence.journal.objectIdentity, /^\d+:\d+$/u);
+    assert.equal(evidence.journalRevalidated, true);
+  }
+
+  assertVerifiedCleanupAbsenceObservations(): void {
+    assert.deepEqual(this.#requireVerifiedCleanupEvidence().absentAfterCleanup, {
+      stage: true,
+      journal: true,
+      destination: true,
+    });
+  }
+
+  assertVerifiedCleanupParentSync(): void {
+    assert.equal(this.#requireVerifiedCleanupEvidence().finalParentSync, true);
+  }
+
+  assertExactVerifiedCleanupFailure(rows: readonly Readonly<Record<string, string>>[]): void {
+    const expected = Object.fromEntries(
+      rows.map((row) => [row.field ?? "", row["exact value"] ?? ""]),
+    );
+    assert.deepEqual(expected, {
+      result: "failed",
+      phase: "pre-commit",
+      reason: "stage-write-failed",
+      cleanupStatus: "verified-complete",
+    });
+    assert.deepEqual(this.#appApplyResult, expected);
+    assert.deepEqual(this.#applyTranscript, [
+      { event: "called", request: this.#applyCalls[0] },
+      { event: "completed", result: expected },
+    ]);
+    assert.equal(this.#cleanupAttestationBoundaryAcknowledged, true);
+  }
+
+  assertVerifiedCleanupAttestationScope(): void {
+    assert.deepEqual(this.#appApplyResult, {
+      result: "failed",
+      phase: "pre-commit",
+      reason: "stage-write-failed",
+      cleanupStatus: "verified-complete",
+    });
+    assert.equal(this.#consumedGrants.has(OPERATION_GRANT_IDENTITY), true);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(this.#createdReceipt, undefined);
+  }
+
+  assertUnverifiedCleanupIsPreserved(): void {
+    assert.equal(this.#strictCleanupContractAcknowledged, true);
+    assert.equal(this.#strictCleanupRejectionAcknowledged, true);
+    assert.equal(this.#cleanupAttestationBoundaryAcknowledged, true);
+    assert.equal(this.#requireVerifiedCleanupEvidence().topologyRevalidated, true);
+  }
+
+  async assertVerifiedNativeReusePreservedState(): Promise<void> {
+    assert.equal(this.#nativeReuseCalls.length, 1);
+    assert.deepEqual(this.#nativeReuseResult, {
+      result: "refused",
+      phase: "pre-commit",
+      reason: "apply-authority-consumed",
+    });
+    await this.assertVerifiedFinalAbsence();
+    await this.assertSourceIdentity();
+    await this.assertDestinationIdentity();
+  }
+
+  assertVerifiedTupleAlertEligibility(): void {
+    assert.equal(this.#strictCleanupContractAcknowledged, true);
+    assert.equal(this.#strictCleanupRejectionAcknowledged, true);
+    assert.deepEqual(this.#appApplyResult, {
+      result: "failed",
+      phase: "pre-commit",
+      reason: "stage-write-failed",
+      cleanupStatus: "verified-complete",
+    });
+  }
+
+  assertNoSafetyClaimForOtherResults(): void {
+    assert.equal(this.#strictCleanupRejectionAcknowledged, true);
+    assert.equal(this.#cleanupAttestationBoundaryAcknowledged, true);
+  }
+
+  async assertNoVerifiedCleanupDisclosures(
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.deepEqual(
+      rows.map((row) => row["prohibited disclosure"] ?? ""),
+      [
+        "selected source or destination path",
+        "final destination, stage, journal, harness, or temporary path",
+        "digest, grant, filesystem object, device, or inode identity",
+        "directory or file inventory, mode, size, hash, or bytes",
+        "source working-tree canary or its content",
+        "Tauri command name",
+        "Rust, provider, or backend identity",
+        "fault injector, injection point, or occurrence",
+        "errno, stack, raw cause, or arbitrary native detail",
+        "persisted diagnostic or log",
+        "support bundle",
+      ],
+    );
+    const alertText = (await this.#dialog().getByRole("alert").innerText()).toLowerCase();
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    for (const disclosure of [
+      SOURCE_REPOSITORY,
+      DESTINATION_PARENT,
+      DERIVED_DESTINATION,
+      this.#verifiedStageName(),
+      this.#verifiedJournalName(),
+      PLAN_DIGEST,
+      SOURCE_GRANT_IDENTITY,
+      DESTINATION_GRANT_IDENTITY,
+      OPERATION_GRANT_IDENTITY,
+      evidence.stage.identity,
+      evidence.journal.objectIdentity,
+      FIRST_STAGED_OUTPUT,
+      SECOND_STAGED_OUTPUT,
+      FIRST_STAGED_OUTPUT_SHA256,
+      "0644",
+      "dirty-tracked-working-tree-bytes",
+      "tauri",
+      "rust",
+      "provider",
+      "backend",
+      "fault injector",
+      "before-file-create",
+      "occurrence 2",
+      "errno",
+      "stack",
+      "raw cause",
+      "persisted diagnostic",
+      "support bundle",
+    ]) {
+      assert.equal(alertText.includes(disclosure.toLowerCase()), false, disclosure);
+    }
+  }
+
+  async assertOnlyVerifiedCleanupCancelEnabled(): Promise<void> {
+    await this.assertOnlyTerminalCancelEnabled();
+    const actionText = await this.#dialog()
+      .locator('button, a[href], [role="button"], [role="link"]')
+      .allTextContents();
+    for (const action of [
+      "retry",
+      "cleanup",
+      "delete",
+      "overwrite",
+      "move",
+      "open",
+      "reveal",
+      "recovery",
+    ]) {
+      assert.equal(
+        actionText.some((text) => new RegExp(`\\b${action}\\b`, "iu").test(text)),
+        false,
+      );
+    }
+  }
+
+  async assertVerifiedFinalAbsence(): Promise<void> {
+    this.assertVerifiedCleanupAbsenceObservations();
+    await assertPathAbsent(join(this.#requireDestinationRoot(), this.#verifiedStageName()));
+    await assertPathAbsent(join(this.#requireDestinationRoot(), this.#verifiedJournalName()));
+    await assertPathAbsent(join(this.#requireDestinationRoot(), "FoundryPreviewFixture"));
+  }
+
+  async assertVerifiedDestinationPreserved(): Promise<void> {
+    await this.assertDestinationIdentity();
+  }
+
+  async assertNoVerifiedCleanupResidue(configurationName: string): Promise<void> {
+    assert.equal(configurationName, ".ide");
+    await this.assertVerifiedFinalAbsence();
+    assert.deepEqual((await readdir(this.#requireSandbox())).sort(), [
+      "empt-v1_4",
+      "foundry-output",
+    ]);
+    assert.deepEqual(await readdir(this.#requireDestinationRoot()), ["existing-sibling"]);
+    assert.equal(this.#createdReceipt, undefined);
+    assert.deepEqual([...this.#activeGrants], []);
+  }
+
+  async assertCleanupDialogClearedAndClosed(): Promise<void> {
+    await this.#assertClosedThenReopenedClearState("Cancel");
+  }
+
+  async assertAllVerifiedStatePreserved(): Promise<void> {
+    await this.assertSourceIdentity();
+    await this.assertDestinationIdentity();
+    await this.assertVerifiedFinalAbsence();
+  }
+
+  assertVerifiedCleanupScopeLimit(): void {
+    const evidence = this.#requireVerifiedCleanupEvidence();
+    assert.equal(this.#requirementId, VERIFIED_CLEANUP_REQUIREMENT_ID);
+    assert.equal(evidence.fileCreateOccurrences, 2);
+    assert.equal(evidence.injectionReason, "stage-write-failed");
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(this.#nativeReuseCalls.length, 1);
+  }
+
+  assertVerifiedCleanupMatrixLimit(): void {
+    assert.equal(this.#verifiedCleanupScenario, true);
+    assert.equal(this.#destinationConflictScenario, false);
+    assert.equal(this.#strictCleanupRejectionAcknowledged, true);
+  }
+
+  assertVerifiedCleanupRecoveryLimit(createdRecoveryRequired: string): void {
+    assert.equal(createdRecoveryRequired, "created-recovery-required");
+    assert.equal(this.#appApplyResult?.result, "failed");
+    assert.equal(this.#createdReceipt, undefined);
+  }
+
+  assertVerifiedCleanupEvidenceLimits(): void {
+    assert.equal(this.#separateRustAuthorityAcknowledged, true);
+    assert.equal(this.#context !== undefined, true);
+    assert.equal(this.#browser !== undefined, true);
+    assert.equal(this.#verifiedCleanupScenario, true);
   }
 
   async createExternalConflict(path: string, createControlName: string): Promise<void> {
@@ -1138,7 +1547,10 @@ export class Xcom2ProjectFoundryHarness {
     await control.evaluate((element: HTMLButtonElement) => element.click());
     await this.#requirePage().waitForTimeout(50);
     assert.equal(this.#applyCalls.length, 1);
-    assert.equal(this.#appApplyResult?.result, "refused");
+    assert.equal(
+      this.#appApplyResult?.result,
+      this.#verifiedCleanupScenario ? "failed" : "refused",
+    );
   }
 
   async repeatExactNativeRequest(reason: string): Promise<void> {
@@ -1176,13 +1588,17 @@ export class Xcom2ProjectFoundryHarness {
       );
     }
     const alert = alerts.first();
-    assert.equal(await alert.getByRole("alert").count(), 0, "The conflict alert nests an alert");
+    assert.equal(await alert.getByRole("alert").count(), 0, "The terminal alert nests an alert");
+    assert.equal(await alert.getAttribute("aria-atomic"), "true");
     assert.ok(((await alert.textContent()) ?? "").trim().length > 0, "Alert meaning is color-only");
   }
 
   async assertConflictTitleIdentified(): Promise<void> {
     const alert = this.#dialog().getByRole("alert");
-    const title = alert.getByRole("heading", { name: "Project location conflict", exact: true });
+    const expectedTitle = this.#verifiedCleanupScenario
+      ? "Project creation stopped safely"
+      : "Project location conflict";
+    const title = alert.getByRole("heading", { name: expectedTitle, exact: true });
     assert.equal(await title.count(), 1);
     const titleId = await title.getAttribute("id");
     assert.ok(titleId, "Conflict alert title has no structural ID");
@@ -1197,18 +1613,38 @@ export class Xcom2ProjectFoundryHarness {
       ["Title", "Summary", "Remediation", "Support code"],
     );
     const expected = rows.map((row) => row["exact text"] ?? "");
-    assert.deepEqual(expected, [
-      "Project location conflict",
-      "The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.",
-      "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
-      "foundry-apply-destination-present",
-    ]);
+    assert.deepEqual(
+      expected,
+      this.#verifiedCleanupScenario
+        ? [
+            "Project creation stopped safely",
+            "Foundry could not finish writing the project, but verified that the final project location and temporary transaction items are absent. This approved preview cannot be retried.",
+            "Cancel, then reopen Project Foundry and preview again before trying to create the project.",
+            "foundry-apply-stage-write-cleanup-verified",
+          ]
+        : [
+            "Project location conflict",
+            "The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.",
+            "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
+            "foundry-apply-destination-present",
+          ],
+    );
     const alert = this.#dialog().getByRole("alert");
     for (const text of expected) {
       assert.equal(await alert.getByText(text, { exact: true }).count(), 1, text);
     }
-    const rendered = ((await alert.innerText()) ?? "").replace(/\s+/gu, " ").trim();
-    for (const text of expected) assert.ok(rendered.includes(text));
+    assert.deepEqual(
+      (await alert.locator("h1, h2, h3, h4, h5, h6").allTextContents()).map((text) => text.trim()),
+      [expected[0]],
+    );
+    assert.deepEqual(
+      (await alert.locator("dt").allTextContents()).map((text) => text.trim()),
+      ["Summary", "Remediation", "Support code"],
+    );
+    assert.deepEqual(
+      (await alert.locator("dd").allTextContents()).map((text) => text.trim()),
+      expected.slice(1),
+    );
   }
 
   async assertNoConflictDisclosures(
@@ -1312,7 +1748,16 @@ export class Xcom2ProjectFoundryHarness {
           ];
         }),
       );
-    for (const action of ["retry", "overwrite", "delete", "move", "open", "reveal", "recovery"]) {
+    for (const action of [
+      "retry",
+      "cleanup",
+      "overwrite",
+      "delete",
+      "move",
+      "open",
+      "reveal",
+      "recovery",
+    ]) {
       assert.equal(
         actionLabels.some((label) => new RegExp(`\\b${action}\\b`, "iu").test(label)),
         false,
@@ -1431,7 +1876,15 @@ export class Xcom2ProjectFoundryHarness {
     const replay = new Xcom2ProjectFoundryHarness();
     try {
       await replay.start();
-      replay.configureDestinationConflictScenario();
+      if (this.#verifiedCleanupScenario) {
+        replay.configureVerifiedCleanupScenario();
+        replay.acknowledgeSeparateRustAuthority();
+        replay.acknowledgeStrictCleanupContract();
+        replay.acknowledgeStrictCleanupRejection();
+        replay.acknowledgeCleanupAttestationBoundary();
+      } else {
+        replay.configureDestinationConflictScenario();
+      }
       replay.configureConflictSource(SOURCE_REPOSITORY, SOURCE_GRANT_IDENTITY);
       replay.assertConflictDestinationSelection(DESTINATION_PARENT, DESTINATION_GRANT_IDENTITY);
       await replay.createPinnedObjectDatabase(SOURCE_COMMIT, SOURCE_TREE);
@@ -1441,14 +1894,17 @@ export class Xcom2ProjectFoundryHarness {
       await replay.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
       await replay.openConflictPreview("New XCOM 2 Project", "FoundryPreviewFixture", "Preview");
       await replay.assertRendererMintedInitialGrant(OPERATION_GRANT_IDENTITY, DERIVED_DESTINATION);
-      await replay.createExternalConflict(DERIVED_DESTINATION, "Create project");
-      await replay.recordPostConflictDestination();
+      if (!this.#verifiedCleanupScenario) {
+        await replay.createExternalConflict(DERIVED_DESTINATION, "Create project");
+        await replay.recordPostConflictDestination();
+      }
       await replay.activateDialogControl("Create project");
       await replay.assertConflictCreationAuthorityConsumed();
       await replay.assertAtomicConflictAlert("alert");
       await replay.#requirePage().keyboard.press("Escape");
       await replay.#assertClosedThenReopenedClearState("Escape");
-      await replay.#assertConflictPreservation();
+      if (this.#verifiedCleanupScenario) await replay.assertAllVerifiedStatePreserved();
+      else await replay.#assertConflictPreservation();
       replay.assertNoConflictGrantRemains();
       await replay.assertGlobalControlFocused("New XCOM 2 Project");
     } finally {
@@ -1768,6 +2224,10 @@ export class Xcom2ProjectFoundryHarness {
       nativeExactRequestReuseResult: this.#nativeReuseResult,
       destinationPostConflictIdentity: this.#destinationPostConflict,
       conflictFingerprint: this.#conflictFingerprint,
+      verifiedCleanupTransaction: this.#verifiedCleanupEvidence,
+      strictCleanupContractAcknowledged: this.#strictCleanupContractAcknowledged,
+      strictCleanupRejectionAcknowledged: this.#strictCleanupRejectionAcknowledged,
+      cleanupAttestationBoundaryAcknowledged: this.#cleanupAttestationBoundaryAcknowledged,
       createdReceipt: this.#createdReceipt,
       separateRustAuthorityAcknowledged: this.#separateRustAuthorityAcknowledged,
       correctedRendererBoundaryAcknowledged: this.#correctedRendererBoundaryAcknowledged,
@@ -1804,6 +2264,199 @@ export class Xcom2ProjectFoundryHarness {
     const sandbox = this.#sandbox;
     this.#sandbox = undefined;
     if (sandbox) await rm(sandbox, { recursive: true, force: true });
+  }
+
+  #verifiedStageName(): string {
+    return `.FoundryPreviewFixture.foundry-stage-${PLAN_DIGEST}`;
+  }
+
+  #verifiedJournalName(): string {
+    return `.FoundryPreviewFixture.foundry-journal-${PLAN_DIGEST}.json`;
+  }
+
+  #requireVerifiedCleanupEvidence(): VerifiedCleanupTransactionEvidence {
+    assert.ok(
+      this.#verifiedCleanupEvidence,
+      "Verified-cleanup transaction evidence is unavailable",
+    );
+    return this.#verifiedCleanupEvidence;
+  }
+
+  async #syncRevalidatedDirectory(path: string, expectedIdentity: string): Promise<void> {
+    const before = await lstat(path);
+    assert.equal(before.isDirectory(), true);
+    assert.equal(before.isSymbolicLink(), false);
+    assert.equal(`${before.dev}:${before.ino}`, expectedIdentity);
+    const handle = await open(path, "r");
+    try {
+      const opened = await handle.stat();
+      assert.equal(opened.isDirectory(), true);
+      assert.equal(`${opened.dev}:${opened.ino}`, expectedIdentity);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    const after = await lstat(path);
+    assert.equal(`${after.dev}:${after.ino}`, expectedIdentity);
+  }
+
+  async #runVerifiedCleanupTransaction(
+    rendered: StoryFoundryRender,
+  ): Promise<Readonly<Xcom2ProjectFoundryApplyResult>> {
+    assert.equal(this.#verifiedCleanupScenario, true);
+    assert.equal(this.#verifiedCleanupEvidence, undefined);
+    const destinationRoot = this.#requireDestinationRoot();
+    const stagePath = join(destinationRoot, this.#verifiedStageName());
+    const journalPath = join(destinationRoot, this.#verifiedJournalName());
+    const destinationPath = join(destinationRoot, "FoundryPreviewFixture");
+    await assertPathAbsent(stagePath);
+    await assertPathAbsent(journalPath);
+    await assertPathAbsent(destinationPath);
+
+    const parentBaseline = this.#destinationBaseline;
+    assert.ok(parentBaseline, "Destination-parent identity was not recorded");
+    const parentIdentity = parentBaseline.entries.find(
+      (entry) => entry.path === ".",
+    )?.objectIdentity;
+    assert.ok(parentIdentity, "Destination-parent root identity is unavailable");
+
+    const journalHandle = await open(journalPath, "wx+", 0o600);
+    await journalHandle.chmod(0o600);
+    await journalHandle.writeFile(
+      `${JSON.stringify({
+        schemaVersion: 1,
+        state: "staging",
+        planDigest: PLAN_DIGEST,
+        operationIdentity: OPERATION_GRANT_IDENTITY,
+        stageName: this.#verifiedStageName(),
+        destinationName: "FoundryPreviewFixture",
+      })}\n`,
+    );
+    await journalHandle.sync();
+    const journal = await fingerprintEntry(journalPath, this.#verifiedJournalName());
+    assert.equal(journal.kind, "file");
+    assert.equal(journal.mode, "0600");
+    await this.#syncRevalidatedDirectory(destinationRoot, parentIdentity);
+
+    await mkdir(stagePath, { mode: 0o700 });
+    await chmod(stagePath, 0o700);
+    const stageRoot = await fingerprintEntry(stagePath, ".");
+    assert.equal(stageRoot.kind, "directory");
+    assert.equal(stageRoot.mode, "0700");
+    await this.#syncRevalidatedDirectory(destinationRoot, parentIdentity);
+
+    const childDirectories = rendered.rendered.planBody.directories.filter(
+      (directory) => directory.path !== ".",
+    );
+    assert.equal(childDirectories.length, 11);
+    for (const directory of childDirectories) {
+      const path = join(stagePath, directory.path);
+      await mkdir(path, { mode: 0o755 });
+      await chmod(path, 0o755);
+    }
+
+    const directorySyncs: string[] = [];
+    for (const directory of [...rendered.rendered.planBody.directories].sort(
+      (left, right) =>
+        right.path.split("/").length - left.path.split("/").length ||
+        left.path.localeCompare(right.path),
+    )) {
+      const path = directory.path === "." ? stagePath : join(stagePath, directory.path);
+      const identity = (await fingerprintEntry(path, directory.path)).objectIdentity;
+      await this.#syncRevalidatedDirectory(path, identity);
+      directorySyncs.push(directory.path);
+    }
+
+    const orderedFiles = rendered.rendered.planBody.files;
+    assert.deepEqual(
+      orderedFiles.slice(0, 2).map((file) => file.path),
+      [FIRST_STAGED_OUTPUT, SECOND_STAGED_OUTPUT],
+    );
+    const firstBytes = rendered.internalBytes.get(FIRST_STAGED_OUTPUT);
+    assert.ok(firstBytes, "The first rendered output bytes are unavailable");
+    const firstFile = await open(join(stagePath, FIRST_STAGED_OUTPUT), "wx+", 0o600);
+    try {
+      await firstFile.writeFile(firstBytes);
+      await firstFile.chmod(0o644);
+      await firstFile.sync();
+      const metadata = await firstFile.stat();
+      assert.equal(metadata.isFile(), true);
+      assert.equal(modeOf(metadata.mode), "0644");
+      assert.equal(metadata.size, 17);
+    } finally {
+      await firstFile.close();
+    }
+    const firstOutput = await fingerprintEntry(
+      join(stagePath, FIRST_STAGED_OUTPUT),
+      FIRST_STAGED_OUTPUT,
+    );
+    assert.equal(firstOutput.sha256, FIRST_STAGED_OUTPUT_SHA256);
+    await assertPathAbsent(join(stagePath, SECOND_STAGED_OUTPUT));
+
+    const fileCreateOccurrences = 2;
+    const stage = await fingerprintTree(stagePath);
+    assert.equal(stage.entries.filter((entry) => entry.kind === "directory").length, 12);
+    assert.equal(stage.entries.filter((entry) => entry.kind === "file").length, 1);
+    assert.deepEqual(
+      stage.entries.map((entry) => entry.path).sort(),
+      [
+        ...rendered.rendered.planBody.directories.map((directory) => directory.path),
+        FIRST_STAGED_OUTPUT,
+      ].sort(),
+    );
+
+    const revalidated = await fingerprintTree(stagePath);
+    assert.deepEqual(revalidated, stage);
+    const removalOrder = stage.entries
+      .filter((entry) => entry.path !== ".")
+      .sort(
+        (left, right) =>
+          right.path.split("/").length - left.path.split("/").length ||
+          left.path.localeCompare(right.path),
+      );
+    const removed: string[] = [];
+    for (const entry of removalOrder) {
+      const path = join(stagePath, entry.path);
+      assert.deepEqual(await fingerprintEntry(path, entry.path), entry);
+      if (entry.kind === "directory") await rmdir(path);
+      else await unlink(path);
+      removed.push(entry.path);
+    }
+    assert.deepEqual(await fingerprintEntry(stagePath, "."), stage.entries[0]);
+    await rmdir(stagePath);
+    removed.push(".");
+    await assertPathAbsent(stagePath);
+
+    await journalHandle.close();
+    assert.deepEqual(await fingerprintEntry(journalPath, this.#verifiedJournalName()), journal);
+    await unlink(journalPath);
+    await assertPathAbsent(journalPath);
+    await assertPathAbsent(destinationPath);
+    await this.#syncRevalidatedDirectory(destinationRoot, parentIdentity);
+
+    this.#verifiedCleanupEvidence = Object.freeze({
+      journal,
+      stage,
+      directorySyncs: Object.freeze(directorySyncs),
+      firstOutput,
+      secondOutput: SECOND_STAGED_OUTPUT,
+      fileCreateOccurrences,
+      injectionReason: "stage-write-failed",
+      topologyRevalidated: true,
+      removalOrder: Object.freeze(removed),
+      journalRevalidated: true,
+      absentAfterCleanup: Object.freeze({ stage: true, journal: true, destination: true }),
+      finalParentSync: true,
+    });
+    await this.assertSourceIdentity();
+    await this.assertDestinationIdentity();
+
+    return Object.freeze({
+      result: "failed" as const,
+      phase: "pre-commit" as const,
+      reason: "stage-write-failed",
+      cleanupStatus: "verified-complete" as const,
+    });
   }
 
   async #waitForConflictApplyCompletion(): Promise<void> {
@@ -1999,6 +2652,32 @@ export class Xcom2ProjectFoundryHarness {
           this.#appApplyResult = refusal;
           this.#applyTranscript.push({ event: "completed", result: refusal });
           return refusal;
+        }
+
+        if (this.#verifiedCleanupScenario) {
+          assert.equal(this.#activeGrants.has(snapshot.operationGrant.identity), true);
+          this.#activeGrants.delete(snapshot.operationGrant.identity);
+          this.#operationGrants.delete(snapshot.operationGrant.identity);
+          this.#consumedGrants.add(snapshot.operationGrant.identity);
+          this.#nativeOperationConsumedBeforeValidation = true;
+          const rerender = renderFoundryPlan(
+            this.#committedSource,
+            {
+              sourceGrant: snapshot.sourceGrant,
+              destinationParentGrant: snapshot.destinationParentGrant,
+              modId: snapshot.modId,
+            },
+            snapshot.operationGrant.identity,
+          );
+          assert.equal(
+            sha256(canonicalJson(rerender.rendered.planBody)),
+            snapshot.approvedPlanDigest,
+          );
+          this.#applyRerendered = true;
+          const failure = await this.#runVerifiedCleanupTransaction(rerender);
+          this.#appApplyResult = failure;
+          this.#applyTranscript.push({ event: "completed", result: failure });
+          return failure;
         }
 
         const applyRenderRequest: Xcom2ProjectFoundryRenderRequest = {

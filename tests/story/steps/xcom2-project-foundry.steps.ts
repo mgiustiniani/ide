@@ -984,3 +984,260 @@ Then<StoryWorld>(
     session(this).assertConflictEvidenceLimits();
   },
 );
+
+Given<StoryWorld>(
+  "the deterministic backend maps {string} to a scenario-owned temporary destination parent and can return only production-shaped Apply results",
+  function (path: string) {
+    session(this).assertDestinationMapping(path);
+    session(this).configureVerifiedCleanupScenario();
+  },
+);
+
+Given<StoryWorld>(
+  "complementary focused production Rust filesystem tests are the separate authority for the exact injected write ordering, operation-owned stage and journal lifecycle, cleanup verification, parent durability, final filesystem state, and consumed native request reuse",
+  function () {
+    session(this).acknowledgeSeparateRustAuthority();
+  },
+);
+
+Given<StoryWorld>(
+  "strict adapter and contract tests are the separate authority that every `failed` and `pre-commit` result has mandatory `cleanupStatus` with the complete value set `verified-complete` and `not-verified`",
+  function () {
+    session(this).acknowledgeStrictCleanupContract();
+  },
+);
+
+Given<StoryWorld>(
+  "those strict tests reject an omitted, null, additional, malformed, incomplete, contradictory, unknown, or legacy cleanup status instead of defaulting, repairing, inferring, or upgrading it",
+  function () {
+    session(this).acknowledgeStrictCleanupRejection();
+  },
+);
+
+Given<StoryWorld>(
+  "neither `stage-write-failed` alone nor TypeScript filesystem inspection can manufacture `cleanupStatus: verified-complete`",
+  function () {
+    session(this).acknowledgeCleanupAttestationBoundary();
+  },
+);
+
+Then<StoryWorld>(
+  "TypeScript shows one still-live complete Preview for exact plan digest {string}",
+  async function (planDigest: string) {
+    await session(this).assertLivePreview(planDigest);
+    await session(this).assertRendererResultValidated();
+  },
+);
+
+Then<StoryWorld>(
+  "the Preview binds exact project GUID {string}, the supplied grants, the exact source commit and tree, {int} directories, {int} ordered regular files, and absent final project location {string}",
+  async function (
+    projectGuid: string,
+    directoryCount: number,
+    fileCount: number,
+    destination: string,
+  ) {
+    await session(this).assertVerifiedCleanupPreviewBindings(
+      projectGuid,
+      directoryCount,
+      fileCount,
+      destination,
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "the request contains no source-object claim, destination-state claim, output manifest, rendered byte, receipt, cleanup assertion, or success assertion",
+  function () {
+    session(this).assertCleanupRequestHasNoClaims();
+  },
+);
+
+Then<StoryWorld>(
+  "Rust consumes operation grant {string} before starting its operation-owned transaction",
+  function (operationIdentity: string) {
+    session(this).assertOperationConsumedBeforeTransaction(operationIdentity);
+  },
+);
+
+Then<StoryWorld>(
+  "the test-owned Rust fault injector fails exact `before-file-create` occurrence `{int}` with reason `stage-write-failed`",
+  function (occurrence: number) {
+    session(this).assertExactSecondFileFault(occurrence);
+  },
+);
+
+Then<StoryWorld>(
+  "the fault injector is evidence scaffolding only and adds no production query route, environment switch, hidden command, alternate use case, or user-triggerable fault control",
+  function () {
+    session(this).assertFaultInjectorIsEvidenceOnly();
+  },
+);
+
+Then<StoryWorld>(
+  "focused production Rust evidence establishes that immediately before that injection all {int} child directories are complete, fsynced, and verified",
+  function (count: number) {
+    session(this).assertStagedDirectories(count);
+  },
+);
+
+Then<StoryWorld>(
+  "focused production Rust evidence establishes that the first ordered output {string} is complete, fsynced, and verified with exactly these properties inside the operation-owned stage:",
+  function (path: string, dataTable: DataTable) {
+    session(this).assertFirstStagedOutput(path, dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "focused production Rust evidence establishes that the second ordered output {string} has not been created",
+  function (path: string) {
+    session(this).assertSecondStagedOutputAbsent(path);
+  },
+);
+
+Then<StoryWorld>(
+  "only focused production Rust evidence establishes that cleanup revalidates the operation-owned `OwnedStage` device, inode, type identities, and exact tracked topology before removing tracked entries deepest-first",
+  function () {
+    session(this).assertOwnedStageCleanupVerified();
+  },
+);
+
+Then<StoryWorld>(
+  "it revalidates and removes the exact operation-owned journal identity",
+  function () {
+    session(this).assertOwnedJournalCleanupVerified();
+  },
+);
+
+Then<StoryWorld>(
+  "exact no-follow metadata observations report `NotFound` for the digest-bound stage name, digest-bound journal name, and derived destination",
+  function () {
+    session(this).assertVerifiedCleanupAbsenceObservations();
+  },
+);
+
+Then<StoryWorld>(
+  "the same revalidated selected parent is successfully fsynced after those sibling removals",
+  function () {
+    session(this).assertVerifiedCleanupParentSync();
+  },
+);
+
+Then<StoryWorld>(
+  "only after every one of those conjunctive checks succeeds Apply returns exactly this production-shaped failure:",
+  function (dataTable: DataTable) {
+    session(this).assertExactVerifiedCleanupFailure(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "`cleanupStatus: verified-complete` attests only this exact operation-owned transaction outcome and does not turn failure into success, restore consumed authority, permit retry, or claim cleanup of arbitrary or unverified state",
+  function () {
+    session(this).assertVerifiedCleanupAttestationScope();
+  },
+);
+
+Then<StoryWorld>(
+  "any unreadable, ambiguous, mismatched, replaced, unexpectedly populated, stale, or otherwise unverified item cannot contribute to that positive attestation and is preserved for separate explicit recovery",
+  function () {
+    session(this).assertUnverifiedCleanupIsPreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "the repeated native refusal leaves the verified final filesystem state unchanged",
+  async function () {
+    await session(this).assertVerifiedNativeReusePreservedState();
+  },
+);
+
+Then<StoryWorld>(
+  /^only that strictly validated exact `failed` \/ `pre-commit` \/ `stage-write-failed` \/ `verified-complete` tuple is eligible for this bespoke non-interpolating alert$/u,
+  function () {
+    session(this).assertVerifiedTupleAlertEligibility();
+  },
+);
+
+Then<StoryWorld>(
+  "`cleanupStatus: not-verified`, `cleanup-failed`, every other strict tuple, and every malformed, incomplete, contradictory, unknown, or legacy result receives no verified-cleanup wording or other safety claim",
+  function () {
+    session(this).assertNoSafetyClaimForOtherResults();
+  },
+);
+
+Then<StoryWorld>(
+  "the failure introduces none of these disclosures:",
+  async function (dataTable: DataTable) {
+    await session(this).assertNoVerifiedCleanupDisclosures(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "only Cancel is enabled, Escape has the same dismissal semantics, and no retry, cleanup, delete, overwrite, move, open, reveal, or recovery action is offered",
+  async function () {
+    await session(this).assertOnlyVerifiedCleanupCancelEnabled();
+  },
+);
+
+Then<StoryWorld>(
+  "focused production Rust evidence establishes that the final project location, exact operation-owned stage, and exact operation-owned journal are absent",
+  async function () {
+    await session(this).assertVerifiedFinalAbsence();
+  },
+);
+
+Then<StoryWorld>(
+  "the destination parent retains exactly its recorded topology, modes, bytes, and entry identities",
+  async function () {
+    await session(this).assertVerifiedDestinationPreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "no Foundry output, stage, journal, receipt file, {string} state, Git repository, remembered project, retained creation authority, or other residue exists",
+  async function (configurationName: string) {
+    await session(this).assertNoVerifiedCleanupResidue(configurationName);
+  },
+);
+
+Then<StoryWorld>(
+  "the dialog closes and clears every controlled value, Preview, failure, digest, approval state, and authority",
+  async function () {
+    await session(this).assertCleanupDialogClearedAndClosed();
+  },
+);
+
+Then<StoryWorld>(
+  "the exact source repository, working-tree canaries, destination-parent baseline entries, and siblings remain unchanged",
+  async function () {
+    await session(this).assertAllVerifiedStatePreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "this Story establishes no other `before-file-create` occurrence or directory, file, journal, sync, verification, parent, rename, commit, or post-commit fault point",
+  function () {
+    session(this).assertVerifiedCleanupScopeLimit();
+  },
+);
+
+Then<StoryWorld>(
+  "it establishes no destination conflict, broad pre-commit failure or cleanup matrix, or cleanup of tampered, mismatched, stale, interrupted, orphaned, or otherwise unverified state",
+  function () {
+    session(this).assertVerifiedCleanupMatrixLimit();
+  },
+);
+
+Then<StoryWorld>(
+  "it establishes no interruption, restart, discovery, recovery, removal, {string}, or in-flight Cancel behavior",
+  function (createdRecoveryRequired: string) {
+    session(this).assertVerifiedCleanupRecoveryLimit(createdRecoveryRequired);
+  },
+);
+
+Then<StoryWorld>(
+  "it establishes no native chooser, WebKit E2E, real IPC, packaged application, package, bundle, installer, Windows, build, deployment, cooking, launch, auto-open, extraction, licensing, publication, release, or distribution evidence",
+  function () {
+    session(this).assertVerifiedCleanupEvidenceLimits();
+  },
+);
