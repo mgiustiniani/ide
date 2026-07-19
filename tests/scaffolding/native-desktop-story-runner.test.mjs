@@ -1464,6 +1464,7 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-XCOM2-MACHINE-SETTINGS-001",
       "@REQ-XCOM2-PROJECT-FOUNDRY-001",
       "@REQ-XCOM2-PROJECT-FOUNDRY-002",
+      "@REQ-XCOM2-PROJECT-FOUNDRY-003",
     ],
   );
 });
