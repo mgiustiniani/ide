@@ -81,8 +81,8 @@ Controller
                            │     └─ re-render before staging and commit validation
                            └─> OS File System
                                  ├─ private same-parent stage + durable journal
-                                 ├─ owned-path and exact-output verification + fsync
-                                 └─ non-replacing atomic destination commit
+                                 ├─ complete-output-set verification + fsync
+                                 └─ atomic publication by non-replacing destination rename
 ```
 
 | C3 component                                    | Stable structural responsibility                                                                                                                                |
@@ -95,15 +95,15 @@ Controller
 | **Directory Selection API Boundary**            | Supplies the single-directory API seam used by the adapter; it is not evidence of a native chooser, packaged application, or GUI/E2E execution.                 |
 | **Native Project Foundry Authority and Grants** | Owns in-memory operation authority, source and destination identity checks, destination-absence checks, and renderer-byte retention.                            |
 | **Shared Project Foundry git2 Renderer**        | Is the sole output authority for Preview and Apply. It reads pinned Git objects and produces the plan body and internal bytes without reading the working tree. |
-| **Native Project Foundry Apply Transaction**    | Re-renders through the shared renderer, binds the approved digest, stages and verifies owned output, journals state, and commits without replacement.           |
+| **Native Project Foundry Apply Transaction**    | Re-renders through the shared renderer, binds the approved digest, stages and verifies the complete output set, then publishes it atomically.                   |
 
-The provider-neutral `ProjectFoundryComposition` is the injection seam. The directory-selection API boundary is modeled without asserting native chooser execution, packaged-application behavior, or a GUI/end-to-end path.
+The provider-neutral `ProjectFoundryComposition` is the injection seam. Preview and Apply share the deterministic desktop/Tauri harness acceptance boundary. The directory-selection API boundary is modeled without asserting native chooser execution, WebKit GUI/end-to-end validation, packaged or distributed artifacts, Windows support, or automatic opening of a created project.
 
 `@ide/web-core` has no embedded template output, renderer, planner, or parallel output authority. Its Foundry role is native-plan validation, digest and immutable presentation custody, and pure one-shot Apply-state reduction. The controller and UI never supply output bytes or authoritative output metadata.
 
-Apply consumes operation authority before validation or filesystem work. Rust then revalidates the source and destination parent, confirms destination absence, re-renders from pinned Git objects, compares the canonical plan digest and retained bytes, and repeats render/authority checks before commit. Pre-commit failure removes only verified transaction-owned artifacts. Post-commit failure preserves the destination and recovery journal because the atomic commit is not rolled back.
+Apply consumes operation authority before validation or filesystem work. Rust then revalidates the source and destination parent, confirms destination absence, re-renders from pinned Git objects, compares the canonical plan digest and retained bytes, and repeats render/authority checks before commit. The non-replacing rename atomically publishes the complete generated output set. Pre-commit failure removes only verified transaction-owned artifacts. Post-commit failure preserves the destination and recovery journal because the atomic publication is not rolled back.
 
-Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. Materializing the rendered project does not execute template content or grant build, deploy, cooking, packaging, distribution, license-clearance, or publication authority.
+Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. Local filesystem publication does not execute or auto-open template content and grants no build, deploy, cooking, packaging, distribution, license-clearance, or product-publication authority. XCOM product publication remains separately gated by distributable-module extraction and license/notice approval.
 
 ## Controlled Desktop Panel Visibility
 

@@ -51,7 +51,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 xcomConfigurationDiagnosticAlert = component "Atomic XCOM Configuration Warning" "Renders one shared atomic alert in Workspace Settings and mirrors it only in an independently recognized project activity." "React" "Current"
                 xcomProjectRecognitionPanel = component "XCOM 2 Project Activity" "Shows active roots and confidence; strong independent recognition can mirror the complete warning without gaining authority." "React" "Current"
                 xcomFoundryController = component "Project Foundry Controller" "Owns dialog sessions, serialized selection and one-shot Apply authority, stale-result rejection, and immutable presentation custody." "TypeScript, React"
-                xcomFoundryDialog = component "Project Foundry Dialog" "Presents selection, ModId, the digest-bound native plan, creation progress, and bounded outcomes." "React"
+                xcomFoundryDialog = component "Project Foundry Dialog" "Presents selection, ModId, the digest-bound native plan, creation progress, and a bounded outcome without opening the created project." "React"
                 xcomFoundryCustody = component "Project Foundry Plan Custody" "Validates native plan consistency, computes its digest, and prepares an exact immutable Apply request from live grants." "TypeScript"
                 tauriXcomFoundryAdapter = component "Strict Project Foundry Tauri Adapter" "Validates exact requests and responses for native grants, rendering, one-shot Apply, and revocation." "TypeScript, Tauri API"
 
@@ -87,7 +87,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
                 tauriDirectoryDialog = component "Directory Selection API Boundary" "Provides the allow-open single-directory API used by the strict desktop adapter." "Rust, Tauri Plugin" "Current"
                 xcomFoundryAuthority = component "Native Project Foundry Authority and Grants" "Owns operation grants, directory identity and destination-absence checks, and renderer-byte retention by operation." "Rust"
                 xcomFoundryRenderer = component "Shared Project Foundry git2 Renderer" "Sole output authority that reads pinned Git objects and produces the plan body and internal output bytes for Preview and Apply." "Rust, git2"
-                xcomFoundryApply = component "Native Project Foundry Apply Transaction" "Re-renders approved output, stages and verifies owned files, journals state, and commits the absent destination without replacement." "Rust"
+                xcomFoundryApply = component "Native Project Foundry Apply Transaction" "Re-renders approved output, stages and verifies the complete set, journals state, and atomically publishes the absent destination." "Rust"
+                // Local destination publication does not pass the separate XCOM module extraction and license/notice publication gate.
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
                 javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
                 javaAdvancedBridge = component "Broader Java Semantic Bridge" "Transports definition, references, symbols, hierarchy, code actions, formatting, and rename over bounded LSP requests." "Rust, JSON-RPC/LSP" "Frozen"
@@ -217,7 +218,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         xcomFoundryAuthority -> filesystem "Revalidates selected directories and destination absence" "Bounded filesystem metadata"
         xcomFoundryApply -> xcomFoundryAuthority "Consumes and revalidates operation authority"
         xcomFoundryApply -> xcomFoundryRenderer "Re-renders authoritative output before staging and commit"
-        xcomFoundryApply -> filesystem "Stages, journals, verifies, and atomically commits without replacement" "Bounded filesystem writes"
+        xcomFoundryApply -> filesystem "Stages, journals, verifies, and atomically publishes the complete output set" "Bounded filesystem writes"
         xcomFoundryRenderer -> filesystem "Reads pinned Git objects without working-tree access" "git2"
         developer -> xcomMonitorPanel "Inspects machine health and requests a descriptive dry run"
         xcomMonitorPanel -> xcomSetupController "Renders monitor evidence and setup planning state"
@@ -283,7 +284,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         container ide "IdeContainers" {
             title "IDE Containers"
-            description "Desktop and Rust host guarded Java, XCOM setup and activation, and digest-bound Foundry preview and one-shot project creation."
+            description "Desktop and Rust host guarded Java, XCOM setup and activation, and digest-bound Foundry Preview and one-shot atomic publication."
             include developer webApp desktopApp rustBackend browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
@@ -304,7 +305,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component rustBackend "RustBackendComponents" {
             title "Rust Backend Components"
-            description "Native services include guarded Java, RefactorKit and XCOM transactions, activation inputs, authoritative rendering, and atomic Foundry creation."
+            description "Native services include guarded Java, RefactorKit and XCOM transactions, activation inputs, authoritative rendering, and atomic Foundry publication."
             include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
             autoLayout lr
         }
@@ -332,14 +333,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         component rustBackend "Xcom2FoundryRustComponents" {
             title "XCOM 2 Project Foundry — Rust Components"
-            description "Grant authority and one-shot Apply share the git2 renderer; Apply revalidates, stages, journals, verifies, and commits without replacement."
+            description "Grant authority and one-shot Apply share the git2 renderer; Apply revalidates and atomically publishes the complete generated output set."
             include desktopApp tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem
             autoLayout lr
         }
 
         dynamic rustBackend "Xcom2FoundryApplyRuntime" {
             title "XCOM 2 Project Foundry Apply"
-            description "One-shot Apply consumes live authority, re-renders pinned Git output, validates the approved digest, and commits the absent destination atomically."
+            description "One-shot Apply consumes live authority, re-renders pinned Git output, validates the approved digest, and atomically publishes the complete generated set."
             developer -> xcomFoundryDialog "Submits the exact reviewed plan digest"
             xcomFoundryDialog -> xcomFoundryController "Requests project creation"
             xcomFoundryController -> tauriXcomFoundryAdapter "Submits live grants and the approved digest"
@@ -347,8 +348,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
             xcomFoundryApply -> xcomFoundryAuthority "Consumes and revalidates operation authority"
             xcomFoundryApply -> xcomFoundryRenderer "Re-renders before staging and before commit"
             xcomFoundryRenderer -> filesystem "Reads pinned Git objects without working-tree access"
-            xcomFoundryApply -> filesystem "Stages and verifies owned output under a durable journal"
-            xcomFoundryApply -> filesystem "Commits by non-replacing atomic rename"
+            xcomFoundryApply -> filesystem "Stages and verifies the complete output set under a durable journal"
+            xcomFoundryApply -> filesystem "Publishes the complete output set by non-replacing atomic rename"
             autoLayout lr
         }
 

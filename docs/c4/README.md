@@ -22,15 +22,15 @@ The repository does not own a Structurizr container or image invocation. It ther
 
 ## Project Foundry rendering and creation boundary
 
-The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Desktop startup injects the strict Tauri Foundry composition into the application root. The directory-selection API seam is modeled without asserting native chooser execution, packaged-application behavior, or GUI/end-to-end validation.
+The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Desktop startup injects the strict Tauri Foundry composition into the application root. Preview and Apply share the deterministic desktop/Tauri harness acceptance boundary. The directory-selection API seam is modeled without asserting native chooser execution, WebKit GUI/end-to-end validation, packaged or distributed artifacts, Windows support, or automatic opening of a created project.
 
 The adapter validates exact selection grants, render requests, immutable Apply requests, and bounded native results. TypeScript validates the complete native plan, computes its RFC 8785/SHA-256 digest, and keeps presentation and one-shot approval custody without becoming an output authority. No frontend field carries authoritative output bytes or metadata.
 
 One shared in-process Rust `git2` renderer is the sole output authority for both Preview and Apply. Preview reads the pinned commit, tree, and reachable blobs, ignores working-tree content, returns the complete plan body, and retains the corresponding internal output bytes by operation identity.
 
-Apply consumes live operation authority before validation or filesystem work, revalidates the source and destination-parent identities and destination absence, and invokes the same renderer again. It binds the approved digest to the re-rendered plan and retained bytes, then uses private same-parent staging, a durable journal, file and directory verification, filesystem synchronization, and a non-replacing atomic rename. Pre-commit failure removes only transaction-owned artifacts when their identities remain verified; post-commit failure preserves the destination and recovery journal rather than rolling the project back.
+Apply consumes live operation authority before validation or filesystem work, revalidates the source and destination-parent identities and destination absence, and invokes the same renderer again. It binds the approved digest to the re-rendered plan and retained bytes, then uses private same-parent staging, a durable journal, complete-set verification, filesystem synchronization, and a non-replacing atomic rename to publish the complete generated output set at once. Pre-commit failure removes only transaction-owned artifacts when their identities remain verified; post-commit failure preserves the destination and recovery journal rather than rolling the project back.
 
-This project-materialization transaction does not execute template content or provide project build, deploy, cooking, packaging, distribution, license-clearance, or publication authority. It remains separate from RefactorKit import mutation and XCOM SDK setup transactions.
+This local filesystem publication does not execute or auto-open template content and provides no project build, deploy, cooking, packaging, distribution, license-clearance, or product-publication authority. XCOM publication remains separately gated by extraction as a distributable module and license/notice approval. Project Foundry also remains separate from RefactorKit import mutation and XCOM SDK setup transactions.
 
 ## Self-contained rendering
 
