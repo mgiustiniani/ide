@@ -383,6 +383,151 @@ fn pinned_object_change_during_staging_is_rerendered_and_refused_before_commit()
 }
 
 #[test]
+fn external_regular_destination_refuses_before_transaction_and_consumes_apply_authority() {
+    let prepared = prepare("req003-destination-present", "PresentMod");
+    let request = prepared.request.clone();
+    let operation_identity = request.operation_grant.identity.clone();
+    let destination_grant_identity = request.destination_parent_grant.identity.clone();
+    let destination = prepared.parent.path().join("PresentMod");
+    let stage = prepared.parent.path().join(format!(
+        ".PresentMod.foundry-stage-{}",
+        request.approved_plan_digest
+    ));
+    let journal = prepared.parent.path().join(format!(
+        ".PresentMod.foundry-journal-{}.json",
+        request.approved_plan_digest
+    ));
+    let source_before = tree_snapshot(prepared._fixture.root_path());
+    let source_root_before = fs::symlink_metadata(prepared._fixture.root_path()).unwrap();
+
+    let external_bytes = b"scenario-owner-conflict\n";
+    let mut external = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o640)
+        .open(&destination)
+        .expect("externally create exact destination file after render");
+    external.write_all(external_bytes).unwrap();
+    external.sync_all().unwrap();
+    drop(external);
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o640)).unwrap();
+
+    let destination_before = fs::symlink_metadata(&destination).unwrap();
+    assert!(destination_before.file_type().is_file());
+    assert!(!destination_before.file_type().is_symlink());
+    let destination_fingerprint = (
+        destination_before.dev(),
+        destination_before.ino(),
+        destination_before.permissions().mode() & 0o7777,
+        fs::read(&destination).unwrap(),
+    );
+    assert_eq!(destination_fingerprint.2, 0o640);
+    assert_eq!(destination_fingerprint.3, external_bytes);
+    assert_eq!(destination_fingerprint.3.len(), 24);
+    assert_eq!(
+        hex_digest(&destination_fingerprint.3),
+        "492ba4c27678918c09572ce6be8cf2fec44f70f5033d29fc1b7f4230d5e0a1fb"
+    );
+
+    let parent_before = fs::symlink_metadata(prepared.parent.path()).unwrap();
+    let parent_fingerprint = (
+        parent_before.dev(),
+        parent_before.ino(),
+        parent_before.permissions().mode() & 0o7777,
+        parent_before.nlink(),
+        parent_before.uid(),
+        parent_before.gid(),
+        parent_before.len(),
+        parent_before.mtime(),
+        parent_before.mtime_nsec(),
+        parent_before.ctime(),
+        parent_before.ctime_nsec(),
+    );
+    let parent_tree = tree_snapshot(prepared.parent.path());
+    assert_eq!(parent_tree.len(), 1);
+
+    let before_rerender = FailAt::new("before-rerender", 1);
+    assert_eq!(
+        apply_with_faults(&prepared.state, request.clone(), &before_rerender),
+        refused(FoundryApplyRefusalReason::DestinationPresent)
+    );
+    assert_eq!(*before_rerender.seen.lock().unwrap(), 0);
+
+    let assert_preserved = || {
+        let destination_after = fs::symlink_metadata(&destination).unwrap();
+        assert!(destination_after.file_type().is_file());
+        assert!(!destination_after.file_type().is_symlink());
+        assert_eq!(
+            (
+                destination_after.dev(),
+                destination_after.ino(),
+                destination_after.permissions().mode() & 0o7777,
+                fs::read(&destination).unwrap(),
+            ),
+            destination_fingerprint
+        );
+        let parent_after = fs::symlink_metadata(prepared.parent.path()).unwrap();
+        assert_eq!(
+            (
+                parent_after.dev(),
+                parent_after.ino(),
+                parent_after.permissions().mode() & 0o7777,
+                parent_after.nlink(),
+                parent_after.uid(),
+                parent_after.gid(),
+                parent_after.len(),
+                parent_after.mtime(),
+                parent_after.mtime_nsec(),
+                parent_after.ctime(),
+                parent_after.ctime_nsec(),
+            ),
+            parent_fingerprint
+        );
+        assert_eq!(tree_snapshot(prepared.parent.path()), parent_tree);
+        assert_eq!(tree_snapshot(prepared._fixture.root_path()), source_before);
+        let source_root_after = fs::symlink_metadata(prepared._fixture.root_path()).unwrap();
+        assert_eq!(source_root_after.dev(), source_root_before.dev());
+        assert_eq!(source_root_after.ino(), source_root_before.ino());
+        assert_eq!(
+            source_root_after.permissions().mode() & 0o7777,
+            source_root_before.permissions().mode() & 0o7777
+        );
+        assert!(stage.symlink_metadata().is_err());
+        assert!(journal.symlink_metadata().is_err());
+    };
+    assert_preserved();
+
+    let assert_apply_authority_consumed = || {
+        let grants = prepared.state.grants.lock().unwrap();
+        assert!(!grants
+            .rendered_files_by_operation
+            .contains_key(&operation_identity));
+        assert!(!grants
+            .operation_to_destination
+            .contains_key(&operation_identity));
+        assert!(grants
+            .destination_grants
+            .values()
+            .all(|record| record.operation.is_none()));
+        assert!(!grants
+            .active_apply_destinations
+            .contains(&destination_grant_identity));
+        assert!(grants
+            .consumed_operations
+            .iter()
+            .any(|identity| identity == &operation_identity));
+    };
+    assert_apply_authority_consumed();
+
+    assert_eq!(
+        apply_foundry_project(&prepared.state, request),
+        refused(FoundryApplyRefusalReason::ApplyAuthorityConsumed)
+    );
+    assert_apply_authority_consumed();
+    assert_preserved();
+}
+
+#[test]
 fn digest_grant_source_destination_stage_and_journal_staleness_are_refused_once() {
     let mut digest = prepare("digest-refusal", "DigestMod");
     digest.request.approved_plan_digest = "0".repeat(64);
