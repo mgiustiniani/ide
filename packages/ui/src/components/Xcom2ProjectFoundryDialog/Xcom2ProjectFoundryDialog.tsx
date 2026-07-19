@@ -1,5 +1,7 @@
 import {
   XCOM2_PROJECT_FOUNDRY_RENDERED_PLAN_INVALID_SUMMARY,
+  type Xcom2ProjectFoundryApplyAttentionPresentation,
+  type Xcom2ProjectFoundryApplyTerminalSessionDecision,
   type Xcom2ProjectFoundryCreatedReceipt,
   type Xcom2ProjectFoundryPreviewPlan,
   type Xcom2ProjectFoundryPreviewRefusalCode,
@@ -28,6 +30,11 @@ export type Xcom2ProjectFoundryDialogCreationState =
   | {
       readonly kind: "created";
       readonly receipt: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
+    }
+  | {
+      readonly kind: "attention";
+      readonly presentation: Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>;
+      readonly terminalDecision: Readonly<Xcom2ProjectFoundryApplyTerminalSessionDecision>;
     };
 
 export interface Xcom2ProjectFoundryDialogProps {
@@ -178,10 +185,51 @@ function CreationReceipt({
   );
 }
 
+function ApplyAttentionAlert({
+  presentation,
+}: {
+  readonly presentation: Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>;
+}): JSX.Element {
+  const titleId = useId();
+
+  return (
+    <section
+      role="alert"
+      aria-atomic="true"
+      aria-labelledby={titleId}
+      className="rounded border border-amber-500/50 bg-amber-500/10 p-4 text-sm"
+    >
+      <h3 id={titleId} className="font-semibold">
+        {presentation.title}
+      </h3>
+      <dl className="mt-3 grid gap-3">
+        <div>
+          <dt className="font-medium">Summary</dt>
+          <dd className="mt-0.5 text-[var(--text-secondary)]">{presentation.summary}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">Remediation</dt>
+          <dd className="mt-0.5 text-[var(--text-secondary)]">{presentation.remediation}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">Support code</dt>
+          <dd className="mt-0.5 text-[var(--text-secondary)]">
+            <code className="rounded bg-black/20 px-1 py-0.5 font-mono text-xs">
+              {presentation.supportCode}
+            </code>
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function ReadyPlan({
   plan,
+  terminalContext = false,
 }: {
   readonly plan: Readonly<Xcom2ProjectFoundryPreviewPlan>;
+  readonly terminalContext?: boolean;
 }): JSX.Element {
   const facts: readonly (readonly [string, React.ReactNode])[] = [
     ["pack ID", plan.packId],
@@ -269,7 +317,10 @@ function ReadyPlan({
                   <span>{preview.lineEndings}</span>
                 </p>
               </header>
-              <div className="max-h-96 max-w-full overflow-auto p-3" tabIndex={0}>
+              <div
+                className="max-h-96 max-w-full overflow-auto p-3"
+                tabIndex={terminalContext ? -1 : 0}
+              >
                 <pre className="w-max min-w-full whitespace-pre font-mono text-xs">
                   {preview.escapedBytePreview}
                 </pre>
@@ -329,9 +380,12 @@ export function Xcom2ProjectFoundryDialog({
   const previousReadyPlanRef = useRef<Readonly<Xcom2ProjectFoundryPreviewPlan> | null>(null);
   const [locallySubmitted, setLocallySubmitted] = useState(false);
   const busy = viewState.kind === "busy";
+  const terminalDecision =
+    creationState.kind === "attention" ? creationState.terminalDecision : null;
+  const terminal = terminalDecision?.kind === "terminal";
   const validModId = isValidModId(modId);
   const canPreview =
-    !busy && sourceRepository.length > 0 && destinationParent.length > 0 && validModId;
+    !busy && !terminal && sourceRepository.length > 0 && destinationParent.length > 0 && validModId;
   const readyPlan = viewState.kind === "ready" ? viewState.plan : null;
   const isCurrentReadyPlan =
     readyPlan !== null &&
@@ -429,7 +483,7 @@ export function Xcom2ProjectFoundryDialog({
             className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5"
           >
             <fieldset
-              disabled={busy}
+              disabled={busy || terminal}
               className="grid gap-4 rounded border border-[var(--border-default)] p-4"
             >
               <legend className="px-1 text-sm font-semibold">Project selections</legend>
@@ -444,6 +498,7 @@ export function Xcom2ProjectFoundryDialog({
                     value={sourceRepository}
                     aria-describedby={sourceRepositoryHelpId}
                     readOnly
+                    disabled={terminal}
                     className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
                   />
                   <p
@@ -457,7 +512,7 @@ export function Xcom2ProjectFoundryDialog({
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || terminal}
                   onClick={() => void onSelectSourceRepository()}
                 >
                   Select EMPT repository
@@ -474,6 +529,7 @@ export function Xcom2ProjectFoundryDialog({
                     value={destinationParent}
                     aria-describedby={destinationParentHelpId}
                     readOnly
+                    disabled={terminal}
                     className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
                   />
                   <p
@@ -487,7 +543,7 @@ export function Xcom2ProjectFoundryDialog({
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || terminal}
                   onClick={() => void onSelectDestinationParent()}
                 >
                   Select Destination parent
@@ -507,6 +563,7 @@ export function Xcom2ProjectFoundryDialog({
                     autoComplete="off"
                     spellCheck={false}
                     maxLength={48}
+                    disabled={terminal}
                     onChange={(event) => onModIdChange(event.target.value)}
                     className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm aria-[invalid=true]:border-[var(--accent-red)]"
                   />
@@ -531,6 +588,7 @@ export function Xcom2ProjectFoundryDialog({
                     value={finalProjectLocation}
                     aria-describedby={finalProjectLocationHelpId}
                     readOnly
+                    disabled={terminal}
                     className="w-full min-w-0 rounded border border-[var(--input-border)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-sm"
                   />
                   <p
@@ -555,7 +613,7 @@ export function Xcom2ProjectFoundryDialog({
               </p>
             ) : null}
 
-            {viewState.kind === "refused" ? (
+            {viewState.kind === "refused" && !terminal ? (
               <div
                 role="alert"
                 className="rounded border border-red-500/40 bg-red-500/10 p-3 text-sm"
@@ -582,7 +640,13 @@ export function Xcom2ProjectFoundryDialog({
               <CreationReceipt receipt={creationState.receipt} />
             ) : null}
 
-            {viewState.kind === "ready" ? <ReadyPlan plan={viewState.plan} /> : null}
+            {creationState.kind === "attention" ? (
+              <ApplyAttentionAlert presentation={creationState.presentation} />
+            ) : null}
+
+            {viewState.kind === "ready" ? (
+              <ReadyPlan plan={viewState.plan} terminalContext={terminal} />
+            ) : null}
           </div>
 
           <footer className="flex shrink-0 justify-end gap-2 border-t border-[var(--border-default)] px-5 py-3">

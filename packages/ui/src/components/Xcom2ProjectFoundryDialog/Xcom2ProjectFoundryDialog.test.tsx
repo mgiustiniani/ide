@@ -1,5 +1,9 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
+  type Xcom2ProjectFoundryApplyAttentionPresentation,
+  type Xcom2ProjectFoundryApplyTerminalSessionDecision,
   type Xcom2ProjectFoundryCreatedReceipt,
   type Xcom2ProjectFoundryPreviewPlan,
 } from "@ide/contracts";
@@ -16,6 +20,7 @@ import {
 } from "../__tests__/Xcom2ProjectFoundryApprovedStoryOracle.fixture";
 import {
   Xcom2ProjectFoundryDialog,
+  type Xcom2ProjectFoundryDialogCreationState,
   type Xcom2ProjectFoundryDialogProps,
 } from "./Xcom2ProjectFoundryDialog";
 
@@ -83,6 +88,26 @@ function createdReceipt(): Xcom2ProjectFoundryCreatedReceipt {
     sourceTree: "cc8823fa99c0d292c4fe48a8b9463ff790176371",
     committedDirectories: 12,
     committedFiles: 27,
+  };
+}
+
+function terminalDecision(): Xcom2ProjectFoundryApplyTerminalSessionDecision {
+  return {
+    kind: "terminal",
+    authority: "consumed",
+    preview: "retained-context",
+    disabledControls: ["source-selection", "destination-selection", "mod-id", "preview", "create"],
+    enabledControls: ["cancel"],
+  };
+}
+
+function attentionCreationState(
+  presentation: Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>,
+): Xcom2ProjectFoundryDialogCreationState {
+  return {
+    kind: "attention",
+    presentation,
+    terminalDecision: terminalDecision(),
   };
 }
 
@@ -613,6 +638,214 @@ describe("Xcom2ProjectFoundryDialog", () => {
     const controls = screen.getAllByRole("button", { name: "Create project" });
     expect(controls).toHaveLength(1);
     expect((controls[0] as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders the exact destination conflict as one atomic structurally labeled non-color-only alert", () => {
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: attentionCreationState(
+            XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+          ),
+          onCreateProject: vi.fn(),
+        })}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(alert.getAttribute("aria-atomic")).toBe("true");
+    const title = within(alert).getByRole("heading", {
+      name: "Project location conflict",
+    });
+    expect(title.id).not.toBe("");
+    expect(alert.getAttribute("aria-labelledby")?.split(/\s+/u)).toContain(title.id);
+    expect(Array.from(alert.querySelectorAll("dt"), (term) => term.textContent)).toEqual([
+      "Summary",
+      "Remediation",
+      "Support code",
+    ]);
+    expect(Array.from(alert.querySelectorAll("dd"), (term) => term.textContent)).toEqual([
+      "The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.",
+      "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
+      "foundry-apply-destination-present",
+    ]);
+    expect(alert.querySelector("code")?.textContent).toBe("foundry-apply-destination-present");
+    expect(within(alert).queryAllByRole("alert")).toHaveLength(0);
+    expect(alert.textContent?.trim().length).toBeGreaterThan(0);
+  });
+
+  it("renders the exact generic fallback without interpolating unknown Apply details", () => {
+    const unsafeCreationState = {
+      ...attentionCreationState(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION),
+      rawCause: "RAW_CAUSE_CANARY errno=17 /tmp/private-stage",
+      provider: "RAW_PROVIDER_CANARY",
+      result: {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "RAW_REASON_CANARY",
+      },
+    } as unknown as Xcom2ProjectFoundryDialogCreationState;
+
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: unsafeCreationState,
+        })}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getByRole("heading").textContent).toBe("Project creation needs attention");
+    expect(Array.from(alert.querySelectorAll("dd"), (term) => term.textContent)).toEqual([
+      "Foundry could not complete or safely confirm project creation. This approved preview cannot be retried.",
+      "Cancel and leave the destination unchanged. Contact support before trying again.",
+      "foundry-apply-unavailable",
+    ]);
+    expect(alert.textContent).not.toMatch(
+      /RAW_CAUSE_CANARY|RAW_PROVIDER_CANARY|RAW_REASON_CANARY|errno|private-stage/u,
+    );
+  });
+
+  it("keeps conflict metadata, native details, logs, and support artifacts out of attention", () => {
+    const unsafePresentation = {
+      ...XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+      conflictBytes: "7363656e6172696f2d6f776e65722d636f6e666c6963740a",
+      conflictMode: "0640",
+      conflictIdentity: "device=9 inode=42",
+      temporaryRoot: "/tmp/foundry-private",
+      siblings: "existing-sibling",
+      stagePath: ".foundry-stage-private",
+      journalPath: ".foundry-journal-private",
+      tauriCommand: "apply_xcom2_project",
+      backend: "Rust provider",
+      rawCause: "errno=17 stack=private",
+      persistedLog: "private.log",
+      supportBundle: "private-support.zip",
+    } as Xcom2ProjectFoundryApplyAttentionPresentation;
+
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: attentionCreationState(unsafePresentation),
+        })}
+      />,
+    );
+
+    expect(screen.getByLabelText("Complete Project Foundry preview")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).not.toMatch(
+      /7363656e|0640|device=|inode=|\/tmp\/|existing-sibling|stage|journal|tauri|rust|provider|errno|stack|private\.log|support bundle|private-support/iu,
+    );
+  });
+
+  it("retains Preview as non-interactive context with Cancel as the only enabled terminal control", async () => {
+    const onSelectSourceRepository = vi.fn();
+    const onSelectDestinationParent = vi.fn();
+    const onModIdChange = vi.fn();
+    const onPreview = vi.fn();
+    const onCreateProject = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: readyPlan() },
+          creationState: attentionCreationState(
+            XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+          ),
+          onSelectSourceRepository,
+          onSelectDestinationParent,
+          onModIdChange,
+          onPreview,
+          onCreateProject,
+          onCancel,
+        })}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "New XCOM 2 Project" });
+    expect(within(dialog).getByLabelText("Complete Project Foundry preview")).toBeDefined();
+    for (const name of ["EMPT repository", "Destination parent", "ModId"]) {
+      expect((within(dialog).getByLabelText(name) as HTMLInputElement).disabled).toBe(true);
+    }
+    for (const name of [
+      "Select EMPT repository",
+      "Select Destination parent",
+      "Preview",
+      "Create project",
+    ]) {
+      const control = within(dialog).getByRole("button", { name }) as HTMLButtonElement;
+      expect(control.disabled).toBe(true);
+      fireEvent.click(control);
+    }
+    const enabledButtons = within(dialog)
+      .getAllByRole("button")
+      .filter((button) => !(button as HTMLButtonElement).disabled);
+    expect(enabledButtons.map((button) => button.textContent?.trim())).toEqual(["Cancel"]);
+    expect(Array.from(dialog.querySelectorAll('[tabindex="0"]'))).toHaveLength(0);
+    expect(
+      Array.from(
+        screen
+          .getByRole("alert")
+          .querySelectorAll(
+            'button, a[href], input, select, textarea, [role="button"], [role="link"], [tabindex]',
+          ),
+      ),
+    ).toHaveLength(0);
+    expect(
+      within(dialog)
+        .queryAllByRole("button")
+        .some((control) =>
+          /retry|overwrite|delete|move|open|reveal|recovery/iu.test(control.textContent ?? ""),
+        ),
+    ).toBe(false);
+    expect(onSelectSourceRepository).not.toHaveBeenCalled();
+    expect(onSelectDestinationParent).not.toHaveBeenCalled();
+    expect(onModIdChange).not.toHaveBeenCalled();
+    expect(onPreview).not.toHaveBeenCalled();
+    expect(onCreateProject).not.toHaveBeenCalled();
+
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    expect(document.activeElement).toBe(cancel);
+    await userEvent.tab();
+    expect(document.activeElement).toBe(cancel);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(cancel);
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(cancel);
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mutate a deeply frozen attention presentation or terminal decision", async () => {
+    const presentation = deepFreeze({
+      ...XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+    });
+    const decision = deepFreeze(terminalDecision());
+    const creationState = deepFreeze({
+      kind: "attention" as const,
+      presentation,
+      terminalDecision: decision,
+    });
+    const before = structuredClone(creationState);
+
+    render(
+      <Xcom2ProjectFoundryDialog
+        {...baseProps({
+          viewState: { kind: "ready", plan: deepFreeze(readyPlan()) },
+          creationState,
+        })}
+      />,
+    );
+    await userEvent.keyboard("{Escape}");
+
+    expect(creationState).toEqual(before);
+    expect(creationState.presentation).toBe(presentation);
+    expect(creationState.terminalDecision).toBe(decision);
+    expect(Object.isFrozen(creationState)).toBe(true);
+    expect(Object.isFrozen(creationState.presentation)).toBe(true);
+    expect(Object.isFrozen(creationState.terminalDecision.disabledControls)).toBe(true);
   });
 
   it("announces creation and renders the exact immutable contract receipt", () => {
