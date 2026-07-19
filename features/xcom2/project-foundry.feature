@@ -16,7 +16,7 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
   Any pre-commit mismatch or refusal must leave the destination absent, consume the one-shot authority, and require a new preview; unverified state must be preserved, and a post-commit durability failure must report "created; recovery required" without rollback.
   The complete stale-source, stale-grant, stale-parent, stale-destination, failure, interruption, recovery, and removal matrices remain assigned to later Stories.
 
-  @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @partial
+  @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Preview and discard exact dynamically rendered EMPT v1.4 Foundry plans without mutation or execution
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and discard use cases use a separate deterministic Tauri-harness composition
     And Preview and Apply are specified to use one shared Rust in-process git2 renderer as their sole output authority
