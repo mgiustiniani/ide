@@ -624,18 +624,24 @@ function normalizeNativeApplyResult(
         command,
         "response",
         value,
-        ["result", "phase", "reason"],
+        ["result", "phase", "reason", "cleanupStatus"],
         "apply failure",
       );
       if (
         failure.result !== "failed" ||
         failure.phase !== "pre-commit" ||
         !safeText(failure.reason) ||
-        !APPLY_PRE_COMMIT_FAILURE_REASONS.has(failure.reason)
+        !APPLY_PRE_COMMIT_FAILURE_REASONS.has(failure.reason) ||
+        (failure.cleanupStatus !== "verified-complete" && failure.cleanupStatus !== "not-verified")
       ) {
         throw protocolError(command, "response", "apply failure violates the apply contract");
       }
-      return Object.freeze({ result: "failed", phase: "pre-commit", reason: failure.reason });
+      return Object.freeze({
+        result: "failed",
+        phase: "pre-commit",
+        reason: failure.reason,
+        cleanupStatus: failure.cleanupStatus,
+      });
     }
 
     if (resultDescriptor.value === "created-recovery-required") {
