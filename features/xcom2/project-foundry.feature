@@ -20,6 +20,10 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
   Its future acceptance route combines deterministic desktop/Tauri-harness evidence for the exact terminal refusal experience with complementary focused production Rust evidence for destination-present enforcement and consumed native authority.
   It covers only one regular-file destination created externally after the fixture Preview and before Apply; every other fault, recovery, native, packaging, and build case remains outside this Story.
 
+  The fourth bounded Story from ADR 0010 traces to AT-X2-032.
+  Its future acceptance route combines deterministic desktop/Tauri-harness evidence for one exact terminal verified-cleanup result with complementary focused production Rust evidence for the exact second-file injection, operation-owned transaction cleanup, final absence and preservation, and consumed native authority.
+  Strict adapter and contract evidence owns the closed cleanup-attestation result shape; neither the harness nor TypeScript filesystem inspection may infer cleanup, and this Story makes no claim that arbitrary or unverified state is safe to remove.
+
   @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Preview and discard exact dynamically rendered EMPT v1.4 Foundry plans without mutation or execution
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and discard use cases use a separate deterministic Tauri-harness composition
@@ -579,3 +583,116 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
     And dismissing the same terminal state with Escape has exactly the same clearing, preservation, grant-cleanup, close, and focus-return semantics
     And this Story establishes no other stale source, grant, parent, digest, ModId, destination-type, stage, journal, commit-race, failure, cleanup-residue, interruption, restart, discovery, recovery, removal, or "created-recovery-required" behavior
     And it establishes no in-flight Cancel, native chooser, WebKit E2E, real IPC, packaged application, Windows, publication, licensing, build, deployment, cooking, launch, or auto-open evidence
+
+  @REQ-XCOM2-PROJECT-FOUNDRY-004 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  Scenario: Report verified cleanup after the exact second-file Foundry stage-write failure
+    Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition
+    And the deterministic backend maps "/scenario/foundry-output" to a scenario-owned temporary destination parent and can return only production-shaped Apply results
+    And complementary focused production Rust filesystem tests are the separate authority for the exact injected write ordering, operation-owned stage and journal lifecycle, cleanup verification, parent durability, final filesystem state, and consumed native request reuse
+    And strict adapter and contract tests are the separate authority that every `failed` and `pre-commit` result has mandatory `cleanupStatus` with the complete value set `verified-complete` and `not-verified`
+    And those strict tests reject an omitted, null, additional, malformed, incomplete, contradictory, unknown, or legacy cleanup status instead of defaulting, repairing, inferring, or upgrading it
+    And neither `stage-write-failed` alone nor TypeScript filesystem inspection can manufacture `cleanupStatus: verified-complete`
+    And the selected source repository is "/scenario/empt-v1_4" under source grant "source-grant-foundry-preview-001"
+    And it resolves exact commit "d968be3c32b250376723563a743a120770ec5c95" and exact tree "cc8823fa99c0d292c4fe48a8b9463ff790176371" from committed local objects only
+    And its working tree has one modified tracked canary and one untracked canary that disagree with the committed tree
+    And the source working tree's exact topology, modes, bytes, and canary identities are recorded before the dialog opens
+    And the selected destination parent is "/scenario/foundry-output" under destination-parent grant "destination-parent-grant-foundry-preview-001"
+    And the temporary destination parent's exact topology, modes, bytes, and entry identities are recorded before the dialog opens
+    And "/scenario/foundry-output/FoundryPreviewFixture" is absent
+    When the person opens "New XCOM 2 Project", accepts the supplied selections, enters exact ModId "FoundryPreviewFixture", and activates "Preview"
+    Then the shared Rust renderer supplies the complete fixture plan and mints operation grant "operation-grant-foundry-preview-001" only after confirming the final project location is absent
+    And TypeScript shows one still-live complete Preview for exact plan digest "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6"
+    And the Preview binds exact project GUID "{30DF67AA-2360-5109-80CF-02CB38BED26F}", the supplied grants, the exact source commit and tree, 12 directories, 27 ordered regular files, and absent final project location "/scenario/foundry-output/FoundryPreviewFixture"
+    And exactly one accessible "Create project" control can approve that still-live Preview
+    When the person activates "Create project"
+    Then the frontend synchronously consumes creation authority before it calls Apply
+    And "Create project" is disabled before the Apply call starts and remains disabled for this Preview
+    And the deterministic backend receives exactly one Apply call with only this production request:
+      | field                                      | exact value                                                        |
+      | schemaVersion                              | 1                                                                  |
+      | sourceGrant.kind                           | source-repository                                                  |
+      | sourceGrant.repository                     | /scenario/empt-v1_4                                                |
+      | sourceGrant.identity                       | source-grant-foundry-preview-001                                   |
+      | destinationParentGrant.kind                | destination-parent                                                 |
+      | destinationParentGrant.parent              | /scenario/foundry-output                                           |
+      | destinationParentGrant.identity            | destination-parent-grant-foundry-preview-001                       |
+      | operationGrant.kind                        | preview-operation                                                  |
+      | operationGrant.derivedDestination          | /scenario/foundry-output/FoundryPreviewFixture                     |
+      | operationGrant.identity                    | operation-grant-foundry-preview-001                                |
+      | modId                                      | FoundryPreviewFixture                                              |
+      | approvedPlanDigest                         | 368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6 |
+    And the request contains no source-object claim, destination-state claim, output manifest, rendered byte, receipt, cleanup assertion, or success assertion
+    And Rust consumes operation grant "operation-grant-foundry-preview-001" before starting its operation-owned transaction
+    And the test-owned Rust fault injector fails exact `before-file-create` occurrence `2` with reason `stage-write-failed`
+    And the fault injector is evidence scaffolding only and adds no production query route, environment switch, hidden command, alternate use case, or user-triggerable fault control
+    And focused production Rust evidence establishes that immediately before that injection all 11 child directories are complete, fsynced, and verified
+    And focused production Rust evidence establishes that the first ordered output ".gitignore" is complete, fsynced, and verified with exactly these properties inside the operation-owned stage:
+      | property    | exact value                                                      |
+      | type        | regular file, not a symlink                                      |
+      | mode        | 0644                                                             |
+      | byte length | 17                                                               |
+      | SHA-256     | 1a0a301b6ced334acafddaf76181e4ac1b46692c04627fe335a60182d7f1f9b8 |
+    And focused production Rust evidence establishes that the second ordered output ".scripts/X2ModBuildCommon/CHANGELOG.md" has not been created
+    And only focused production Rust evidence establishes that cleanup revalidates the operation-owned `OwnedStage` device, inode, type identities, and exact tracked topology before removing tracked entries deepest-first
+    And it revalidates and removes the exact operation-owned journal identity
+    And exact no-follow metadata observations report `NotFound` for the digest-bound stage name, digest-bound journal name, and derived destination
+    And the same revalidated selected parent is successfully fsynced after those sibling removals
+    And only after every one of those conjunctive checks succeeds Apply returns exactly this production-shaped failure:
+      | field         | exact value       |
+      | result        | failed            |
+      | phase         | pre-commit        |
+      | reason        | stage-write-failed |
+      | cleanupStatus | verified-complete |
+    And `cleanupStatus: verified-complete` attests only this exact operation-owned transaction outcome and does not turn failure into success, restore consumed authority, permit retry, or claim cleanup of arbitrary or unverified state
+    And any unreadable, ambiguous, mismatched, replaced, unexpectedly populated, stale, or otherwise unverified item cannot contribute to that positive attestation and is preserved for separate explicit recovery
+    And repeated Create activation invokes no second Apply call
+    And complementary production Rust evidence repeats the exact native request once and receives reason "apply-authority-consumed" as `ApplyAuthorityConsumed`
+    And the repeated native refusal leaves the verified final filesystem state unchanged
+    Then exactly one atomic accessible alert with `role="alert"` appears without a nested alert or color-only meaning
+    And its title is structurally identified
+    And that same alert contains exactly these four fixed fields:
+      | field        | exact text                                                                                                                                                                        |
+      | Title        | Project creation stopped safely                                                                                                                                                   |
+      | Summary      | Foundry could not finish writing the project, but verified that the final project location and temporary transaction items are absent. This approved preview cannot be retried. |
+      | Remediation  | Cancel, then reopen Project Foundry and preview again before trying to create the project.                                                                                        |
+      | Support code | foundry-apply-stage-write-cleanup-verified                                                                                                                                         |
+    And only that strictly validated exact `failed` / `pre-commit` / `stage-write-failed` / `verified-complete` tuple is eligible for this bespoke non-interpolating alert
+    And `cleanupStatus: not-verified`, `cleanup-failed`, every other strict tuple, and every malformed, incomplete, contradictory, unknown, or legacy result receives no verified-cleanup wording or other safety claim
+    And the failure introduces none of these disclosures:
+      | prohibited disclosure                                  |
+      | selected source or destination path                    |
+      | final destination, stage, journal, harness, or temporary path |
+      | digest, grant, filesystem object, device, or inode identity |
+      | directory or file inventory, mode, size, hash, or bytes |
+      | source working-tree canary or its content              |
+      | Tauri command name                                     |
+      | Rust, provider, or backend identity                    |
+      | fault injector, injection point, or occurrence         |
+      | errno, stack, raw cause, or arbitrary native detail    |
+      | persisted diagnostic or log                            |
+      | support bundle                                         |
+    And only already reviewed controlled Preview facts remain visible, only as non-authoritative context that grants no approval or Apply authority
+    And source selection, destination selection, ModId, Preview, and Create are disabled for this terminal session
+    And only Cancel is enabled, Escape has the same dismissal semantics, and no retry, cleanup, delete, overwrite, move, open, reveal, or recovery action is offered
+    And the modal focus trap remains active and Cancel remains keyboard accessible
+    And the controller discards every source, destination-parent, and operation grant and completes `revokeAll`
+    And focused production Rust evidence establishes that the final project location, exact operation-owned stage, and exact operation-owned journal are absent
+    And the source repository retains exactly its recorded topology, modes, bytes, and canary identities
+    And the destination parent retains exactly its recorded topology, modes, bytes, and entry identities
+    And no Foundry output, stage, journal, receipt file, ".ide" state, Git repository, remembered project, retained creation authority, or other residue exists
+    And the production path has invoked none of these mechanisms:
+      | mechanism                                            | invocation count |
+      | process, shell, or Git process                       | 0                |
+      | PowerShell, batch file, PE helper, or compiled C#    | 0                |
+      | network operation                                    | 0                |
+      | build, deployment, cooking, launch, or auto-open     | 0                |
+    When the person activates "Cancel"
+    Then the dialog closes and clears every controlled value, Preview, failure, digest, approval state, and authority
+    And the exact source repository, working-tree canaries, destination-parent baseline entries, and siblings remain unchanged
+    And no source, destination-parent, operation, creation, or later Apply grant remains
+    And focus returns to the "New XCOM 2 Project" application control
+    And dismissing the same terminal state with Escape has exactly the same clearing, preservation, grant-cleanup, close, and focus-return semantics
+    And this Story establishes no other `before-file-create` occurrence or directory, file, journal, sync, verification, parent, rename, commit, or post-commit fault point
+    And it establishes no destination conflict, broad pre-commit failure or cleanup matrix, or cleanup of tampered, mismatched, stale, interrupted, orphaned, or otherwise unverified state
+    And it establishes no interruption, restart, discovery, recovery, removal, "created-recovery-required", or in-flight Cancel behavior
+    And it establishes no native chooser, WebKit E2E, real IPC, packaged application, package, bundle, installer, Windows, build, deployment, cooking, launch, auto-open, extraction, licensing, publication, release, or distribution evidence
