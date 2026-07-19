@@ -964,6 +964,70 @@ describe("Xcom2ProjectFoundryDialog", () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
+  it("owns document Escape after a terminal transition moves focus to the body and cleans up", () => {
+    const onCancel = vi.fn();
+    const onBackgroundEscape = vi.fn();
+    window.addEventListener("keydown", onBackgroundEscape);
+
+    function Host({ open, terminal }: { readonly open: boolean; readonly terminal: boolean }) {
+      return (
+        <div>
+          <button type="button">Open Project Foundry</button>
+          {open ? (
+            <Xcom2ProjectFoundryDialog
+              {...baseProps({
+                onCancel,
+                creationState: terminal
+                  ? attentionCreationState(
+                      XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+                    )
+                  : { kind: "ready" },
+              })}
+            />
+          ) : null}
+        </div>
+      );
+    }
+
+    try {
+      const { rerender } = render(<Host open={false} terminal={false} />);
+      const opener = screen.getByRole("button", { name: "Open Project Foundry" });
+      opener.focus();
+
+      rerender(<Host open terminal={false} />);
+      const sourceSelector = screen.getByRole("button", { name: "Select EMPT repository" });
+      expect(document.activeElement).toBe(sourceSelector);
+
+      rerender(<Host open terminal />);
+      document.body.tabIndex = -1;
+      document.body.focus();
+      expect(document.activeElement).toBe(document.body);
+
+      const capturedEscape = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      });
+      document.body.dispatchEvent(capturedEscape);
+
+      expect(capturedEscape.defaultPrevented).toBe(true);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onBackgroundEscape).not.toHaveBeenCalled();
+
+      rerender(<Host open={false} terminal />);
+      expect(document.activeElement).toBe(opener);
+
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onBackgroundEscape).toHaveBeenCalledTimes(1);
+    } finally {
+      document.body.removeAttribute("tabindex");
+      window.removeEventListener("keydown", onBackgroundEscape);
+    }
+  });
+
   it("offers exactly one creation control without Apply, auto-open, or extra action wording", () => {
     render(
       <Xcom2ProjectFoundryDialog

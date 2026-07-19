@@ -407,6 +407,18 @@ export function Xcom2ProjectFoundryDialog({
   }, []);
 
   useEffect(() => {
+    const handleDocumentKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void onCancel();
+    };
+
+    document.addEventListener("keydown", handleDocumentKeyDown, true);
+    return () => document.removeEventListener("keydown", handleDocumentKeyDown, true);
+  }, [onCancel]);
+
+  useEffect(() => {
     const enteredReady =
       creationState.kind === "ready" && previousCreationKindRef.current !== "ready";
     const receivedNewReadyPlan = readyPlan !== null && previousReadyPlanRef.current !== readyPlan;
@@ -432,12 +444,6 @@ export function Xcom2ProjectFoundryDialog({
         aria-describedby={descriptionId}
         className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded border border-[var(--border-default)] bg-[var(--surface-overlay)] text-[var(--text-primary)] shadow-2xl"
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            cancel();
-            return;
-          }
           if (event.key !== "Tab") return;
 
           const focusable = Array.from(
