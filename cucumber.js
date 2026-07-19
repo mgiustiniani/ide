@@ -120,6 +120,12 @@ const xcom2ProjectFoundryDestinationConflictTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+const xcom2ProjectFoundryVerifiedCleanupTauriHarness = {
+  ...common,
+  tags: "@REQ-XCOM2-PROJECT-FOUNDRY-004",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const xcom2MachineSettingsMissingSteamNativeGui = {
   ...common,
   tags: "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001 and @desktop and @native-gui and not @web",
@@ -172,6 +178,7 @@ export {
   xcom2ProjectFoundryTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,
   xcom2ProjectFoundryDestinationConflictTauriHarness,
+  xcom2ProjectFoundryVerifiedCleanupTauriHarness,
   xcom2MachineSettingsMissingSteamNativeGui,
   xcom2ModuleActivationNativeGui,
   xcom2ModuleConfigurationActivationNativeGui,
