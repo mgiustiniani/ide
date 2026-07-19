@@ -16,6 +16,10 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
   Any pre-commit mismatch or refusal must leave the destination absent, consume the one-shot authority, and require a new preview; unverified state must be preserved, and a post-commit durability failure must report "created; recovery required" without rollback.
   The complete stale-source, stale-grant, stale-parent, stale-destination, failure, interruption, recovery, and removal matrices remain assigned to later Stories.
 
+  The third bounded Story from ADR 0010 traces to AT-X2-031.
+  Its future acceptance route combines deterministic desktop/Tauri-harness evidence for the exact terminal refusal experience with complementary focused production Rust evidence for destination-present enforcement and consumed native authority.
+  It covers only one regular-file destination created externally after the fixture Preview and before Apply; every other fault, recovery, native, packaging, and build case remains outside this Story.
+
   @REQ-XCOM2-PROJECT-FOUNDRY-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Preview and discard exact dynamically rendered EMPT v1.4 Foundry plans without mutation or execution
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and discard use cases use a separate deterministic Tauri-harness composition
@@ -476,3 +480,102 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
     And creation does not auto-open the project, switch or alter the workspace, initialize Git, write IDE configuration, or retain any grant or later Apply authority
     And creation performs no build, deployment, cooking, launch, SDK or game access or validation, package, bundle, installer, release, publication, or distribution
     And it provides no native chooser, native GUI or E2E, extracted-module, licensing-clearance, Windows implementation, support, or parity claim
+
+  @REQ-XCOM2-PROJECT-FOUNDRY-003 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  Scenario: Refuse a destination created after Foundry Preview without changing it
+    Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition
+    And the deterministic backend maps "/scenario/foundry-output" to a scenario-owned temporary destination parent
+    And complementary focused production Rust filesystem tests are the separate authority for consuming the native operation grant, refusing a destination created after Preview but before transaction writes, preserving filesystem state, and refusing exact request reuse
+    And the selected source repository is "/scenario/empt-v1_4" under source grant "source-grant-foundry-preview-001"
+    And it resolves exact commit "d968be3c32b250376723563a743a120770ec5c95" and exact tree "cc8823fa99c0d292c4fe48a8b9463ff790176371" from committed local objects only
+    And its working tree has one modified tracked canary and one untracked canary that disagree with the committed tree
+    And the source working tree's exact topology, modes, bytes, and canary identities are recorded before the dialog opens
+    And the selected destination parent is "/scenario/foundry-output" under destination-parent grant "destination-parent-grant-foundry-preview-001"
+    And the temporary destination parent's exact topology, modes, bytes, and entry identities are recorded before the dialog opens
+    And "/scenario/foundry-output/FoundryPreviewFixture" is absent
+    When the person opens "New XCOM 2 Project", accepts the supplied selections, enters exact ModId "FoundryPreviewFixture", and activates "Preview"
+    Then the shared Rust renderer supplies the complete fixture plan and mints operation grant "operation-grant-foundry-preview-001" only after confirming the final project location is absent
+    And TypeScript shows the ready fixture Preview for exact plan digest "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6"
+    And the Preview binds exact project GUID "{30DF67AA-2360-5109-80CF-02CB38BED26F}", the supplied grants, the exact source commit and tree, 12 directories, 27 regular files, and absent final project location "/scenario/foundry-output/FoundryPreviewFixture"
+    And exactly one accessible "Create project" control can approve that still-live Preview
+    When the scenario owner externally creates one item at "/scenario/foundry-output/FoundryPreviewFixture" before the person activates "Create project"
+    Then that conflict has exactly these recorded properties:
+      | property                   | exact value                                                      |
+      | type                       | regular file, not a symlink                                       |
+      | mode                       | 0640                                                              |
+      | byte length                | 24                                                                |
+      | byte sequence as lowercase hex | 7363656e6172696f2d6f776e65722d636f6e666c6963740a             |
+      | SHA-256                    | 492ba4c27678918c09572ce6be8cf2fec44f70f5033d29fc1b7f4230d5e0a1fb |
+      | filesystem object identity | recorded immediately after the external creation                  |
+    And the destination parent's exact topology, modes, bytes, and entry identities are recorded after that external creation
+    When the person activates "Create project"
+    Then the frontend synchronously consumes creation authority before it calls Apply
+    And "Create project" is disabled before the Apply call starts and remains disabled for this Preview
+    And the deterministic backend receives exactly one Apply call with only this production request:
+      | field                                      | exact value                                                        |
+      | schemaVersion                              | 1                                                                  |
+      | sourceGrant.kind                           | source-repository                                                  |
+      | sourceGrant.repository                     | /scenario/empt-v1_4                                                |
+      | sourceGrant.identity                       | source-grant-foundry-preview-001                                   |
+      | destinationParentGrant.kind                | destination-parent                                                 |
+      | destinationParentGrant.parent              | /scenario/foundry-output                                           |
+      | destinationParentGrant.identity            | destination-parent-grant-foundry-preview-001                       |
+      | operationGrant.kind                        | preview-operation                                                  |
+      | operationGrant.derivedDestination          | /scenario/foundry-output/FoundryPreviewFixture                     |
+      | operationGrant.identity                    | operation-grant-foundry-preview-001                                |
+      | modId                                      | FoundryPreviewFixture                                              |
+      | approvedPlanDigest                         | 368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6 |
+    And the request contains no source-object claim, destination-state claim, output manifest, rendered byte, receipt, or success assertion
+    And Rust consumes operation grant "operation-grant-foundry-preview-001" before validating the destination
+    And Apply returns exactly this production-shaped refusal:
+      | field  | exact value         |
+      | result | refused             |
+      | phase  | pre-commit          |
+      | reason | destination-present |
+    And repeated Create activation invokes no second Apply call
+    And complementary production Rust evidence repeats the exact native request once and receives reason "apply-authority-consumed" as `ApplyAuthorityConsumed`
+    And the repeated native refusal leaves the already preserved state unchanged and leaves no stage or journal residue
+    Then exactly one atomic accessible alert with `role="alert"` appears without a nested alert or color-only meaning
+    And its title is structurally identified
+    And that same alert contains exactly these four fixed fields:
+      | field       | exact text                                                                                                                                                      |
+      | Title       | Project location conflict                                                                                                                                       |
+      | Summary     | The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.            |
+      | Remediation | Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.                         |
+      | Support code | foundry-apply-destination-present                                                                                                                               |
+    And the refusal introduces none of these disclosures:
+      | prohibited disclosure                                  |
+      | conflict bytes, mode, type, identity, or other metadata |
+      | harness path or temporary root                         |
+      | destination listing or sibling information             |
+      | stage or journal name or path                          |
+      | Tauri command name                                     |
+      | Rust, provider, or backend identity                    |
+      | errno, stack, raw cause, or arbitrary native detail    |
+      | persisted diagnostic or log                            |
+      | support bundle                                         |
+    And only already reviewed controlled Preview facts remain visible, only as non-authoritative context that grants no approval or Apply authority
+    And source selection, destination selection, ModId, Preview, and Create are disabled for this terminal session
+    And only Cancel is enabled, Escape has the same dismissal semantics, and no retry, overwrite, delete, move, open, reveal, or recovery action is offered
+    And the modal focus trap remains active and Cancel remains keyboard accessible
+    And the controller discards every source, destination-parent, and operation grant and completes `revokeAll`
+    And the conflict retains exactly its recorded regular-file type, non-symlink status, mode, byte sequence, hash, and filesystem object identity
+    And the source repository retains exactly its recorded topology, modes, bytes, and canary identities
+    And the destination parent retains exactly its post-conflict recorded topology, modes, bytes, and entry identities
+    And compared with the pre-Preview destination-parent recording, the only change is the scenario owner's exact conflict file
+    And Foundry has performed zero destination, source, sibling, stage, journal, receipt, IDE-state, Git-repository, remembered-project, or other filesystem writes
+    And no Foundry output, private stage, journal, receipt file, ".ide" state, Git repository, remembered project, retained creation authority, or other residue exists
+    And the production path has invoked none of these mechanisms:
+      | mechanism                                            | invocation count |
+      | process, shell, or Git process                       | 0                |
+      | PowerShell, batch file, PE helper, or compiled C#    | 0                |
+      | network operation                                    | 0                |
+      | build, deployment, cooking, launch, or auto-open     | 0                |
+    When the person activates "Cancel"
+    Then the dialog closes and clears every controlled value, Preview, refusal, digest, approval state, and authority
+    And the exact conflict, source repository, working-tree canaries, destination-parent baseline entries, and siblings remain unchanged
+    And no source, destination-parent, operation, creation, or later Apply grant remains
+    And focus returns to the "New XCOM 2 Project" application control
+    And dismissing the same terminal state with Escape has exactly the same clearing, preservation, grant-cleanup, close, and focus-return semantics
+    And this Story establishes no other stale source, grant, parent, digest, ModId, destination-type, stage, journal, commit-race, failure, cleanup-residue, interruption, restart, discovery, recovery, removal, or "created-recovery-required" behavior
+    And it establishes no in-flight Cancel, native chooser, WebKit E2E, real IPC, packaged application, Windows, publication, licensing, build, deployment, cooking, launch, or auto-open evidence
