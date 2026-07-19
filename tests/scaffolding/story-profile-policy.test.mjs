@@ -417,7 +417,7 @@ test("focused XCOM Project Foundry destination-conflict profile selects only its
   assert.equal(selected[0].tags.has("@native-gui"), false);
   assert.match(
     dryRunSummary("xcom2ProjectFoundryDestinationConflictTauriHarness"),
-    /1 scenario \(1 undefined\)[\s\S]*53 steps \(8 skipped, 45 undefined\)/,
+    /1 scenario \(1 skipped\)[\s\S]*53 steps \(53 skipped\)/,
   );
 });
 
