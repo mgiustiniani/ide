@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as foundryContracts from "../../packages/contracts/src/domain/xcom2-project-foundry";
 import type {
+  Xcom2ProjectFoundryApplyCleanupStatus,
   Xcom2ProjectFoundryApplyCurrentSelection,
   Xcom2ProjectFoundryApplyEvent,
   Xcom2ProjectFoundryApplyFailurePhase,
@@ -150,6 +151,9 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
     expectTypeOf<Xcom2ProjectFoundryApplyFailurePhase>().toEqualTypeOf<
       "pre-commit" | "post-commit"
     >();
+    expectTypeOf<Xcom2ProjectFoundryApplyCleanupStatus>().toEqualTypeOf<
+      "verified-complete" | "not-verified"
+    >();
     expectTypeOf<Extract<Xcom2ProjectFoundryApplyResult, { result: "refused" }>>().toEqualTypeOf<{
       readonly result: "refused";
       readonly phase: "pre-commit";
@@ -159,6 +163,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-002 ADR0010 pure exact-preview Apply policy
       readonly result: "failed";
       readonly phase: "pre-commit";
       readonly reason: string;
+      readonly cleanupStatus: Xcom2ProjectFoundryApplyCleanupStatus;
     }>();
     expectTypeOf<
       Extract<Xcom2ProjectFoundryApplyResult, { result: "created-recovery-required" }>

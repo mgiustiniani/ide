@@ -59,3 +59,14 @@ export function mutableFoundryCreatedReceipt() {
     committedFiles: 27,
   };
 }
+
+export function mutableFoundryStageWriteFailure(
+  cleanupStatus: "verified-complete" | "not-verified" = "verified-complete",
+) {
+  return {
+    result: "failed" as const,
+    phase: "pre-commit" as const,
+    reason: "stage-write-failed",
+    cleanupStatus,
+  };
+}

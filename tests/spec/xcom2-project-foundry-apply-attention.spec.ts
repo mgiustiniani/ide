@@ -61,7 +61,10 @@ const strictOtherAttentionResults = [
     "parent-sync-failed",
     "atomic-commit-failed",
     "cleanup-failed",
-  ].map((reason) => ({ result: "failed", phase: "pre-commit", reason }) as const),
+  ].map(
+    (reason) =>
+      ({ result: "failed", phase: "pre-commit", reason, cleanupStatus: "not-verified" }) as const,
+  ),
   ...["post-commit-parent-sync-failed", "post-commit-journal-failed"].map(
     (reason) =>
       ({
@@ -208,7 +211,12 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-003 ADR0010 Apply attention policy", () => 
       rawCause: "raw-cause-canary",
     },
     { result: "refused", phase: "post-commit", reason: "destination-present" },
-    { result: "failed", phase: "pre-commit", reason: "destination-present" },
+    {
+      result: "failed",
+      phase: "pre-commit",
+      reason: "destination-present",
+      cleanupStatus: "not-verified",
+    },
     {
       result: "created-recovery-required",
       phase: "post-commit",
