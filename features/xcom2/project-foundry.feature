@@ -356,7 +356,7 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
     And no Foundry stage, journal, output, filesystem write, remembered path, retained plan, digest, approval state, Apply authority, or project state remains
     And every supplied source and destination-parent grant and every renderer-minted operation grant is revoked with no authority residue
 
-  @REQ-XCOM2-PROJECT-FOUNDRY-002 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-PROJECT-FOUNDRY-002 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Apply one still-live exact Foundry preview once
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition
     And the deterministic backend maps "/scenario/foundry-output" to a scenario-owned temporary destination parent
