@@ -1,6 +1,7 @@
 import {
   XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
   type Xcom2ProjectFoundryApplyAttentionPresentation,
   type Xcom2ProjectFoundryApplyCurrentSelection,
@@ -30,6 +31,7 @@ export {
 } from "./rendered-plan-custody";
 export {
   XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
 };
 
@@ -192,10 +194,61 @@ function isExactDestinationPresentRefusal(value: unknown): boolean {
   }
 }
 
-/** Collapse untrusted Apply results to one of two immutable, non-interpolated presentations. */
+function isExactVerifiedStageWriteCleanupFailure(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.length !== 4 ||
+      !keys.includes("result") ||
+      !keys.includes("phase") ||
+      !keys.includes("reason") ||
+      !keys.includes("cleanupStatus")
+    ) {
+      return false;
+    }
+
+    const result = Object.getOwnPropertyDescriptor(value, "result");
+    const phase = Object.getOwnPropertyDescriptor(value, "phase");
+    const reason = Object.getOwnPropertyDescriptor(value, "reason");
+    const cleanupStatus = Object.getOwnPropertyDescriptor(value, "cleanupStatus");
+    return (
+      result !== undefined &&
+      "value" in result &&
+      result.enumerable === true &&
+      result.value === "failed" &&
+      phase !== undefined &&
+      "value" in phase &&
+      phase.enumerable === true &&
+      phase.value === "pre-commit" &&
+      reason !== undefined &&
+      "value" in reason &&
+      reason.enumerable === true &&
+      reason.value === "stage-write-failed" &&
+      cleanupStatus !== undefined &&
+      "value" in cleanupStatus &&
+      cleanupStatus.enumerable === true &&
+      cleanupStatus.value === "verified-complete" &&
+      Reflect.get(value, "result") === result.value &&
+      Reflect.get(value, "phase") === phase.value &&
+      Reflect.get(value, "reason") === reason.value &&
+      Reflect.get(value, "cleanupStatus") === cleanupStatus.value
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Collapse untrusted Apply results to fixed immutable, non-interpolated presentations. */
 export function mapXcom2ProjectFoundryApplyAttentionPresentation(
   result: unknown,
 ): Readonly<Xcom2ProjectFoundryApplyAttentionPresentation> {
+  if (isExactVerifiedStageWriteCleanupFailure(result)) {
+    return XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION;
+  }
   return isExactDestinationPresentRefusal(result)
     ? XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION
     : XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION;
@@ -444,14 +497,20 @@ function reduceApplyCompletion(
   if (
     record.result === "failed" &&
     record.phase === "pre-commit" &&
-    typeof record.reason === "string"
+    typeof record.reason === "string" &&
+    (record.cleanupStatus === "verified-complete" || record.cleanupStatus === "not-verified")
   ) {
     return deepFreeze({
       kind: "transitioned",
       state: {
         status: "failed",
         authority: "consumed",
-        failure: { result: "failed", phase: "pre-commit", reason: record.reason },
+        failure: {
+          result: "failed",
+          phase: "pre-commit",
+          reason: record.reason,
+          cleanupStatus: record.cleanupStatus,
+        },
       },
     });
   }
