@@ -1,7 +1,9 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
   XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+  type Xcom2ProjectFoundryApplyRequest,
   type Xcom2ProjectFoundryDestinationParentSelectionGrant,
   type Xcom2ProjectFoundryOperationGrant,
   type Xcom2ProjectFoundryRenderRequest,
@@ -13,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TauriAdapterError } from "./errors";
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
   XCOM2_PROJECT_FOUNDRY_COMMANDS,
   XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS,
   TauriProjectFoundryAdapter,
@@ -35,6 +38,39 @@ const commands = XCOM2_PROJECT_FOUNDRY_COMMANDS;
 const rendererCommands = XCOM2_PROJECT_FOUNDRY_RENDERER_COMMANDS;
 const dialogCommand = "plugin:dialog|open";
 const modId = "FoundryPreviewFixture";
+const approvedPlanDigest = "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6";
+const applyRefusalReasons = [
+  "schema-version-invalid",
+  "source-grant-mismatched",
+  "destination-parent-grant-mismatched",
+  "operation-grant-mismatched",
+  "mod-id-invalid",
+  "mod-id-mismatched",
+  "approved-plan-digest-invalid",
+  "approved-plan-digest-mismatched",
+  "apply-authority-consumed",
+  "source-stale",
+  "destination-parent-stale",
+  "destination-present",
+  "rendered-plan-invalid",
+  "stage-conflict",
+  "journal-conflict",
+] as const;
+const applyPreCommitFailureReasons = [
+  "journal-create-failed",
+  "journal-sync-failed",
+  "stage-create-failed",
+  "stage-write-failed",
+  "stage-verify-failed",
+  "stage-sync-failed",
+  "parent-sync-failed",
+  "atomic-commit-failed",
+  "cleanup-failed",
+] as const;
+const applyPostCommitFailureReasons = [
+  "post-commit-parent-sync-failed",
+  "post-commit-journal-failed",
+] as const;
 
 function sourceGrant(
   overrides: Record<string, unknown> = {},
@@ -83,6 +119,31 @@ function renderedResult(
   grant: Xcom2ProjectFoundryOperationGrant = operationGrant(),
 ): Record<string, unknown> {
   return { kind: "rendered", operationGrant: grant, planBody };
+}
+
+function applyRequest(overrides: Record<string, unknown> = {}): Xcom2ProjectFoundryApplyRequest {
+  return {
+    schemaVersion: XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
+    sourceGrant: sourceGrant(),
+    destinationParentGrant: destinationGrant(),
+    operationGrant: operationGrant(),
+    modId,
+    approvedPlanDigest,
+    ...overrides,
+  } as Xcom2ProjectFoundryApplyRequest;
+}
+
+function createdReceipt(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    result: "created",
+    planDigest: approvedPlanDigest,
+    finalProjectLocation: `/destination/parent/${modId}`,
+    sourceCommit: XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
+    sourceTree: XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
+    committedDirectories: 12,
+    committedFiles: 27,
+    ...overrides,
+  };
 }
 
 function nestedJson(depth: number): unknown {
@@ -1793,6 +1854,641 @@ describe("Project Foundry operation revocation and corrected factory composition
         { request: { selectedRoot: "/destination/parent" } },
       ],
       [rendererCommands.renderPreview, { request: renderRequest() }],
+    ]);
+  });
+});
+
+describe("Project Foundry Apply exact command, request custody, and pass-through", () => {
+  it("publishes and invokes the exact Apply command with only a detached immutable request", async () => {
+    const caller = applyRequest();
+    invokeMock.mockImplementationOnce((command, args) => {
+      expect(command).toBe("apply_xcom2_project_foundry");
+      expect(command).toBe(XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND);
+      expect(Reflect.ownKeys(args as object)).toEqual(["request"]);
+      const immutable = (args as { request: Xcom2ProjectFoundryApplyRequest }).request;
+      expect(Reflect.ownKeys(immutable)).toEqual([
+        "schemaVersion",
+        "sourceGrant",
+        "destinationParentGrant",
+        "operationGrant",
+        "modId",
+        "approvedPlanDigest",
+      ]);
+      expect(immutable).toEqual(applyRequest());
+      expect(immutable).not.toBe(caller);
+      expect(immutable.sourceGrant).not.toBe(caller.sourceGrant);
+      expect(immutable.destinationParentGrant).not.toBe(caller.destinationParentGrant);
+      expect(immutable.operationGrant).not.toBe(caller.operationGrant);
+      expect(Object.isFrozen(args)).toBe(true);
+      expect(Object.isFrozen(immutable)).toBe(true);
+      expect(Object.isFrozen(immutable.sourceGrant)).toBe(true);
+      expect(Object.isFrozen(immutable.destinationParentGrant)).toBe(true);
+      expect(Object.isFrozen(immutable.operationGrant)).toBe(true);
+      expect(Reflect.set(immutable, "modId", "ProviderMutated")).toBe(false);
+      expect(Reflect.set(immutable.operationGrant, "identity", "provider-mutated")).toBe(false);
+      return Promise.resolve(createdReceipt());
+    });
+
+    await expect(new TauriXcom2ProjectFoundryRendererAdapter().apply(caller)).resolves.toEqual(
+      createdReceipt(),
+    );
+
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND, {
+      request: applyRequest(),
+    });
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it("snapshots caller data before pending native work and ignores later caller mutation", async () => {
+    const native = deferred<unknown>();
+    const caller = applyRequest();
+    let captured: Xcom2ProjectFoundryApplyRequest | undefined;
+    invokeMock.mockImplementationOnce((_command, args) => {
+      captured = (args as { request: Xcom2ProjectFoundryApplyRequest }).request;
+      return native.promise;
+    });
+
+    const pending = new TauriXcom2ProjectFoundryRendererAdapter().apply(caller);
+    (caller.sourceGrant as unknown as Record<string, unknown>).repository = "/caller/mutated";
+    (caller.destinationParentGrant as unknown as Record<string, unknown>).parent =
+      "/caller/mutated";
+    (caller.operationGrant as unknown as Record<string, unknown>).derivedDestination =
+      "/caller/mutated/Other";
+    (caller as unknown as Record<string, unknown>).approvedPlanDigest = "f".repeat(64);
+
+    expect(captured).toEqual(applyRequest());
+    native.resolve(createdReceipt());
+    await expect(pending).resolves.toEqual(createdReceipt());
+  });
+
+  it("passes concurrent one-shot attempts through independently without cross-binding results", async () => {
+    const firstNative = deferred<unknown>();
+    const secondNative = deferred<unknown>();
+    invokeMock
+      .mockImplementationOnce(() => firstNative.promise)
+      .mockImplementationOnce(() => secondNative.promise);
+    const adapter = new TauriXcom2ProjectFoundryRendererAdapter();
+
+    const first = adapter.apply(applyRequest());
+    const second = adapter.apply(applyRequest());
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+    secondNative.resolve({
+      result: "refused",
+      phase: "pre-commit",
+      reason: "apply-authority-consumed",
+    });
+    await expect(second).resolves.toEqual({
+      result: "refused",
+      phase: "pre-commit",
+      reason: "apply-authority-consumed",
+    });
+    firstNative.resolve(createdReceipt());
+    await expect(first).resolves.toEqual(createdReceipt());
+
+    expect(invokeMock.mock.calls).toEqual([
+      [XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND, { request: applyRequest() }],
+      [XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND, { request: applyRequest() }],
+    ]);
+  });
+});
+
+describe("Project Foundry Apply strict request DTO validation", () => {
+  it.each([
+    ["null", null],
+    ["array", []],
+    ["primitive", "apply"],
+    ["class instance", Object.assign(new (class ApplyRequest {})(), applyRequest())],
+    [
+      "missing schemaVersion",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.schemaVersion;
+        return value;
+      })(),
+    ],
+    [
+      "missing sourceGrant",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.sourceGrant;
+        return value;
+      })(),
+    ],
+    [
+      "missing destinationParentGrant",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.destinationParentGrant;
+        return value;
+      })(),
+    ],
+    [
+      "missing operationGrant",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.operationGrant;
+        return value;
+      })(),
+    ],
+    [
+      "missing modId",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.modId;
+        return value;
+      })(),
+    ],
+    [
+      "missing approvedPlanDigest",
+      (() => {
+        const value = applyRequest() as unknown as Record<string, unknown>;
+        delete value.approvedPlanDigest;
+        return value;
+      })(),
+    ],
+    ["extra source-object claim", applyRequest({ sourceObject: evidence() })],
+    ["extra destination-state claim", applyRequest({ destinationState: "absent" })],
+    ["extra output manifest", applyRequest({ manifest: [] })],
+    ["extra rendered bytes", applyRequest({ bytes: "provider-owned" })],
+    ["extra receipt", applyRequest({ receipt: createdReceipt() })],
+    ["extra success assertion", applyRequest({ success: true })],
+  ])("rejects an inexact Apply request before invoke: %s", async (_label, request) => {
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(
+        request as Xcom2ProjectFoundryApplyRequest,
+      ),
+      XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      "request",
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["wrong schema version", applyRequest({ schemaVersion: 2 })],
+    ["string schema version", applyRequest({ schemaVersion: "1" })],
+    ["malformed source grant", applyRequest({ sourceGrant: sourceGrant({ kind: "other" }) })],
+    [
+      "source path control",
+      applyRequest({ sourceGrant: sourceGrant({ repository: "/source/secret\u0000" }) }),
+    ],
+    [
+      "source path surrogate",
+      applyRequest({ sourceGrant: sourceGrant({ repository: "/source/\ud800" }) }),
+    ],
+    [
+      "source path oversized",
+      applyRequest({ sourceGrant: sourceGrant({ repository: `/${"s".repeat(4_096)}` }) }),
+    ],
+    [
+      "malformed destination grant",
+      applyRequest({ destinationParentGrant: destinationGrant({ parent: "relative" }) }),
+    ],
+    [
+      "malformed operation grant",
+      applyRequest({ operationGrant: operationGrant({ kind: "other" }) }),
+    ],
+    [
+      "operation path control",
+      applyRequest({
+        operationGrant: operationGrant({ derivedDestination: `/destination/parent/${modId}\n` }),
+      }),
+    ],
+    [
+      "operation path surrogate",
+      applyRequest({
+        operationGrant: operationGrant({ derivedDestination: "/destination/parent/Foundry\udc00" }),
+      }),
+    ],
+    [
+      "operation path oversized",
+      applyRequest({
+        operationGrant: operationGrant({ derivedDestination: `/${"d".repeat(4_096)}` }),
+      }),
+    ],
+    ["invalid ModId", applyRequest({ modId: "1Invalid" })],
+    ["ModId control", applyRequest({ modId: "Foundry\n" })],
+    ["ModId surrogate", applyRequest({ modId: "Foundry\ud800" })],
+    ["ModId oversized", applyRequest({ modId: `A${"b".repeat(48)}` })],
+    ["digest is not lowercase SHA-256", applyRequest({ approvedPlanDigest: "F".repeat(64) })],
+    ["digest malformed", applyRequest({ approvedPlanDigest: "g".repeat(64) })],
+    ["digest control", applyRequest({ approvedPlanDigest: `${"a".repeat(63)}\n` })],
+    ["digest surrogate", applyRequest({ approvedPlanDigest: `${"a".repeat(63)}\ud800` })],
+    ["digest oversized", applyRequest({ approvedPlanDigest: "a".repeat(65) })],
+    [
+      "derived destination does not bind parent and ModId",
+      applyRequest({
+        operationGrant: operationGrant({ derivedDestination: "/destination/parent/Other" }),
+      }),
+    ],
+    [
+      "source and destination identities collide",
+      applyRequest({ destinationParentGrant: destinationGrant({ identity: "source-grant:1" }) }),
+    ],
+    [
+      "source and operation identities collide",
+      applyRequest({ operationGrant: operationGrant({ identity: "source-grant:1" }) }),
+    ],
+    [
+      "destination and operation identities collide",
+      applyRequest({ operationGrant: operationGrant({ identity: "destination-grant:1" }) }),
+    ],
+  ])("rejects malformed Apply field or binding: %s", async (_label, request) => {
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(request),
+      XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      "request",
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects hidden, symbol, accessor, and proxy request data without inspection leakage", async () => {
+    const hidden = hiddenExtra(applyRequest(), "providerPath");
+    const symbol = applyRequest() as unknown as Record<PropertyKey, unknown>;
+    Object.defineProperty(symbol, Symbol("provider-secret"), { value: "SECRET" });
+    const getter = vi.fn(() => "SECRET-ACCESSOR:/private/provider");
+    const accessor = applyRequest() as unknown as Record<string, unknown>;
+    Object.defineProperty(accessor, "approvedPlanDigest", { enumerable: true, get: getter });
+    const secret = new Error("SECRET-PROXY:/private/provider");
+    const proxy = new Proxy(applyRequest(), {
+      getPrototypeOf: () => {
+        throw secret;
+      },
+    });
+
+    for (const request of [hidden, symbol, accessor, proxy]) {
+      const error = await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().apply(
+          request as Xcom2ProjectFoundryApplyRequest,
+        ),
+        XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+        "request",
+      );
+      expect(error.message).not.toContain("SECRET");
+      expect(error.message).not.toContain("/private/provider");
+      expect(error.cause).toBeUndefined();
+      expect(invokeMock).not.toHaveBeenCalled();
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project Foundry Apply exact result vocabularies and immutable receipts", () => {
+  it("accepts only the exact created receipt and returns a detached frozen snapshot", async () => {
+    const provider = createdReceipt();
+    invokeMock.mockResolvedValueOnce(provider);
+
+    const result = await new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest());
+    provider.planDigest = "f".repeat(64);
+    provider.finalProjectLocation = "/provider/mutated";
+    provider.committedFiles = 0;
+
+    expect(result).toEqual(createdReceipt());
+    expect(result).not.toBe(provider);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Reflect.ownKeys(result)).toEqual([
+      "result",
+      "planDigest",
+      "finalProjectLocation",
+      "sourceCommit",
+      "sourceTree",
+      "committedDirectories",
+      "committedFiles",
+    ]);
+    expect(Reflect.set(result, "committedFiles", 0)).toBe(false);
+  });
+
+  it.each(applyRefusalReasons)("accepts exact pre-commit refusal reason %s", async (reason) => {
+    const provider = { result: "refused", phase: "pre-commit", reason };
+    invokeMock.mockResolvedValueOnce(provider);
+
+    const result = await new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest());
+
+    expect(result).toEqual(provider);
+    expect(result).not.toBe(provider);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Reflect.ownKeys(result)).toEqual(["result", "phase", "reason"]);
+  });
+
+  it.each(applyPreCommitFailureReasons)(
+    "accepts exact pre-commit failure reason %s",
+    async (reason) => {
+      const provider = { result: "failed", phase: "pre-commit", reason };
+      invokeMock.mockResolvedValueOnce(provider);
+
+      const result = await new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest());
+
+      expect(result).toEqual(provider);
+      expect(result).not.toBe(provider);
+      expect(Object.isFrozen(result)).toBe(true);
+    },
+  );
+
+  it.each(applyPostCommitFailureReasons)(
+    "accepts exact post-commit recovery reason %s",
+    async (reason) => {
+      const provider = {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: approvedPlanDigest,
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason,
+      };
+      invokeMock.mockResolvedValueOnce(provider);
+
+      const result = await new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest());
+
+      expect(result).toEqual(provider);
+      expect(result).not.toBe(provider);
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Reflect.ownKeys(result)).toEqual([
+        "result",
+        "phase",
+        "planDigest",
+        "finalProjectLocation",
+        "reason",
+      ]);
+    },
+  );
+});
+
+describe("Project Foundry Apply rejects malformed native results", () => {
+  it.each([
+    ["null", null],
+    ["array", []],
+    ["primitive", "created"],
+    ["missing result", { planDigest: approvedPlanDigest }],
+    ["unsupported result", { result: "success" }],
+    ["class instance", Object.assign(new (class ApplyResult {})(), createdReceipt())],
+    [
+      "created missing digest",
+      (() => {
+        const value = createdReceipt();
+        delete value.planDigest;
+        return value;
+      })(),
+    ],
+    [
+      "created missing path",
+      (() => {
+        const value = createdReceipt();
+        delete value.finalProjectLocation;
+        return value;
+      })(),
+    ],
+    [
+      "created missing source commit",
+      (() => {
+        const value = createdReceipt();
+        delete value.sourceCommit;
+        return value;
+      })(),
+    ],
+    [
+      "created missing source tree",
+      (() => {
+        const value = createdReceipt();
+        delete value.sourceTree;
+        return value;
+      })(),
+    ],
+    [
+      "created missing directory count",
+      (() => {
+        const value = createdReceipt();
+        delete value.committedDirectories;
+        return value;
+      })(),
+    ],
+    [
+      "created missing file count",
+      (() => {
+        const value = createdReceipt();
+        delete value.committedFiles;
+        return value;
+      })(),
+    ],
+    ["created extra mode", createdReceipt({ mode: "0755" })],
+    ["created extra hash", createdReceipt({ hash: approvedPlanDigest })],
+    ["created extra path", createdReceipt({ providerPath: "/private/provider" })],
+    ["created wrong plan digest", createdReceipt({ planDigest: "f".repeat(64) })],
+    [
+      "created uppercase plan digest",
+      createdReceipt({ planDigest: approvedPlanDigest.toUpperCase() }),
+    ],
+    [
+      "created wrong final path",
+      createdReceipt({ finalProjectLocation: "/destination/parent/Other" }),
+    ],
+    [
+      "created relative final path",
+      createdReceipt({ finalProjectLocation: "destination/relative" }),
+    ],
+    [
+      "created path control",
+      createdReceipt({ finalProjectLocation: `/destination/parent/${modId}\n` }),
+    ],
+    [
+      "created path surrogate",
+      createdReceipt({ finalProjectLocation: "/destination/parent/Foundry\ud800" }),
+    ],
+    ["created path oversized", createdReceipt({ finalProjectLocation: `/${"p".repeat(4_096)}` })],
+    ["created wrong source commit", createdReceipt({ sourceCommit: "0".repeat(40) })],
+    ["created malformed source commit", createdReceipt({ sourceCommit: 1 })],
+    ["created wrong source tree", createdReceipt({ sourceTree: "f".repeat(40) })],
+    ["created malformed source tree", createdReceipt({ sourceTree: null })],
+    ["created wrong directory count", createdReceipt({ committedDirectories: 11 })],
+    ["created fractional directory count", createdReceipt({ committedDirectories: 12.5 })],
+    ["created string directory count", createdReceipt({ committedDirectories: "12" })],
+    ["created wrong file count", createdReceipt({ committedFiles: 26 })],
+    ["created fractional file count", createdReceipt({ committedFiles: 27.5 })],
+    ["created string file count", createdReceipt({ committedFiles: "27" })],
+    [
+      "refusal extra field",
+      { result: "refused", phase: "pre-commit", reason: "source-stale", detail: "SECRET" },
+    ],
+    ["refusal missing phase", { result: "refused", reason: "source-stale" }],
+    ["refusal wrong phase", { result: "refused", phase: "post-commit", reason: "source-stale" }],
+    [
+      "refusal unknown reason",
+      { result: "refused", phase: "pre-commit", reason: "provider-secret" },
+    ],
+    [
+      "refusal failure reason",
+      { result: "refused", phase: "pre-commit", reason: "stage-write-failed" },
+    ],
+    ["failure missing reason", { result: "failed", phase: "pre-commit" }],
+    [
+      "failure wrong phase",
+      { result: "failed", phase: "post-commit", reason: "stage-write-failed" },
+    ],
+    ["failure refusal reason", { result: "failed", phase: "pre-commit", reason: "source-stale" }],
+    [
+      "failure post-commit-only reason",
+      { result: "failed", phase: "pre-commit", reason: "post-commit-journal-failed" },
+    ],
+    [
+      "recovery missing digest",
+      {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason: "post-commit-journal-failed",
+      },
+    ],
+    [
+      "recovery wrong phase",
+      {
+        result: "created-recovery-required",
+        phase: "pre-commit",
+        planDigest: approvedPlanDigest,
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason: "post-commit-journal-failed",
+      },
+    ],
+    [
+      "recovery wrong digest",
+      {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: "f".repeat(64),
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason: "post-commit-journal-failed",
+      },
+    ],
+    [
+      "recovery wrong path",
+      {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: approvedPlanDigest,
+        finalProjectLocation: "/destination/parent/Other",
+        reason: "post-commit-journal-failed",
+      },
+    ],
+    [
+      "recovery pre-commit-only reason",
+      {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: approvedPlanDigest,
+        finalProjectLocation: `/destination/parent/${modId}`,
+        reason: "stage-write-failed",
+      },
+    ],
+    ["reason control", { result: "failed", phase: "pre-commit", reason: "stage-write-failed\n" }],
+    [
+      "reason surrogate",
+      { result: "failed", phase: "pre-commit", reason: "stage-write-failed\ud800" },
+    ],
+    ["reason oversized", { result: "failed", phase: "pre-commit", reason: "x".repeat(1_049_000) }],
+  ])("rejects malformed Apply result: %s", async (_label, response) => {
+    invokeMock.mockResolvedValueOnce(response);
+    await expectProtocolRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
+      XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      "response",
+    );
+  });
+
+  it("rejects response accessors and proxies without executing or leaking provider data", async () => {
+    const getter = vi.fn(() => "SECRET-ACCESSOR:/private/provider");
+    const accessor = createdReceipt();
+    Object.defineProperty(accessor, "finalProjectLocation", { enumerable: true, get: getter });
+    const hidden = hiddenExtra(createdReceipt(), "providerPath");
+    const symbol = createdReceipt();
+    Object.defineProperty(symbol, Symbol("provider-secret"), { value: "SECRET" });
+    const secret = new Error("SECRET-PROXY:/private/provider");
+    const proxy = new Proxy(createdReceipt(), {
+      getPrototypeOf: () => {
+        throw secret;
+      },
+    });
+
+    for (const response of [accessor, hidden, symbol, proxy]) {
+      invokeMock.mockResolvedValueOnce(response);
+      const error = await expectProtocolRejection(
+        new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
+        XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+        "response",
+      );
+      expect(error.message).not.toContain("SECRET");
+      expect(error.message).not.toContain("/private/provider");
+      expect(error.cause).toBeUndefined();
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project Foundry Apply sanitized invoke rejection", () => {
+  it.each([
+    ["raw path string", "/private/provider/SECRET-PATH"],
+    ["raw Error", new Error("SECRET-ERROR:/private/provider/SECRET-PATH")],
+    ["provider object", { message: "SECRET", path: "/private/provider/SECRET-PATH" }],
+    ["symbol", Symbol("SECRET")],
+  ])("sanitizes rejected Apply invocation from %s", async (_label, failure) => {
+    invokeMock.mockRejectedValueOnce(failure);
+
+    const error = await captureRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
+    );
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND,
+      message: `[tauri:${XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND}] Native Project Foundry command failed`,
+      cause: undefined,
+    });
+    expect(error).not.toBe(failure);
+    const exposed = `${error.message}\n${JSON.stringify(error)}\n${Reflect.ownKeys(error)
+      .map((key) => String(Reflect.get(error, key)))
+      .join("\n")}`;
+    expect(exposed).not.toContain("SECRET");
+    expect(exposed).not.toContain("/private/provider");
+    expect(exposed).not.toContain("[object Object]");
+  });
+
+  it("fails closed when reading an invoking Error message throws", async () => {
+    const secret = new Error("SECRET-CAUSE:/private/provider");
+    const hostile = new Error("placeholder");
+    Object.defineProperty(hostile, "message", {
+      get: () => {
+        throw secret;
+      },
+    });
+    invokeMock.mockRejectedValueOnce(hostile);
+
+    const error = await captureRejection(
+      new TauriXcom2ProjectFoundryRendererAdapter().apply(applyRequest()),
+    );
+
+    expect(error.message).toBe(
+      `[tauri:${XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND}] Native Project Foundry command failed`,
+    );
+    expect(error.cause).toBeUndefined();
+    expect(error.message).not.toContain("SECRET");
+  });
+});
+
+describe("Project Foundry Apply corrected factory and composition", () => {
+  it("exposes Apply on both corrected factory aliases and preserves every frozen facet", async () => {
+    const composition = createTauriXcom2ProjectFoundryRendererComposition();
+    const alias = createTauriProjectFoundryRendererComposition();
+
+    expect(composition).toBeInstanceOf(TauriXcom2ProjectFoundryRendererAdapter);
+    expect(alias).toBeInstanceOf(TauriProjectFoundryRendererAdapter);
+    expect(Reflect.ownKeys(composition)).toEqual(["bridge", "selectors", "renderer", "grants"]);
+    expect(typeof composition.apply).toBe("function");
+    expect(typeof alias.apply).toBe("function");
+    for (const facet of [composition.selectors, composition.renderer, composition.grants]) {
+      expect(Object.isFrozen(facet)).toBe(true);
+    }
+
+    invokeMock.mockResolvedValueOnce(createdReceipt()).mockResolvedValueOnce(createdReceipt());
+    await expect(composition.apply(applyRequest())).resolves.toEqual(createdReceipt());
+    await expect(alias.apply(applyRequest())).resolves.toEqual(createdReceipt());
+    expect(invokeMock.mock.calls).toEqual([
+      [XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND, { request: applyRequest() }],
+      [XCOM2_PROJECT_FOUNDRY_APPLY_COMMAND, { request: applyRequest() }],
     ]);
   });
 });
