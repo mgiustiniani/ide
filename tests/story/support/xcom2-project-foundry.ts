@@ -1269,8 +1269,17 @@ export class Xcom2ProjectFoundryHarness {
 
   async assertTerminalConflictControlsDisabled(): Promise<void> {
     const dialog = this.#dialog();
-    for (const name of ["Select EMPT repository", "Select Destination parent", "Preview", "Create project"]) {
-      assert.equal(await dialog.getByRole("button", { name, exact: true }).isDisabled(), true, name);
+    for (const name of [
+      "Select EMPT repository",
+      "Select Destination parent",
+      "Preview",
+      "Create project",
+    ]) {
+      assert.equal(
+        await dialog.getByRole("button", { name, exact: true }).isDisabled(),
+        true,
+        name,
+      );
     }
     for (const name of ["EMPT repository", "Destination parent", "ModId"]) {
       assert.equal(await dialog.getByLabel(name, { exact: true }).isDisabled(), true, name);
@@ -1281,12 +1290,34 @@ export class Xcom2ProjectFoundryHarness {
     const buttons = this.#dialog().getByRole("button");
     const enabled: string[] = [];
     for (let index = 0; index < (await buttons.count()); index += 1) {
-      if (await buttons.nth(index).isEnabled()) enabled.push((await buttons.nth(index).innerText()).trim());
+      if (await buttons.nth(index).isEnabled())
+        enabled.push((await buttons.nth(index).innerText()).trim());
     }
     assert.deepEqual(enabled, ["Cancel"]);
-    const text = (await this.#dialog().innerText()).toLowerCase();
+    const actionLabels = await this.#dialog()
+      .locator(
+        'button, a[href], input[type="button"], input[type="submit"], input[type="reset"], [role="button"], [role="link"], [role^="menuitem"]',
+      )
+      .evaluateAll((controls) =>
+        controls.flatMap((control) => {
+          const labelledBy = (control.getAttribute("aria-labelledby") ?? "")
+            .split(/\s+/u)
+            .filter(Boolean)
+            .map((id) => document.getElementById(id)?.textContent ?? "");
+          return [
+            control.textContent ?? "",
+            control.getAttribute("aria-label") ?? "",
+            control.getAttribute("title") ?? "",
+            ...labelledBy,
+          ];
+        }),
+      );
     for (const action of ["retry", "overwrite", "delete", "move", "open", "reveal", "recovery"]) {
-      assert.equal(new RegExp(`\\b${action}\\b`, "u").test(text), false, action);
+      assert.equal(
+        actionLabels.some((label) => new RegExp(`\\b${action}\\b`, "iu").test(label)),
+        false,
+        action,
+      );
     }
   }
 
@@ -1341,7 +1372,9 @@ export class Xcom2ProjectFoundryHarness {
     await this.assertOnlyExternalConflictChangedDestination();
     this.#assertNoDestinationTransactionResidue();
     assert.deepEqual(
-      this.#tauriCalls.filter((call) => /(?:write|create|remove|delete|move|rename|git|remember)/iu.test(call.command)),
+      this.#tauriCalls.filter((call) =>
+        /(?:write|create|remove|delete|move|rename|git|remember)/iu.test(call.command),
+      ),
       [],
     );
   }
@@ -1349,7 +1382,10 @@ export class Xcom2ProjectFoundryHarness {
   async assertNoConflictResidue(configurationName: string): Promise<void> {
     assert.equal(configurationName, ".ide");
     this.#assertNoDestinationTransactionResidue();
-    assert.deepEqual((await readdir(this.#requireSandbox())).sort(), ["empt-v1_4", "foundry-output"]);
+    assert.deepEqual((await readdir(this.#requireSandbox())).sort(), [
+      "empt-v1_4",
+      "foundry-output",
+    ]);
     assert.deepEqual((await readdir(this.#requireDestinationRoot())).sort(), [
       "FoundryPreviewFixture",
       "existing-sibling",
@@ -1359,9 +1395,16 @@ export class Xcom2ProjectFoundryHarness {
 
   assertNoConflictMechanisms(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.equal(rows.length, 4);
-    assert.equal(rows.every((row) => row["invocation count"] === "0"), true);
-    const forbidden = /(?:process|shell|git|powershell|batch|\.exe|c#|network|build|deploy|cook|launch|open)/iu;
-    assert.deepEqual(this.#tauriCalls.filter((call) => forbidden.test(call.command)), []);
+    assert.equal(
+      rows.every((row) => row["invocation count"] === "0"),
+      true,
+    );
+    const forbidden =
+      /(?:process|shell|git|powershell|batch|\.exe|c#|network|build|deploy|cook|launch|open)/iu;
+    assert.deepEqual(
+      this.#tauriCalls.filter((call) => forbidden.test(call.command)),
+      [],
+    );
   }
 
   async assertConflictDialogClearedAndClosed(): Promise<void> {
@@ -1769,7 +1812,9 @@ export class Xcom2ProjectFoundryHarness {
       if (this.#appApplyResult && this.#revokeAllCalls > 0) return;
       await delay(10);
     }
-    throw new Error("Project Foundry destination-conflict Apply did not complete deterministically");
+    throw new Error(
+      "Project Foundry destination-conflict Apply did not complete deterministically",
+    );
   }
 
   #requireConflictFingerprint(): FingerprintEntry {
@@ -1797,7 +1842,10 @@ export class Xcom2ProjectFoundryHarness {
     const destination = this.#destinationPostConflict;
     assert.ok(destination, "Post-conflict destination recording is unavailable");
     const forbidden = /(?:^|\/)(?:\.ide|\.git|.*stage.*|.*journal.*|.*receipt.*)(?:\/|$)/iu;
-    assert.deepEqual(destination.entries.filter((entry) => forbidden.test(entry.path)), []);
+    assert.deepEqual(
+      destination.entries.filter((entry) => forbidden.test(entry.path)),
+      [],
+    );
     assert.equal(this.#createdReceipt, undefined);
   }
 
@@ -1809,9 +1857,7 @@ export class Xcom2ProjectFoundryHarness {
     this.#assertNoDestinationTransactionResidue();
   }
 
-  async #assertClosedThenReopenedClearState(
-    dismissal: "Cancel" | "Escape",
-  ): Promise<void> {
+  async #assertClosedThenReopenedClearState(dismissal: "Cancel" | "Escape"): Promise<void> {
     const page = this.#requirePage();
     await page
       .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
@@ -1823,7 +1869,10 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(await dialog.getByLabel("EMPT repository", { exact: true }).inputValue(), "");
     assert.equal(await dialog.getByLabel("Destination parent", { exact: true }).inputValue(), "");
     assert.equal(await dialog.getByLabel("ModId", { exact: true }).inputValue(), "");
-    assert.equal(await dialog.locator('[aria-label="Complete Project Foundry preview"]').count(), 0);
+    assert.equal(
+      await dialog.locator('[aria-label="Complete Project Foundry preview"]').count(),
+      0,
+    );
     assert.equal(await dialog.getByRole("alert").count(), 0);
     assert.equal(
       await dialog.getByRole("button", { name: "Create project", exact: true }).isDisabled(),
