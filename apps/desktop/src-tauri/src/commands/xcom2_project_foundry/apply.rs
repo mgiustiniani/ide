@@ -68,6 +68,13 @@ pub enum FoundryApplyFailureReason {
     PostCommitJournalFailed,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FoundryApplyCleanupStatus {
+    VerifiedComplete,
+    NotVerified,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "result", rename_all = "kebab-case")]
 pub enum ApplyFoundryProjectResult {
@@ -92,6 +99,8 @@ pub enum ApplyFoundryProjectResult {
     Failed {
         phase: FoundryApplyPhase,
         reason: FoundryApplyFailureReason,
+        #[serde(rename = "cleanupStatus")]
+        cleanup_status: FoundryApplyCleanupStatus,
     },
     CreatedRecoveryRequired {
         phase: FoundryApplyPostCommitPhase,
@@ -292,7 +301,7 @@ fn apply_consumed(
         return refused(reason);
     }
     if let Err(reason) = faults.hit("before-rerender").map_err(ApplyError::Failed) {
-        return result_from_error(reason);
+        return result_from_error(reason, FoundryApplyCleanupStatus::NotVerified);
     }
 
     let repository = match open_exact_repository(&consumed.source.git_directory) {
@@ -383,7 +392,10 @@ fn apply_consumed(
             committed_directories: DIRECTORY_COUNT,
             committed_files: FILE_COUNT,
         },
-        Err(TransactionFailure::PreCommit(error)) => result_from_error(error),
+        Err(TransactionFailure::PreCommit {
+            error,
+            cleanup_status,
+        }) => result_from_error(error, cleanup_status),
         Err(TransactionFailure::PostCommit(reason)) => {
             ApplyFoundryProjectResult::CreatedRecoveryRequired {
                 phase: FoundryApplyPostCommitPhase::PostCommit,
@@ -534,7 +546,10 @@ pub(super) fn canonical_plan_digest(
 
 #[derive(Debug)]
 enum TransactionFailure {
-    PreCommit(ApplyError),
+    PreCommit {
+        error: ApplyError,
+        cleanup_status: FoundryApplyCleanupStatus,
+    },
     PostCommit(FoundryApplyFailureReason),
 }
 
@@ -593,7 +608,7 @@ fn materialize_and_commit(
 
     faults
         .hit("before-journal-create")
-        .map_err(|reason| TransactionFailure::PreCommit(ApplyError::Failed(reason)))?;
+        .map_err(|reason| precommit_not_verified(ApplyError::Failed(reason)))?;
     let mut journal = OpenOptions::new()
         .read(true)
         .write(true)
@@ -602,47 +617,63 @@ fn materialize_and_commit(
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(&journal_path)
         .map_err(|error| {
-            TransactionFailure::PreCommit(if error.kind() == std::io::ErrorKind::AlreadyExists {
+            precommit_not_verified(if error.kind() == std::io::ErrorKind::AlreadyExists {
                 ApplyError::Refused(FoundryApplyRefusalReason::JournalConflict)
             } else {
                 ApplyError::Failed(FoundryApplyFailureReason::JournalCreateFailed)
             })
         })?;
     let initial_journal_metadata = journal.metadata().map_err(|_| {
-        TransactionFailure::PreCommit(ApplyError::Failed(
+        precommit_not_verified(ApplyError::Failed(
             FoundryApplyFailureReason::JournalCreateFailed,
         ))
     })?;
     let journal_identity = owned_identity(&initial_journal_metadata);
-    if journal
-        .set_permissions(fs::Permissions::from_mode(0o600))
-        .is_err()
+    if faults.hit("before-journal-permission-set").is_err()
+        || journal
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .is_err()
     {
         drop(journal);
-        let _ = remove_owned_file(&journal_path, journal_identity);
-        let _ = sync_directory(parent);
-        return Err(TransactionFailure::PreCommit(ApplyError::Failed(
-            FoundryApplyFailureReason::JournalCreateFailed,
-        )));
+        return Err(early_journal_setup_failure(
+            parent,
+            &stage_path,
+            &journal_path,
+            &destination_path,
+            journal_identity,
+            faults,
+            expected_parent_device,
+            expected_parent_inode,
+        ));
     }
     let journal_metadata = match journal.metadata() {
         Ok(metadata) => metadata,
         Err(_) => {
             drop(journal);
-            let _ = remove_owned_file(&journal_path, journal_identity);
-            let _ = sync_directory(parent);
-            return Err(TransactionFailure::PreCommit(ApplyError::Failed(
-                FoundryApplyFailureReason::JournalCreateFailed,
-            )));
+            return Err(early_journal_setup_failure(
+                parent,
+                &stage_path,
+                &journal_path,
+                &destination_path,
+                journal_identity,
+                faults,
+                expected_parent_device,
+                expected_parent_inode,
+            ));
         }
     };
     if !journal_metadata.is_file() || journal_metadata.permissions().mode() & 0o7777 != 0o600 {
         drop(journal);
-        let _ = remove_owned_file(&journal_path, journal_identity);
-        let _ = sync_directory(parent);
-        return Err(TransactionFailure::PreCommit(ApplyError::Failed(
-            FoundryApplyFailureReason::JournalCreateFailed,
-        )));
+        return Err(early_journal_setup_failure(
+            parent,
+            &stage_path,
+            &journal_path,
+            &destination_path,
+            journal_identity,
+            faults,
+            expected_parent_device,
+            expected_parent_inode,
+        ));
     }
     let mut owned = OwnedStage::default();
     let mut committed = false;
@@ -699,6 +730,13 @@ fn materialize_and_commit(
                 .map_err(|_| ApplyError::Failed(FoundryApplyFailureReason::StageWriteFailed))?;
         }
 
+        verify_staged_directories(&stage_path, directories, &owned, 0o700)?;
+        sync_directories_bottom_up(&stage_path, directories, faults)?;
+        verify_staged_directories(&stage_path, directories, &owned, 0o700)?;
+        faults
+            .hit("after-directory-verify")
+            .map_err(ApplyError::Failed)?;
+
         for output in files {
             faults
                 .hit("before-file-create")
@@ -725,6 +763,9 @@ fn materialize_and_commit(
             file.sync_all()
                 .map_err(|_| ApplyError::Failed(FoundryApplyFailureReason::StageSyncFailed))?;
             verify_file(&mut file, output)?;
+            faults
+                .hit("after-file-verify")
+                .map_err(ApplyError::Failed)?;
         }
 
         fs::set_permissions(&stage_path, fs::Permissions::from_mode(0o755))
@@ -775,14 +816,29 @@ fn materialize_and_commit(
                 ApplyError::Refused(_) => FoundryApplyFailureReason::PostCommitJournalFailed,
             }));
         }
-        let cleanup_ok = cleanup_owned_stage(&stage_path, &owned)
-            && remove_owned_file(&journal_path, journal_identity);
-        let _ = sync_directory(parent);
-        return Err(TransactionFailure::PreCommit(if cleanup_ok {
+        drop(journal);
+        let stage_was_owned = !owned.entries.is_empty();
+        let cleanup = cleanup_precommit_transaction(
+            parent,
+            &stage_path,
+            &journal_path,
+            &destination_path,
+            &owned,
+            journal_identity,
+            faults,
+            expected_parent_device,
+            expected_parent_inode,
+        );
+        let cleanup_status = cleanup_status_for(error, cleanup, stage_was_owned);
+        let error = if cleanup.owned_artifacts_removed {
             error
         } else {
             ApplyError::Failed(FoundryApplyFailureReason::CleanupFailed)
-        }));
+        };
+        return Err(TransactionFailure::PreCommit {
+            error,
+            cleanup_status,
+        });
     }
 
     if faults.hit("after-commit-before-parent-fsync").is_err() || sync_directory(parent).is_err() {
@@ -832,11 +888,18 @@ fn materialize_and_commit(
     Ok(())
 }
 
+fn precommit_not_verified(error: ApplyError) -> TransactionFailure {
+    TransactionFailure::PreCommit {
+        error,
+        cleanup_status: FoundryApplyCleanupStatus::NotVerified,
+    }
+}
+
 fn require_absent(
     path: &Path,
     reason: FoundryApplyRefusalReason,
 ) -> Result<(), TransactionFailure> {
-    require_absent_apply(path, reason).map_err(TransactionFailure::PreCommit)
+    require_absent_apply(path, reason).map_err(precommit_not_verified)
 }
 
 fn require_absent_apply(path: &Path, reason: FoundryApplyRefusalReason) -> Result<(), ApplyError> {
@@ -902,6 +965,22 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(path)?
         .sync_all()
+}
+
+fn sync_revalidated_directory(
+    path: &Path,
+    expected_device: u64,
+    expected_inode: u64,
+) -> std::io::Result<()> {
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    let metadata = directory.metadata()?;
+    if !metadata.is_dir() || metadata.dev() != expected_device || metadata.ino() != expected_inode {
+        return Err(std::io::Error::other("stale Foundry parent identity"));
+    }
+    directory.sync_all()
 }
 
 fn sync_directories_bottom_up(
@@ -1051,6 +1130,51 @@ fn verify_file(file: &mut File, output: &FoundryRenderedOutputFile) -> Result<()
     Ok(())
 }
 
+fn verify_staged_directories(
+    stage: &Path,
+    directories: &[super::renderer::FoundryRenderedDirectory],
+    owned: &OwnedStage,
+    root_mode: u32,
+) -> Result<(), ApplyError> {
+    if owned.entries.len() != directories.len() {
+        return Err(ApplyError::Failed(
+            FoundryApplyFailureReason::StageVerifyFailed,
+        ));
+    }
+    let expected = directories
+        .iter()
+        .filter(|directory| directory.path != ".")
+        .map(|directory| directory.path.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut actual = BTreeSet::new();
+    collect_relative_entries(stage, stage, &mut actual)?;
+    if actual.iter().map(String::as_str).collect::<BTreeSet<_>>() != expected {
+        return Err(ApplyError::Failed(
+            FoundryApplyFailureReason::StageVerifyFailed,
+        ));
+    }
+    for directory in directories {
+        let relative = checked_relative(&directory.path)?;
+        let metadata = fs::symlink_metadata(stage.join(relative))
+            .map_err(|_| ApplyError::Failed(FoundryApplyFailureReason::StageVerifyFailed))?;
+        let expected_mode = if relative == Path::new(".") {
+            root_mode
+        } else {
+            0o755
+        };
+        if metadata.file_type().is_symlink()
+            || !metadata.is_dir()
+            || metadata.permissions().mode() & 0o7777 != expected_mode
+            || owned.entries.get(relative) != Some(&owned_identity(&metadata))
+        {
+            return Err(ApplyError::Failed(
+                FoundryApplyFailureReason::StageVerifyFailed,
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn verify_complete_stage(
     stage: &Path,
     directories: &[super::renderer::FoundryRenderedDirectory],
@@ -1146,6 +1270,114 @@ fn collect_relative_entries(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CleanupOutcome {
+    owned_artifacts_removed: bool,
+    verified_complete: bool,
+}
+
+fn cleanup_status_for(
+    error: ApplyError,
+    cleanup: CleanupOutcome,
+    stage_was_owned: bool,
+) -> FoundryApplyCleanupStatus {
+    if cleanup.owned_artifacts_removed
+        && cleanup.verified_complete
+        && stage_was_owned
+        && matches!(
+            error,
+            ApplyError::Failed(FoundryApplyFailureReason::StageWriteFailed)
+        )
+    {
+        FoundryApplyCleanupStatus::VerifiedComplete
+    } else {
+        FoundryApplyCleanupStatus::NotVerified
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn early_journal_setup_failure(
+    parent: &Path,
+    stage: &Path,
+    journal: &Path,
+    destination: &Path,
+    journal_identity: OwnedIdentity,
+    faults: &dyn FaultInjector,
+    expected_parent_device: u64,
+    expected_parent_inode: u64,
+) -> TransactionFailure {
+    let cleanup = cleanup_precommit_transaction(
+        parent,
+        stage,
+        journal,
+        destination,
+        &OwnedStage::default(),
+        journal_identity,
+        faults,
+        expected_parent_device,
+        expected_parent_inode,
+    );
+    let reason = if cleanup.verified_complete {
+        FoundryApplyFailureReason::JournalCreateFailed
+    } else {
+        FoundryApplyFailureReason::CleanupFailed
+    };
+    precommit_not_verified(ApplyError::Failed(reason))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cleanup_precommit_transaction(
+    parent: &Path,
+    stage: &Path,
+    journal: &Path,
+    destination: &Path,
+    owned: &OwnedStage,
+    journal_identity: OwnedIdentity,
+    faults: &dyn FaultInjector,
+    expected_parent_device: u64,
+    expected_parent_inode: u64,
+) -> CleanupOutcome {
+    let failed = || CleanupOutcome {
+        owned_artifacts_removed: false,
+        verified_complete: false,
+    };
+    if faults.hit("before-stage-cleanup").is_err() || !cleanup_owned_stage(stage, owned) {
+        return failed();
+    }
+    if faults.hit("before-cleanup-absence-check").is_err() || !exact_path_absent(stage) {
+        return failed();
+    }
+    if faults.hit("before-journal-cleanup").is_err()
+        || !remove_owned_file(journal, journal_identity)
+        || !exact_path_absent(journal)
+    {
+        return failed();
+    }
+
+    let owned_artifacts_removed = true;
+    if !exact_path_absent(destination)
+        || faults.hit("before-cleanup-parent-fsync").is_err()
+        || sync_revalidated_directory(parent, expected_parent_device, expected_parent_inode)
+            .is_err()
+    {
+        return CleanupOutcome {
+            owned_artifacts_removed,
+            verified_complete: false,
+        };
+    }
+    CleanupOutcome {
+        owned_artifacts_removed,
+        verified_complete: true,
+    }
+}
+
+fn exact_path_absent(path: &Path) -> bool {
+    matches!(
+        fs::symlink_metadata(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
 }
 
 fn cleanup_owned_stage(stage: &Path, owned: &OwnedStage) -> bool {
@@ -1259,12 +1491,16 @@ fn refused(reason: FoundryApplyRefusalReason) -> ApplyFoundryProjectResult {
     }
 }
 
-fn result_from_error(error: ApplyError) -> ApplyFoundryProjectResult {
+fn result_from_error(
+    error: ApplyError,
+    cleanup_status: FoundryApplyCleanupStatus,
+) -> ApplyFoundryProjectResult {
     match error {
         ApplyError::Refused(reason) => refused(reason),
         ApplyError::Failed(reason) => ApplyFoundryProjectResult::Failed {
             phase: FoundryApplyPhase::PreCommit,
             reason,
+            cleanup_status,
         },
     }
 }

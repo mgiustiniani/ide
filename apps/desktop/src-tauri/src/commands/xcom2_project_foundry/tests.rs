@@ -123,6 +123,8 @@ impl RendererRepositoryFixture {
                 }
             } else if path == "ModPreview.jpg" {
                 vec![0xff, 0xd8, 0xff, 0xd9]
+            } else if path == ".gitignore" {
+                b"*.lnk\nBuildCache/".to_vec()
             } else {
                 format!("synthetic {path}: $guid1$ $Name$ $ModSafeName$ $Description$\n")
                     .into_bytes()
