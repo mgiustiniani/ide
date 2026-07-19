@@ -218,6 +218,27 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   );
 
   assert.deepEqual(
+    cucumberProfiles.xcom2ProjectFoundryDestinationConflictTauriHarness.worldParameters,
+    {
+      target: { name: "desktop", driver: "tauri" },
+      evidence: {
+        kind: "tauri-harness",
+        nativeGui: false,
+        e2e: false,
+        packagedApplication: false,
+      },
+    },
+  );
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryDestinationConflictTauriHarness.tags,
+    "@REQ-XCOM2-PROJECT-FOUNDRY-003",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.xcom2ProjectFoundryDestinationConflictTauriHarness.tags,
+    /implemented|partial|not-implemented|native-gui|web/,
+  );
+
+  assert.deepEqual(
     cucumberProfiles.xcom2MachineSettingsMissingSteamNativeGui.worldParameters,
     nativeGuiEvidence,
   );
@@ -382,6 +403,41 @@ test("focused XCOM Project Foundry Apply command declares only deterministic har
   );
 });
 
+test("focused XCOM Project Foundry destination-conflict profile selects only its parked harness requirement", () => {
+  const selected = selectedScenarios("xcom2ProjectFoundryDestinationConflictTauriHarness");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-003"]);
+  assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
+  assert.ok(selected[0].tags.has("@not-implemented"));
+  assert.equal(selected[0].tags.has("@partial"), false);
+  assert.ok(selected[0].tags.has("@desktop"));
+  assert.ok(selected[0].tags.has("@tauri-harness"));
+  assert.equal(selected[0].tags.has("@web"), false);
+  assert.equal(selected[0].tags.has("@native-gui"), false);
+  assert.match(
+    dryRunSummary("xcom2ProjectFoundryDestinationConflictTauriHarness"),
+    /1 scenario \(1 undefined\)[\s\S]*53 steps \(8 skipped, 45 undefined\)/,
+  );
+});
+
+test("focused XCOM Project Foundry destination-conflict command declares only deterministic harness evidence", async () => {
+  const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
+  const command = manifest.scripts["test:story:req-xcom2-project-foundry-003"];
+
+  assert.equal(
+    command,
+    "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryDestinationConflictTauriHarness",
+  );
+  assert.match(command, /^IDE_STORY_TARGET=desktop\/tauri-harness\b/);
+  assert.doesNotMatch(command, /native|webdriver|playwright|implementedWeb|build|package|bundle/i);
+  assert.equal(
+    cucumberProfiles.xcom2ProjectFoundryDestinationConflictTauriHarness.worldParameters.evidence
+      .artifactKind,
+    undefined,
+  );
+});
+
 test("focused missing-Steam XCOM machine Settings profile is native-only and status-independent after promotion", () => {
   const selected = selectedScenarios("xcom2MachineSettingsMissingSteamNativeGui");
 
@@ -524,6 +580,30 @@ test("promoted XCOM Project Foundry Apply routes only to deterministic harness e
   assert.deepEqual(routing.expectedDesktopTauriWebdriver, []);
 });
 
+test("parked XCOM Project Foundry destination conflict can promote only to deterministic harness evidence", () => {
+  const [parked] = selectedScenarios("xcom2ProjectFoundryDestinationConflictTauriHarness");
+
+  const before = evaluateDeclaredStoryRouting([parked]);
+  assert.deepEqual(before.failures, []);
+  assert.deepEqual(before.expectedWeb, []);
+  assert.deepEqual(before.expectedDesktopTauriHarness, []);
+  assert.deepEqual(before.expectedDesktopTauriWebdriver, []);
+
+  const promoted = {
+    ...parked,
+    tags: new Set(
+      [...parked.tags, "@implemented-not-e2e-validated"].filter(
+        (tag) => tag !== "@not-implemented",
+      ),
+    ),
+  };
+  const after = evaluateDeclaredStoryRouting([promoted]);
+  assert.deepEqual(after.failures, []);
+  assert.deepEqual(after.expectedWeb, []);
+  assert.deepEqual(after.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
+  assert.deepEqual(after.expectedDesktopTauriWebdriver, []);
+});
+
 test("declared routes and partial versus non-implemented inventory stay exact", () => {
   const declared = selectedScenarios("declaredDiscovery");
   const validated = declared.filter(({ tags }) => tags.has("@implemented-and-validated"));
@@ -556,11 +636,13 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
+    "@REQ-XCOM2-PROJECT-FOUNDRY-003",
   ]);
+  assert.equal(declared.length, 16);
   assert.equal(validated.length, 9);
   assert.equal(harnessOnly.length, 4);
   assert.equal(partial.length, 0);
-  assert.equal(notImplemented.length, 2);
+  assert.equal(notImplemented.length, 3);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 4);
   assert.equal(nativeGui.length, 7);
