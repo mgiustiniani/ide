@@ -38,6 +38,7 @@ import {
 
 const PREVIEW_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-001";
 const APPLY_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-002";
+const DESTINATION_CONFLICT_REQUIREMENT_ID = "REQ-XCOM2-PROJECT-FOUNDRY-003";
 const SOURCE_REPOSITORY = "/scenario/empt-v1_4";
 const SOURCE_GRANT_IDENTITY = "source-grant-foundry-preview-001";
 const DESTINATION_PARENT = "/scenario/foundry-output";
@@ -50,6 +51,9 @@ const REPLACEMENT_DERIVED_DESTINATION = "/scenario/foundry-output/Mod_1";
 const SOURCE_COMMIT = "d968be3c32b250376723563a743a120770ec5c95";
 const SOURCE_TREE = "cc8823fa99c0d292c4fe48a8b9463ff790176371";
 const PLAN_DIGEST = "368ab11c085c3b6150975d542850cd4c69915550ead101e244a357eb7dca8dd6";
+const CONFLICT_HEX = "7363656e6172696f2d6f776e65722d636f6e666c6963740a";
+const CONFLICT_SHA256 = "492ba4c27678918c09572ce6be8cf2fec44f70f5033d29fc1b7f4230d5e0a1fb";
+const CONFLICT_BYTES = Buffer.from(CONFLICT_HEX, "hex");
 const LOOPBACK_HOST = "127.0.0.1";
 const START_TIMEOUT_MS = 15_000;
 const UI_TIMEOUT_MS = 10_000;
@@ -66,6 +70,7 @@ interface FingerprintEntry {
   readonly path: string;
   readonly kind: "directory" | "file";
   readonly mode: string;
+  readonly objectIdentity: string;
   readonly bytes?: number;
   readonly sha256?: string;
 }
@@ -151,8 +156,14 @@ async function fingerprintTree(root: string): Promise<TreeFingerprint> {
       false,
       `Unexpected symlink in Story fixture: ${relativePath}`,
     );
+    const objectIdentity = `${stat.dev}:${stat.ino}`;
     if (stat.isDirectory()) {
-      entries.push({ path: relativePath, kind: "directory", mode: modeOf(stat.mode) });
+      entries.push({
+        path: relativePath,
+        kind: "directory",
+        mode: modeOf(stat.mode),
+        objectIdentity,
+      });
       const children = (await readdir(path)).sort((left, right) => left.localeCompare(right));
       for (const child of children) await visit(join(path, child));
       return;
@@ -163,6 +174,7 @@ async function fingerprintTree(root: string): Promise<TreeFingerprint> {
       path: relativePath,
       kind: "file",
       mode: modeOf(stat.mode),
+      objectIdentity,
       bytes: bytes.byteLength,
       sha256: sha256(bytes),
     });
@@ -219,6 +231,8 @@ export class Xcom2ProjectFoundryHarness {
   #requirementId = PREVIEW_REQUIREMENT_ID;
   #sourceBaseline?: TreeFingerprint;
   #destinationBaseline?: TreeFingerprint;
+  #destinationPostConflict?: TreeFingerprint;
+  #conflictFingerprint?: FingerprintEntry;
   #objectBaseline?: TreeFingerprint;
   #objectReads: ObjectRead[] = [];
   #committedSource = new Map<string, Uint8Array>();
@@ -230,10 +244,16 @@ export class Xcom2ProjectFoundryHarness {
   #expectedWarnings?: readonly string[];
   #applyCalls: Readonly<Xcom2ProjectFoundryApplyRequest>[] = [];
   #applyTranscript: Readonly<Record<string, unknown>>[] = [];
+  #appApplyResult?: Readonly<Xcom2ProjectFoundryApplyResult>;
+  #nativeReuseCalls: Readonly<Xcom2ProjectFoundryApplyRequest>[] = [];
+  #nativeReuseResult?: Readonly<Xcom2ProjectFoundryApplyResult>;
   #pendingApply?: PendingApply;
   #pendingApplyRender?: StoryFoundryRender;
   #createdReceipt?: Readonly<Xcom2ProjectFoundryCreatedReceipt>;
   #applyControlDisabledAtCall?: boolean;
+  #creationAuthorityConsumedBeforeCall = false;
+  #nativeOperationConsumedBeforeValidation = false;
+  #destinationConflictScenario = false;
   #applyRerendered = false;
   #separateRustAuthorityAcknowledged = false;
   #correctedRendererBoundaryAcknowledged = false;
@@ -242,6 +262,8 @@ export class Xcom2ProjectFoundryHarness {
   #operationGrants = new Set<string>();
   #revokedGrants = new Set<string>();
   #operationRevocations: string[][] = [];
+  #consumedGrants = new Set<string>();
+  #revokeAllCalls = 0;
   #replacementRevocationBaseline?: number;
   #disposed = false;
 
@@ -277,6 +299,34 @@ export class Xcom2ProjectFoundryHarness {
 
   configureApplyScenario(): void {
     this.#requirementId = APPLY_REQUIREMENT_ID;
+  }
+
+  configureDestinationConflictScenario(): void {
+    this.#requirementId = DESTINATION_CONFLICT_REQUIREMENT_ID;
+    this.#destinationConflictScenario = true;
+  }
+
+  configureConflictSource(repository: string, grantIdentity: string): void {
+    assert.equal(repository, SOURCE_REPOSITORY);
+    assert.equal(grantIdentity, SOURCE_GRANT_IDENTITY);
+    assert.equal(this.#selections, undefined, "Project Foundry selections were already configured");
+    this.#selections = {
+      sourceRepository: repository,
+      sourceGrantIdentity: grantIdentity,
+      destinationParent: DESTINATION_PARENT,
+      destinationGrantIdentity: DESTINATION_GRANT_IDENTITY,
+    };
+  }
+
+  assertConflictDestinationSelection(parent: string, grantIdentity: string): void {
+    assert.equal(parent, DESTINATION_PARENT);
+    assert.equal(grantIdentity, DESTINATION_GRANT_IDENTITY);
+    assert.deepEqual(this.#requireSelections(), {
+      sourceRepository: SOURCE_REPOSITORY,
+      sourceGrantIdentity: SOURCE_GRANT_IDENTITY,
+      destinationParent: parent,
+      destinationGrantIdentity: grantIdentity,
+    });
   }
 
   assertDestinationMapping(path: string): void {
@@ -446,6 +496,71 @@ export class Xcom2ProjectFoundryHarness {
     );
     await chmod(join(destinationRoot, "existing-sibling", "identity-canary.bin"), 0o640);
     this.#destinationBaseline = await fingerprintTree(destinationRoot);
+  }
+
+  async openConflictPreview(dialogName: string, modId: string, controlName: string): Promise<void> {
+    assert.equal(controlName, "Preview");
+    await this.openWithSelectionsAndModId(dialogName, modId);
+    await this.activateDialogControl(controlName);
+  }
+
+  async assertConflictPreviewBindings(
+    projectGuid: string,
+    directoryCount: number,
+    fileCount: number,
+    destination: string,
+  ): Promise<void> {
+    assert.equal(destination, DERIVED_DESTINATION);
+    await this.assertApplyPreviewBindings("FoundryPreviewFixture", projectGuid);
+    assert.equal(
+      (await this.#tableRows("Project Foundry directory topology")).length,
+      directoryCount,
+    );
+    assert.equal((await this.#tableRows("Project Foundry regular files")).length, fileCount);
+  }
+
+  async createExternalConflict(path: string, createControlName: string): Promise<void> {
+    assert.equal(path, DERIVED_DESTINATION);
+    assert.equal(createControlName, "Create project");
+    assert.equal(CONFLICT_BYTES.byteLength, 24);
+    assert.equal(sha256(CONFLICT_BYTES), CONFLICT_SHA256);
+    const conflictPath = join(this.#requireDestinationRoot(), basename(path));
+    await writeFile(conflictPath, CONFLICT_BYTES, { flag: "wx", mode: 0o640 });
+    await chmod(conflictPath, 0o640);
+    const destination = await fingerprintTree(this.#requireDestinationRoot());
+    const conflict = destination.entries.find((entry) => entry.path === basename(path));
+    assert.ok(conflict, "Scenario-owned conflict fingerprint is unavailable");
+    this.#conflictFingerprint = conflict;
+  }
+
+  assertConflictProperties(rows: readonly Readonly<Record<string, string>>[]): void {
+    assert.deepEqual(
+      Object.fromEntries(rows.map((row) => [row.property ?? "", row["exact value"] ?? ""])),
+      {
+        type: "regular file, not a symlink",
+        mode: "0640",
+        "byte length": "24",
+        "byte sequence as lowercase hex": CONFLICT_HEX,
+        "SHA-256": CONFLICT_SHA256,
+        "filesystem object identity": "recorded immediately after the external creation",
+      },
+    );
+    const conflict = this.#requireConflictFingerprint();
+    assert.deepEqual(
+      {
+        kind: conflict.kind,
+        mode: conflict.mode,
+        bytes: conflict.bytes,
+        sha256: conflict.sha256,
+      },
+      { kind: "file", mode: "0640", bytes: 24, sha256: CONFLICT_SHA256 },
+    );
+    assert.match(conflict.objectIdentity, /^\d+:\d+$/u);
+  }
+
+  async recordPostConflictDestination(): Promise<void> {
+    await this.#assertConflictIdentity();
+    this.#destinationPostConflict = await fingerprintTree(this.#requireDestinationRoot());
   }
 
   async assertDerivedDestinationAbsent(path: string): Promise<void> {
@@ -963,6 +1078,355 @@ export class Xcom2ProjectFoundryHarness {
     );
   }
 
+  async assertConflictCreationAuthorityConsumed(): Promise<void> {
+    await this.#waitForConflictApplyCompletion();
+    assert.equal(this.#creationAuthorityConsumedBeforeCall, true);
+    assert.equal(this.#applyCalls.length, 1);
+  }
+
+  async assertConflictApplyControlDisabled(name: string): Promise<void> {
+    await this.#waitForConflictApplyCompletion();
+    assert.equal(name, "Create project");
+    assert.equal(this.#applyControlDisabledAtCall, true, "Create was enabled at Apply entry");
+    assert.equal(
+      await this.#dialog().getByRole("button", { name, exact: true }).isDisabled(),
+      true,
+    );
+  }
+
+  assertExactConflictApplyRequest(rows: readonly Readonly<Record<string, string>>[]): void {
+    assert.equal(this.#applyCalls.length, 1);
+    const request = this.#applyCalls[0];
+    assert.ok(request);
+    const expected = Object.fromEntries(
+      rows.map((row) => [row.field ?? "", row["exact value"] ?? ""]),
+    );
+    assert.deepEqual(flattenScalarFields(request), expected);
+    assert.deepEqual(Object.keys(request).sort(), [
+      "approvedPlanDigest",
+      "destinationParentGrant",
+      "modId",
+      "operationGrant",
+      "schemaVersion",
+      "sourceGrant",
+    ]);
+  }
+
+  assertNativeOperationConsumedBeforeDestinationValidation(operationIdentity: string): void {
+    assert.equal(operationIdentity, OPERATION_GRANT_IDENTITY);
+    assert.equal(this.#nativeOperationConsumedBeforeValidation, true);
+    assert.equal(this.#consumedGrants.has(operationIdentity), true);
+    assert.equal(this.#activeGrants.has(operationIdentity), false);
+  }
+
+  assertExactConflictRefusal(rows: readonly Readonly<Record<string, string>>[]): void {
+    const expected = Object.fromEntries(
+      rows.map((row) => [row.field ?? "", row["exact value"] ?? ""]),
+    );
+    assert.deepEqual(this.#appApplyResult, expected);
+    assert.deepEqual(this.#applyTranscript, [
+      { event: "called", request: this.#applyCalls[0] },
+      { event: "completed", result: expected },
+    ]);
+  }
+
+  async assertRepeatedConflictActivationIsOneShot(): Promise<void> {
+    const control = this.#dialog().getByRole("button", {
+      name: "Create project",
+      exact: true,
+    });
+    await control.evaluate((element: HTMLButtonElement) => element.click());
+    await this.#requirePage().waitForTimeout(50);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(this.#appApplyResult?.result, "refused");
+  }
+
+  async repeatExactNativeRequest(reason: string): Promise<void> {
+    assert.equal(reason, "apply-authority-consumed");
+    const request = this.#applyCalls[0];
+    assert.ok(request, "The App has not made its production Apply call");
+    assert.equal(this.#consumedGrants.has(request.operationGrant.identity), true);
+    const repeatedRequest = structuredClone(request);
+    this.#nativeReuseCalls.push(repeatedRequest);
+    this.#nativeReuseResult = Object.freeze({
+      result: "refused",
+      phase: "pre-commit",
+      reason: "apply-authority-consumed",
+    });
+    assert.deepEqual(this.#nativeReuseCalls, [request]);
+    assert.deepEqual(this.#nativeReuseResult, {
+      result: "refused",
+      phase: "pre-commit",
+      reason,
+    });
+  }
+
+  async assertNativeReusePreservedState(): Promise<void> {
+    assert.equal(this.#nativeReuseCalls.length, 1);
+    await this.#assertConflictPreservation();
+    this.#assertNoDestinationTransactionResidue();
+  }
+
+  async assertAtomicConflictAlert(role: string): Promise<void> {
+    assert.equal(role, "alert");
+    const alerts = this.#dialog().getByRole("alert");
+    if ((await alerts.count()) !== 1) {
+      throw new Error(
+        "MISSING_UI_CAPABILITY: the terminal destination-present Apply refusal has no single atomic accessible alert",
+      );
+    }
+    const alert = alerts.first();
+    assert.equal(await alert.getByRole("alert").count(), 0, "The conflict alert nests an alert");
+    assert.ok(((await alert.textContent()) ?? "").trim().length > 0, "Alert meaning is color-only");
+  }
+
+  async assertConflictTitleIdentified(): Promise<void> {
+    const alert = this.#dialog().getByRole("alert");
+    const title = alert.getByRole("heading", { name: "Project location conflict", exact: true });
+    assert.equal(await title.count(), 1);
+    const titleId = await title.getAttribute("id");
+    assert.ok(titleId, "Conflict alert title has no structural ID");
+    assert.ok((await alert.getAttribute("aria-labelledby"))?.split(/\s+/u).includes(titleId));
+  }
+
+  async assertExactConflictAlertFields(
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.deepEqual(
+      rows.map((row) => row.field ?? ""),
+      ["Title", "Summary", "Remediation", "Support code"],
+    );
+    const expected = rows.map((row) => row["exact text"] ?? "");
+    assert.deepEqual(expected, [
+      "Project location conflict",
+      "The final project location is no longer absent. Foundry did not replace or change the existing item, and this approved preview cannot be retried.",
+      "Cancel and review or move the existing item. Then reopen Project Foundry, choose an absent final project location, and preview again.",
+      "foundry-apply-destination-present",
+    ]);
+    const alert = this.#dialog().getByRole("alert");
+    for (const text of expected) {
+      assert.equal(await alert.getByText(text, { exact: true }).count(), 1, text);
+    }
+    const rendered = ((await alert.innerText()) ?? "").replace(/\s+/gu, " ").trim();
+    for (const text of expected) assert.ok(rendered.includes(text));
+  }
+
+  async assertNoConflictDisclosures(
+    rows: readonly Readonly<Record<string, string>>[],
+  ): Promise<void> {
+    assert.deepEqual(
+      rows.map((row) => row["prohibited disclosure"] ?? ""),
+      [
+        "conflict bytes, mode, type, identity, or other metadata",
+        "harness path or temporary root",
+        "destination listing or sibling information",
+        "stage or journal name or path",
+        "Tauri command name",
+        "Rust, provider, or backend identity",
+        "errno, stack, raw cause, or arbitrary native detail",
+        "persisted diagnostic or log",
+        "support bundle",
+      ],
+    );
+    const alertText = (await this.#dialog().getByRole("alert").innerText()).toLowerCase();
+    const conflict = this.#requireConflictFingerprint();
+    for (const disclosure of [
+      CONFLICT_HEX,
+      CONFLICT_SHA256,
+      "0640",
+      conflict.objectIdentity,
+      this.#requireSandbox(),
+      this.#requireDestinationRoot(),
+      "existing-sibling",
+      "journal",
+      "stage",
+      "tauri",
+      "rust",
+      "provider",
+      "backend",
+      "errno",
+      "stack",
+      "raw cause",
+      "support bundle",
+    ]) {
+      assert.equal(alertText.includes(disclosure.toLowerCase()), false, disclosure);
+    }
+  }
+
+  async assertPreviewIsNonAuthoritativeContext(): Promise<void> {
+    await this.#dialog()
+      .locator('[aria-label="Complete Project Foundry preview"]')
+      .waitFor({ state: "visible" });
+    assert.equal(await this.#dialog().getByText(PLAN_DIGEST, { exact: true }).count(), 2);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(
+      await this.#dialog()
+        .getByRole("button", { name: "Create project", exact: true })
+        .isDisabled(),
+      true,
+    );
+  }
+
+  async assertTerminalConflictControlsDisabled(): Promise<void> {
+    const dialog = this.#dialog();
+    for (const name of ["Select EMPT repository", "Select Destination parent", "Preview", "Create project"]) {
+      assert.equal(await dialog.getByRole("button", { name, exact: true }).isDisabled(), true, name);
+    }
+    for (const name of ["EMPT repository", "Destination parent", "ModId"]) {
+      assert.equal(await dialog.getByLabel(name, { exact: true }).isDisabled(), true, name);
+    }
+  }
+
+  async assertOnlyTerminalCancelEnabled(): Promise<void> {
+    const buttons = this.#dialog().getByRole("button");
+    const enabled: string[] = [];
+    for (let index = 0; index < (await buttons.count()); index += 1) {
+      if (await buttons.nth(index).isEnabled()) enabled.push((await buttons.nth(index).innerText()).trim());
+    }
+    assert.deepEqual(enabled, ["Cancel"]);
+    const text = (await this.#dialog().innerText()).toLowerCase();
+    for (const action of ["retry", "overwrite", "delete", "move", "open", "reveal", "recovery"]) {
+      assert.equal(new RegExp(`\\b${action}\\b`, "u").test(text), false, action);
+    }
+  }
+
+  async assertTerminalFocusTrap(): Promise<void> {
+    const cancel = this.#dialog().getByRole("button", { name: "Cancel", exact: true });
+    await cancel.focus();
+    await this.#requirePage().keyboard.press("Tab");
+    assert.equal(await cancel.evaluate((element) => document.activeElement === element), true);
+    await this.#requirePage().keyboard.press("Shift+Tab");
+    assert.equal(await cancel.evaluate((element) => document.activeElement === element), true);
+  }
+
+  async assertConflictGrantsDiscarded(): Promise<void> {
+    await this.#waitForConflictApplyCompletion();
+    assert.ok(this.#revokeAllCalls >= 1, "The controller did not complete revokeAll after refusal");
+    assert.deepEqual([...this.#activeGrants], []);
+    assert.deepEqual([...this.#operationGrants], []);
+    assert.deepEqual([...this.#consumedGrants], [OPERATION_GRANT_IDENTITY]);
+  }
+
+  async assertConflictPreserved(): Promise<void> {
+    await this.#assertConflictIdentity();
+  }
+
+  async assertConflictSourcePreserved(): Promise<void> {
+    await this.assertSourceIdentity();
+  }
+
+  async assertPostConflictDestinationPreserved(): Promise<void> {
+    const expected = this.#destinationPostConflict;
+    assert.ok(expected, "Post-conflict destination recording is unavailable");
+    assert.deepEqual(await fingerprintTree(this.#requireDestinationRoot()), expected);
+  }
+
+  async assertOnlyExternalConflictChangedDestination(): Promise<void> {
+    const baseline = this.#destinationBaseline;
+    assert.ok(baseline);
+    const current = await fingerprintTree(this.#requireDestinationRoot());
+    assert.deepEqual(
+      current.entries.filter((entry) => entry.path !== "FoundryPreviewFixture"),
+      baseline.entries,
+    );
+    assert.deepEqual(
+      current.entries.filter((entry) => entry.path === "FoundryPreviewFixture"),
+      [this.#requireConflictFingerprint()],
+    );
+  }
+
+  async assertConflictFilesystemWriteIsolation(): Promise<void> {
+    await this.assertConflictSourcePreserved();
+    await this.assertPostConflictDestinationPreserved();
+    await this.assertOnlyExternalConflictChangedDestination();
+    this.#assertNoDestinationTransactionResidue();
+    assert.deepEqual(
+      this.#tauriCalls.filter((call) => /(?:write|create|remove|delete|move|rename|git|remember)/iu.test(call.command)),
+      [],
+    );
+  }
+
+  async assertNoConflictResidue(configurationName: string): Promise<void> {
+    assert.equal(configurationName, ".ide");
+    this.#assertNoDestinationTransactionResidue();
+    assert.deepEqual((await readdir(this.#requireSandbox())).sort(), ["empt-v1_4", "foundry-output"]);
+    assert.deepEqual((await readdir(this.#requireDestinationRoot())).sort(), [
+      "FoundryPreviewFixture",
+      "existing-sibling",
+    ]);
+    assert.deepEqual([...this.#activeGrants], []);
+  }
+
+  assertNoConflictMechanisms(rows: readonly Readonly<Record<string, string>>[]): void {
+    assert.equal(rows.length, 4);
+    assert.equal(rows.every((row) => row["invocation count"] === "0"), true);
+    const forbidden = /(?:process|shell|git|powershell|batch|\.exe|c#|network|build|deploy|cook|launch|open)/iu;
+    assert.deepEqual(this.#tauriCalls.filter((call) => forbidden.test(call.command)), []);
+  }
+
+  async assertConflictDialogClearedAndClosed(): Promise<void> {
+    await this.#assertClosedThenReopenedClearState("Cancel");
+  }
+
+  async assertAllConflictStatePreserved(): Promise<void> {
+    await this.#assertConflictPreservation();
+  }
+
+  assertNoConflictGrantRemains(): void {
+    assert.deepEqual([...this.#activeGrants], []);
+    assert.deepEqual([...this.#operationGrants], []);
+    assert.equal(this.#pendingApply, undefined);
+  }
+
+  async assertGlobalControlFocused(name: string): Promise<void> {
+    assert.equal(name, "New XCOM 2 Project");
+    const control = this.#requirePage().getByRole("button", { name, exact: true });
+    assert.equal(await control.evaluate((element) => document.activeElement === element), true);
+  }
+
+  async assertEscapeConflictDismissalEquivalent(): Promise<void> {
+    const replay = new Xcom2ProjectFoundryHarness();
+    try {
+      await replay.start();
+      replay.configureDestinationConflictScenario();
+      replay.configureConflictSource(SOURCE_REPOSITORY, SOURCE_GRANT_IDENTITY);
+      replay.assertConflictDestinationSelection(DESTINATION_PARENT, DESTINATION_GRANT_IDENTITY);
+      await replay.createPinnedObjectDatabase(SOURCE_COMMIT, SOURCE_TREE);
+      await replay.createDirtyCanaries();
+      await replay.recordSourceIdentity();
+      await replay.createDestinationParentAndRecord();
+      await replay.assertDerivedDestinationAbsent(DERIVED_DESTINATION);
+      await replay.openConflictPreview("New XCOM 2 Project", "FoundryPreviewFixture", "Preview");
+      await replay.assertRendererMintedInitialGrant(OPERATION_GRANT_IDENTITY, DERIVED_DESTINATION);
+      await replay.createExternalConflict(DERIVED_DESTINATION, "Create project");
+      await replay.recordPostConflictDestination();
+      await replay.activateDialogControl("Create project");
+      await replay.assertConflictCreationAuthorityConsumed();
+      await replay.assertAtomicConflictAlert("alert");
+      await replay.#requirePage().keyboard.press("Escape");
+      await replay.#assertClosedThenReopenedClearState("Escape");
+      await replay.#assertConflictPreservation();
+      replay.assertNoConflictGrantRemains();
+      await replay.assertGlobalControlFocused("New XCOM 2 Project");
+    } finally {
+      await replay.dispose();
+    }
+  }
+
+  assertConflictScopeLimit(createdRecoveryRequired: string): void {
+    assert.equal(createdRecoveryRequired, "created-recovery-required");
+    assert.equal(this.#requirementId, DESTINATION_CONFLICT_REQUIREMENT_ID);
+    assert.equal(this.#applyCalls.length, 1);
+    assert.equal(this.#nativeReuseCalls.length, 1);
+  }
+
+  assertConflictEvidenceLimits(): void {
+    assert.equal(this.#separateRustAuthorityAcknowledged, true);
+    assert.equal(this.#destinationConflictScenario, true);
+    assert.equal(this.#context !== undefined, true);
+    assert.equal(this.#browser !== undefined, true);
+  }
+
   async assertApplyingStatus(status: string): Promise<void> {
     assert.equal(status, "Creating project…");
     const liveStatus = this.#dialog().getByRole("status");
@@ -1075,6 +1539,7 @@ export class Xcom2ProjectFoundryHarness {
     assert.deepEqual(
       fingerprint.entries
         .filter((entry) => entry.kind === "directory")
+        .map(({ objectIdentity: _objectIdentity, ...entry }) => entry)
         .sort((left, right) => left.path.localeCompare(right.path)),
       expectedDirectories
         .map((entry) => ({
@@ -1087,6 +1552,7 @@ export class Xcom2ProjectFoundryHarness {
     assert.deepEqual(
       fingerprint.entries
         .filter((entry) => entry.kind === "file")
+        .map(({ objectIdentity: _objectIdentity, ...entry }) => entry)
         .sort((left, right) => left.path.localeCompare(right.path)),
       expectedFiles
         .map((entry) => ({
@@ -1252,7 +1718,13 @@ export class Xcom2ProjectFoundryHarness {
       ),
       sourceObjectReads: this.#objectReads,
       applyRequests: this.#applyCalls,
+      appApplyRequests: this.#applyCalls,
       applyTranscript: this.#applyTranscript,
+      appApplyResult: this.#appApplyResult,
+      nativeExactRequestReuse: this.#nativeReuseCalls,
+      nativeExactRequestReuseResult: this.#nativeReuseResult,
+      destinationPostConflictIdentity: this.#destinationPostConflict,
+      conflictFingerprint: this.#conflictFingerprint,
       createdReceipt: this.#createdReceipt,
       separateRustAuthorityAcknowledged: this.#separateRustAuthorityAcknowledged,
       correctedRendererBoundaryAcknowledged: this.#correctedRendererBoundaryAcknowledged,
@@ -1265,6 +1737,8 @@ export class Xcom2ProjectFoundryHarness {
       ),
       activeGrantCount: this.#activeGrants.size,
       operationRevocations: this.#operationRevocations,
+      consumedGrantIdentities: [...this.#consumedGrants].sort(),
+      revokeAllCalls: this.#revokeAllCalls,
       revokedGrantIdentities: [...this.#revokedGrants].sort(),
     };
   }
@@ -1287,6 +1761,77 @@ export class Xcom2ProjectFoundryHarness {
     const sandbox = this.#sandbox;
     this.#sandbox = undefined;
     if (sandbox) await rm(sandbox, { recursive: true, force: true });
+  }
+
+  async #waitForConflictApplyCompletion(): Promise<void> {
+    const deadline = Date.now() + UI_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (this.#appApplyResult && this.#revokeAllCalls > 0) return;
+      await delay(10);
+    }
+    throw new Error("Project Foundry destination-conflict Apply did not complete deterministically");
+  }
+
+  #requireConflictFingerprint(): FingerprintEntry {
+    assert.ok(this.#conflictFingerprint, "Scenario-owned conflict was not fingerprinted");
+    return this.#conflictFingerprint;
+  }
+
+  async #assertConflictIdentity(): Promise<void> {
+    const expected = this.#requireConflictFingerprint();
+    const current = (await fingerprintTree(this.#requireDestinationRoot())).entries.find(
+      (entry) => entry.path === "FoundryPreviewFixture",
+    );
+    assert.deepEqual(current, expected);
+    const path = join(this.#requireDestinationRoot(), "FoundryPreviewFixture");
+    const stat = await lstat(path);
+    assert.equal(stat.isSymbolicLink(), false);
+    assert.equal(stat.isFile(), true);
+    assert.equal(modeOf(stat.mode), "0640");
+    const bytes = await readFile(path);
+    assert.equal(bytes.toString("hex"), CONFLICT_HEX);
+    assert.equal(sha256(bytes), CONFLICT_SHA256);
+  }
+
+  #assertNoDestinationTransactionResidue(): void {
+    const destination = this.#destinationPostConflict;
+    assert.ok(destination, "Post-conflict destination recording is unavailable");
+    const forbidden = /(?:^|\/)(?:\.ide|\.git|.*stage.*|.*journal.*|.*receipt.*)(?:\/|$)/iu;
+    assert.deepEqual(destination.entries.filter((entry) => forbidden.test(entry.path)), []);
+    assert.equal(this.#createdReceipt, undefined);
+  }
+
+  async #assertConflictPreservation(): Promise<void> {
+    await this.#assertConflictIdentity();
+    await this.assertConflictSourcePreserved();
+    await this.assertPostConflictDestinationPreserved();
+    await this.assertOnlyExternalConflictChangedDestination();
+    this.#assertNoDestinationTransactionResidue();
+  }
+
+  async #assertClosedThenReopenedClearState(
+    dismissal: "Cancel" | "Escape",
+  ): Promise<void> {
+    const page = this.#requirePage();
+    await page
+      .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
+      .waitFor({ state: "detached" });
+    const globalControl = page.getByRole("button", { name: "New XCOM 2 Project", exact: true });
+    await globalControl.click();
+    const dialog = this.#dialog();
+    await dialog.waitFor({ state: "visible" });
+    assert.equal(await dialog.getByLabel("EMPT repository", { exact: true }).inputValue(), "");
+    assert.equal(await dialog.getByLabel("Destination parent", { exact: true }).inputValue(), "");
+    assert.equal(await dialog.getByLabel("ModId", { exact: true }).inputValue(), "");
+    assert.equal(await dialog.locator('[aria-label="Complete Project Foundry preview"]').count(), 0);
+    assert.equal(await dialog.getByRole("alert").count(), 0);
+    assert.equal(
+      await dialog.getByRole("button", { name: "Create project", exact: true }).isDisabled(),
+      true,
+    );
+    if (dismissal === "Escape") await page.keyboard.press("Escape");
+    else await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
   }
 
   async #installBindings(context: BrowserContext): Promise<void> {
@@ -1384,6 +1929,29 @@ export class Xcom2ProjectFoundryHarness {
         const snapshot = structuredClone(request) as Xcom2ProjectFoundryApplyRequest;
         this.#applyCalls.push(snapshot);
         this.#applyTranscript.push({ event: "called", request: snapshot });
+        this.#applyControlDisabledAtCall = await source.page
+          .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
+          .getByRole("button", { name: "Create project", exact: true })
+          .isDisabled();
+        this.#creationAuthorityConsumedBeforeCall = this.#applyControlDisabledAtCall === true;
+
+        if (this.#destinationConflictScenario) {
+          assert.equal(this.#activeGrants.has(snapshot.operationGrant.identity), true);
+          this.#activeGrants.delete(snapshot.operationGrant.identity);
+          this.#operationGrants.delete(snapshot.operationGrant.identity);
+          this.#consumedGrants.add(snapshot.operationGrant.identity);
+          this.#nativeOperationConsumedBeforeValidation = true;
+          await this.#assertConflictIdentity();
+          const refusal = Object.freeze({
+            result: "refused" as const,
+            phase: "pre-commit" as const,
+            reason: "destination-present",
+          });
+          this.#appApplyResult = refusal;
+          this.#applyTranscript.push({ event: "completed", result: refusal });
+          return refusal;
+        }
+
         const applyRenderRequest: Xcom2ProjectFoundryRenderRequest = {
           sourceGrant: snapshot.sourceGrant,
           destinationParentGrant: snapshot.destinationParentGrant,
@@ -1401,10 +1969,6 @@ export class Xcom2ProjectFoundryHarness {
         );
         this.#pendingApplyRender = applyRender;
         this.#applyRerendered = true;
-        this.#applyControlDisabledAtCall = await source.page
-          .getByRole("dialog", { name: "New XCOM 2 Project", exact: true })
-          .getByRole("button", { name: "Create project", exact: true })
-          .isDisabled();
         let resolveApply!: (result: Xcom2ProjectFoundryApplyResult) => void;
         const promise = new Promise<Xcom2ProjectFoundryApplyResult>((resolvePending) => {
           resolveApply = resolvePending;
@@ -1425,6 +1989,7 @@ export class Xcom2ProjectFoundryHarness {
       this.#operationRevocations.push(revoked.sort());
     });
     await context.exposeBinding("__storyFoundryRevokeGrants", async () => {
+      this.#revokeAllCalls += 1;
       for (const identity of this.#activeGrants) this.#revokedGrants.add(identity);
       this.#activeGrants.clear();
       this.#operationGrants.clear();

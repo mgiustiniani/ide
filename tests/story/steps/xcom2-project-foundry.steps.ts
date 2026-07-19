@@ -659,3 +659,328 @@ Then<StoryWorld>(
     session(this).assertGrantsRevoked();
   },
 );
+
+Given<StoryWorld>(
+  "complementary focused production Rust filesystem tests are the separate authority for consuming the native operation grant, refusing a destination created after Preview but before transaction writes, preserving filesystem state, and refusing exact request reuse",
+  function () {
+    session(this).configureDestinationConflictScenario();
+    session(this).acknowledgeSeparateRustAuthority();
+  },
+);
+
+Given<StoryWorld>(
+  "the selected source repository is {string} under source grant {string}",
+  function (repository: string, grantIdentity: string) {
+    session(this).configureConflictSource(repository, grantIdentity);
+  },
+);
+
+Given<StoryWorld>(
+  "it resolves exact commit {string} and exact tree {string} from committed local objects only",
+  async function (commit: string, tree: string) {
+    await session(this).createPinnedObjectDatabase(commit, tree);
+  },
+);
+
+Given<StoryWorld>(
+  "the source working tree's exact topology, modes, bytes, and canary identities are recorded before the dialog opens",
+  async function () {
+    await session(this).recordSourceIdentity();
+  },
+);
+
+Given<StoryWorld>(
+  "the selected destination parent is {string} under destination-parent grant {string}",
+  function (parent: string, grantIdentity: string) {
+    session(this).assertConflictDestinationSelection(parent, grantIdentity);
+  },
+);
+
+Given<StoryWorld>(
+  "the temporary destination parent's exact topology, modes, bytes, and entry identities are recorded before the dialog opens",
+  async function () {
+    await session(this).createDestinationParentAndRecord();
+  },
+);
+
+When<StoryWorld>(
+  "the person opens {string}, accepts the supplied selections, enters exact ModId {string}, and activates {string}",
+  async function (dialogName: string, modId: string, controlName: string) {
+    await session(this).openConflictPreview(dialogName, modId, controlName);
+  },
+);
+
+Then<StoryWorld>(
+  "the shared Rust renderer supplies the complete fixture plan and mints operation grant {string} only after confirming the final project location is absent",
+  async function (operationIdentity: string) {
+    await session(this).assertRendererMintedInitialGrant(
+      operationIdentity,
+      "/scenario/foundry-output/FoundryPreviewFixture",
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "TypeScript shows the ready fixture Preview for exact plan digest {string}",
+  async function (planDigest: string) {
+    await session(this).assertLivePreview(planDigest);
+    await session(this).assertRendererResultValidated();
+  },
+);
+
+Then<StoryWorld>(
+  "the Preview binds exact project GUID {string}, the supplied grants, the exact source commit and tree, {int} directories, {int} regular files, and absent final project location {string}",
+  async function (
+    projectGuid: string,
+    directoryCount: number,
+    fileCount: number,
+    destination: string,
+  ) {
+    await session(this).assertConflictPreviewBindings(
+      projectGuid,
+      directoryCount,
+      fileCount,
+      destination,
+    );
+  },
+);
+
+Then<StoryWorld>(
+  "exactly one accessible {string} control can approve that still-live Preview",
+  async function (name: string) {
+    await session(this).assertSingleApplyControl(name);
+  },
+);
+
+When<StoryWorld>(
+  "the scenario owner externally creates one item at {string} before the person activates {string}",
+  async function (path: string, controlName: string) {
+    await session(this).createExternalConflict(path, controlName);
+  },
+);
+
+Then<StoryWorld>(
+  "that conflict has exactly these recorded properties:",
+  function (dataTable: DataTable) {
+    session(this).assertConflictProperties(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "the destination parent's exact topology, modes, bytes, and entry identities are recorded after that external creation",
+  async function () {
+    await session(this).recordPostConflictDestination();
+  },
+);
+
+Then<StoryWorld>(
+  "the frontend synchronously consumes creation authority before it calls Apply",
+  async function () {
+    await session(this).assertConflictCreationAuthorityConsumed();
+  },
+);
+
+Then<StoryWorld>(
+  "{string} is disabled before the Apply call starts and remains disabled for this Preview",
+  async function (name: string) {
+    await session(this).assertConflictApplyControlDisabled(name);
+  },
+);
+
+Then<StoryWorld>(
+  "the deterministic backend receives exactly one Apply call with only this production request:",
+  function (dataTable: DataTable) {
+    session(this).assertExactConflictApplyRequest(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "Rust consumes operation grant {string} before validating the destination",
+  function (operationIdentity: string) {
+    session(this).assertNativeOperationConsumedBeforeDestinationValidation(operationIdentity);
+  },
+);
+
+Then<StoryWorld>(
+  "Apply returns exactly this production-shaped refusal:",
+  function (dataTable: DataTable) {
+    session(this).assertExactConflictRefusal(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>("repeated Create activation invokes no second Apply call", async function () {
+  await session(this).assertRepeatedConflictActivationIsOneShot();
+});
+
+Then<StoryWorld>(
+  "complementary production Rust evidence repeats the exact native request once and receives reason {string} as `ApplyAuthorityConsumed`",
+  async function (reason: string) {
+    await session(this).repeatExactNativeRequest(reason);
+  },
+);
+
+Then<StoryWorld>(
+  "the repeated native refusal leaves the already preserved state unchanged and leaves no stage or journal residue",
+  async function () {
+    await session(this).assertNativeReusePreservedState();
+  },
+);
+
+Then<StoryWorld>(
+  "exactly one atomic accessible alert with `role={string}` appears without a nested alert or color-only meaning",
+  async function (role: string) {
+    await session(this).assertAtomicConflictAlert(role);
+  },
+);
+
+Then<StoryWorld>("its title is structurally identified", async function () {
+  await session(this).assertConflictTitleIdentified();
+});
+
+Then<StoryWorld>(
+  "that same alert contains exactly these four fixed fields:",
+  async function (dataTable: DataTable) {
+    await session(this).assertExactConflictAlertFields(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "the refusal introduces none of these disclosures:",
+  async function (dataTable: DataTable) {
+    await session(this).assertNoConflictDisclosures(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "only already reviewed controlled Preview facts remain visible, only as non-authoritative context that grants no approval or Apply authority",
+  async function () {
+    await session(this).assertPreviewIsNonAuthoritativeContext();
+  },
+);
+
+Then<StoryWorld>(
+  "source selection, destination selection, ModId, Preview, and Create are disabled for this terminal session",
+  async function () {
+    await session(this).assertTerminalConflictControlsDisabled();
+  },
+);
+
+Then<StoryWorld>(
+  "only Cancel is enabled, Escape has the same dismissal semantics, and no retry, overwrite, delete, move, open, reveal, or recovery action is offered",
+  async function () {
+    await session(this).assertOnlyTerminalCancelEnabled();
+  },
+);
+
+Then<StoryWorld>(
+  "the modal focus trap remains active and Cancel remains keyboard accessible",
+  async function () {
+    await session(this).assertTerminalFocusTrap();
+  },
+);
+
+Then<StoryWorld>(
+  "the controller discards every source, destination-parent, and operation grant and completes `revokeAll`",
+  async function () {
+    await session(this).assertConflictGrantsDiscarded();
+  },
+);
+
+Then<StoryWorld>(
+  "the conflict retains exactly its recorded regular-file type, non-symlink status, mode, byte sequence, hash, and filesystem object identity",
+  async function () {
+    await session(this).assertConflictPreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "the source repository retains exactly its recorded topology, modes, bytes, and canary identities",
+  async function () {
+    await session(this).assertConflictSourcePreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "the destination parent retains exactly its post-conflict recorded topology, modes, bytes, and entry identities",
+  async function () {
+    await session(this).assertPostConflictDestinationPreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "compared with the pre-Preview destination-parent recording, the only change is the scenario owner's exact conflict file",
+  async function () {
+    await session(this).assertOnlyExternalConflictChangedDestination();
+  },
+);
+
+Then<StoryWorld>(
+  "Foundry has performed zero destination, source, sibling, stage, journal, receipt, IDE-state, Git-repository, remembered-project, or other filesystem writes",
+  async function () {
+    await session(this).assertConflictFilesystemWriteIsolation();
+  },
+);
+
+Then<StoryWorld>(
+  "no Foundry output, private stage, journal, receipt file, {string} state, Git repository, remembered project, retained creation authority, or other residue exists",
+  async function (configurationName: string) {
+    await session(this).assertNoConflictResidue(configurationName);
+  },
+);
+
+Then<StoryWorld>(
+  "the production path has invoked none of these mechanisms:",
+  function (dataTable: DataTable) {
+    session(this).assertNoConflictMechanisms(dataTable.hashes());
+  },
+);
+
+Then<StoryWorld>(
+  "the dialog closes and clears every controlled value, Preview, refusal, digest, approval state, and authority",
+  async function () {
+    await session(this).assertConflictDialogClearedAndClosed();
+  },
+);
+
+Then<StoryWorld>(
+  "the exact conflict, source repository, working-tree canaries, destination-parent baseline entries, and siblings remain unchanged",
+  async function () {
+    await session(this).assertAllConflictStatePreserved();
+  },
+);
+
+Then<StoryWorld>(
+  "no source, destination-parent, operation, creation, or later Apply grant remains",
+  function () {
+    session(this).assertNoConflictGrantRemains();
+  },
+);
+
+Then<StoryWorld>(
+  "focus returns to the {string} application control",
+  async function (name: string) {
+    await session(this).assertGlobalControlFocused(name);
+  },
+);
+
+Then<StoryWorld>(
+  "dismissing the same terminal state with Escape has exactly the same clearing, preservation, grant-cleanup, close, and focus-return semantics",
+  { timeout: 30_000 },
+  async function () {
+    await session(this).assertEscapeConflictDismissalEquivalent();
+  },
+);
+
+Then<StoryWorld>(
+  "this Story establishes no other stale source, grant, parent, digest, ModId, destination-type, stage, journal, commit-race, failure, cleanup-residue, interruption, restart, discovery, recovery, removal, or {string} behavior",
+  function (createdRecoveryRequired: string) {
+    session(this).assertConflictScopeLimit(createdRecoveryRequired);
+  },
+);
+
+Then<StoryWorld>(
+  "it establishes no in-flight Cancel, native chooser, WebKit E2E, real IPC, packaged application, Windows, publication, licensing, build, deployment, cooking, launch, or auto-open evidence",
+  function () {
+    session(this).assertConflictEvidenceLimits();
+  },
+);
