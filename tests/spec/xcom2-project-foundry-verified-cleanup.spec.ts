@@ -1,11 +1,14 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import * as foundryContracts from "../../packages/contracts/src/domain/xcom2-project-foundry";
-import type {
-  Xcom2ProjectFoundryApplyAttentionPresentation,
-  Xcom2ProjectFoundryApplyResult,
-  Xcom2ProjectFoundryApplyState,
-  Xcom2ProjectFoundryApplyTerminalSessionDecision,
+import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES,
+  XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+  type Xcom2ProjectFoundryApplyAttentionPresentation,
+  type Xcom2ProjectFoundryApplyCleanupStatus,
+  type Xcom2ProjectFoundryApplyResult,
+  type Xcom2ProjectFoundryApplyState,
+  type Xcom2ProjectFoundryApplyTerminalSessionDecision,
 } from "../../packages/contracts/src/domain/xcom2-project-foundry";
 import * as foundryCore from "../../packages/web-core/src/xcom2/project-foundry";
 import {
@@ -15,14 +18,8 @@ import {
   readyFoundryApplyPreview,
 } from "./support/xcom2-project-foundry-apply-fixture";
 
-type CleanupStatus = "verified-complete" | "not-verified";
 type FailedApplyState = Extract<Xcom2ProjectFoundryApplyState, { readonly status: "failed" }>;
 type RefusedApplyState = Extract<Xcom2ProjectFoundryApplyState, { readonly status: "refused" }>;
-
-const cleanupContracts = foundryContracts as typeof foundryContracts & {
-  readonly XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES: readonly CleanupStatus[];
-  readonly XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION: Readonly<Xcom2ProjectFoundryApplyAttentionPresentation>;
-};
 
 const cleanupCore = foundryCore as typeof foundryCore & {
   decideXcom2ProjectFoundryApplyTerminalSession(
@@ -84,17 +81,19 @@ const genericFallbackCases: readonly (readonly [string, unknown])[] = [
  */
 describe("@REQ-XCOM2-PROJECT-FOUNDRY-004 ADR0010 verified stage-write cleanup policy", () => {
   it("defines the closed cleanup-status vocabulary and exact frozen positive presentation", () => {
-    expectTypeOf<CleanupStatus>().toEqualTypeOf<"verified-complete" | "not-verified">();
-    expect(cleanupContracts.XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES).toEqual([
+    expectTypeOf<Xcom2ProjectFoundryApplyCleanupStatus>().toEqualTypeOf<
+      "verified-complete" | "not-verified"
+    >();
+    expectTypeOf<
+      FailedApplyState["failure"]["cleanupStatus"]
+    >().toEqualTypeOf<Xcom2ProjectFoundryApplyCleanupStatus>();
+    expect(XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES).toEqual([
       "verified-complete",
       "not-verified",
     ]);
-    expect(Object.isFrozen(cleanupContracts.XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES)).toBe(
-      true,
-    );
+    expect(Object.isFrozen(XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES)).toBe(true);
 
-    const presentation =
-      cleanupContracts.XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION;
+    const presentation = XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION;
     expect(presentation).toEqual(verifiedCleanupPresentation);
     expect(Object.keys(presentation)).toEqual(["title", "summary", "remediation", "supportCode"]);
     assertDeepFrozen(presentation);
@@ -107,7 +106,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-004 ADR0010 verified stage-write cleanup po
       cleanupCore.mapXcom2ProjectFoundryApplyAttentionPresentation(positiveTuple);
 
     expect(presentation).toBe(
-      cleanupContracts.XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
+      XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
     );
     expect(presentation).toEqual(verifiedCleanupPresentation);
     assertDeepFrozen(presentation);
@@ -116,9 +115,7 @@ describe("@REQ-XCOM2-PROJECT-FOUNDRY-004 ADR0010 verified stage-write cleanup po
   it.each(genericFallbackCases)("maps %s to the existing generic fallback", (_label, result) => {
     const presentation = cleanupCore.mapXcom2ProjectFoundryApplyAttentionPresentation(result);
 
-    expect(presentation).toBe(
-      cleanupContracts.XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
-    );
+    expect(presentation).toBe(XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION);
     expect(JSON.stringify(presentation)).not.toMatch(
       /(?:verified that|stopped safely|cleanup-verified|provider-secret)/u,
     );

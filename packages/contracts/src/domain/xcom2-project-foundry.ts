@@ -216,6 +216,11 @@ export const XCOM2_PROJECT_FOUNDRY_APPLY_FAILURE_PHASES = Object.freeze([
   "post-commit",
 ] as const);
 
+export const XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES = Object.freeze([
+  "verified-complete",
+  "not-verified",
+] as const);
+
 export interface Xcom2ProjectFoundryApplyAttentionPresentation {
   readonly title: string;
   readonly summary: string;
@@ -232,6 +237,15 @@ export const XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION = Obje
   supportCode: "foundry-apply-destination-present",
 } as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation);
 
+export const XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION = Object.freeze({
+  title: "Project creation stopped safely",
+  summary:
+    "Foundry could not finish writing the project, but verified that the final project location and temporary transaction items are absent. This approved preview cannot be retried.",
+  remediation:
+    "Cancel, then reopen Project Foundry and preview again before trying to create the project.",
+  supportCode: "foundry-apply-stage-write-cleanup-verified",
+} as const satisfies Xcom2ProjectFoundryApplyAttentionPresentation);
+
 export const XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION = Object.freeze({
   title: "Project creation needs attention",
   summary:
@@ -245,6 +259,9 @@ export type Xcom2ProjectFoundryApplyRefusalCode =
 
 export type Xcom2ProjectFoundryApplyFailurePhase =
   (typeof XCOM2_PROJECT_FOUNDRY_APPLY_FAILURE_PHASES)[number];
+
+export type Xcom2ProjectFoundryApplyCleanupStatus =
+  (typeof XCOM2_PROJECT_FOUNDRY_APPLY_CLEANUP_STATUSES)[number];
 
 export interface Xcom2ProjectFoundryApplyCurrentSelection {
   readonly sourceGrant: Readonly<Xcom2ProjectFoundrySourceSelectionGrant>;
@@ -278,6 +295,7 @@ export interface Xcom2ProjectFoundryApplyFailure {
   readonly result: "failed";
   readonly phase: "pre-commit";
   readonly reason: string;
+  readonly cleanupStatus: Xcom2ProjectFoundryApplyCleanupStatus;
 }
 
 export interface Xcom2ProjectFoundryCreatedRecoveryRequired {
