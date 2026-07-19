@@ -1,5 +1,8 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_SCHEMA_VERSION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+  type Xcom2ProjectFoundryApplyAttentionPresentation,
   type Xcom2ProjectFoundryApplyCurrentSelection,
   type Xcom2ProjectFoundryApplyEvent,
   type Xcom2ProjectFoundryApplyPreparation,
@@ -9,12 +12,14 @@ import {
   type Xcom2ProjectFoundryApplyResult,
   type Xcom2ProjectFoundryApplyState,
   type Xcom2ProjectFoundryApplyStateDecision,
+  type Xcom2ProjectFoundryApplyTerminalSessionDecision,
   type Xcom2ProjectFoundryApplyingState,
   type Xcom2ProjectFoundryCreatedReceipt,
-  type Xcom2ProjectFoundryReadyApplyState,
   type Xcom2ProjectFoundryDigestBoundPlan,
   type Xcom2ProjectFoundryModIdValidationResult,
   type Xcom2ProjectFoundryPreviewResult,
+  type Xcom2ProjectFoundryReadyApplyState,
+  type Xcom2ProjectFoundryRefusedApplyState,
 } from "@ide/contracts";
 
 import { canonicalizeJsonRfc8785, sha256Hex } from "./deterministic-data";
@@ -23,6 +28,10 @@ export {
   createXcom2ProjectFoundryRenderRequest,
   validateAndDigestXcom2ProjectFoundryRenderedPlan,
 } from "./rendered-plan-custody";
+export {
+  XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+};
 
 const MOD_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/u;
 const WINDOWS_DEVICE_PATTERN = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu;
@@ -140,6 +149,71 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object"
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function isExactDestinationPresentRefusal(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.length !== 3 ||
+      !keys.includes("result") ||
+      !keys.includes("phase") ||
+      !keys.includes("reason")
+    ) {
+      return false;
+    }
+
+    const result = Object.getOwnPropertyDescriptor(value, "result");
+    const phase = Object.getOwnPropertyDescriptor(value, "phase");
+    const reason = Object.getOwnPropertyDescriptor(value, "reason");
+    return (
+      result !== undefined &&
+      "value" in result &&
+      result.enumerable === true &&
+      result.value === "refused" &&
+      phase !== undefined &&
+      "value" in phase &&
+      phase.enumerable === true &&
+      phase.value === "pre-commit" &&
+      reason !== undefined &&
+      "value" in reason &&
+      reason.enumerable === true &&
+      reason.value === "destination-present" &&
+      Reflect.get(value, "result") === result.value &&
+      Reflect.get(value, "phase") === phase.value &&
+      Reflect.get(value, "reason") === reason.value
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Collapse untrusted Apply results to one of two immutable, non-interpolated presentations. */
+export function mapXcom2ProjectFoundryApplyAttentionPresentation(
+  result: unknown,
+): Readonly<Xcom2ProjectFoundryApplyAttentionPresentation> {
+  return isExactDestinationPresentRefusal(result)
+    ? XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION
+    : XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION;
+}
+
+const XCOM2_PROJECT_FOUNDRY_APPLY_TERMINAL_SESSION_DECISION = deepFreeze({
+  kind: "terminal",
+  authority: "consumed",
+  preview: "retained-context",
+  disabledControls: ["source-selection", "destination-selection", "mod-id", "preview", "create"],
+  enabledControls: ["cancel"],
+} as const satisfies Xcom2ProjectFoundryApplyTerminalSessionDecision);
+
+/** Keep a refused Preview as context while exposing Cancel as the only live control. */
+export function decideXcom2ProjectFoundryApplyTerminalSession(
+  _state: Readonly<Xcom2ProjectFoundryRefusedApplyState>,
+): Readonly<Xcom2ProjectFoundryApplyTerminalSessionDecision> {
+  return XCOM2_PROJECT_FOUNDRY_APPLY_TERMINAL_SESSION_DECISION;
 }
 
 function sourceGrantMatchesPlan(
@@ -362,6 +436,7 @@ function reduceApplyCompletion(
       state: {
         status: "refused",
         authority: "consumed",
+        preview: cloneJsonData(state.preview),
         refusal: { result: "refused", phase: "pre-commit", reason: record.reason },
       },
     });
