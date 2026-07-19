@@ -244,7 +244,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
         xcomOptionalProvisioning -> xcomProvisioningServices "Describes separately authorized provisioning"
         developer -> xcomContributionCoordinator "Uses contextual tools only after additional project authorization"
         xcomConfirmationAndExternalRoots -> xcomConfiguredActivationEvaluator "Extends activation only after separate confirmation or root grants"
-        xcomContributionCoordinator -> xcomConfiguredActivationEvaluator "Uses current project activation as one future authorization input"
+        xcomContributionCoordinator -> xcomConfiguredActivationEvaluator "Uses project activation as a separately authorized input"
         xcomContributionCoordinator -> xcomActivationEvaluator "Can retain convention recognition as one activation input"
         xcomContributionCoordinator -> xcomLanguageBuildAdapters "Enables Build, Problems, Logs, and language tools for authorized modules"
         xcomLanguageBuildAdapters -> xcomLanguageBuildBridge "Uses an authorized native boundary"
@@ -381,14 +381,14 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, workspace 
 
         container ide "Xcom2ProjectContainers" {
             title "XCOM 2 Project and Optional Provisioning Runtime"
-            description "Configured or recognized project activation, future contextual tools, optional provisioning, and machine setup retain distinct authority."
+            description "Configured or recognized project activation, contextual tools, optional provisioning, and machine setup retain distinct authority."
             include developer desktopApp rustBackend filesystem steamMetadata xcomToolchain xcomProvisioningServices
             autoLayout lr
         }
 
         component desktopApp "Xcom2ProjectDesktopComponents" {
             title "XCOM 2 Project Activation, Contextual Tools, and Settings"
-            description "Recognition-only activation and machine Settings stay separate from future external roots, contextual tools, and provisioning."
+            description "Recognition-only activation and machine Settings stay separate from external-root grants, contextual tools, and provisioning."
             include developer xcomFeatureContracts xcomSetupPresentation xcomSetupController tauriXcomTransactionAdapter xcomProductionSetup xcomModuleActivationController tauriXcomModuleConfigurationAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomConfirmationAndExternalRoots xcomOptionalProvisioning xcomContributionCoordinator xcomLanguageBuildAdapters filesystem rustBackend
             autoLayout lr
         }
