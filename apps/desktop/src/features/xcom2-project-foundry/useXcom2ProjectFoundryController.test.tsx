@@ -1,5 +1,6 @@
 import {
   XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
@@ -663,6 +664,7 @@ describe("useXcom2ProjectFoundryController", () => {
         result: "failed",
         phase: "pre-commit",
         reason: "RAW_PROVIDER_REASON /tmp/private-stage errno=17",
+        cleanupStatus: "not-verified",
       },
     },
     {
@@ -684,11 +686,12 @@ describe("useXcom2ProjectFoundryController", () => {
       },
     },
     {
-      name: "malformed conflict refusal",
+      name: "malformed verified-cleanup attestation",
       provider: {
-        result: "refused",
+        result: "failed",
         phase: "pre-commit",
-        reason: "destination-present",
+        reason: "stage-write-failed",
+        cleanupStatus: "verified-complete",
         rawCause: "RAW_CAUSE_CANARY /home/scenario-owner/private",
       },
     },
@@ -729,6 +732,30 @@ describe("useXcom2ProjectFoundryController", () => {
     );
     expect(harness.revokeAll).toHaveBeenCalledOnce();
     controller.unmount();
+  });
+
+  it("presents verified cleanup only for an exact provider attestation", async () => {
+    const harness = createComposition({
+      apply: vi.fn(async () => ({
+        result: "failed" as const,
+        phase: "pre-commit" as const,
+        reason: "stage-write-failed",
+        cleanupStatus: "verified-complete" as const,
+      })),
+    });
+    const controller = renderFoundryController(harness.composition);
+    await renderReady(controller);
+    const ready = controller.result.current.applyState;
+    if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+
+    await act(() => controller.result.current.apply(ready.preview.plan.planDigest));
+
+    expect(controller.result.current.creationState).toEqual({
+      kind: "attention",
+      presentation: XCOM2_PROJECT_FOUNDRY_APPLY_STAGE_WRITE_CLEANUP_VERIFIED_PRESENTATION,
+      terminalDecision: expect.objectContaining({ enabledControls: ["cancel"] }),
+    });
+    expect(harness.revokeAll).toHaveBeenCalledOnce();
   });
 
   it("maps thrown Apply causes to generic terminal attention without leaking provider causes", async () => {

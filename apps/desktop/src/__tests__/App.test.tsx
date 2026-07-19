@@ -2339,14 +2339,15 @@ describe("App", () => {
     await flushMicrotasks();
   });
 
-  it("renders fixed generic attention for a malformed provider completion without raw details", async () => {
+  it("does not trust malformed verified-cleanup attestation for fallback attention", async () => {
     const raw = "RAW_CAUSE_CANARY /tmp/private-stage errno=17";
     const apply = vi.fn(
       async () =>
         ({
-          result: "refused",
+          result: "failed",
           phase: "pre-commit",
-          reason: "destination-present",
+          reason: "stage-write-failed",
+          cleanupStatus: "verified-complete",
           rawCause: raw,
         }) as never,
     );
@@ -2392,7 +2393,7 @@ describe("App", () => {
       XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION.supportCode,
     );
     expect(alert.textContent).not.toMatch(
-      /RAW_CAUSE_CANARY|destination-present|private-stage|errno/u,
+      /RAW_CAUSE_CANARY|stage-write-failed|verified-complete|private-stage|errno/u,
     );
     expect(apply).toHaveBeenCalledOnce();
     expect(composition.grants.revokeAll).toHaveBeenCalledOnce();

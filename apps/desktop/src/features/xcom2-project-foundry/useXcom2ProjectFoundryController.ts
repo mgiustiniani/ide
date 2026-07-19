@@ -74,6 +74,12 @@ export interface Xcom2ProjectFoundryController {
 const EDITING = Object.freeze({ kind: "editing" } as const);
 const CREATION_UNAVAILABLE = Object.freeze({ kind: "unavailable" } as const);
 const SAFE_APPLY_FAILURE_REASON = "Project creation failed safely.";
+const SAFE_APPLY_FAILURE = Object.freeze({
+  result: "failed",
+  phase: "pre-commit",
+  reason: SAFE_APPLY_FAILURE_REASON,
+  cleanupStatus: "not-verified",
+} as const satisfies Xcom2ProjectFoundryApplyResult);
 const SAFE_PREVIEW_REFUSALS = new Set<string>(XCOM2_PROJECT_FOUNDRY_REFUSAL_CODES);
 const GRANT_IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
@@ -234,21 +240,40 @@ function snapshotApplyResult(value: unknown): Readonly<Xcom2ProjectFoundryApplyR
     });
   }
 
-  if (resultKind === "refused" || resultKind === "failed") {
+  if (resultKind === "refused") {
     const result = exactDataRecord(value, ["result", "phase", "reason"]);
     if (
       !result ||
-      result.result !== resultKind ||
+      result.result !== "refused" ||
       result.phase !== "pre-commit" ||
       typeof result.reason !== "string"
     ) {
       return null;
     }
     return Object.freeze({
-      result: resultKind,
+      result: "refused",
       phase: "pre-commit",
       reason: result.reason,
-    }) as Readonly<Xcom2ProjectFoundryApplyResult>;
+    });
+  }
+
+  if (resultKind === "failed") {
+    const result = exactDataRecord(value, ["result", "phase", "reason", "cleanupStatus"]);
+    if (
+      !result ||
+      result.result !== "failed" ||
+      result.phase !== "pre-commit" ||
+      typeof result.reason !== "string" ||
+      (result.cleanupStatus !== "verified-complete" && result.cleanupStatus !== "not-verified")
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      result: "failed",
+      phase: "pre-commit",
+      reason: result.reason,
+      cleanupStatus: result.cleanupStatus,
+    });
   }
 
   if (resultKind === "created-recovery-required") {
@@ -804,19 +829,9 @@ export function useXcom2ProjectFoundryController(
         let result: Readonly<Xcom2ProjectFoundryApplyResult>;
         try {
           const providerResult = await owner.apply!(request);
-          result =
-            snapshotApplyResult(providerResult) ??
-            Object.freeze({
-              result: "failed",
-              phase: "pre-commit",
-              reason: SAFE_APPLY_FAILURE_REASON,
-            });
+          result = snapshotApplyResult(providerResult) ?? SAFE_APPLY_FAILURE;
         } catch {
-          result = Object.freeze({
-            result: "failed",
-            phase: "pre-commit",
-            reason: SAFE_APPLY_FAILURE_REASON,
-          });
+          result = SAFE_APPLY_FAILURE;
         }
         if (!isCurrent()) return;
 
