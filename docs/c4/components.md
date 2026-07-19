@@ -1,10 +1,10 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. The global Project Foundry flow is a separate display-only composition with a strict TypeScript boundary and one authoritative in-process Rust `git2` renderer. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit flow. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires capability and shell controllers; composes RefactorKit Symbol Navigation support behind its parked boundary; accepts the injected Project Foundry renderer composition; derives presentation props; and renders the shell. Production `main.tsx` supplies the strict Tauri Foundry renderer composition. Feature orchestration remains inside the controllers rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires capability and shell controllers; composes RefactorKit Symbol Navigation support behind its parked boundary; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. `main.tsx` supplies the strict Tauri Foundry composition with selection, rendering, one-shot Apply, and revocation ports. Feature orchestration remains inside the controllers rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities. It synchronously revokes XCOM project recognition before a root transition and starts recognition only after authorization. Open Settings independently owns the machine monitor and transaction runtime.
 
@@ -54,52 +54,56 @@ The six additional extracted controllers keep shell, document, and editor coordi
 
 The Workspace Controller coordinates lifecycle ordering; normal feature interactions remain direct at the most specific C3 boundary. In particular, editor readiness feeds the Java Language Controller, the RefactorKit Import Controller opens only a backend-reported result through the Desktop Editor Controller, and the extracted command/navigation controllers reuse those boundaries rather than bypassing them.
 
-## Display-only Project Foundry Preview
+## Project Foundry Rendering and One-shot Apply
 
 ```text
-Desktop main ──injects strict renderer composition──> App.tsx
-                                                      │
-                                                      ├─> Project Foundry Preview Controller
-                                                      └─> Project Foundry Preview Dialog
+Desktop main ──injects strict Foundry composition──> App.tsx
+                                                       │
+                                                       ├─> Project Foundry Controller
+                                                       └─> Project Foundry Dialog
 
-Project Foundry Preview Dialog ──gestures──> Controller
+Project Foundry Dialog ──selection / preview / create / cancel──> Controller
 Controller
-  ├─ serialized ephemeral authority + stale-result guards
-  ├─> Strict Project Foundry Tauri Adapter
-  │     ├─ allow-open single-directory API integration
-  │     └─ exact Linux path, request, and complete response DTO validation
-  │              │
-  │              ▼
-  │     Native Project Foundry Authority and Grants
-  │       ├─ source/destination identity and absence revalidation
-  │       ├─ operation-scoped in-memory grant and byte retention
-  │       └─> Shared Project Foundry git2 Renderer
-  │              ├─ pinned commit/tree/reachable-blob reads
-  │              ├─ complete renderer-owned plan body
-  │              ├─ complete internal authoritative output bytes
-  │              └─ working tree ignored; no project-path writes
-  └─> Project Foundry Rendered-plan Custody
-         ├─ complete plan and internal-consistency validation
-         ├─ RFC 8785 / SHA-256 digest
-         └─ deeply immutable presentation and approval data
+  ├─ serialized grant and one-shot Apply authority + stale-result guards
+  ├─> Project Foundry Plan Custody
+  │     ├─ complete native-plan validation
+  │     ├─ RFC 8785 / SHA-256 digest
+  │     └─ immutable request from live grants + exact approved digest
+  └─> Strict Project Foundry Tauri Adapter
+         ├─ exact request and bounded response validation
+         ├─ Preview ──> Native Authority and Grants
+         │                ├─ revalidate source, parent, and destination absence
+         │                ├─ retain renderer bytes by operation identity
+         │                └─> Shared Project Foundry git2 Renderer
+         └─ Apply ─────> Native Project Foundry Apply Transaction
+                           ├─ consume and revalidate live operation authority
+                           ├─> Shared Project Foundry git2 Renderer
+                           │     └─ re-render before staging and commit validation
+                           └─> OS File System
+                                 ├─ private same-parent stage + durable journal
+                                 ├─ owned-path and exact-output verification + fsync
+                                 └─ non-replacing atomic destination commit
 ```
 
-| Current C3 component                            | Stable structural responsibility                                                                                                                                                   |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Desktop Composition Root and IDE UI State**   | Receives the production renderer composition, renders the global control and dialog, and passes controller state and callbacks without becoming an output authority.               |
-| **Project Foundry Preview Controller**          | Owns dialog sessions, serialized selector authority, generation guards, safe refusal projection, revocation, and immutable presentation and approval custody.                      |
-| **Project Foundry Preview Dialog**              | Provides the modal form, selected paths, ModId input, busy/refused/ready states, and complete contract-provided plan rendering. It exposes Preview and Cancel but no Apply.        |
-| **Project Foundry Rendered-plan Custody**       | Strictly validates the complete native plan and internal consistency, computes its RFC 8785/SHA-256 digest, and deep-freezes presentation data.                                    |
-| **Strict Project Foundry Tauri Adapter**        | Integrates the allow-open API with bounded commands and validates canonical Linux paths, exact requests, complete renderer DTOs, bindings, bounds, and safe native rejections.     |
-| **Directory Selection API Boundary**            | Provides the allow-open single-directory API used by the strict adapter. This architectural integration is not a claim of native chooser GUI or end-to-end execution.              |
-| **Native Project Foundry Authority and Grants** | Mints revocable in-memory grants, revalidates directory identities and destination absence, invokes the shared renderer, and retains internal output bytes by operation identity.  |
-| **Shared Project Foundry git2 Renderer**        | Is the sole output authority. It reads pinned local Git objects and produces the complete plan body and corresponding internal output bytes without working-tree or output writes. |
+| C3 component                                    | Stable structural responsibility                                                                                                                                |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop Composition Root and IDE UI State**   | Receives one Foundry composition and passes controller state and callbacks to the dialog without becoming an output or transaction authority.                   |
+| **Project Foundry Controller**                  | Owns dialog sessions, serialized selector and Apply authority, generation guards, revocation, immutable presentation, and bounded creation outcomes.            |
+| **Project Foundry Dialog**                      | Presents selections, ModId, the complete contract-provided plan, creation progress, and bounded result states; it submits only the reviewed digest.             |
+| **Project Foundry Plan Custody**                | Validates native-plan consistency, computes its digest, freezes presentation, and prepares an exact request from the live grants and approved digest.           |
+| **Strict Project Foundry Tauri Adapter**        | Snapshots and validates exact Preview and Apply DTOs, invokes bounded commands, and validates phase-bound native outcomes without exposing raw causes.          |
+| **Directory Selection API Boundary**            | Supplies the single-directory API seam used by the adapter; it is not evidence of a native chooser, packaged application, or GUI/E2E execution.                 |
+| **Native Project Foundry Authority and Grants** | Owns in-memory operation authority, source and destination identity checks, destination-absence checks, and renderer-byte retention.                            |
+| **Shared Project Foundry git2 Renderer**        | Is the sole output authority for Preview and Apply. It reads pinned Git objects and produces the plan body and internal bytes without reading the working tree. |
+| **Native Project Foundry Apply Transaction**    | Re-renders through the shared renderer, binds the approved digest, stages and verifies owned output, journals state, and commits without replacement.           |
 
-The provider-neutral `ProjectFoundryComposition` is the injection seam. Fake source and destination selectors are used only by harness and adapter tests; production desktop startup injects the strict renderer adapter. Native chooser acceptance and GUI/end-to-end execution are absent; neither the fakes nor the API wiring imply real native chooser execution.
+The provider-neutral `ProjectFoundryComposition` is the injection seam. The directory-selection API boundary is modeled without asserting native chooser execution, packaged-application behavior, or a GUI/end-to-end path.
 
-`@ide/web-core` has no embedded EMPT source/output metadata, generated preview implementation, pure renderer, planner, or parallel output authority. Its Foundry role is strict native-plan validation, digest and immutable custody, and pure approval lifecycle state. The controller and UI own presentation and approval custody; they never supply output bytes or authoritative output metadata.
+`@ide/web-core` has no embedded template output, renderer, planner, or parallel output authority. Its Foundry role is native-plan validation, digest and immutable presentation custody, and pure one-shot Apply-state reduction. The controller and UI never supply output bytes or authoritative output metadata.
 
-Project Foundry is global desktop composition rather than XCOM machine Settings or workspace-scoped activation. It does not consume activation evidence, contribute an activity or bottom tool, or acquire setup-transaction authority. Production has no Apply filesystem transaction. A future Apply boundary must invoke this same Rust renderer as its output authority and must not trust frontend bytes or metadata. Project creation, output writes, build, deploy, cooking, package, distribution, license-clearance, and publication are absent. RefactorKit remains the sole owner of its separate managed Java-import writes and rollback authority.
+Apply consumes operation authority before validation or filesystem work. Rust then revalidates the source and destination parent, confirms destination absence, re-renders from pinned Git objects, compares the canonical plan digest and retained bytes, and repeats render/authority checks before commit. Pre-commit failure removes only verified transaction-owned artifacts. Post-commit failure preserves the destination and recovery journal because the atomic commit is not rolled back.
+
+Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. Materializing the rendered project does not execute template content or grant build, deploy, cooking, packaging, distribution, license-clearance, or publication authority.
 
 ## Controlled Desktop Panel Visibility
 

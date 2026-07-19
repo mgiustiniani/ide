@@ -20,15 +20,17 @@ Separately, the native desktop path presents the exact accessible missing-Steam 
 
 The repository does not own a Structurizr container or image invocation. It therefore does not pin an image tag or digest. The version above is the validated CLI compatibility boundary; installation and acquisition of that CLI remain external to this repository.
 
-## Project Foundry preview boundary
+## Project Foundry rendering and creation boundary
 
-The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Production startup injects the strict Tauri Foundry composition into the App; fake selectors remain confined to harness and adapter-test seams.
+The global desktop **New XCOM 2 Project** flow is independent from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. Desktop startup injects the strict Tauri Foundry composition into the application root. The directory-selection API seam is modeled without asserting native chooser execution, packaged-application behavior, or GUI/end-to-end validation.
 
-The adapter integrates the Tauri allow-open directory API, validates canonical Linux paths and complete renderer DTOs, and delegates ephemeral grants and rendering to Rust. One shared in-process Rust `git2` renderer is the sole output authority: it revalidates directory identities and destination absence, reads the pinned commit, tree, and reachable blobs, produces the complete plan body, and retains the corresponding internal output bytes. Working-tree content is ignored and neither selected location is written.
+The adapter validates exact selection grants, render requests, immutable Apply requests, and bounded native results. TypeScript validates the complete native plan, computes its RFC 8785/SHA-256 digest, and keeps presentation and one-shot approval custody without becoming an output authority. No frontend field carries authoritative output bytes or metadata.
 
-TypeScript validates the complete native DTO and its internal consistency, computes the RFC 8785/SHA-256 digest, and deep-freezes the result. The controller and UI retain presentation and approval custody without becoming output authorities. `@ide/web-core` contains no embedded EMPT source/output metadata, generated preview implementation, pure renderer, planner, or parallel output authority.
+One shared in-process Rust `git2` renderer is the sole output authority for both Preview and Apply. Preview reads the pinned commit, tree, and reachable blobs, ignores working-tree content, returns the complete plan body, and retains the corresponding internal output bytes by operation identity.
 
-Native chooser acceptance and GUI/end-to-end execution are absent. Fake selectors are confined to harness and adapter-test seams and do not imply real native chooser execution. Production has no Project Foundry Apply filesystem transaction; a future Apply boundary must reuse the same Rust renderer authority rather than accept frontend bytes or metadata. Project creation, output writes, build, deploy, cooking, package, distribution, license-clearance, and publication are absent. RefactorKit import mutation and its package policies remain separate and unchanged.
+Apply consumes live operation authority before validation or filesystem work, revalidates the source and destination-parent identities and destination absence, and invokes the same renderer again. It binds the approved digest to the re-rendered plan and retained bytes, then uses private same-parent staging, a durable journal, file and directory verification, filesystem synchronization, and a non-replacing atomic rename. Pre-commit failure removes only transaction-owned artifacts when their identities remain verified; post-commit failure preserves the destination and recovery journal rather than rolling the project back.
+
+This project-materialization transaction does not execute template content or provide project build, deploy, cooking, packaging, distribution, license-clearance, or publication authority. It remains separate from RefactorKit import mutation and XCOM SDK setup transactions.
 
 ## Self-contained rendering
 
