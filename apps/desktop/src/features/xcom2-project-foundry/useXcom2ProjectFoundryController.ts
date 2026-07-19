@@ -17,6 +17,8 @@ import type {
 import {
   createXcom2ProjectFoundryReadyApplyState,
   createXcom2ProjectFoundryRenderRequest,
+  decideXcom2ProjectFoundryApplyTerminalSession,
+  mapXcom2ProjectFoundryApplyAttentionPresentation,
   reduceXcom2ProjectFoundryApplyState,
   validateAndDigestXcom2ProjectFoundryRenderedPlan,
   validateXcom2ProjectFoundryModId,
@@ -804,7 +806,11 @@ export function useXcom2ProjectFoundryController(
           const providerResult = await owner.apply!(request);
           result =
             snapshotApplyResult(providerResult) ??
-            ({ result: "created" } as unknown as Xcom2ProjectFoundryApplyResult);
+            Object.freeze({
+              result: "failed",
+              phase: "pre-commit",
+              reason: SAFE_APPLY_FAILURE_REASON,
+            });
         } catch {
           result = Object.freeze({
             result: "failed",
@@ -818,14 +824,59 @@ export function useXcom2ProjectFoundryController(
           kind: "apply-completed",
           result,
         });
-        applyStateRef.current = completion.state;
+        const createdState =
+          completion.kind === "transitioned" && completion.state.status === "created"
+            ? completion.state
+            : null;
+        let publishedState = completion.state;
+        let attention: Extract<
+          Xcom2ProjectFoundryDialogCreationState,
+          { kind: "attention" }
+        > | null = null;
+        if (!createdState) {
+          const presentation = mapXcom2ProjectFoundryApplyAttentionPresentation(result);
+          const terminalResult: Readonly<Xcom2ProjectFoundryApplyResult> =
+            result.result === "refused" &&
+            result.phase === "pre-commit" &&
+            result.reason === "destination-present"
+              ? result
+              : Object.freeze({
+                  result: "refused",
+                  phase: "pre-commit",
+                  reason: SAFE_APPLY_FAILURE_REASON,
+                });
+          const terminalReduction = reduceXcom2ProjectFoundryApplyState(prepared.state, {
+            kind: "apply-completed",
+            result: terminalResult,
+          });
+          if (
+            terminalReduction.kind !== "transitioned" ||
+            terminalReduction.state.status !== "refused"
+          ) {
+            throw new Error("Project Foundry terminal state invariant failed");
+          }
+          publishedState = terminalReduction.state;
+          attention = {
+            kind: "attention",
+            presentation,
+            terminalDecision: decideXcom2ProjectFoundryApplyTerminalSession(
+              terminalReduction.state,
+            ),
+          };
+        }
+
+        applyStateRef.current = publishedState;
         clearGrantMemory();
         if (mountedRef.current) {
-          setApplyState(completion.state);
-          if (completion.kind === "transitioned" && completion.state.status === "created") {
-            setCreationState({ kind: "created", receipt: completion.state.receipt });
+          if (createdState) {
+            // Preserve the established successful completion behavior.
+            setApplyState(createdState);
+            setCreationState({ kind: "created", receipt: createdState.receipt });
           } else {
-            setCreationState({ kind: "consumed" });
+            flushSync(() => {
+              setApplyState(publishedState);
+              setCreationState(attention!);
+            });
           }
         }
         await revokeAllSafely(owner);

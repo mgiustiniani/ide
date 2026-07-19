@@ -1,4 +1,6 @@
 import {
+  XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+  XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_SOURCE_COMMIT,
   XCOM2_PROJECT_FOUNDRY_SOURCE_TREE,
   type Xcom2ProjectFoundryApplyResult,
@@ -574,7 +576,162 @@ describe("useXcom2ProjectFoundryController", () => {
     expect(apply).toHaveBeenCalledOnce();
   });
 
-  it("maps Apply failures to safe consumed states without leaking provider causes", async () => {
+  it("publishes exact destination attention synchronously, retains context, and makes every creation callback terminal", async () => {
+    const applyGate = deferred<Xcom2ProjectFoundryApplyResult>();
+    const revocationGate = deferred<undefined>();
+    const apply = vi.fn(() => applyGate.promise);
+    const harness = createComposition({ apply });
+    harness.revokeAll.mockImplementationOnce(() => revocationGate.promise);
+    const controller = renderFoundryController(harness.composition);
+    await renderReady(controller);
+    const ready = controller.result.current.applyState;
+    if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+    const reviewed = {
+      sourceRepository: controller.result.current.sourceRepository,
+      destinationParent: controller.result.current.destinationParent,
+      modId: controller.result.current.modId,
+      finalProjectLocation: controller.result.current.finalProjectLocation,
+      viewState: controller.result.current.viewState,
+    };
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = controller.result.current.apply(ready.preview.plan.planDigest);
+    });
+    await waitFor(() => expect(apply).toHaveBeenCalledOnce());
+    await act(async () => {
+      applyGate.resolve({
+        result: "refused",
+        phase: "pre-commit",
+        reason: "destination-present",
+      });
+      await applyGate.promise;
+      await Promise.resolve();
+    });
+
+    expect(controller.result.current.creationState).toEqual({
+      kind: "attention",
+      presentation: XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
+      terminalDecision: {
+        kind: "terminal",
+        authority: "consumed",
+        preview: "retained-context",
+        disabledControls: [
+          "source-selection",
+          "destination-selection",
+          "mod-id",
+          "preview",
+          "create",
+        ],
+        enabledControls: ["cancel"],
+      },
+    });
+    expect(controller.result.current.applyState).toMatchObject({
+      status: "refused",
+      authority: "consumed",
+      preview: ready.preview,
+    });
+    expect(controller.result.current).toMatchObject(reviewed);
+    expect(harness.revokeAll).toHaveBeenCalledOnce();
+
+    const sourceCalls = harness.selectSourceRepository.mock.calls.length;
+    const destinationCalls = harness.selectDestinationParent.mock.calls.length;
+    const renderCalls = harness.renderPreview.mock.calls.length;
+    await act(async () => {
+      controller.result.current.setModId("ProgrammaticRetry");
+      await Promise.all([
+        controller.result.current.selectSourceRepository(),
+        controller.result.current.selectDestinationParent(),
+        controller.result.current.preview("ProgrammaticRetry"),
+        controller.result.current.apply(ready.preview.plan.planDigest),
+      ]);
+    });
+    expect(harness.selectSourceRepository).toHaveBeenCalledTimes(sourceCalls);
+    expect(harness.selectDestinationParent).toHaveBeenCalledTimes(destinationCalls);
+    expect(harness.renderPreview).toHaveBeenCalledTimes(renderCalls);
+    expect(apply).toHaveBeenCalledOnce();
+    expect(controller.result.current).toMatchObject(reviewed);
+
+    revocationGate.resolve(undefined);
+    await act(async () => pending);
+  });
+
+  it.each([
+    {
+      name: "exact generic failure",
+      provider: {
+        result: "failed",
+        phase: "pre-commit",
+        reason: "RAW_PROVIDER_REASON /tmp/private-stage errno=17",
+      },
+    },
+    {
+      name: "exact generic refusal",
+      provider: {
+        result: "refused",
+        phase: "pre-commit",
+        reason: "RAW_PROVIDER_REASON",
+      },
+    },
+    {
+      name: "exact recovery-required result",
+      provider: {
+        result: "created-recovery-required",
+        phase: "post-commit",
+        planDigest: "b".repeat(64),
+        finalProjectLocation: "/tmp/private-recovery-destination",
+        reason: "RAW_PROVIDER_REASON",
+      },
+    },
+    {
+      name: "malformed conflict refusal",
+      provider: {
+        result: "refused",
+        phase: "pre-commit",
+        reason: "destination-present",
+        rawCause: "RAW_CAUSE_CANARY /home/scenario-owner/private",
+      },
+    },
+  ])("maps $name to fixed generic terminal attention without disclosure", async ({ provider }) => {
+    const harness = createComposition({ apply: vi.fn(async () => provider as never) });
+    const controller = renderFoundryController(harness.composition);
+    await renderReady(controller);
+    const ready = controller.result.current.applyState;
+    if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+
+    await act(() => controller.result.current.apply(ready.preview.plan.planDigest));
+
+    expect(controller.result.current.applyState).toMatchObject({
+      status: "refused",
+      authority: "consumed",
+      preview: ready.preview,
+      refusal: { reason: "Project creation failed safely." },
+    });
+    expect(controller.result.current.creationState).toEqual({
+      kind: "attention",
+      presentation: XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+      terminalDecision: {
+        kind: "terminal",
+        authority: "consumed",
+        preview: "retained-context",
+        disabledControls: [
+          "source-selection",
+          "destination-selection",
+          "mod-id",
+          "preview",
+          "create",
+        ],
+        enabledControls: ["cancel"],
+      },
+    });
+    expect(JSON.stringify(controller.result.current.creationState)).not.toMatch(
+      /RAW_PROVIDER_REASON|RAW_CAUSE_CANARY|private-stage|private-recovery|scenario-owner|errno/u,
+    );
+    expect(harness.revokeAll).toHaveBeenCalledOnce();
+    controller.unmount();
+  });
+
+  it("maps thrown Apply causes to generic terminal attention without leaking provider causes", async () => {
     const privateCause = "/private/output token=raw-secret";
     const harness = createComposition({
       apply: vi.fn(async () => {
@@ -588,8 +745,15 @@ describe("useXcom2ProjectFoundryController", () => {
     await act(() => controller.result.current.apply(ready.preview.plan.planDigest));
 
     expect(controller.result.current.applyState).toMatchObject({
-      status: "failed",
-      failure: { reason: "Project creation failed safely." },
+      status: "refused",
+      authority: "consumed",
+      preview: ready.preview,
+      refusal: { reason: "Project creation failed safely." },
+    });
+    expect(controller.result.current.creationState).toEqual({
+      kind: "attention",
+      presentation: XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
+      terminalDecision: expect.objectContaining({ enabledControls: ["cancel"] }),
     });
     expect(JSON.stringify(controller.result.current)).not.toContain(privateCause);
   });
@@ -644,6 +808,47 @@ describe("useXcom2ProjectFoundryController", () => {
       expect(first.revokeAll).toHaveBeenCalled();
     }
   });
+
+  it.each(["composition", "unmount"] as const)(
+    "suppresses stale terminal attention after %s invalidation while still revoking authority",
+    async (invalidation) => {
+      const gate = deferred<Xcom2ProjectFoundryApplyResult>();
+      const first = createComposition({ apply: vi.fn(() => gate.promise) });
+      const second = createComposition({ apply: vi.fn() });
+      const hook = renderHook(
+        ({ composition }: { composition: ProjectFoundryComposition }) =>
+          useXcom2ProjectFoundryController(composition),
+        { initialProps: { composition: first.composition } },
+      );
+      await renderReady(hook);
+      const ready = hook.result.current.applyState;
+      if (ready?.status !== "ready") throw new Error("Expected ready Apply state");
+      let pending!: Promise<void>;
+      act(() => {
+        pending = hook.result.current.apply(ready.preview.plan.planDigest);
+      });
+      await waitFor(() => expect(first.composition.apply).toHaveBeenCalledOnce());
+
+      if (invalidation === "composition") {
+        hook.rerender({ composition: second.composition });
+      } else {
+        hook.unmount();
+      }
+      gate.resolve({
+        result: "refused",
+        phase: "pre-commit",
+        reason: "destination-present",
+      });
+      await act(async () => pending);
+
+      if (invalidation === "composition") {
+        expect(hook.result.current.isOpen).toBe(false);
+        expect(hook.result.current.creationState).toEqual({ kind: "unavailable" });
+        hook.unmount();
+      }
+      expect(first.revokeAll).toHaveBeenCalled();
+    },
+  );
 
   it("refuses an absent composition safely and contains no native/Tauri dependency", async () => {
     const controller = renderFoundryController();
