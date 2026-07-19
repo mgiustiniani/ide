@@ -85,7 +85,7 @@ const APPLY_REFUSAL_REASONS = new Set<string>([
   "stage-conflict",
   "journal-conflict",
 ]);
-const APPLY_FAILURE_REASONS = new Set<string>([
+const APPLY_PRE_COMMIT_FAILURE_REASONS = new Set<string>([
   "journal-create-failed",
   "journal-sync-failed",
   "stage-create-failed",
@@ -95,6 +95,8 @@ const APPLY_FAILURE_REASONS = new Set<string>([
   "parent-sync-failed",
   "atomic-commit-failed",
   "cleanup-failed",
+]);
+const APPLY_POST_COMMIT_FAILURE_REASONS = new Set<string>([
   "post-commit-parent-sync-failed",
   "post-commit-journal-failed",
 ]);
@@ -629,7 +631,7 @@ function normalizeNativeApplyResult(
         failure.result !== "failed" ||
         failure.phase !== "pre-commit" ||
         !safeText(failure.reason) ||
-        !APPLY_FAILURE_REASONS.has(failure.reason)
+        !APPLY_PRE_COMMIT_FAILURE_REASONS.has(failure.reason)
       ) {
         throw protocolError(command, "response", "apply failure violates the apply contract");
       }
@@ -651,7 +653,7 @@ function normalizeNativeApplyResult(
         recovery.finalProjectLocation !== request.operationGrant.derivedDestination ||
         !canonicalLinuxPath(recovery.finalProjectLocation) ||
         !safeText(recovery.reason) ||
-        !APPLY_FAILURE_REASONS.has(recovery.reason)
+        !APPLY_POST_COMMIT_FAILURE_REASONS.has(recovery.reason)
       ) {
         throw protocolError(
           command,
