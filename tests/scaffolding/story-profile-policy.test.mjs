@@ -312,14 +312,14 @@ test("focused XCOM machine Settings command declares only deterministic harness 
   );
 });
 
-test("focused XCOM Project Foundry profile retains its partial deterministic harness route", () => {
+test("focused XCOM Project Foundry profile retains its promoted deterministic harness route", () => {
   const selected = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
   assert.equal(selected.length, 1);
   assert.deepEqual(requirementIds(selected[0]), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
   assert.equal(selected[0].uri, "features/xcom2/project-foundry.feature");
-  assert.ok(selected[0].tags.has("@partial"));
-  assert.equal(selected[0].tags.has("@implemented-not-e2e-validated"), false);
+  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
+  assert.equal(selected[0].tags.has("@partial"), false);
   assert.equal(selected[0].tags.has("@not-implemented"), false);
   assert.ok(selected[0].tags.has("@desktop"));
   assert.ok(selected[0].tags.has("@tauri-harness"));
@@ -503,13 +503,13 @@ test("declared routing separates web, harness, and native GUI evidence while exc
   assert.deepEqual(result.expectedDesktopTauriWebdriver.map(scenarioKey), [scenarioKey(nativeGui)]);
 });
 
-test("partial XCOM Project Foundry stays excluded from every implemented route", () => {
-  const [partial] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
+test("promoted XCOM Project Foundry routes only to deterministic harness evidence", () => {
+  const [promoted] = selectedScenarios("xcom2ProjectFoundryTauriHarness");
 
-  const routing = evaluateDeclaredStoryRouting([partial]);
+  const routing = evaluateDeclaredStoryRouting([promoted]);
   assert.deepEqual(routing.failures, []);
   assert.deepEqual(routing.expectedWeb, []);
-  assert.deepEqual(routing.expectedDesktopTauriHarness, []);
+  assert.deepEqual(routing.expectedDesktopTauriHarness.map(scenarioKey), [scenarioKey(promoted)]);
   assert.deepEqual(routing.expectedDesktopTauriWebdriver, []);
 });
 
@@ -561,20 +561,21 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
+    "@REQ-XCOM2-PROJECT-FOUNDRY-001",
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
-  assert.deepEqual(partial.flatMap(requirementIds), ["@REQ-XCOM2-PROJECT-FOUNDRY-001"]);
+  assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
     "@REQ-XCOM2-PROJECT-FOUNDRY-002",
   ]);
   assert.equal(validated.length, 9);
-  assert.equal(harnessOnly.length, 2);
-  assert.equal(partial.length, 1);
+  assert.equal(harnessOnly.length, 3);
+  assert.equal(partial.length, 0);
   assert.equal(notImplemented.length, 3);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 2);
+  assert.equal(harness.length, 3);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -582,7 +583,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /2 scenarios \(2 skipped\)[\s\S]*49 steps \(49 skipped\)/,
+    /3 scenarios \(3 skipped\)[\s\S]*107 steps \(107 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -590,7 +591,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 2);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 3);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
