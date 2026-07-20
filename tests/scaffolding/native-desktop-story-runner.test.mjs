@@ -1465,7 +1465,12 @@ test("implemented desktop discovery selects the exact harness and native require
       "@REQ-XCOM2-PROJECT-FOUNDRY-001",
       "@REQ-XCOM2-PROJECT-FOUNDRY-002",
       "@REQ-XCOM2-PROJECT-FOUNDRY-003",
+      "@REQ-XCOM2-PROJECT-FOUNDRY-004",
     ],
+  );
+  assert.match(
+    dryRunSummary("implementedDesktopTauriHarness"),
+    /6 scenarios \(6 skipped\)[\s\S]*265 steps \(265 skipped\)/,
   );
 });
 
