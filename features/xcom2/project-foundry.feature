@@ -584,7 +584,7 @@ Business Need: Safe deterministic preview and creation of a new XCOM 2 project
     And this Story establishes no other stale source, grant, parent, digest, ModId, destination-type, stage, journal, commit-race, failure, cleanup-residue, interruption, restart, discovery, recovery, removal, or "created-recovery-required" behavior
     And it establishes no in-flight Cancel, native chooser, WebKit E2E, real IPC, packaged application, Windows, publication, licensing, build, deployment, cooking, launch, or auto-open evidence
 
-  @REQ-XCOM2-PROJECT-FOUNDRY-004 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-PROJECT-FOUNDRY-004 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Report verified cleanup after the exact second-file Foundry stage-write failure
     Given the production desktop App, its "New XCOM 2 Project" controller, and its production preview and Apply use cases use a separate deterministic Tauri-harness composition
     And the deterministic backend maps "/scenario/foundry-output" to a scenario-owned temporary destination parent and can return only production-shaped Apply results
