@@ -68,7 +68,7 @@ Controller
   ├─> Project Foundry Plan and Outcome Custody
   │     ├─ native-plan validation + RFC 8785 / SHA-256 digest
   │     ├─ immutable request from live grants + exact approved digest
-  │     ├─ exact destination-present mapping; fixed fallback otherwise
+  │     ├─ exact conflict and verified-cleanup mappings; fixed fallback otherwise
   │     └─ consumed terminal decision with only Cancel enabled
   └─> Strict Project Foundry Tauri Adapter
          ├─ exact request and bounded provider-neutral result validation
@@ -105,9 +105,9 @@ Plan and Outcome Custody maps that exact refusal to the fixed atomic **Project l
 
 Both bespoke outcomes are terminal for the approved Preview. Publishing either clears controller grant memory and completes `revokeAll`. Source selection, destination selection, ModId, Preview, retry, and Create are disabled; reviewed Preview facts may remain only as non-authoritative context. Cancel is the only enabled action, Escape has identical dismissal semantics, and the modal focus boundary remains active. Dismissal closes the dialog, clears controlled values, Preview, outcome, digest, approval, and authority, preserves filesystem state, and returns focus to **New XCOM 2 Project**.
 
-When destination validation succeeds, Rust revalidates source and parent identities, re-renders from pinned Git objects, compares the canonical digest and retained bytes, and repeats checks before commit. A non-replacing rename atomically publishes the verified output set. Every pre-commit failure returns mandatory `cleanupStatus` with the closed values `verified-complete` and `not-verified`. The positive value is restricted to a stage-write failure after operation-owned stage and journal identity checks, tracked-artifact removal, no-follow absence observations for stage, journal, and destination, and synchronization of the revalidated parent all succeed. Any unmet condition returns `not-verified`; unverifiable state is not removed, and no positive cleanup wording is authorized. Post-commit failure preserves the destination and recovery journal.
+When destination validation succeeds, Rust revalidates source and parent identities, re-renders from pinned Git objects, compares the canonical digest and retained bytes, and repeats checks before commit. A non-replacing rename atomically publishes the verified output set. Every pre-commit failure returns mandatory `cleanupStatus` with the closed values `verified-complete` and `not-verified`. The positive value is restricted to a stage-write failure after operation-owned stage identity and tracked-topology checks, tracked-entry removal, journal identity revalidation and removal, no-follow absence observations for stage, journal, and destination, and synchronization of the same revalidated selected parent all succeed. Any unmet condition returns `not-verified`; unverified state is preserved, malformed or invalid results fail closed, and no positive cleanup wording is authorized. Post-commit failure preserves the destination and recovery journal.
 
-Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. This boundary claims no native chooser or WebKit/native E2E behavior, other conflict/failure/recovery matrices, Windows support, or package, build, deploy, launch, auto-open, and product-publication capability. It does not execute template content. XCOM publication remains separately gated by distributable-module extraction and license/notice approval.
+Project Foundry remains independent from XCOM activation, machine Settings, SDK setup transactions, and RefactorKit imports. Current atomic publication is Linux-only. This boundary claims no native chooser or WebKit/native E2E behavior, other fault point or conflict/failure/cleanup/recovery matrix, Windows support, or package, build, deploy, launch, auto-open, and product-publication capability. It does not execute template content. XCOM publication remains separately gated by distributable-module extraction and license/notice approval.
 
 ## Controlled Desktop Panel Visibility
 
