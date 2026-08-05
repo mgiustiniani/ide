@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   chmod,
   cp,
@@ -163,6 +163,48 @@ function sha256(bytes: Uint8Array | string): string {
 
 function gitBlobOid(bytes: Uint8Array): string {
   return createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
+}
+
+/** Run git against an external repository and return its raw stdout, throwing on failure. */
+function runGit(repoRoot: string, args: readonly string[]): Buffer {
+  const result = spawnSync("git", ["-C", repoRoot, ...args], {
+    encoding: "buffer",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stderr = result.stderr?.toString() ?? "";
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed (${result.status}): ${stderr.trim()}`);
+  }
+  return result.stdout ?? Buffer.alloc(0);
+}
+
+/** Resolve a git object spec by SHA and return its full object id, or throw if absent. */
+function gitRevParse(repoRoot: string, spec: string): string {
+  return runGit(repoRoot, ["rev-parse", "--verify", spec]).toString("utf8").trim();
+}
+
+/**
+ * Materialize the exact committed tree at `commit` into `destRoot` via `git archive`,
+ * so uncommitted working-tree modifications never leak into the fixture.
+ */
+async function materializeCommittedTree(
+  repoRoot: string,
+  commit: string,
+  destRoot: string,
+): Promise<void> {
+  await mkdir(destRoot, { recursive: true });
+  const archive = runGit(repoRoot, ["archive", "--format=tar", `${commit}^{tree}`]);
+  const extract = spawnSync("tar", ["-x", "-C", destRoot], {
+    input: archive,
+    encoding: "buffer",
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  const stderr = extract.stderr?.toString() ?? "";
+  if (extract.error) throw extract.error;
+  if (extract.status !== 0) {
+    throw new Error(`tar extraction of pinned EMPT tree failed (${extract.status}): ${stderr.trim()}`);
+  }
 }
 
 function modeOf(mode: number): string {
@@ -488,13 +530,22 @@ export class Xcom2ProjectFoundryHarness {
     assert.equal(tree, SOURCE_TREE);
     const sourceRoot = this.#requireSourceRoot();
     try {
+      // Resolve the pinned commit by SHA only. `refs/heads/master` is allowed to advance
+      // upstream, so the pin is never compared against a branch ref. The committed tree must
+      // still resolve to the pinned SOURCE_TREE, and its objects must be present locally.
       assert.equal(
-        (
-          await readFile(join(EXTERNAL_EMPT_ROOT, ".git", "refs", "heads", "master"), "utf8")
-        ).trim(),
+        gitRevParse(EXTERNAL_EMPT_ROOT, `${SOURCE_COMMIT}^{commit}`),
         SOURCE_COMMIT,
       );
-      await cp(EXTERNAL_EMPT_ROOT, sourceRoot, { recursive: true, errorOnExist: true });
+      assert.equal(gitRevParse(EXTERNAL_EMPT_ROOT, `${SOURCE_COMMIT}^{tree}`), SOURCE_TREE);
+      // Materialize the exact committed blobs at the pin (never the uncommitted working tree).
+      await materializeCommittedTree(EXTERNAL_EMPT_ROOT, SOURCE_COMMIT, sourceRoot);
+      // Copy the EMPT object database, which contains the pinned commit objects and its pack,
+      // into sourceRoot so downstream object-database fingerprints remain stable.
+      await cp(join(EXTERNAL_EMPT_ROOT, ".git"), join(sourceRoot, ".git"), {
+        recursive: true,
+        errorOnExist: true,
+      });
     } catch (error) {
       throw new Error(
         `BUILD_ENVIRONMENT_FAILURE: exact external EMPT v1.4 fixture is unavailable at ${EXTERNAL_EMPT_ROOT}: ${String(error)}`,
