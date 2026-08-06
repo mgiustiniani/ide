@@ -1,7 +1,7 @@
-//! Generation-bound RefactorKit 0.6.2 saved-snapshot semantic navigation.
+//! Generation-bound RefactorKit 0.7.0-SNAPSHOT saved-snapshot semantic navigation.
 //!
-//! This boundary deliberately uses only the immutable v0.6.2 daemon protocol. It never invokes
-//! the legacy CLI, discovers a TypeScript toolchain, or promotes structural results.
+//! This boundary deliberately uses only the immutable v0.7.0-SNAPSHOT daemon protocol. It never
+//! invokes the legacy CLI, discovers a TypeScript toolchain, or promotes structural results.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -26,7 +26,7 @@ use super::transport::{
 
 const PROVIDER: &str = "refactorkit";
 const PROVIDER_NAME: &str = "RefactorKit";
-const PROVIDER_VERSION: &str = "0.6.2";
+const PROVIDER_VERSION: &str = "0.7.0-SNAPSHOT";
 const BACKEND: &str = "typescript-lsp-explicit-v1";
 const ADAPTER_BACKEND: &str = "tree-sitter-jni-0.25.3+typescript-lsp-explicit-v1";
 const MAX_QUERY_BYTES: usize = 1_024;
@@ -272,7 +272,7 @@ pub fn start(
                 "server-capabilities",
             )
         })?;
-        verify_v062_capabilities(&raw_capabilities, &capabilities, &request)?;
+        verify_v070_capabilities(&raw_capabilities, &capabilities, &request)?;
 
         let opened = call_start(
             &mut session,
@@ -813,7 +813,7 @@ fn validate_start_contract(
     Ok(())
 }
 
-fn verify_v062_capabilities(
+fn verify_v070_capabilities(
     raw: &Value,
     capabilities: &ManagedCapabilityMetadata,
     request: &StartSavedSnapshotSemanticSessionRequest,
@@ -1002,7 +1002,16 @@ fn verify_language_capabilities(
 fn normalize_project_open(value: &Value, root: &Path) -> SemanticResult<String> {
     let object = exact_object(
         value,
-        &["root", "fileCount", "moduleCount", "snapshotHash"],
+        &[
+            "root",
+            "fileCount",
+            "moduleCount",
+            "snapshotHash",
+            "indexGeneration",
+            "indexedSourceCount",
+            "indexedSymbolCount",
+            "watcherState",
+        ],
         "project-open",
     )?;
     let returned_root = object
@@ -1040,11 +1049,21 @@ fn normalize_semantic_start(
     value: &Value,
     request: &StartSavedSnapshotSemanticSessionRequest,
 ) -> SemanticResult<UpstreamStart> {
+    // The source-built 0.7.0-SNAPSHOT daemon returns a richer start response that
+    // also carries semanticLease, snapshotHash, and index. semanticLease is the
+    // daemon-side session lease and is accepted but deliberately NOT retained for
+    // correlation: session correlation stays on the minted session_id + derived
+    // snapshot_identity, so no SemanticAuthority/RetainedSearch surface change is
+    // needed. snapshotHash here is the daemon's own snapshot hash (distinct from
+    // the project.open snapshot_identity digest) and index is the semantic index
+    // descriptor; neither is consumed by the required-field checks below.
     let object = exact_object(
         value,
         &[
             "languageId",
             "status",
+            "semanticLease",
+            "snapshotHash",
             "completeness",
             "serverName",
             "serverVersion",
@@ -1052,6 +1071,7 @@ fn normalize_semantic_start(
             "executableSha256",
             "argumentsSha256",
             "processId",
+            "index",
         ],
         "typescript-semantic-start",
     )?;
@@ -1679,7 +1699,7 @@ mod tests {
         }
     }
 
-    fn v062_capabilities() -> Value {
+    fn v070_capabilities() -> Value {
         let runtime = runtime_value();
         json!({
             "name": PROVIDER_NAME,
@@ -1757,21 +1777,26 @@ mod tests {
     }
 
     #[test]
-    fn immutable_v062_capability_evidence_is_required_exactly() {
-        let raw = v062_capabilities();
+    fn immutable_v070_capability_evidence_is_required_exactly() {
+        let raw = v070_capabilities();
         let normalized = normalize_server_capabilities(&raw).unwrap();
-        verify_v062_capabilities(&raw, &normalized, &start_request()).unwrap();
+        verify_v070_capabilities(&raw, &normalized, &start_request()).unwrap();
 
-        let mut wrong_provider = raw.clone();
-        wrong_provider["version"] = json!("0.6.3");
-        let normalized = normalize_server_capabilities(&wrong_provider).unwrap();
-        assert!(verify_v062_capabilities(&wrong_provider, &normalized, &start_request()).is_err());
+        for wrong_version in ["0.6.2", "0.6.3"] {
+            let mut wrong_provider = raw.clone();
+            wrong_provider["version"] = json!(wrong_version);
+            let normalized = normalize_server_capabilities(&wrong_provider).unwrap();
+            assert!(
+                verify_v070_capabilities(&wrong_provider, &normalized, &start_request()).is_err(),
+                "v{wrong_version} capability evidence must be rejected"
+            );
+        }
 
         let mut structural = raw;
         structural["languageKernel"]["adapters"][0]["capabilities"][1]["evidence"] =
             json!("native-ast");
         let normalized = normalize_server_capabilities(&structural).unwrap();
-        assert!(verify_v062_capabilities(&structural, &normalized, &start_request()).is_err());
+        assert!(verify_v070_capabilities(&structural, &normalized, &start_request()).is_err());
     }
 
     #[test]
@@ -1796,13 +1821,16 @@ mod tests {
         let mut upstream = json!({
             "languageId": "typescript",
             "status": "started",
+            "semanticLease": "lease-1",
+            "snapshotHash": "d".repeat(64),
             "completeness": "full-typescript",
             "serverName": "typescript-language-server",
             "serverVersion": "5.1.3",
             "capabilitiesSha256": "a".repeat(64),
             "executableSha256": "b".repeat(64),
             "argumentsSha256": "c".repeat(64),
-            "processId": 42
+            "processId": 42,
+            "index": {"sources": 1}
         });
         assert!(normalize_semantic_start(&upstream, &request).is_ok());
         upstream["compilerAttestation"] = json!({"compiler": "invented"});
@@ -1939,7 +1967,9 @@ mod tests {
         let result = normalize_project_open(
             &json!({
                 "root": root, "fileCount": 1, "moduleCount": 1,
-                "snapshotHash": "a".repeat(64)
+                "snapshotHash": "a".repeat(64),
+                "indexGeneration": 1, "indexedSourceCount": 1,
+                "indexedSymbolCount": 1, "watcherState": "idle"
             }),
             &root,
         )
@@ -1949,16 +1979,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires an isolated packaged RefactorKit v0.6.2 daemon and explicit external TypeScript toolchain"]
-    fn packaged_v062_saved_snapshot_start_search_definition_stop_smoke() {
-        let daemon = env::var("IDE_REFACTORKIT_V062_DAEMON").unwrap();
-        let node = fs::canonicalize(env::var("IDE_REFACTORKIT_V062_NODE").unwrap()).unwrap();
+    #[ignore = "requires an isolated source-built RefactorKit 0.7.0-SNAPSHOT daemon and explicit external TypeScript toolchain"]
+    fn packaged_v070_saved_snapshot_start_search_definition_stop_smoke() {
+        let daemon = env::var("IDE_REFACTORKIT_DAEMON").unwrap();
+        let node = fs::canonicalize(env::var("IDE_REFACTORKIT_NODE").unwrap()).unwrap();
         let language_server =
-            fs::canonicalize(env::var("IDE_REFACTORKIT_V062_LANGUAGE_SERVER_ROOT").unwrap())
-                .unwrap();
+            fs::canonicalize(env::var("IDE_REFACTORKIT_LANGUAGE_SERVER_ROOT").unwrap()).unwrap();
         let typescript =
-            fs::canonicalize(env::var("IDE_REFACTORKIT_V062_TYPESCRIPT_ROOT").unwrap()).unwrap();
-        let root = temp_root("packaged-v062");
+            fs::canonicalize(env::var("IDE_REFACTORKIT_TYPESCRIPT_ROOT").unwrap()).unwrap();
+        let root = temp_root("packaged-v070");
         fs::write(
             root.join("tsconfig.json"),
             r#"{"compilerOptions":{"strict":true},"include":["src/**/*.ts"]}"#,
@@ -2060,6 +2089,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(stopped["stopped"], true);
+
+        // Byte-tree audit: the read-only symbol path must never create a daemon workspace lock.
+        assert!(
+            !root.join(".refactorkit/workspace.lock").exists(),
+            "read-only symbol ops must not create a .refactorkit/workspace.lock"
+        );
         env::remove_var("IDE_REFACTORKIT_DAEMON");
         fs::remove_dir_all(root).unwrap();
     }
