@@ -2,7 +2,7 @@ Business Need: Trusted semantic navigation for TypeScript and JavaScript workspa
   To explore saved code without allowing a workspace to choose or alter semantic tooling
   A TypeScript or JavaScript developer needs a searched symbol to open only at a definition proven by the authorized desktop session.
 
-  @desktop @REQ-REFACTORKIT-TS-002 @functional-requirement @non-functional-requirement @compatibility @security @not-implemented
+  @desktop @REQ-REFACTORKIT-TS-002 @functional-requirement @non-functional-requirement @compatibility @security @implemented-not-e2e-validated
   Scenario: Open a searched workspace symbol at its semantic definition
     Given a TypeScript or JavaScript developer has opened an authorized desktop workspace
     And each participating TypeScript or JavaScript editor buffer matches its saved file
