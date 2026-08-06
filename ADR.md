@@ -848,3 +848,40 @@ Still-later stories cover, independently:
 - Windows work waits until the end of the project, and no web route is planned.
 
 ---
+
+## ADR 0011 — Option-B RefactorKit 0.7.0-SNAPSHOT Waiver for REQ-REFACTORKIT-TS-002 Saved-Snapshot Semantic Navigation
+
+**Status:** Accepted as a user-approved exception for `REQ-REFACTORKIT-TS-002` only. The prior option-A wait-for-upstream parking decision for this requirement is superseded; option A / `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` is retained unchanged for `REQ-REFACTORKIT-TS-001` diagnostics. `REQ-REFACTORKIT-TS-002` is declared `@implemented-not-e2e-validated`, not `@implemented-and-validated`.
+
+### Context
+
+[ADR 0005](ADR.md#adr-0005--hybrid-java-intelligence-with-jdt-ls-and-refactorkit) parked `REQ-REFACTORKIT-TS-002` (features/refactorkit/typescript-javascript-symbol-definition.feature) under option A / `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` because immutable `v0.6.2` validation confirmed an unauthorized `.refactorkit/workspace.lock` write from `project.open`. A released, immutable RefactorKit provider capable of TypeScript/JavaScript saved-snapshot semantic navigation was not available, so the requirement was treated as not implemented until corrected released capability and applicable real acceptance evidence existed.
+
+A user-approved exception (option B) now accepts a source-built RefactorKit `0.7.0-SNAPSHOT` daemon protocol for TypeScript/JavaScript saved-snapshot semantic navigation. This is a deliberate, evidence-bounded deviation from the released-provider policy because the workflow requires a real provider protocol to make the requirement executable rather than indefinitely parked.
+
+### Decision
+
+Accept the **option-B exception** for `REQ-REFACTORKIT-TS-002` only: use the source-built RefactorKit `0.7.0-SNAPSHOT` saved-snapshot daemon protocol, supported by a fresh immutable byte-tree audit that asserts read-only symbol operations never create `.refactorkit/workspace.lock`. This supersedes the prior option-A wait-for-upstream parking decision for this requirement. Keep option A / `WAIT_FOR_UPSTREAM_PROTOCOL_FIX` for `REQ-REFACTORKIT-TS-001` diagnostics unchanged.
+
+- Rust production ([`saved_snapshot_semantic.rs`](apps/desktop/src-tauri/src/commands/refactorkit_daemon/saved_snapshot_semantic.rs)) bumps `PROVIDER_VERSION` to `0.7.0-SNAPSHOT`; the backend protocol remains `typescript-lsp-explicit-v1`.
+- `normalize_project_open` widens the `project.open` `exact_object` list from 4 to 8 fields (adding `indexGeneration`, `indexedSourceCount`, `indexedSymbolCount`, `watcherState`), and `normalize_semantic_start` widens the `semantic.start` list from 9 to 12 fields (adding `semanticLease`, `snapshotHash`, `index`). `semanticLease` is accepted but deliberately not retained for correlation; session correlation stays on the minted `session_id` plus the derived `snapshot_identity`, so no `SemanticAuthority`/`RetainedSearch` surface change is required.
+- `verify_v070_capabilities` replaces the prior `verify_v062_capabilities` immutable capability-evidence gate. It requires exact `0.7.0-SNAPSHOT` evidence (`apiVersion` 0.2, version `0.7.0-SNAPSHOT`, non-structural `languageKernel` adapter evidence) and rejects `0.6.2`, `0.6.3`, and structural (native-ast) capability evidence.
+- A fresh immutable byte-tree audit, asserted in `packaged_v070_saved_snapshot_start_search_definition_stop_smoke`, runs `project.open` + `semantic.start` + `symbol.search` + `symbol.definition` + `semantic.stop` and asserts `.refactorkit/workspace.lock` is never created, resolving the no-write failure that had parked the requirement under option A. The packaged smoke uses the `IDE_REFACTORKIT_DAEMON` / `IDE_REFACTORKIT_NODE` / `IDE_REFACTORKIT_LANGUAGE_SERVER_ROOT` / `IDE_REFACTORKIT_TYPESCRIPT_ROOT` toolchain.
+- The shared `refactorkit-062-protocol-fixture.ts` is kept untouched; a separate `refactorkit-070-snapshot-protocol-fixture.ts` (`RefactorKit070SnapshotProtocolFixture`) carries `providerVersion: 0.7.0-SNAPSHOT`. `REQ-REFACTORKIT-TS-001` diagnostics stays on `0.6.2` and remains `@not-implemented`.
+- `REQ-REFACTORKIT-TS-002` is promoted to `@implemented-not-e2e-validated` (commit `512da8b`); its Story is GREEN under the desktop/tauri-harness target (1 scenario, 18 steps). Scaffolding routes the requirement into the implemented desktop tauri-harness aggregate (commit `782904d`).
+
+### Consequences
+
+**Positive:**
+
+- The requirement is no longer indefinitely parked; a real, auditable provider protocol makes saved-snapshot symbol search and definition navigation executable and testable.
+- The fresh immutable byte-tree audit directly addresses the workspace-lock no-write failure that blocked option A, giving concrete no-write evidence for read-only symbol operations.
+- `REQ-REFACTORKIT-TS-001` is unaffected: its `0.6.2` diagnostics fixture and option-A parking remain unchanged, so the two requirements stay independently evidence-bounded.
+- The widened `exact_object` lists keep strict typed protocol validation while accommodating the richer `0.7.0-SNAPSHOT` daemon responses without relaxing correlation.
+
+**Negative:**
+
+- The accepted `0.7.0-SNAPSHOT` daemon is a source-built snapshot, not an immutable released provider; it is not the audited released capability the workflow normally requires. A future released provider may still be required to promote beyond `@implemented-not-e2e-validated`.
+- Packaged GUI/E2E and a real immutable daemon audit remain unexecuted. The byte-tree audit and Story GREEN are desktop/tauri-harness evidence; they do not establish native-gui desktop or browser/web E2E validation.
+- `REQ-REFACTORKIT-TS-002` is `@implemented-not-e2e-validated`, not `@implemented-and-validated`; the remaining gaps must be closed before any stronger status claim.
+- Accepting option B for this requirement does not relax the released-provider policy for other parked requirements; it is a bounded, user-approved exception for `REQ-REFACTORKIT-TS-002` only.
