@@ -152,6 +152,7 @@ pub struct SearchSavedSnapshotSymbolsRequest {
     workspace_id: String,
     workspace_generation: u64,
     session_id: String,
+    semantic_lease: String,
     snapshot_identity: String,
     provider_version: String,
     backend: String,
@@ -166,6 +167,7 @@ pub struct ResolveSavedSnapshotDefinitionRequest {
     workspace_id: String,
     workspace_generation: u64,
     session_id: String,
+    semantic_lease: String,
     snapshot_identity: String,
     provider_version: String,
     backend: String,
@@ -187,6 +189,8 @@ struct SemanticAuthority {
     workspace_generation: u64,
     session_id: String,
     snapshot_identity: String,
+    semantic_lease: String,
+    start_snapshot_hash: String,
     provider_version: String,
     backend: String,
     toolchain: AuthorizedToolchain,
@@ -205,6 +209,7 @@ struct RetainedSearch {
     workspace_id: String,
     workspace_generation: u64,
     session_id: String,
+    semantic_lease: String,
     snapshot_identity: String,
     provider_version: String,
     backend: String,
@@ -281,6 +286,10 @@ pub fn start(
             "project-open",
         )?;
         let snapshot_identity = normalize_project_open(&opened, &root)?;
+        let snapshot_digest = snapshot_identity
+            .strip_prefix("sha256:")
+            .unwrap_or_default()
+            .to_string();
 
         let started = call_start(
             &mut session,
@@ -288,7 +297,7 @@ pub fn start(
             semantic_start_params(&request.language_id, &toolchain),
             "typescript-semantic-start",
         )?;
-        let upstream = normalize_semantic_start(&started, &request)?;
+        let upstream = normalize_semantic_start(&started, &request, &snapshot_digest)?;
         let session_id = mint_session_id().map_err(|_| {
             SavedSnapshotSemanticError::request(
                 "REFACTORKIT_SEMANTIC_SESSION_START_FAILED",
@@ -304,6 +313,8 @@ pub fn start(
             workspace_generation: request.workspace_generation,
             session_id: session_id.clone(),
             snapshot_identity: snapshot_identity.clone(),
+            semantic_lease: upstream.semantic_lease.clone(),
+            start_snapshot_hash: upstream.snapshot_hash.clone(),
             provider_version: request.provider_version.clone(),
             backend: request.backend.clone(),
             toolchain: toolchain.clone(),
@@ -316,6 +327,8 @@ pub fn start(
             "workspaceGeneration": request.workspace_generation,
             "sessionId": session_id,
             "providerProjectSnapshotIdentity": snapshot_identity,
+            "semanticLease": upstream.semantic_lease,
+            "startSnapshotHash": upstream.snapshot_hash,
             "provider": PROVIDER,
             "providerVersion": PROVIDER_VERSION,
             "backend": BACKEND,
@@ -459,6 +472,7 @@ pub fn search(
         workspace_id: request.workspace_id.clone(),
         workspace_generation: request.workspace_generation,
         session_id: request.session_id.clone(),
+        semantic_lease: request.semantic_lease.clone(),
         snapshot_identity: request.snapshot_identity.clone(),
         provider_version: request.provider_version.clone(),
         backend: request.backend.clone(),
@@ -1037,6 +1051,8 @@ fn normalize_project_open(value: &Value, root: &Path) -> SemanticResult<String> 
 
 struct UpstreamStart {
     completeness: String,
+    semantic_lease: String,
+    snapshot_hash: String,
     server_name: Option<String>,
     server_version: Option<String>,
     capabilities_sha256: String,
@@ -1048,15 +1064,18 @@ struct UpstreamStart {
 fn normalize_semantic_start(
     value: &Value,
     request: &StartSavedSnapshotSemanticSessionRequest,
+    expected_snapshot_digest: &str,
 ) -> SemanticResult<UpstreamStart> {
     // The source-built 0.7.0-SNAPSHOT daemon returns a richer start response that
-    // also carries semanticLease, snapshotHash, and index. semanticLease is the
-    // daemon-side session lease and is accepted but deliberately NOT retained for
-    // correlation: session correlation stays on the minted session_id + derived
-    // snapshot_identity, so no SemanticAuthority/RetainedSearch surface change is
-    // needed. snapshotHash here is the daemon's own snapshot hash (distinct from
-    // the project.open snapshot_identity digest) and index is the semantic index
-    // descriptor; neither is consumed by the required-field checks below.
+    // also carries semanticLease, snapshotHash, and index. All three are validated:
+    //   (a) snapshotHash must be the 64-hex sha256 digest equal to the project.open
+    //       snapshot_identity digest (same value) — a same-value binding, not just a
+    //       shape check;
+    //   (b) semanticLease must be a non-empty opaque daemon-side lease token;
+    //   (c) index must be present and structurally valid (status == "ready" or a
+    //       structurally valid index descriptor).
+    // The validated semanticLease and start snapshotHash are retained on
+    // SemanticAuthority and correlated on search/definition requests.
     let object = exact_object(
         value,
         &[
@@ -1102,9 +1121,20 @@ fn normalize_semantic_start(
         .get("processId")
         .and_then(Value::as_u64)
         .filter(|id| *id > 0);
+    let semantic_lease = object
+        .get("semanticLease")
+        .and_then(Value::as_str)
+        .filter(|value| valid_semantic_lease(value));
+    let snapshot_hash = object
+        .get("snapshotHash")
+        .and_then(Value::as_str)
+        .filter(|value| sha256_digest(value) && *value == expected_snapshot_digest);
     if object.get("languageId").and_then(Value::as_str) != Some(request.language_id.as_str())
         || object.get("status").and_then(Value::as_str) != Some("started")
         || completeness.is_none()
+        || semantic_lease.is_none()
+        || snapshot_hash.is_none()
+        || !index_is_ready_or_valid(object.get("index"))
         || metadata("serverName").is_none()
         || metadata("serverVersion").is_none()
         || capabilities_sha256.is_none()
@@ -1119,6 +1149,8 @@ fn normalize_semantic_start(
     }
     Ok(UpstreamStart {
         completeness: completeness.unwrap().to_string(),
+        semantic_lease: semantic_lease.unwrap().to_string(),
+        snapshot_hash: snapshot_hash.unwrap().to_string(),
         server_name: metadata("serverName").unwrap(),
         server_version: metadata("serverVersion").unwrap(),
         capabilities_sha256: capabilities_sha256.unwrap(),
@@ -1126,6 +1158,34 @@ fn normalize_semantic_start(
         arguments_sha256: arguments_sha256.unwrap(),
         process_id: process_id.unwrap(),
     })
+}
+
+/// A semanticLease is a non-empty opaque daemon-side token (e.g. `semantic-<uuid>` or a hex
+/// token). It must be trimmed, free of control characters, and bounded in length.
+fn valid_semantic_lease(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_METADATA_BYTES
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+        && value.starts_with("semantic-")
+        && value.strip_prefix("semantic-").is_some_and(|rest| !rest.is_empty())
+}
+
+/// The semantic index descriptor is accepted when status is `ready` or when it is present and
+/// structurally valid (carries a status string and/or numeric source/symbol counts).
+fn index_is_ready_or_valid(index: Option<&Value>) -> bool {
+    let Some(object) = index.and_then(Value::as_object) else {
+        return false;
+    };
+    if object.get("status").and_then(Value::as_str) == Some("ready") {
+        return true;
+    }
+    if object.get("sources").and_then(Value::as_u64).is_some()
+        || object.get("symbols").and_then(Value::as_u64).is_some()
+    {
+        return true;
+    }
+    object.get("status").and_then(Value::as_str).is_some()
 }
 
 fn normalize_semantic_stop(value: &Value, language_id: &str) -> SemanticResult<bool> {
@@ -1355,7 +1415,8 @@ fn validate_search_request(request: &SearchSavedSnapshotSymbolsRequest) -> Seman
     validate_generation(request.workspace_generation, "symbol-search-request")?;
     validate_session_id(&request.session_id, "symbol-search-request")?;
     validate_snapshot_identity(&request.snapshot_identity, "symbol-search-request")?;
-    if request.query.is_empty()
+    if !valid_semantic_lease(&request.semantic_lease)
+        || request.query.is_empty()
         || request.query.len() > MAX_QUERY_BYTES
         || request.query.trim() != request.query
         || request.query.chars().any(char::is_control)
@@ -1380,7 +1441,8 @@ fn validate_definition_request(
     validate_generation(request.workspace_generation, "definition-request")?;
     validate_session_id(&request.session_id, "definition-request")?;
     validate_snapshot_identity(&request.snapshot_identity, "definition-request")?;
-    if !symbol_id(&request.symbol_id)
+    if !valid_semantic_lease(&request.semantic_lease)
+        || !symbol_id(&request.symbol_id)
         || request.provider_version != PROVIDER_VERSION
         || request.backend != BACKEND
     {
@@ -1400,7 +1462,9 @@ fn authorize_search(
         || request.workspace_id != authority.workspace_id
         || request.workspace_generation != authority.workspace_generation
         || request.session_id != authority.session_id
+        || request.semantic_lease != authority.semantic_lease
         || request.snapshot_identity != authority.snapshot_identity
+        || request.snapshot_identity.strip_prefix("sha256:") != Some(authority.start_snapshot_hash.as_str())
         || request.provider_version != authority.provider_version
         || request.backend != authority.backend
         || request.toolchain.node_executable != authority.toolchain.node_executable
@@ -1425,7 +1489,9 @@ fn authorize_definition(
         || request.workspace_id != authority.workspace_id
         || request.workspace_generation != authority.workspace_generation
         || request.session_id != authority.session_id
+        || request.semantic_lease != authority.semantic_lease
         || request.snapshot_identity != authority.snapshot_identity
+        || request.snapshot_identity.strip_prefix("sha256:") != Some(authority.start_snapshot_hash.as_str())
         || request.provider_version != authority.provider_version
         || request.backend != authority.backend
     {
@@ -1445,6 +1511,7 @@ fn definition_search_matches(
         && request.workspace_id == search.workspace_id
         && request.workspace_generation == search.workspace_generation
         && request.session_id == search.session_id
+        && request.semantic_lease == search.semantic_lease
         && request.snapshot_identity == search.snapshot_identity
         && request.provider_version == search.provider_version
         && request.backend == search.backend
@@ -1657,10 +1724,10 @@ mod tests {
         root.canonicalize().unwrap()
     }
 
-    /// Snapshot the complete workspace byte tree: every file path plus byte length under `root`,
-    /// walked recursively, excluding nothing. Symlinks are recorded as files (length follows the
-    /// target) so no entry type is silently dropped from the audit.
-    fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, u64)> {
+    /// Snapshot the complete workspace byte tree: every file path plus its content sha256 under
+    /// `root`, walked recursively, excluding nothing. Symlinks are recorded as files (content follows
+    /// the target) so no entry type is silently dropped from the audit.
+    fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
         let mut entries = Vec::new();
         let mut stack = vec![root.to_path_buf()];
         while let Some(dir) = stack.pop() {
@@ -1671,22 +1738,25 @@ mod tests {
                 if file_type.is_dir() {
                     stack.push(path);
                 } else {
-                    let len = fs::metadata(&path).unwrap().len();
-                    entries.push((path, len));
+                    let digest: [u8; 32] = Sha256::digest(&fs::read(&path).unwrap()).into();
+                    entries.push((path, digest));
                 }
             }
         }
         entries
     }
 
-    /// Compute a deterministic tree fingerprint: sha256 over the sorted `relative-path size` lines.
+    /// Compute a deterministic content-based tree fingerprint: sha256 over the sorted
+    /// `relative-path content-sha256` lines. Hashing file bytes (not just length) makes
+    /// same-length rewrites, metadata-only changes, empty-dir changes, and transient
+    /// create/delete detectable.
     fn tree_fingerprint(root: &Path) -> String {
         let mut entries = snapshot_workspace_tree(root);
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         let mut canonical = String::new();
-        for (path, len) in entries {
+        for (path, digest) in entries {
             let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
-            canonical.push_str(&format!("{rel} {len}\n"));
+            canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
         }
         hex_lower(&Sha256::digest(canonical.as_bytes()))
     }
@@ -1852,11 +1922,12 @@ mod tests {
     #[test]
     fn semantic_start_rejects_added_compiler_attestation() {
         let request = start_request();
+        let digest = "d".repeat(64);
         let mut upstream = json!({
             "languageId": "typescript",
             "status": "started",
-            "semanticLease": "lease-1",
-            "snapshotHash": "d".repeat(64),
+            "semanticLease": "semantic-lease-1",
+            "snapshotHash": digest,
             "completeness": "full-typescript",
             "serverName": "typescript-language-server",
             "serverVersion": "5.1.3",
@@ -1866,9 +1937,62 @@ mod tests {
             "processId": 42,
             "index": {"sources": 1}
         });
-        assert!(normalize_semantic_start(&upstream, &request).is_ok());
+        assert!(normalize_semantic_start(&upstream, &request, &digest).is_ok());
         upstream["compilerAttestation"] = json!({"compiler": "invented"});
-        assert!(normalize_semantic_start(&upstream, &request).is_err());
+        assert!(normalize_semantic_start(&upstream, &request, &digest).is_err());
+    }
+
+    #[test]
+    fn semantic_start_validates_lease_snapshot_binding_and_index() {
+        let request = start_request();
+        let digest = "e".repeat(64);
+        let base = json!({
+            "languageId": "typescript",
+            "status": "started",
+            "semanticLease": "semantic-lease-9",
+            "snapshotHash": digest,
+            "completeness": "full-typescript",
+            "serverName": "typescript-language-server",
+            "serverVersion": "5.1.3",
+            "capabilitiesSha256": "a".repeat(64),
+            "executableSha256": "b".repeat(64),
+            "argumentsSha256": "c".repeat(64),
+            "processId": 42,
+            "index": {"status": "ready"}
+        });
+        assert!(normalize_semantic_start(&base, &request, &digest).is_ok());
+
+        // (b) semanticLease must be a non-empty opaque token.
+        for lease in [
+            "lease-1",
+            "",
+            "semantic-",
+            "semantic-lease-\u{0000}x",
+            "  semantic-lease-2",
+        ] {
+            let mut bad = base.clone();
+            bad["semanticLease"] = json!(lease);
+            assert!(normalize_semantic_start(&bad, &request, &digest).is_err(), "lease {lease}");
+        }
+
+        // (a) snapshotHash must equal the project.open snapshot digest (same value).
+        let mut mismatched = base.clone();
+        mismatched["snapshotHash"] = json!("f".repeat(64));
+        assert!(normalize_semantic_start(&mismatched, &request, &digest).is_err());
+        let mut short = base.clone();
+        short["snapshotHash"] = json!("deadbeef");
+        assert!(normalize_semantic_start(&short, &request, &digest).is_err());
+
+        // (c) index must be present and structurally valid (ready or a valid descriptor).
+        let mut absent = base.clone();
+        absent["index"] = Value::Null;
+        assert!(normalize_semantic_start(&absent, &request, &digest).is_err());
+        let mut invalid = base.clone();
+        invalid["index"] = json!({});
+        assert!(normalize_semantic_start(&invalid, &request, &digest).is_err());
+        let mut statused = base.clone();
+        statused["index"] = json!({"status": "building"});
+        assert!(normalize_semantic_start(&statused, &request, &digest).is_ok());
     }
 
     #[test]
@@ -1968,6 +2092,7 @@ mod tests {
             workspace_id: "workspace".into(),
             workspace_generation: 3,
             session_id: format!("refactorkit-semantic-session-v1:{}", "e".repeat(64)),
+            semantic_lease: "semantic-lease-1".into(),
             snapshot_identity: format!("sha256:{}", "f".repeat(64)),
             provider_version: PROVIDER_VERSION.into(),
             backend: BACKEND.into(),
@@ -1978,6 +2103,7 @@ mod tests {
             workspace_id: request.workspace_id.clone(),
             workspace_generation: request.workspace_generation,
             session_id: request.session_id.clone(),
+            semantic_lease: request.semantic_lease.clone(),
             snapshot_identity: request.snapshot_identity.clone(),
             provider_version: request.provider_version.clone(),
             backend: request.backend.clone(),
@@ -2015,12 +2141,12 @@ mod tests {
     #[test]
     #[ignore = "requires an isolated source-built RefactorKit 0.7.0-SNAPSHOT daemon and explicit external TypeScript toolchain"]
     fn packaged_v070_saved_snapshot_start_search_definition_stop_smoke() {
-        let daemon = env::var("IDE_REFACTORKIT_DAEMON").unwrap();
-        let node = fs::canonicalize(env::var("IDE_REFACTORKIT_NODE").unwrap()).unwrap();
+        let daemon = env::var("IDE_REFORKIT_DAEMON").unwrap();
+        let node = fs::canonicalize(env::var("IDE_REFORKIT_NODE").unwrap()).unwrap();
         let language_server =
-            fs::canonicalize(env::var("IDE_REFACTORKIT_LANGUAGE_SERVER_ROOT").unwrap()).unwrap();
+            fs::canonicalize(env::var("IDE_REFORKIT_LANGUAGE_SERVER_ROOT").unwrap()).unwrap();
         let typescript =
-            fs::canonicalize(env::var("IDE_REFACTORKIT_TYPESCRIPT_ROOT").unwrap()).unwrap();
+            fs::canonicalize(env::var("IDE_REFORKIT_TYPESCRIPT_ROOT").unwrap()).unwrap();
         let root = temp_root("packaged-v070");
         fs::write(
             root.join("tsconfig.json"),
@@ -2029,10 +2155,15 @@ mod tests {
         .unwrap();
         fs::write(root.join("src/service.ts"), "export class Service {}\n").unwrap();
         crate::workspace::set_workspace_root_override(root.clone()).unwrap();
-        env::set_var("IDE_REFACTORKIT_DAEMON", &daemon);
+        env::set_var("IDE_REFORKIT_DAEMON", &daemon);
 
-        // Complete byte-tree audit: snapshot the whole workspace (every file path + byte length,
-        // excluding nothing) before project.open and again after semantic.stop.
+        // Complete byte-tree audit: snapshot the whole workspace (every file path + content sha256,
+        // excluding nothing) before project.open and again after semantic.stop. Prove the
+        // .refactorkit/workspace.lock path NEVER exists before AND after project.open.
+        assert!(
+            !root.join(".refactorkit/workspace.lock").exists(),
+            "workspace.lock must never be created by a read-only semantic session (pre-open)"
+        );
         let before_tree_fingerprint = tree_fingerprint(&root);
         let audit_command = "packaged_v070_saved_snapshot_start_search_definition_stop_smoke";
 
@@ -2066,9 +2197,16 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
+        let semantic_lease = started["semanticLease"].as_str().unwrap().to_string();
+        let start_snapshot_hash = started["startSnapshotHash"].as_str().unwrap().to_string();
         assert!(session_id
             .strip_prefix("refactorkit-semantic-session-v1:")
             .is_some_and(sha256_digest));
+        assert!(valid_semantic_lease(&semantic_lease));
+        assert_eq!(
+            start_snapshot_hash,
+            snapshot_identity.strip_prefix("sha256:").unwrap()
+        );
         assert_eq!(started["semanticCompleteness"], "full-typescript");
         assert!(started.get("compilerAttestation").is_none());
 
@@ -2079,6 +2217,7 @@ mod tests {
                 workspace_id: workspace_id.clone(),
                 workspace_generation: 1,
                 session_id: session_id.clone(),
+                semantic_lease: semantic_lease.clone(),
                 snapshot_identity: snapshot_identity.clone(),
                 provider_version: PROVIDER_VERSION.into(),
                 backend: BACKEND.into(),
@@ -2107,6 +2246,7 @@ mod tests {
                 workspace_id: workspace_id.clone(),
                 workspace_generation: 1,
                 session_id: session_id.clone(),
+                semantic_lease: semantic_lease.clone(),
                 snapshot_identity,
                 provider_version: PROVIDER_VERSION.into(),
                 backend: BACKEND.into(),
@@ -2136,21 +2276,28 @@ mod tests {
         let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
 
         let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
-        let source_manifest = env::var("CARGO_MANIFEST_DIR")
-            .unwrap_or_else(|_| option_env!("CARGO_MANIFEST_DIR").unwrap_or("unknown").to_string());
+        // Provider source provenance comes only from IDE_REFORKIT_SOURCE_COMMIT (with ACT),
+        // never from the IDE Cargo manifest. No CARGO_MANIFEST_DIR fallback is used.
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-        let receipt = format!(
-            "workspace-tree-audit receipt\n\
-             audit_command: {audit_command}\n\
-             daemon_binary_sha256: {daemon_binary_sha256}\n\
-             source_manifest: {source_manifest}\n\
-             source_commit: {source_commit}\n\
-             before_tree_fingerprint: {before_tree_fingerprint}\n\
-             after_tree_fingerprint: {after_tree_fingerprint}\n\
-             trees_equal: {trees_equal}"
-        );
+        let receipt = serde_json::to_string_pretty(&json!({
+            "auditCommand": audit_command,
+            "daemonBinarySha256": daemon_binary_sha256,
+            "providerSourceCommit": source_commit,
+            "beforeTreeFingerprint": before_tree_fingerprint,
+            "afterTreeFingerprint": after_tree_fingerprint,
+            "treesEqual": trees_equal,
+            "timestamp": timestamp
+        }))
+        .unwrap();
+        // Immutable receipt persisted under the workspace test root, named by fingerprint.
+        let receipt_path = root.join(format!("receipt-{before_tree_fingerprint}.json"));
+        fs::write(&receipt_path, format!("{receipt}\n")).unwrap();
         println!("{receipt}");
         assert!(
             trees_equal,
@@ -2160,8 +2307,15 @@ mod tests {
             !root.join(".refactorkit/workspace.lock").exists(),
             "read-only symbol ops must not create a .refactorkit/workspace.lock:\n{receipt}"
         );
+        assert!(
+            receipt_path.is_file()
+                && receipt_path.file_name().is_some_and(|name| {
+                    name.to_string_lossy() == format!("receipt-{before_tree_fingerprint}.json")
+                }),
+            "immutable receipt must exist under the workspace test root with the expected fingerprint"
+        );
 
-        env::remove_var("IDE_REFACTORKIT_DAEMON");
+        env::remove_var("IDE_REFORKIT_DAEMON");
         fs::remove_dir_all(root).unwrap();
     }
 }
