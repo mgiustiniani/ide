@@ -1657,6 +1657,40 @@ mod tests {
         root.canonicalize().unwrap()
     }
 
+    /// Snapshot the complete workspace byte tree: every file path plus byte length under `root`,
+    /// walked recursively, excluding nothing. Symlinks are recorded as files (length follows the
+    /// target) so no entry type is silently dropped from the audit.
+    fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, u64)> {
+        let mut entries = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let file_type = entry.file_type().unwrap();
+                if file_type.is_dir() {
+                    stack.push(path);
+                } else {
+                    let len = fs::metadata(&path).unwrap().len();
+                    entries.push((path, len));
+                }
+            }
+        }
+        entries
+    }
+
+    /// Compute a deterministic tree fingerprint: sha256 over the sorted `relative-path size` lines.
+    fn tree_fingerprint(root: &Path) -> String {
+        let mut entries = snapshot_workspace_tree(root);
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut canonical = String::new();
+        for (path, len) in entries {
+            let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+            canonical.push_str(&format!("{rel} {len}\n"));
+        }
+        hex_lower(&Sha256::digest(canonical.as_bytes()))
+    }
+
     fn runtime() -> SemanticRuntimeRequest {
         SemanticRuntimeRequest {
             execution_mode: "external-process".into(),
@@ -1995,7 +2029,12 @@ mod tests {
         .unwrap();
         fs::write(root.join("src/service.ts"), "export class Service {}\n").unwrap();
         crate::workspace::set_workspace_root_override(root.clone()).unwrap();
-        env::set_var("IDE_REFACTORKIT_DAEMON", daemon);
+        env::set_var("IDE_REFACTORKIT_DAEMON", &daemon);
+
+        // Complete byte-tree audit: snapshot the whole workspace (every file path + byte length,
+        // excluding nothing) before project.open and again after semantic.stop.
+        let before_tree_fingerprint = tree_fingerprint(&root);
+        let audit_command = "packaged_v070_saved_snapshot_start_search_definition_stop_smoke";
 
         let workspace_id = workspace_id_for_path(&root);
         let state = SavedSnapshotSemanticState::default();
@@ -2090,11 +2129,38 @@ mod tests {
         .unwrap();
         assert_eq!(stopped["stopped"], true);
 
-        // Byte-tree audit: the read-only symbol path must never create a daemon workspace lock.
+        // Complete byte-tree audit: the read-only symbol path must not mutate ANY workspace file,
+        // including .refactorkit metadata. Compare the full before/after tree fingerprints and keep
+        // lock-file absence as one specific case inside the complete-tree comparison.
+        let after_tree_fingerprint = tree_fingerprint(&root);
+        let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
+
+        let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
+        let source_manifest = env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| option_env!("CARGO_MANIFEST_DIR").unwrap_or("unknown").to_string());
+        let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
+            .unwrap_or_else(|_| "not-provided".into());
+
+        let receipt = format!(
+            "workspace-tree-audit receipt\n\
+             audit_command: {audit_command}\n\
+             daemon_binary_sha256: {daemon_binary_sha256}\n\
+             source_manifest: {source_manifest}\n\
+             source_commit: {source_commit}\n\
+             before_tree_fingerprint: {before_tree_fingerprint}\n\
+             after_tree_fingerprint: {after_tree_fingerprint}\n\
+             trees_equal: {trees_equal}"
+        );
+        println!("{receipt}");
+        assert!(
+            trees_equal,
+            "read-only symbol search/definition must not mutate the workspace byte tree:\n{receipt}"
+        );
         assert!(
             !root.join(".refactorkit/workspace.lock").exists(),
-            "read-only symbol ops must not create a .refactorkit/workspace.lock"
+            "read-only symbol ops must not create a .refactorkit/workspace.lock:\n{receipt}"
         );
+
         env::remove_var("IDE_REFACTORKIT_DAEMON");
         fs::remove_dir_all(root).unwrap();
     }
