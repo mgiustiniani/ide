@@ -681,6 +681,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
+    "@REQ-REFACTORKIT-TS-002",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
     "@REQ-XCOM2-PROJECT-FOUNDRY-001",
     "@REQ-XCOM2-PROJECT-FOUNDRY-002",
@@ -691,15 +692,14 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
     "@REQ-REFACTORKIT-TS-001",
-    "@REQ-REFACTORKIT-TS-002",
   ]);
   assert.equal(declared.length, 17);
   assert.equal(validated.length, 9);
-  assert.equal(harnessOnly.length, 6);
+  assert.equal(harnessOnly.length, 7);
   assert.equal(partial.length, 0);
-  assert.equal(notImplemented.length, 2);
+  assert.equal(notImplemented.length, 1);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 6);
+  assert.equal(harness.length, 7);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -707,7 +707,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /6 scenarios \(6 skipped\)[\s\S]*265 steps \(265 skipped\)/,
+    /7 scenarios \(7 skipped\)[\s\S]*283 steps \(283 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -715,7 +715,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 6);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 7);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
