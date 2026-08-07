@@ -1919,9 +1919,11 @@ mod tests {
 
     /// Build-to-source containment: whether the built daemon binary (`IDE_REFORKIT_DAEMON`) lives
     /// within the provider source tree (`IDE_REFORKIT_SOURCE_ROOT`) after canonicalization. This
-    /// confirms the daemon binary's source is derived from the hashed source tree rather than an
-    /// unrelated binary. When either env var is unset or canonicalization fails, returns false and
-    /// NO containment claim is made.
+    /// only confirms path containment — the binary is located inside the source root at the expected
+    /// Gradle install path. Per ADR 0011 it does NOT prove the binary was compiled from the hashed
+    /// source tree: there is no compiler provenance and `sourceGitClean=false`, so no
+    /// source-to-binary derivation is claimed. When either env var is unset or canonicalization
+    /// fails, returns false and NO containment claim is made.
     fn daemon_binary_inside_source_tree() -> bool {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
@@ -1941,18 +1943,22 @@ mod tests {
     }
 
     /// Build-to-source layout verification (RQR-TS002-PROVENANCE-002): whether the built daemon
-    /// binary (`IDE_REFORKIT_DAEMON`) is a build artifact OF the hashed source tree, not merely a
-    /// path-co-located binary. Requires BOTH:
+    /// binary (`IDE_REFORKIT_DAEMON`) is a build artifact located at the expected source-built Gradle
+    /// install path inside the provider source root. Requires BOTH:
     ///   (1) path containment — the canonical daemon binary lives inside the canonical
     ///       `IDE_REFORKIT_SOURCE_ROOT` tree; AND
     ///   (2) the expected source-built Gradle install layout — the daemon's relative path from the
     ///       source root matches `<root>/modules/refactorkit-daemon/build/install/<app>/bin/
     ///       refactorkit-daemon` (install application directory followed by `bin/refactorkit-daemon`
     ///       launcher).
-    /// Together with `sourceTreeHash` and `daemonBinarySha256` this establishes the build-to-source
-    /// link even when the provider source tree is not git-clean (`sourceGitClean=false`). When
-    /// either env var is unset or verification fails, returns false and NO build-to-source claim is
-    /// made.
+    ///
+    /// This only confirms the binary is a build artifact at the expected Gradle install path inside
+    /// the source root. It does NOT prove the binary was compiled from the hashed source tree
+    /// (`sourceTreeHash`): because `sourceGitClean=false` and there is no compiler provenance, no
+    /// cryptographic or compiler-based derivation of the binary from `sourceTreeHash` is claimed.
+    /// `sourceTreeHash` and `daemonBinarySha256` are recorded but, together with this flag, do NOT
+    /// establish a build-to-source link. When either env var is unset or verification fails, returns
+    /// false and NO build-to-source claim is made.
     fn daemon_binary_build_layout_verified() -> bool {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
@@ -2680,24 +2686,24 @@ mod tests {
         let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
         // Provider source provenance: providerSourceCommit is the git commit id from
         // IDE_REFORKIT_SOURCE_COMMIT (never from the IDE Cargo manifest; no CARGO_MANIFEST_DIR
-        // fallback). sourceTreeHash is the cryptographic build-to-source binding: a hash of the
-        // whole RefactorKit provider source tree from IDE_REFORKIT_SOURCE_ROOT. If that env var is
-        // unset, sourceTreeHash is "not-provided" and NO cryptographic relationship is claimed.
+        // fallback). sourceTreeHash is a deterministic content fingerprint of the whole RefactorKit
+        // provider source tree from IDE_REFORKIT_SOURCE_ROOT. If that env var is unset,
+        // sourceTreeHash is "not-provided" and NO cryptographic relationship is claimed.
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
         let source_tree_hash = provider_source_tree_hash();
-        // Build-to-source provenance strengthening (RQR-TS002-003 / PROVENANCE-002): the daemon
-        // binary's source is derived by hashing the provider source tree (IDE_REFORKIT_SOURCE_ROOT)
-        // AND verifying the built daemon binary is a build artifact OF that tree: path containment
-        // plus the expected source-built Gradle install layout
-        // (modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon). We additionally
-        // record the provider source git HEAD and cleanliness (git status --porcelain empty) so the
-        // receipt binds the daemon to a specific source revision.
+        // Build-to-source layout verification (RQR-TS002-003 / PROVENANCE-002): buildLayoutVerified
+        // only confirms the built daemon binary is a build artifact at the expected Gradle install
+        // path (<root>/modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon)
+        // inside the provider source root: path containment plus the expected source-built Gradle
+        // install layout. We additionally record the provider source git HEAD and cleanliness (git
+        // status --porcelain empty) so the receipt binds a specific source revision.
         //
-        // sourceTreeHash + buildLayoutVerified + daemonBinarySha256 together establish the
-        // build-to-source link: the hashed tree (sourceTreeHash) is the tree the daemon binary
-        // (daemonBinarySha256) was built from, and buildLayoutVerified proves the binary is a build
-        // artifact of that tree (not merely path-co-located) even when sourceGitClean=false.
+        // Per ADR 0011, this does NOT prove the binary was compiled from the hashed source tree:
+        // because sourceGitClean=false and there is no compiler provenance, no cryptographic or
+        // compiler-based derivation of the binary from sourceTreeHash is claimed. sourceTreeHash,
+        // daemonBinarySha256, and buildLayoutVerified together do NOT establish a build-to-source
+        // link.
         let source_git_head = provider_source_git_head();
         let source_git_clean = provider_source_git_clean();
         let daemon_inside = daemon_binary_inside_source_tree();
