@@ -285,6 +285,8 @@ pub fn start(
             json!({"root": request.workspace_root}),
             "project-open",
         )?;
+        #[cfg(test)]
+        record_checkpoint("after-project-open", &root);
         let snapshot_identity = normalize_project_open(&opened, &root)?;
         let snapshot_digest = snapshot_identity
             .strip_prefix("sha256:")
@@ -297,6 +299,8 @@ pub fn start(
             semantic_start_params(&request.language_id, &toolchain),
             "typescript-semantic-start",
         )?;
+        #[cfg(test)]
+        record_checkpoint("after-semantic-start", &root);
         let upstream = normalize_semantic_start(&started, &request, &snapshot_digest)?;
         let session_id = mint_session_id().map_err(|_| {
             SavedSnapshotSemanticError::request(
@@ -1709,6 +1713,73 @@ fn hex_lower(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
+static AUDIT_CHECKPOINTS: std::sync::OnceLock<Mutex<Vec<(String, String)>>> =
+    std::sync::OnceLock::new();
+
+/// Snapshot the complete workspace byte tree: every file path plus its content sha256 under
+/// `root`, walked recursively, excluding nothing. Symlinks are recorded as files (content follows
+/// the target) so no entry type is silently dropped from the audit.
+#[cfg(test)]
+fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
+    let mut entries = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let file_type = entry.file_type().unwrap();
+            if file_type.is_dir() {
+                stack.push(path);
+            } else {
+                let digest: [u8; 32] = Sha256::digest(&fs::read(&path).unwrap()).into();
+                entries.push((path, digest));
+            }
+        }
+    }
+    entries
+}
+
+/// Compute a deterministic content-based tree fingerprint: sha256 over the sorted
+/// `relative-path content-sha256` lines. Hashing file bytes (not just length) makes
+/// same-length rewrites, metadata-only changes, empty-dir changes, and transient
+/// create/delete detectable.
+#[cfg(test)]
+fn tree_fingerprint(root: &Path) -> String {
+    let mut entries = snapshot_workspace_tree(root);
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut canonical = String::new();
+    for (path, digest) in entries {
+        let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+        canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
+    }
+    hex_lower(&Sha256::digest(canonical.as_bytes()))
+}
+
+/// Test-only audit checkpoint registry: production `start()` records the workspace tree
+/// fingerprint after each internal operation boundary (project.open, semantic.start) so the smoke
+/// audit can prove no write persists through any checkpoint. These hooks are compiled out of
+/// production builds (`#[cfg(test)]`), so the production daemon path is unaffected.
+#[cfg(test)]
+fn record_checkpoint(label: &str, root: &Path) {
+    let fingerprint = tree_fingerprint(root);
+    AUDIT_CHECKPOINTS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap()
+        .push((label.to_string(), fingerprint));
+}
+
+/// Drain the recorded audit checkpoints.
+#[cfg(test)]
+fn take_checkpoints() -> Vec<(String, String)> {
+    let mut registry = AUDIT_CHECKPOINTS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap();
+    std::mem::take(&mut *registry)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
@@ -1724,41 +1795,14 @@ mod tests {
         root.canonicalize().unwrap()
     }
 
-    /// Snapshot the complete workspace byte tree: every file path plus its content sha256 under
-    /// `root`, walked recursively, excluding nothing. Symlinks are recorded as files (content follows
-    /// the target) so no entry type is silently dropped from the audit.
-    fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
-        let mut entries = Vec::new();
-        let mut stack = vec![root.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            for entry in fs::read_dir(&dir).unwrap() {
-                let entry = entry.unwrap();
-                let path = entry.path();
-                let file_type = entry.file_type().unwrap();
-                if file_type.is_dir() {
-                    stack.push(path);
-                } else {
-                    let digest: [u8; 32] = Sha256::digest(&fs::read(&path).unwrap()).into();
-                    entries.push((path, digest));
-                }
-            }
-        }
-        entries
-    }
-
-    /// Compute a deterministic content-based tree fingerprint: sha256 over the sorted
-    /// `relative-path content-sha256` lines. Hashing file bytes (not just length) makes
-    /// same-length rewrites, metadata-only changes, empty-dir changes, and transient
-    /// create/delete detectable.
-    fn tree_fingerprint(root: &Path) -> String {
-        let mut entries = snapshot_workspace_tree(root);
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut canonical = String::new();
-        for (path, digest) in entries {
-            let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
-            canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
-        }
-        hex_lower(&Sha256::digest(canonical.as_bytes()))
+    /// IDE revision: the current HEAD commit of the IDE repository, discovered from the crate
+    /// manifest directory (git2 is a crate dependency). Used for durable audit provenance.
+    fn ide_revision() -> String {
+        use git2::Repository;
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        Repository::discover(manifest)
+            .and_then(|repo| repo.revparse_single("HEAD").map(|object| object.id().to_string()))
+            .unwrap_or_else(|_| "not-provided".into())
     }
 
     fn runtime() -> SemanticRuntimeRequest {
@@ -2166,6 +2210,8 @@ mod tests {
         );
         let before_tree_fingerprint = tree_fingerprint(&root);
         let audit_command = "packaged_v070_saved_snapshot_start_search_definition_stop_smoke";
+        // Drain any checkpoints left by prior runs so this run's open/start boundaries are isolated.
+        let _ = take_checkpoints();
 
         let workspace_id = workspace_id_for_path(&root);
         let state = SavedSnapshotSemanticState::default();
@@ -2210,6 +2256,23 @@ mod tests {
         assert_eq!(started["semanticCompleteness"], "full-typescript");
         assert!(started.get("compilerAttestation").is_none());
 
+        // Assert the internal operation boundaries recorded by production (after project.open,
+        // after semantic.start) each equal the baseline tree fingerprint. This proves no write
+        // persists through any start-phase boundary.
+        let open_start_checkpoints = take_checkpoints();
+        assert!(
+            open_start_checkpoints.len() == 2,
+            "start() must record after-project-open and after-semantic-start checkpoints, got: {:?}",
+            open_start_checkpoints
+        );
+        for (label, checkpoint_fingerprint) in &open_start_checkpoints {
+            assert_eq!(
+                checkpoint_fingerprint,
+                &before_tree_fingerprint,
+                "checkpoint {label} must equal baseline: {label} {checkpoint_fingerprint} vs baseline {before_tree_fingerprint}"
+            );
+        }
+
         let searched = search(
             SearchSavedSnapshotSymbolsRequest {
                 language_id: "typescript".into(),
@@ -2239,6 +2302,14 @@ mod tests {
             .find(|symbol| symbol["name"] == "Service")
             .unwrap();
         let symbol_id = symbol["id"].as_str().unwrap().to_string();
+        // Checkpoint after symbol.search: the workspace tree must still equal baseline.
+        let search_fingerprint = tree_fingerprint(&root);
+        assert_eq!(
+            search_fingerprint,
+            before_tree_fingerprint,
+            "after symbol.search the workspace byte tree must equal baseline"
+        );
+
         let definition = resolve_definition(
             ResolveSavedSnapshotDefinitionRequest {
                 language_id: "typescript".into(),
@@ -2256,6 +2327,13 @@ mod tests {
         .unwrap();
         assert_eq!(definition["file"], "src/service.ts");
         assert_eq!(definition["point"], json!({"line": 0, "character": 13}));
+        // Checkpoint after symbol.definition: the workspace tree must still equal baseline.
+        let definition_fingerprint = tree_fingerprint(&root);
+        assert_eq!(
+            definition_fingerprint,
+            before_tree_fingerprint,
+            "after symbol.definition the workspace byte tree must equal baseline"
+        );
 
         let stopped = stop(
             StopSavedSnapshotSemanticSessionRequest {
@@ -2269,9 +2347,10 @@ mod tests {
         .unwrap();
         assert_eq!(stopped["stopped"], true);
 
-        // Complete byte-tree audit: the read-only symbol path must not mutate ANY workspace file,
-        // including .refactorkit metadata. Compare the full before/after tree fingerprints and keep
-        // lock-file absence as one specific case inside the complete-tree comparison.
+        // Final checkpoint after semantic.stop: the workspace tree must still equal baseline. Along
+        // with the open/start/search/definition checkpoints this proves no write persists through ANY
+        // operation boundary, so transient create/delete and empty-dir changes cannot slip past a
+        // single before/after comparison.
         let after_tree_fingerprint = tree_fingerprint(&root);
         let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
 
@@ -2285,19 +2364,51 @@ mod tests {
             .unwrap()
             .as_secs();
 
+        // IDE revision: the IDE repository HEAD at audit time (independent of the provider commit).
+        let ide_revision = ide_revision();
+        let mut checkpoint_list: Vec<(String, String)> = open_start_checkpoints;
+        checkpoint_list.push(("after-symbol-search".to_string(), search_fingerprint));
+        checkpoint_list.push(("after-symbol-definition".to_string(), definition_fingerprint));
+        checkpoint_list.push(("after-semantic-stop".to_string(), after_tree_fingerprint.clone()));
+        let checkpoint_fingerprints = checkpoint_list
+            .into_iter()
+            .map(|(label, fingerprint)| json!({"label": label, "fingerprint": fingerprint}))
+            .collect::<Vec<_>>();
+
         let receipt = serde_json::to_string_pretty(&json!({
             "auditCommand": audit_command,
             "daemonBinarySha256": daemon_binary_sha256,
             "providerSourceCommit": source_commit,
-            "beforeTreeFingerprint": before_tree_fingerprint,
+            "sourceTreeHash": before_tree_fingerprint,
+            "ideRevision": ide_revision,
+            "checkpoints": checkpoint_fingerprints,
+            "baselineTreeFingerprint": before_tree_fingerprint,
             "afterTreeFingerprint": after_tree_fingerprint,
             "treesEqual": trees_equal,
             "timestamp": timestamp
         }))
         .unwrap();
-        // Immutable receipt persisted under the workspace test root, named by fingerprint.
-        let receipt_path = root.join(format!("receipt-{before_tree_fingerprint}.json"));
-        fs::write(&receipt_path, format!("{receipt}\n")).unwrap();
+        // Durable receipt persisted OUTSIDE the audited workspace (temp_root is deleted with
+        // remove_dir_all below), under a fixed crate-level target path, so the artifact survives the
+        // audit. A write-exclusive create-new guard refuses any accidental overwrite of an already
+        // existing receipt (overwrite is never silently accepted).
+        let receipt_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/rk-semantic-receipts");
+        fs::create_dir_all(&receipt_dir).unwrap();
+        let receipt_name = format!("receipt-{before_tree_fingerprint}-{timestamp}.json");
+        let receipt_path = receipt_dir.join(&receipt_name);
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&receipt_path)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "durable receipt write must be create-new (no silent overwrite); {}: {}",
+                    receipt_path.display(),
+                    error
+                )
+            });
+        file.write_all(format!("{receipt}\n").as_bytes()).unwrap();
         println!("{receipt}");
         assert!(
             trees_equal,
@@ -2310,9 +2421,10 @@ mod tests {
         assert!(
             receipt_path.is_file()
                 && receipt_path.file_name().is_some_and(|name| {
-                    name.to_string_lossy() == format!("receipt-{before_tree_fingerprint}.json")
+                    name.to_string_lossy() == receipt_name.as_str()
                 }),
-            "immutable receipt must exist under the workspace test root with the expected fingerprint"
+            "durable receipt must exist under the crate target dir with the expected fingerprint: {}",
+            receipt_path.display()
         );
 
         env::remove_var("IDE_REFORKIT_DAEMON");
