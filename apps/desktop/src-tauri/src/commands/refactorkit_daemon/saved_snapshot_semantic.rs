@@ -1848,39 +1848,76 @@ mod tests {
             .unwrap_or_else(|_| "not-provided".into())
     }
 
-    /// Cryptographic build-to-source provenance: hash the RefactorKit provider SOURCE TREE.
-    /// Reads `IDE_REFORKIT_SOURCE_ROOT`; when set, walks the whole tree and returns a deterministic
-    /// content-based fingerprint of every non-directory file path/content pair (broken symlinks and
-    /// unreadable files are skipped so the fingerprint stays deterministic). When the env var is
-    /// unset, returns "not-provided" and NO cryptographic build-to-source relationship is claimed.
+    /// Cryptographic build-to-source provenance: hash the RefactorKit provider SOURCE TREE at the
+    /// pinned commit, independent of any dirty working-tree state. Reads `IDE_REFORKIT_SOURCE_ROOT`
+    /// and `IDE_REFORKIT_SOURCE_COMMIT`; when both are set and the commit resolves to a valid git
+    /// object, computes a deterministic fingerprint of the COMMITTED source tree (path + git blob
+    /// sha for every non-directory entry), so the fingerprint is reproducible across runs regardless
+    /// of `sourceGitClean`. When either env var is unset, the commit hash is not a valid git object,
+    /// or git discovery fails, returns "not-provided" and NO cryptographic build-to-source
+    /// relationship is claimed.
     fn provider_source_tree_hash() -> String {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
             Err(_) => return "not-provided".into(),
         };
-        let mut entries = Vec::new();
-        let mut stack = vec![root.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            let Ok(mut read) = fs::read_dir(&dir) else { continue };
-            while let Some(Ok(entry)) = read.next() {
-                let path = entry.path();
-                let Ok(file_type) = entry.file_type() else { continue };
-                if file_type.is_dir() {
-                    stack.push(path);
-                } else if file_type.is_file() {
-                    if let Ok(bytes) = fs::read(&path) {
-                        let digest: [u8; 32] = Sha256::digest(&bytes).into();
-                        entries.push((path, digest));
+        let commit = match env::var("IDE_REFORKIT_SOURCE_COMMIT") {
+            Ok(commit) => commit,
+            Err(_) => return "not-provided".into(),
+        };
+        use git2::Repository;
+        let repo = match Repository::discover(&root) {
+            Ok(repo) => repo,
+            Err(_) => return "not-provided".into(),
+        };
+        // Resolve the pinned commit and peel to its committed tree. If the commit hash is not a
+        // valid git object, revparse_single/peel_to_tree fails and we fall back to "not-provided".
+        let tree = match repo
+            .revparse_single(&commit)
+            .and_then(|object| object.peel_to_tree())
+        {
+            Ok(tree) => tree,
+            Err(_) => return "not-provided".into(),
+        };
+        // Collect every non-directory (blob) entry's relative path + git blob sha from the committed
+        // tree. The blob sha is itself a deterministic content hash, so the fingerprint is
+        // independent of any dirty working-tree files. Symlinks/submodules and other entry kinds are
+        // skipped to keep the fingerprint deterministic.
+        let mut entries: Vec<(PathBuf, git2::Oid)> = Vec::new();
+        let mut stack: Vec<(git2::Tree, PathBuf)> = vec![(tree, PathBuf::new())];
+        while let Some((tree, prefix)) = stack.pop() {
+            let mut iter = tree.iter();
+            while let Some(entry) = iter.next() {
+                let name = match entry.name() {
+                    Some(name) => name,
+                    None => return "not-provided".into(),
+                };
+                let path = prefix.join(name);
+                match entry.kind() {
+                    Some(git2::ObjectType::Tree) => {
+                        let subtree = match entry
+                            .to_object(&repo)
+                            .and_then(|object| object.peel_to_tree())
+                        {
+                            Ok(subtree) => subtree,
+                            Err(_) => return "not-provided".into(),
+                        };
+                        stack.push((subtree, path));
+                    }
+                    Some(git2::ObjectType::Blob) => {
+                        entries.push((path, entry.id()));
+                    }
+                    _ => {
+                        // Skip submodules and other entry kinds so the fingerprint stays deterministic.
                     }
                 }
-                // Symlinks and other entry types are skipped to keep the fingerprint deterministic.
             }
         }
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         let mut canonical = String::new();
-        for (path, digest) in entries {
-            let rel = path.strip_prefix(&root).unwrap().to_string_lossy().into_owned();
-            canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
+        for (path, blob_id) in entries {
+            let rel = path.to_string_lossy().into_owned();
+            canonical.push_str(&format!("{rel} {}\n", blob_id.to_string()));
         }
         hex_lower(&Sha256::digest(canonical.as_bytes()))
     }
@@ -2686,9 +2723,11 @@ mod tests {
         let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
         // Provider source provenance: providerSourceCommit is the git commit id from
         // IDE_REFORKIT_SOURCE_COMMIT (never from the IDE Cargo manifest; no CARGO_MANIFEST_DIR
-        // fallback). sourceTreeHash is a deterministic content fingerprint of the whole RefactorKit
-        // provider source tree from IDE_REFORKIT_SOURCE_ROOT. If that env var is unset,
-        // sourceTreeHash is "not-provided" and NO cryptographic relationship is claimed.
+        // fallback). sourceTreeHash is now a deterministic fingerprint of the COMMITTED source tree
+        // at IDE_REFORKIT_SOURCE_COMMIT (path + git blob sha), independent of any dirty
+        // working-tree state (sourceGitClean=false), so the receipt is reproducible across runs. If
+        // either env var is unset or the commit is not a valid git object, sourceTreeHash is
+        // "not-provided" and NO cryptographic relationship is claimed.
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
         let source_tree_hash = provider_source_tree_hash();
