@@ -324,36 +324,21 @@ pub fn start(
             toolchain: toolchain.clone(),
             semantic_completeness: upstream.completeness.clone(),
         };
-        let result = json!({
-            "languageId": request.language_id,
-            "workspaceRoot": request.workspace_root,
-            "workspaceId": request.workspace_id,
-            "workspaceGeneration": request.workspace_generation,
-            "sessionId": session_id,
-            "providerProjectSnapshotIdentity": snapshot_identity,
-            "semanticLease": upstream.semantic_lease,
-            "startSnapshotHash": upstream.snapshot_hash,
-            "provider": PROVIDER,
-            "providerVersion": PROVIDER_VERSION,
-            "backend": BACKEND,
-            "toolchain": {
-                "backend": BACKEND,
-                "runtime": runtime_json(&request.runtime),
-                "extensions": request.extensions,
-                "nodeExecutable": toolchain.node_executable,
-                "languageServerPackageRoot": toolchain.language_server_package_root,
-                "typeScriptPackageRoot": toolchain.type_script_package_root
-            },
-            "semanticCompleteness": upstream.completeness,
-            "processProvenance": {
-                "serverName": upstream.server_name,
-                "serverVersion": upstream.server_version,
-                "capabilitiesSha256": upstream.capabilities_sha256,
-                "executableSha256": upstream.executable_sha256,
-                "argumentsSha256": upstream.arguments_sha256,
-                "processId": upstream.process_id
-            }
-        });
+        let result = assemble_start_result(
+            &request.language_id,
+            &request.workspace_root,
+            &request.workspace_id,
+            request.workspace_generation,
+            &session_id,
+            &snapshot_identity,
+            &upstream.semantic_lease,
+            &upstream.snapshot_hash,
+            &request.runtime,
+            &request.extensions,
+            &toolchain,
+            &upstream.completeness,
+            &upstream,
+        );
         Ok((authority, result))
     })();
 
@@ -1190,6 +1175,61 @@ fn index_is_ready_or_valid(index: Option<&Value>) -> bool {
         return true;
     }
     object.get("status").and_then(Value::as_str).is_some()
+}
+
+/// Assemble the `start()` result JSON that the Tauri adapter's
+/// `parseSemanticSessionStartCandidate` consumes. The adapter validates every field through an
+/// exact-field shape and, critically, requires `startSnapshotHash` to be a PREFIXED sha256
+/// identity (`sha256:<64hex>`) matching `validSha256Identity` / `SHA256_IDENTITY`. The bare
+/// 64-hex digest is therefore emitted with the `sha256:` prefix alongside the prefixed
+/// `providerProjectSnapshotIdentity` (both identity fields are kept). Internal correlation keeps
+/// the bare digest on `SemanticAuthority.start_snapshot_hash`, so search/definition binding is
+/// unchanged; only the wire shape is prefixed.
+fn assemble_start_result(
+    language_id: &str,
+    workspace_root: &str,
+    workspace_id: &str,
+    workspace_generation: u64,
+    session_id: &str,
+    snapshot_identity: &str,
+    semantic_lease: &str,
+    start_snapshot_hash: &str,
+    runtime: &SemanticRuntimeRequest,
+    extensions: &[String],
+    toolchain: &AuthorizedToolchain,
+    completeness: &str,
+    upstream: &UpstreamStart,
+) -> Value {
+    json!({
+        "languageId": language_id,
+        "workspaceRoot": workspace_root,
+        "workspaceId": workspace_id,
+        "workspaceGeneration": workspace_generation,
+        "sessionId": session_id,
+        "providerProjectSnapshotIdentity": snapshot_identity,
+        "semanticLease": semantic_lease,
+        "startSnapshotHash": format!("sha256:{start_snapshot_hash}"),
+        "provider": PROVIDER,
+        "providerVersion": PROVIDER_VERSION,
+        "backend": BACKEND,
+        "toolchain": {
+            "backend": BACKEND,
+            "runtime": runtime_json(runtime),
+            "extensions": extensions,
+            "nodeExecutable": toolchain.node_executable,
+            "languageServerPackageRoot": toolchain.language_server_package_root,
+            "typeScriptPackageRoot": toolchain.type_script_package_root
+        },
+        "semanticCompleteness": completeness,
+        "processProvenance": {
+            "serverName": upstream.server_name,
+            "serverVersion": upstream.server_version,
+            "capabilitiesSha256": upstream.capabilities_sha256,
+            "executableSha256": upstream.executable_sha256,
+            "argumentsSha256": upstream.arguments_sha256,
+            "processId": upstream.process_id
+        }
+    })
 }
 
 fn normalize_semantic_stop(value: &Value, language_id: &str) -> SemanticResult<bool> {
@@ -2090,6 +2130,64 @@ mod tests {
     }
 
     #[test]
+    fn start_result_emits_prefixed_sha256_start_snapshot_hash_for_adapter() {
+        // Builds the adapter's parseSemanticSessionStartCandidate-style shape via the same
+        // assemble_start_result used by production start(). The Tauri adapter requires
+        // startSnapshotHash to be a PREFIXED sha256 identity (sha256:<64hex>), matching
+        // validSha256Identity / SHA256_IDENTITY, and rejects an unprefixed digest. Both identity
+        // fields (providerProjectSnapshotIdentity and startSnapshotHash) must be present and the
+        // prefixed startSnapshotHash must equal the prefixed snapshot identity.
+        let digest = "a".repeat(64);
+        let snapshot_identity = format!("sha256:{digest}");
+        let upstream = UpstreamStart {
+            completeness: "full-typescript".into(),
+            semantic_lease: "semantic-lease-1".into(),
+            snapshot_hash: digest.clone(),
+            server_name: Some("typescript-language-server".into()),
+            server_version: Some("5.1.3".into()),
+            capabilities_sha256: "b".repeat(64),
+            executable_sha256: "c".repeat(64),
+            arguments_sha256: "d".repeat(64),
+            process_id: 42,
+        };
+        let toolchain = AuthorizedToolchain {
+            node_executable: "/tools/node".into(),
+            language_server_package_root: "/tools/typescript-language-server".into(),
+            type_script_package_root: "/tools/typescript".into(),
+        };
+        let request = start_request();
+        let result = assemble_start_result(
+            &request.language_id,
+            &request.workspace_root,
+            &request.workspace_id,
+            request.workspace_generation,
+            &format!("refactorkit-semantic-session-v1:{}", "e".repeat(64)),
+            &snapshot_identity,
+            &upstream.semantic_lease,
+            &upstream.snapshot_hash,
+            &request.runtime,
+            &request.extensions,
+            &toolchain,
+            &upstream.completeness,
+            &upstream,
+        );
+
+        // Adapter contract: startSnapshotHash must be a PREFIXED sha256 identity.
+        let start_hash = result["startSnapshotHash"].as_str().unwrap();
+        assert!(
+            start_hash.strip_prefix("sha256:").is_some_and(sha256_digest),
+            "startSnapshotHash must be sha256:<64hex>, got: {start_hash}"
+        );
+        assert!(result.get("providerProjectSnapshotIdentity").is_some());
+        assert_eq!(
+            result["providerProjectSnapshotIdentity"].as_str().unwrap(),
+            snapshot_identity
+        );
+        // Prefixed startSnapshotHash must equal the prefixed providerProjectSnapshotIdentity.
+        assert_eq!(start_hash, snapshot_identity);
+    }
+
+    #[test]
     fn v062_runtime_is_exact_not_merely_bounded() {
         let mut value = runtime();
         assert!(runtime_request_is_v062(&value));
@@ -2292,10 +2390,13 @@ mod tests {
             .strip_prefix("refactorkit-semantic-session-v1:")
             .is_some_and(sha256_digest));
         assert!(valid_semantic_lease(&semantic_lease));
-        assert_eq!(
-            start_snapshot_hash,
-            snapshot_identity.strip_prefix("sha256:").unwrap()
-        );
+        // The Tauri adapter requires startSnapshotHash to be a PREFIXED sha256 identity
+        // (sha256:<64hex>) matching validSha256Identity, so it must equal the prefixed
+        // providerProjectSnapshotIdentity rather than the bare digest.
+        assert!(start_snapshot_hash
+            .strip_prefix("sha256:")
+            .is_some_and(sha256_digest));
+        assert_eq!(start_snapshot_hash, snapshot_identity);
         assert_eq!(started["semanticCompleteness"], "full-typescript");
         assert!(started.get("compilerAttestation").is_none());
 
