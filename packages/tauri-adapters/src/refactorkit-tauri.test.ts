@@ -170,6 +170,7 @@ const rustCommandResult = {
 
 const SEMANTIC_SESSION_ID = `refactorkit-semantic-session-v1:${"a".repeat(64)}`;
 const SNAPSHOT_IDENTITY = `sha256:${"b".repeat(64)}`;
+const SEMANTIC_LEASE = `semantic-${"a".repeat(36)}`;
 const PRIVATE_NATIVE_DETAIL = "private-native-toolchain-detail-sentinel";
 
 function semanticRuntime() {
@@ -219,6 +220,8 @@ function semanticSessionStartResponse() {
     workspaceGeneration: request.workspaceGeneration,
     sessionId: SEMANTIC_SESSION_ID,
     providerProjectSnapshotIdentity: SNAPSHOT_IDENTITY,
+    semanticLease: SEMANTIC_LEASE,
+    startSnapshotHash: SNAPSHOT_IDENTITY,
     provider: request.provider,
     providerVersion: request.providerVersion,
     backend: request.backend,
@@ -266,6 +269,7 @@ function savedSnapshotSearchRequest(): SavedSnapshotSymbolSearchRequest {
     workspaceId: "workspace:1",
     workspaceGeneration: 7,
     sessionId: SEMANTIC_SESSION_ID,
+    semanticLease: SEMANTIC_LEASE,
     snapshotIdentity: SNAPSHOT_IDENTITY,
     providerVersion: "0.5.0-SNAPSHOT",
     backend: "typescript-language-server-4.3.4",
@@ -312,6 +316,7 @@ function savedSnapshotDefinitionRequest(): SavedSnapshotDefinitionRequest {
     workspaceId: search.workspaceId,
     workspaceGeneration: search.workspaceGeneration,
     sessionId: search.sessionId,
+    semanticLease: SEMANTIC_LEASE,
     snapshotIdentity: search.snapshotIdentity,
     providerVersion: search.providerVersion,
     backend: search.backend,

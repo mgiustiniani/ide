@@ -273,6 +273,8 @@ function sessionFromStart(
     workspaceId: result.workspaceId,
     workspaceGeneration: result.workspaceGeneration,
     sessionId: result.sessionId,
+    semanticLease: result.semanticLease,
+    startSnapshotHash: result.startSnapshotHash,
     snapshot: { state: "saved", identity: result.providerProjectSnapshotIdentity },
     providerVersion: result.providerVersion,
     toolchain: {

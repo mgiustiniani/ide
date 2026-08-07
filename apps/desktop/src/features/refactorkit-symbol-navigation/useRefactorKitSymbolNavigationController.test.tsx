@@ -22,6 +22,8 @@ import {
 
 const SESSION_ID = `refactorkit-semantic-session-v1:${"a".repeat(64)}`;
 const SNAPSHOT_IDENTITY = `sha256:${"b".repeat(64)}`;
+const SEMANTIC_LEASE = `semantic-${"a".repeat(36)}`;
+const START_SNAPSHOT_HASH = `sha256:${"a".repeat(64)}`;
 const SYMBOL_ID = `lsp-symbol-v1:${"c".repeat(64)}`;
 const WORKSPACE = {
   id: "workspace:semantic",
@@ -127,6 +129,8 @@ function startResult(
     workspaceGeneration: request.workspaceGeneration,
     sessionId: SESSION_ID,
     providerProjectSnapshotIdentity: SNAPSHOT_IDENTITY,
+    semanticLease: SEMANTIC_LEASE,
+    startSnapshotHash: START_SNAPSHOT_HASH,
     provider: request.provider,
     providerVersion: request.providerVersion,
     backend: request.backend,
@@ -388,6 +392,7 @@ describe("useRefactorKitSymbolNavigationController", () => {
       workspaceId: WORKSPACE.id,
       workspaceGeneration: 7,
       sessionId: SESSION_ID,
+      semanticLease: SEMANTIC_LEASE,
       snapshotIdentity: SNAPSHOT_IDENTITY,
       providerVersion: "0.6.2",
       backend: "typescript-language-server-4.3.4",

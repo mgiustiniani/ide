@@ -139,6 +139,7 @@ const AUTHORITY = {
   workspaceGeneration: 1,
   sessionId: `refactorkit-semantic-session-v1:${"a".repeat(64)}`,
   snapshotIdentity: `sha256:${"b".repeat(64)}`,
+  semanticLease: `semantic-${"c".repeat(36)}`,
 } as const;
 
 const APPROVED_TOOLCHAIN = {
@@ -189,6 +190,8 @@ const SEMANTIC_SESSION_START_RESULT = {
   workspaceGeneration: AUTHORITY.workspaceGeneration,
   sessionId: AUTHORITY.sessionId,
   providerProjectSnapshotIdentity: AUTHORITY.snapshotIdentity,
+  semanticLease: AUTHORITY.semanticLease,
+  startSnapshotHash: AUTHORITY.snapshotIdentity,
   provider: "refactorkit",
   providerVersion: "0.7.0-SNAPSHOT",
   backend: "typescript-lsp-explicit-v1",
@@ -223,7 +226,10 @@ const SYMBOL_SEARCH_REQUEST = {
 const SYMBOL_SEARCH_RESULT = {
   languageId: "typescript",
   query: "Service",
-  ...AUTHORITY,
+  workspaceId: AUTHORITY.workspaceId,
+  workspaceGeneration: AUTHORITY.workspaceGeneration,
+  sessionId: AUTHORITY.sessionId,
+  snapshotIdentity: AUTHORITY.snapshotIdentity,
   providerVersion: "0.7.0-SNAPSHOT",
   backend: "typescript-lsp-explicit-v1",
   completeness: {
@@ -245,7 +251,10 @@ const DEFINITION_REQUEST = {
 
 const DEFINITION_RESULT = {
   languageId: "typescript",
-  ...AUTHORITY,
+  workspaceId: AUTHORITY.workspaceId,
+  workspaceGeneration: AUTHORITY.workspaceGeneration,
+  sessionId: AUTHORITY.sessionId,
+  snapshotIdentity: AUTHORITY.snapshotIdentity,
   providerVersion: "0.7.0-SNAPSHOT",
   backend: "typescript-lsp-explicit-v1",
   selectedSymbol: SYMBOL_SEARCH_RESULT.symbols[0],

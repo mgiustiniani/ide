@@ -63,6 +63,7 @@ const MAX_SAVED_SNAPSHOT_IDENTITY = 512;
 const MAX_SAVED_SNAPSHOT_METADATA = 256;
 const OPAQUE_SAVED_SNAPSHOT_SYMBOL_ID = /^lsp-symbol-v1:[a-f0-9]{64}$/u;
 const OPAQUE_SEMANTIC_SESSION_ID = /^refactorkit-semantic-session-v1:[a-f0-9]{64}$/u;
+const OPAQUE_SEMANTIC_LEASE = /^semantic-[a-f0-9-]{36}$/u;
 const SHA256_IDENTITY = /^sha256:[a-f0-9]{64}$/u;
 const SHA256_DIGEST = /^[a-f0-9]{64}$/u;
 const SOURCE_EXTENSION = /^[a-z0-9]+$/u;
@@ -462,6 +463,10 @@ function validOpaqueSemanticSessionId(value: unknown): value is string {
   return typeof value === "string" && OPAQUE_SEMANTIC_SESSION_ID.test(value);
 }
 
+function validOpaqueSemanticLease(value: unknown): value is string {
+  return typeof value === "string" && OPAQUE_SEMANTIC_LEASE.test(value);
+}
+
 function validSha256Identity(value: unknown): value is string {
   return typeof value === "string" && SHA256_IDENTITY.test(value);
 }
@@ -738,6 +743,8 @@ function parseSemanticSessionStartCandidate(
       "workspaceGeneration",
       "sessionId",
       "providerProjectSnapshotIdentity",
+      "semanticLease",
+      "startSnapshotHash",
       "provider",
       "providerVersion",
       "backend",
@@ -754,6 +761,8 @@ function parseSemanticSessionStartCandidate(
     !positiveBoundedInteger(record.workspaceGeneration, Number.MAX_SAFE_INTEGER) ||
     !validOpaqueSemanticSessionId(record.sessionId) ||
     !validSha256Identity(record.providerProjectSnapshotIdentity) ||
+    !validOpaqueSemanticLease(record.semanticLease) ||
+    !validSha256Identity(record.startSnapshotHash) ||
     !validSavedSnapshotMetadata(record.provider) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
@@ -834,6 +843,8 @@ function parseSemanticSessionStartCandidate(
     workspaceGeneration: record.workspaceGeneration,
     sessionId: record.sessionId,
     providerProjectSnapshotIdentity: record.providerProjectSnapshotIdentity,
+    semanticLease: record.semanticLease,
+    startSnapshotHash: record.startSnapshotHash,
     provider: record.provider,
     providerVersion: record.providerVersion,
     backend: record.backend,
@@ -956,6 +967,7 @@ function validateSearchRequest(
     "workspaceId",
     "workspaceGeneration",
     "sessionId",
+    "semanticLease",
     "snapshotIdentity",
     "providerVersion",
     "backend",
@@ -966,6 +978,7 @@ function validateSearchRequest(
     !validSavedSnapshotQuery(record.query) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
     !validOpaqueSemanticSessionId(record.sessionId) ||
+    !validOpaqueSemanticLease(record.semanticLease) ||
     !validSha256Identity(record.snapshotIdentity) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
@@ -998,6 +1011,7 @@ function validateSearchRequest(
     workspaceId: record.workspaceId,
     workspaceGeneration: record.workspaceGeneration,
     sessionId: record.sessionId,
+    semanticLease: record.semanticLease,
     snapshotIdentity: record.snapshotIdentity,
     providerVersion: record.providerVersion,
     backend: record.backend,
@@ -1022,6 +1036,7 @@ function validateDefinitionRequest(
     "workspaceId",
     "workspaceGeneration",
     "sessionId",
+    "semanticLease",
     "snapshotIdentity",
     "providerVersion",
     "backend",
@@ -1031,6 +1046,7 @@ function validateDefinitionRequest(
     !validOpaqueSymbolId(record.symbolId) ||
     !validSavedSnapshotIdentity(record.workspaceId) ||
     !validOpaqueSemanticSessionId(record.sessionId) ||
+    !validOpaqueSemanticLease(record.semanticLease) ||
     !validSha256Identity(record.snapshotIdentity) ||
     !validSavedSnapshotMetadata(record.providerVersion) ||
     !validSavedSnapshotMetadata(record.backend) ||
@@ -1046,6 +1062,7 @@ function validateDefinitionRequest(
     workspaceId: record.workspaceId,
     workspaceGeneration: record.workspaceGeneration,
     sessionId: record.sessionId,
+    semanticLease: record.semanticLease,
     snapshotIdentity: record.snapshotIdentity,
     providerVersion: record.providerVersion,
     backend: record.backend,

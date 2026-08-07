@@ -35,6 +35,8 @@ export type TypeScriptJavaScriptSemanticSession =
       workspaceId: string;
       workspaceGeneration: number;
       sessionId: string;
+      semanticLease: string;
+      startSnapshotHash: string;
       snapshot: { state: "saved"; identity: string } | { state: "unsaved" };
       providerVersion: string;
       toolchain: TypeScriptJavaScriptSemanticToolchain;
@@ -135,6 +137,8 @@ export interface SavedSnapshotSemanticSessionStartResultCandidate {
   workspaceGeneration: number;
   sessionId: string;
   providerProjectSnapshotIdentity: string;
+  semanticLease: string;
+  startSnapshotHash: string;
   provider: string;
   providerVersion: string;
   backend: string;
@@ -158,6 +162,8 @@ export interface SavedSnapshotSemanticSessionStartResult {
   readonly workspaceGeneration: number;
   readonly sessionId: string;
   readonly providerProjectSnapshotIdentity: string;
+  readonly semanticLease: string;
+  readonly startSnapshotHash: string;
   readonly provider: string;
   readonly providerVersion: string;
   readonly backend: string;
@@ -265,6 +271,7 @@ export interface SavedSnapshotSymbolSearchRequest {
   readonly workspaceId: string;
   readonly workspaceGeneration: number;
   readonly sessionId: string;
+  readonly semanticLease: string;
   readonly snapshotIdentity: string;
   readonly providerVersion: string;
   readonly backend: string;
@@ -299,6 +306,7 @@ export type SavedSnapshotSymbolSearchRefusalReason =
   | "toolchain-path-invalid"
   | "toolchain-not-external"
   | "semantic-session-inactive"
+  | "semantic-session-lease-invalid"
   | "session-identity-invalid"
   | "semantic-session-authority-mismatch"
   | "semantic-session-snapshot-unsaved"
@@ -392,6 +400,7 @@ export interface SavedSnapshotDefinitionRequest {
   readonly workspaceId: string;
   readonly workspaceGeneration: number;
   readonly sessionId: string;
+  readonly semanticLease: string;
   readonly snapshotIdentity: string;
   readonly providerVersion: string;
   readonly backend: string;
@@ -485,6 +494,7 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const SOURCE_EXTENSION = /^[a-z0-9]+$/u;
 const OPAQUE_SYMBOL_ID = /^lsp-symbol-v1:[a-f0-9]{64}$/u;
 const OPAQUE_SEMANTIC_SESSION_ID = /^refactorkit-semantic-session-v1:[a-f0-9]{64}$/u;
+const OPAQUE_SEMANTIC_LEASE = /^semantic-[a-f0-9-]{36}$/u;
 const SHA256_IDENTITY = /^sha256:[a-f0-9]{64}$/u;
 const SHA256_DIGEST = /^[a-f0-9]{64}$/u;
 
@@ -692,6 +702,8 @@ export function normalizeSavedSnapshotSemanticSessionStartResult(
     workspaceGeneration: request.workspaceGeneration,
     sessionId: candidate.sessionId,
     providerProjectSnapshotIdentity: candidate.providerProjectSnapshotIdentity,
+    semanticLease: candidate.semanticLease,
+    startSnapshotHash: candidate.startSnapshotHash,
     provider: request.provider,
     providerVersion: request.providerVersion,
     backend: request.backend,
@@ -839,6 +851,9 @@ export function decideSavedSnapshotSymbolSearchRequest(
 
   const session = input.semanticSession;
   if (session.state !== "active") return searchRefused("semantic-session-inactive");
+  if (!OPAQUE_SEMANTIC_LEASE.test(session.semanticLease)) {
+    return searchRefused("semantic-session-lease-invalid");
+  }
   if (!validIdentity(session.sessionId)) return searchRefused("session-identity-invalid");
   if (
     session.languageId !== input.languageId ||
@@ -900,6 +915,7 @@ export function decideSavedSnapshotSymbolSearchRequest(
     workspaceId: input.workspaceId,
     workspaceGeneration: input.workspaceGeneration,
     sessionId: session.sessionId,
+    semanticLease: session.semanticLease,
     snapshotIdentity: input.currentSavedSnapshotIdentity,
     providerVersion,
     backend: pair.workspaceSymbols.backend,
@@ -947,6 +963,7 @@ export function decideSavedSnapshotDefinitionRequest(
     workspaceId: request.workspaceId,
     workspaceGeneration: request.workspaceGeneration,
     sessionId: request.sessionId,
+    semanticLease: request.semanticLease,
     snapshotIdentity: request.snapshotIdentity,
     providerVersion: request.providerVersion,
     backend: request.backend,
