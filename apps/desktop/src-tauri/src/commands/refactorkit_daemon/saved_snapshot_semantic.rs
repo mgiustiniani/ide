@@ -1716,9 +1716,10 @@ fn hex_lower(bytes: &[u8]) -> String {
 static AUDIT_CHECKPOINTS: std::sync::OnceLock<Mutex<Vec<(String, String)>>> =
     std::sync::OnceLock::new();
 
-/// Snapshot the complete workspace byte tree: every file path plus its content sha256 under
-/// `root`, walked recursively, excluding nothing. Symlinks are recorded as files (content follows
-/// the target) so no entry type is silently dropped from the audit.
+/// Snapshot the workspace byte tree: every non-directory entry's path plus its content sha256
+/// under `root`, walked recursively. Directories are traversed but never hashed themselves, so
+/// empty-directory-only changes are not represented. Symlinks are recorded as files (content
+/// follows the target) so no non-directory entry type is silently dropped from the audit.
 #[cfg(test)]
 fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
     let mut entries = Vec::new();
@@ -1740,9 +1741,11 @@ fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
 }
 
 /// Compute a deterministic content-based tree fingerprint: sha256 over the sorted
-/// `relative-path content-sha256` lines. Hashing file bytes (not just length) makes
-/// same-length rewrites, metadata-only changes, empty-dir changes, and transient
-/// create/delete detectable.
+/// `relative-path content-sha256` lines. The fingerprint covers only non-directory file
+/// path/content pairs sampled at discrete operation boundaries. It does NOT detect metadata-only
+/// changes, empty-directory-only changes, or transient create/delete changes that do not persist
+/// at a sampled boundary. It proves the workspace file byte-tree (non-directory path + content)
+/// is unchanged across the sampled boundaries.
 #[cfg(test)]
 fn tree_fingerprint(root: &Path) -> String {
     let mut entries = snapshot_workspace_tree(root);
@@ -1803,6 +1806,43 @@ mod tests {
         Repository::discover(manifest)
             .and_then(|repo| repo.revparse_single("HEAD").map(|object| object.id().to_string()))
             .unwrap_or_else(|_| "not-provided".into())
+    }
+
+    /// Cryptographic build-to-source provenance: hash the RefactorKit provider SOURCE TREE.
+    /// Reads `IDE_REFORKIT_SOURCE_ROOT`; when set, walks the whole tree and returns a deterministic
+    /// content-based fingerprint of every non-directory file path/content pair (broken symlinks and
+    /// unreadable files are skipped so the fingerprint stays deterministic). When the env var is
+    /// unset, returns "not-provided" and NO cryptographic build-to-source relationship is claimed.
+    fn provider_source_tree_hash() -> String {
+        let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
+            Ok(root) => PathBuf::from(root),
+            Err(_) => return "not-provided".into(),
+        };
+        let mut entries = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(mut read) = fs::read_dir(&dir) else { continue };
+            while let Some(Ok(entry)) = read.next() {
+                let path = entry.path();
+                let Ok(file_type) = entry.file_type() else { continue };
+                if file_type.is_dir() {
+                    stack.push(path);
+                } else if file_type.is_file() {
+                    if let Ok(bytes) = fs::read(&path) {
+                        let digest: [u8; 32] = Sha256::digest(&bytes).into();
+                        entries.push((path, digest));
+                    }
+                }
+                // Symlinks and other entry types are skipped to keep the fingerprint deterministic.
+            }
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut canonical = String::new();
+        for (path, digest) in entries {
+            let rel = path.strip_prefix(&root).unwrap().to_string_lossy().into_owned();
+            canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
+        }
+        hex_lower(&Sha256::digest(canonical.as_bytes()))
     }
 
     fn runtime() -> SemanticRuntimeRequest {
@@ -2201,9 +2241,12 @@ mod tests {
         crate::workspace::set_workspace_root_override(root.clone()).unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", &daemon);
 
-        // Complete byte-tree audit: snapshot the whole workspace (every file path + content sha256,
-        // excluding nothing) before project.open and again after semantic.stop. Prove the
-        // .refactorkit/workspace.lock path NEVER exists before AND after project.open.
+        // Byte-tree audit: snapshot every non-directory workspace file path + content sha256 before
+        // project.open and at each operation boundary through semantic.stop. The audit proves the
+        // workspace file byte-tree (non-directory path + content) is unchanged at the sampled
+        // boundaries; it does NOT detect metadata-only, empty-directory-only, or transient
+        // create/delete changes. Prove the .refactorkit/workspace.lock path NEVER exists before AND
+        // after project.open.
         assert!(
             !root.join(".refactorkit/workspace.lock").exists(),
             "workspace.lock must never be created by a read-only semantic session (pre-open)"
@@ -2347,18 +2390,23 @@ mod tests {
         .unwrap();
         assert_eq!(stopped["stopped"], true);
 
-        // Final checkpoint after semantic.stop: the workspace tree must still equal baseline. Along
-        // with the open/start/search/definition checkpoints this proves no write persists through ANY
-        // operation boundary, so transient create/delete and empty-dir changes cannot slip past a
-        // single before/after comparison.
+        // Final checkpoint after semantic.stop: the workspace tree must still equal baseline. The
+        // five per-boundary checkpoints (after project.open, semantic.start, symbol.search,
+        // symbol.definition, semantic.stop) prove the workspace file byte-tree (non-directory path +
+        // content) is unchanged at each sampled operation boundary. This does NOT claim detection of
+        // metadata-only, empty-directory-only, or transient create/delete changes.
         let after_tree_fingerprint = tree_fingerprint(&root);
         let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
 
         let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
-        // Provider source provenance comes only from IDE_REFORKIT_SOURCE_COMMIT (with ACT),
-        // never from the IDE Cargo manifest. No CARGO_MANIFEST_DIR fallback is used.
+        // Provider source provenance: providerSourceCommit is the git commit id from
+        // IDE_REFORKIT_SOURCE_COMMIT (never from the IDE Cargo manifest; no CARGO_MANIFEST_DIR
+        // fallback). sourceTreeHash is the cryptographic build-to-source binding: a hash of the
+        // whole RefactorKit provider source tree from IDE_REFORKIT_SOURCE_ROOT. If that env var is
+        // unset, sourceTreeHash is "not-provided" and NO cryptographic relationship is claimed.
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
+        let source_tree_hash = provider_source_tree_hash();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -2379,7 +2427,7 @@ mod tests {
             "auditCommand": audit_command,
             "daemonBinarySha256": daemon_binary_sha256,
             "providerSourceCommit": source_commit,
-            "sourceTreeHash": before_tree_fingerprint,
+            "sourceTreeHash": source_tree_hash,
             "ideRevision": ide_revision,
             "checkpoints": checkpoint_fingerprints,
             "baselineTreeFingerprint": before_tree_fingerprint,
