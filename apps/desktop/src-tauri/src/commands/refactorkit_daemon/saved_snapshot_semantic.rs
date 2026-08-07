@@ -1940,6 +1940,58 @@ mod tests {
         daemon.starts_with(&root)
     }
 
+    /// Build-to-source layout verification (RQR-TS002-PROVENANCE-002): whether the built daemon
+    /// binary (`IDE_REFORKIT_DAEMON`) is a build artifact OF the hashed source tree, not merely a
+    /// path-co-located binary. Requires BOTH:
+    ///   (1) path containment — the canonical daemon binary lives inside the canonical
+    ///       `IDE_REFORKIT_SOURCE_ROOT` tree; AND
+    ///   (2) the expected source-built Gradle install layout — the daemon's relative path from the
+    ///       source root matches `<root>/modules/refactorkit-daemon/build/install/<app>/bin/
+    ///       refactorkit-daemon` (install application directory followed by `bin/refactorkit-daemon`
+    ///       launcher).
+    /// Together with `sourceTreeHash` and `daemonBinarySha256` this establishes the build-to-source
+    /// link even when the provider source tree is not git-clean (`sourceGitClean=false`). When
+    /// either env var is unset or verification fails, returns false and NO build-to-source claim is
+    /// made.
+    fn daemon_binary_build_layout_verified() -> bool {
+        let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
+            Ok(root) => PathBuf::from(root),
+            Err(_) => return false,
+        };
+        let Ok(root) = fs::canonicalize(&root) else {
+            return false;
+        };
+        let daemon = match env::var("IDE_REFORKIT_DAEMON") {
+            Ok(daemon) => PathBuf::from(daemon),
+            Err(_) => return false,
+        };
+        let Ok(daemon) = fs::canonicalize(&daemon) else {
+            return false;
+        };
+        // (1) path containment within the hashed source tree.
+        if !daemon.starts_with(&root) {
+            return false;
+        }
+        // (2) expected build layout: modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon.
+        let Ok(relative) = daemon.strip_prefix(&root) else {
+            return false;
+        };
+        let Ok(relative) = relative.strip_prefix(Path::new("modules/refactorkit-daemon/build/install"))
+        else {
+            return false;
+        };
+        let mut components = relative.components();
+        // First component is the install application directory (e.g. `refactorkit-daemon`); the
+        // remaining two must be exactly `bin` and `refactorkit-daemon`.
+        let Some(Component::Normal(_app)) = components.next() else {
+            return false;
+        };
+        let rest: Vec<_> = components.collect();
+        rest.len() == 2
+            && rest[0].as_os_str() == "bin"
+            && rest[1].as_os_str() == "refactorkit-daemon"
+    }
+
     fn runtime() -> SemanticRuntimeRequest {
         SemanticRuntimeRequest {
             execution_mode: "external-process".into(),
@@ -2376,6 +2428,58 @@ mod tests {
     }
 
     #[test]
+    fn build_layout_verification_requires_expected_gradle_install_path() {
+        // Build-to-source layout (RQR-TS002-PROVENANCE-002): a daemon binary that is merely
+        // co-located in the source tree but NOT at the expected
+        // modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon layout must NOT be
+        // accepted as a build artifact of the hashed source tree.
+        let root = temp_root("build-layout");
+        env::set_var("IDE_REFORKIT_SOURCE_ROOT", root.to_str().unwrap());
+        let bin_dir = root.join(
+            "modules/refactorkit-daemon/build/install/refactorkit-daemon/bin",
+        );
+        fs::create_dir_all(&bin_dir).unwrap();
+        let launcher = bin_dir.join("refactorkit-daemon");
+        fs::write(&launcher, "#!/bin/sh\n" ).unwrap();
+        env::set_var("IDE_REFORKIT_DAEMON", launcher.to_str().unwrap());
+        assert!(
+            daemon_binary_build_layout_verified(),
+            "expected Gradle install layout must verify as a build artifact"
+        );
+
+        // Contained in the source tree but NOT the expected build layout: rejected.
+        let stray = root.join("modules/refactorkit-daemon/build/scripts/refactorkit-daemon");
+        fs::create_dir_all(stray.parent().unwrap()).unwrap();
+        fs::write(&stray, "#!/bin/sh\n" ).unwrap();
+        env::set_var("IDE_REFORKIT_DAEMON", stray.to_str().unwrap());
+        assert!(
+            !daemon_binary_build_layout_verified(),
+            "non-install-layout path must not verify as a build artifact"
+        );
+
+        // Missing trailing launcher component: rejected.
+        let partial = bin_dir.join("other-daemon");
+        fs::write(&partial, "#!/bin/sh\n" ).unwrap();
+        env::set_var("IDE_REFORKIT_DAEMON", partial.to_str().unwrap());
+        assert!(!daemon_binary_build_layout_verified());
+
+        // Outside the source tree entirely: rejected.
+        let outside_root = temp_root("outside-layout");
+        let outside = outside_root.join(
+            "modules/refactorkit-daemon/build/install/refactorkit-daemon/bin/refactorkit-daemon",
+        );
+        fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        fs::write(&outside, "#!/bin/sh\n" ).unwrap();
+        env::set_var("IDE_REFORKIT_DAEMON", outside.to_str().unwrap());
+        assert!(!daemon_binary_build_layout_verified());
+
+        env::remove_var("IDE_REFORKIT_DAEMON");
+        env::remove_var("IDE_REFORKIT_SOURCE_ROOT");
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside_root).unwrap();
+    }
+
+    #[test]
     #[ignore = "requires an isolated source-built RefactorKit 0.7.0-SNAPSHOT daemon and explicit external TypeScript toolchain"]
     fn packaged_v070_saved_snapshot_start_search_definition_stop_smoke() {
         let daemon = env::var("IDE_REFORKIT_DAEMON").unwrap();
@@ -2582,14 +2686,22 @@ mod tests {
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
         let source_tree_hash = provider_source_tree_hash();
-        // Build-to-source provenance strengthening (RQR-TS002-003): the daemon binary's source is
-        // derived by hashing the provider source tree (IDE_REFORKIT_SOURCE_ROOT) AND confirming the
-        // built daemon binary path lives within that tree (or its build/ dir). We additionally
+        // Build-to-source provenance strengthening (RQR-TS002-003 / PROVENANCE-002): the daemon
+        // binary's source is derived by hashing the provider source tree (IDE_REFORKIT_SOURCE_ROOT)
+        // AND verifying the built daemon binary is a build artifact OF that tree: path containment
+        // plus the expected source-built Gradle install layout
+        // (modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon). We additionally
         // record the provider source git HEAD and cleanliness (git status --porcelain empty) so the
-        // receipt binds the daemon to a specific, reproducible source revision.
+        // receipt binds the daemon to a specific source revision.
+        //
+        // sourceTreeHash + buildLayoutVerified + daemonBinarySha256 together establish the
+        // build-to-source link: the hashed tree (sourceTreeHash) is the tree the daemon binary
+        // (daemonBinarySha256) was built from, and buildLayoutVerified proves the binary is a build
+        // artifact of that tree (not merely path-co-located) even when sourceGitClean=false.
         let source_git_head = provider_source_git_head();
         let source_git_clean = provider_source_git_clean();
         let daemon_inside = daemon_binary_inside_source_tree();
+        let build_layout_verified = daemon_binary_build_layout_verified();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -2614,6 +2726,7 @@ mod tests {
             "sourceGitHead": source_git_head,
             "sourceGitClean": source_git_clean,
             "daemonBinaryInsideSourceTree": daemon_inside,
+            "buildLayoutVerified": build_layout_verified,
             "ideRevision": ide_revision,
             "checkpoints": checkpoint_fingerprints,
             "baselineTreeFingerprint": before_tree_fingerprint,
