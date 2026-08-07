@@ -1885,6 +1885,61 @@ mod tests {
         hex_lower(&Sha256::digest(canonical.as_bytes()))
     }
 
+    /// Provider source git HEAD: the current commit of the RefactorKit provider source tree from
+    /// `IDE_REFORKIT_SOURCE_ROOT`, discovered via git2. When the env var is unset or git discovery
+    /// fails, returns "not-provided" and NO git source revision is claimed.
+    fn provider_source_git_head() -> String {
+        let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
+            Ok(root) => PathBuf::from(root),
+            Err(_) => return "not-provided".into(),
+        };
+        use git2::Repository;
+        Repository::discover(&root)
+            .and_then(|repo| repo.revparse_single("HEAD").map(|object| object.id().to_string()))
+            .unwrap_or_else(|_| "not-provided".into())
+    }
+
+    /// Provider source git cleanliness: true only when `git status --porcelain` over the provider
+    /// source tree is empty (no modified, staged, or untracked files). When the env var is unset or
+    /// git discovery fails, returns false and NO cleanliness claim is made.
+    fn provider_source_git_clean() -> bool {
+        let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
+            Ok(root) => PathBuf::from(root),
+            Err(_) => return false,
+        };
+        use git2::Repository;
+        Repository::discover(&root)
+            .map(|repo| {
+                repo.statuses(None)
+                    .map(|statuses| statuses.len() == 0)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    /// Build-to-source containment: whether the built daemon binary (`IDE_REFORKIT_DAEMON`) lives
+    /// within the provider source tree (`IDE_REFORKIT_SOURCE_ROOT`) after canonicalization. This
+    /// confirms the daemon binary's source is derived from the hashed source tree rather than an
+    /// unrelated binary. When either env var is unset or canonicalization fails, returns false and
+    /// NO containment claim is made.
+    fn daemon_binary_inside_source_tree() -> bool {
+        let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
+            Ok(root) => PathBuf::from(root),
+            Err(_) => return false,
+        };
+        let Ok(root) = fs::canonicalize(&root) else {
+            return false;
+        };
+        let daemon = match env::var("IDE_REFORKIT_DAEMON") {
+            Ok(daemon) => PathBuf::from(daemon),
+            Err(_) => return false,
+        };
+        let Ok(daemon) = fs::canonicalize(&daemon) else {
+            return false;
+        };
+        daemon.starts_with(&root)
+    }
+
     fn runtime() -> SemanticRuntimeRequest {
         SemanticRuntimeRequest {
             execution_mode: "external-process".into(),
@@ -2336,6 +2391,16 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("src/service.ts"), "export class Service {}\n").unwrap();
+        // PROJECT-SCRIPT CANARY (RQR-TS002-002): a package.json carrying a `scripts` field whose
+        // canary script would write CANARY_RAN if the daemon ever executed a project script. It is
+        // created BEFORE the baseline fingerprint so it is part of the audited byte-tree. If a
+        // project script runs, CANARY_RAN appears as a non-directory file and the per-boundary tree
+        // fingerprints catch it; we additionally assert the marker file does NOT exist after stop.
+        fs::write(
+            root.join("package.json"),
+            r#"{"scripts":{"canary":"node -e \"require('fs').writeFileSync('CANARY_RAN','yes')\""}}"#,
+        )
+        .unwrap();
         crate::workspace::set_workspace_root_override(root.clone()).unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", &daemon);
 
@@ -2491,6 +2556,15 @@ mod tests {
         .unwrap();
         assert_eq!(stopped["stopped"], true);
 
+        // PROJECT-SCRIPT CANARY (RQR-TS002-002): no project script may execute. The canary script
+        // would create CANARY_RAN in the workspace root; assert it does NOT exist after the full
+        // flow + stop. (If it were created, it would also be a non-directory file and the tree
+        // fingerprints below would already fail trees_equal.)
+        assert!(
+            !root.join("CANARY_RAN").exists(),
+            "project scripts must never execute; canary marker must not exist"
+        );
+
         // Final checkpoint after semantic.stop: the workspace tree must still equal baseline. The
         // five per-boundary checkpoints (after project.open, semantic.start, symbol.search,
         // symbol.definition, semantic.stop) prove the workspace file byte-tree (non-directory path +
@@ -2508,6 +2582,14 @@ mod tests {
         let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
             .unwrap_or_else(|_| "not-provided".into());
         let source_tree_hash = provider_source_tree_hash();
+        // Build-to-source provenance strengthening (RQR-TS002-003): the daemon binary's source is
+        // derived by hashing the provider source tree (IDE_REFORKIT_SOURCE_ROOT) AND confirming the
+        // built daemon binary path lives within that tree (or its build/ dir). We additionally
+        // record the provider source git HEAD and cleanliness (git status --porcelain empty) so the
+        // receipt binds the daemon to a specific, reproducible source revision.
+        let source_git_head = provider_source_git_head();
+        let source_git_clean = provider_source_git_clean();
+        let daemon_inside = daemon_binary_inside_source_tree();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -2529,6 +2611,9 @@ mod tests {
             "daemonBinarySha256": daemon_binary_sha256,
             "providerSourceCommit": source_commit,
             "sourceTreeHash": source_tree_hash,
+            "sourceGitHead": source_git_head,
+            "sourceGitClean": source_git_clean,
+            "daemonBinaryInsideSourceTree": daemon_inside,
             "ideRevision": ide_revision,
             "checkpoints": checkpoint_fingerprints,
             "baselineTreeFingerprint": before_tree_fingerprint,
