@@ -31,7 +31,11 @@ const STUBS = new Map([
       focus() {},
     };
     const monaco = {
-      editor: { setModelMarkers() {} },
+      editor: {
+        setModelMarkers(_model, owner, markers) {
+          globalThis.__IDE_STORY_MONACO_MARKER_OBSERVER__?.(owner, markers);
+        },
+      },
       languages: {
         CompletionItemKind: { Text: 0 },
         registerCompletionItemProvider: disposable,
@@ -57,7 +61,11 @@ const STUBS = new Map([
 ]);
 
 const MONACO_API = `
-  export const editor = { setModelMarkers() {} };
+  export const editor = {
+    setModelMarkers(_model, owner, markers) {
+      globalThis.__IDE_STORY_MONACO_MARKER_OBSERVER__?.(owner, markers);
+    },
+  };
   export const languages = {
     CompletionItemKind: { Text: 0 },
     registerCompletionItemProvider: () => ({ dispose() {} }),
