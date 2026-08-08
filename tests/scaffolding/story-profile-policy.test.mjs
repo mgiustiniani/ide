@@ -691,12 +691,14 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(partial.flatMap(requirementIds), []);
-  assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), []);
-  assert.equal(declared.length, 17);
+  assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
+    "@REQ-XCOM2-PROJECT-BUILD-RECIPE-001",
+  ]);
+  assert.equal(declared.length, 18);
   assert.equal(validated.length, 9);
   assert.equal(harnessOnly.length, 8);
   assert.equal(partial.length, 0);
-  assert.equal(notImplemented.length, 0);
+  assert.equal(notImplemented.length, 1);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 8);
   assert.equal(nativeGui.length, 7);
