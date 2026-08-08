@@ -2,7 +2,7 @@
 
 > **CURRENT/AS-BUILT + FROZEN INVENTORY.** Monaco-only editing, locally bundled Java syntax highlighting, JDT LS document synchronization, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, the guarded conditional project-scoped Problems contribution, completion, hover, signature help, cancellation, and stale-result guards are **CURRENT/AS-BUILT**. Everything under **UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY** is neither target architecture nor an implied commitment. This structural view does not establish native-GUI, live-provider, or packaged-application execution evidence. The filename is retained for stable incoming links.
 
-The managed RefactorKit Java clipboard-import transaction is current but architecturally separate. No Java module activation is implied by the current Problems visibility guard.
+The managed RefactorKit Java clipboard-import transaction and saved-snapshot TypeScript/JavaScript diagnostics are current but architecturally separate from JDT LS semantics. No Java module activation is implied by either RefactorKit capability or the current Problems visibility guard.
 
 ## Current Delivery Boundary
 
@@ -13,7 +13,7 @@ The managed RefactorKit Java clipboard-import transaction is current but archite
 | Java document synchronization   | Exact desktop Java model                    | Versioned full-text `didOpen`/`didChange`/`didSave`/`didClose` through `DocumentSyncPort`, a typed Tauri adapter, and Rust/LSP transport.                                                                                                                                  |
 | Java diagnostics and Problems   | Authorized workspace and ready Java context | The Java controller owns provider-neutral diagnostic events, active-editor diagnostics, and `ProblemItem` projection. The Desktop Shell Controller contributes project-scoped Problems while a ready Java context or projected items exist. This is not module activation. |
 | Interactive semantics           | Exact synchronized Java model               | Completion, hover, signature help, and cancellation through provider-neutral contracts and guarded Monaco providers.                                                                                                                                                       |
-| RefactorKit IDE capability      | Desktop Settings and directory-tree import  | Current only for status/capability discovery and the separate managed Java external-class import transaction. Production composes Symbol Navigation support, but policy keeps it parked and outside active IDE capability.                                                 |
+| RefactorKit IDE capabilities   | Desktop Settings, editor diagnostics, and directory-tree import | Status/capability discovery, the managed Java external-class import transaction, and provider-backed saved-snapshot TypeScript/JavaScript diagnostics. Source-built provider authority is capability-specific.                                                     |
 
 The desktop BottomPanel contains core Terminal and AI Agent plus the conditional project-scoped Problems contribution; web contains only Terminal. Java diagnostics and semantics are not a global Java technology tab or a Settings project-action surface.
 
@@ -71,12 +71,16 @@ Directory-tree **Paste Java Class from Clipboard** remains independent from JDT 
 
 Provider version is diagnostic only. Normalized language-kernel, runtime-limit, and safety metadata are retained evidence, not blanket authorization; the top-level safety booleans do not all gate the current import transaction. Missing or incomplete required import methods fail closed before clipboard read. RefactorKit remains the sole imported-project-content writer. Provider `project.open` may create `.refactorkit/workspace.lock`, so preview/no-write is not a complete hidden-metadata byte-tree guarantee. Rollback is implemented behind contracts, adapters, Rust, and provider authority, but the import UI exposes no rollback action. Clipboard source is transient, never logged, and has no Pi path.
 
-The current IDE RefactorKit capability bucket is deliberately limited to:
+Saved-snapshot TypeScript/JavaScript diagnostics use the separately bounded `diagnostics.v2` flow. The IDE sends an immutable authorized editor snapshot and accepts only correlated structured ready, refused, or error outcomes. Ready diagnostics retain exact bounded UTF-16 ranges, compiler and process attestation, snapshot identity, workspace authority, and completeness metadata before projection to editor markers and Problems.
 
-- provider status and capability discovery; and
-- the managed Java external-class import transaction above.
+The IDE RefactorKit capability boundary is limited to:
 
-Fixed, legacy, support, or provider-side scan/query/navigation code does not make search, diagnostics, symbols, navigation, references, rename, or general refactoring a current IDE capability.
+- provider status and capability discovery;
+- the managed Java external-class import transaction above;
+- saved-snapshot TypeScript/JavaScript diagnostics; and
+- separately approved saved-snapshot semantic navigation.
+
+Fixed, legacy, support, or provider-side code does not by itself authorize references, rename, general refactoring, or any other provider operation.
 
 ## Roadmap Freeze
 
@@ -100,18 +104,18 @@ The following are **UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY**, not target
 
 No order, phase, delivery date, or resumption promise is attached to this inventory.
 
-## Parked RefactorKit Requirements
+## Approved RefactorKit Exception and Capability Boundaries
 
-Two TypeScript/JavaScript RefactorKit slices are explicitly parked and are not active C4 capabilities:
+The approved capability-specific Option-B exception permits an audited source-built RefactorKit daemon for:
 
-- **Compiler diagnostics:** the provider protocol does not preserve the required exact bounded UTF-16 ranges, structured readiness/refusal/failure outcomes, compiler attestation, saved/unsaved snapshot semantics, authority correlation, or compatible runtime/response bounds. The IDE does not fabricate approximate markers or add a saved-disk fallback.
-- **Semantic navigation:** provider `project.open` may create `.refactorkit/workspace.lock` despite advertised `writesWorkspace:false`. No metadata-write exception is authorized for this read-only flow, so the composed support remains parked and is not an IDE capability.
+- **Compiler diagnostics:** the bounded `diagnostics.v2` flow preserves exact UTF-16 ranges, structured ready/refused/error outcomes, compiler and process attestation, immutable editor-snapshot identity, authority correlation, and response bounds without approximate markers or a saved-disk fallback.
+- **Semantic navigation:** the separately approved saved-snapshot search and definition capability remains independently gated by its contract, authority, lifecycle, and workspace-write evidence.
 
-Support code or successful substeps do not override these parked outcomes. Resumption requires a corrected released provider contract, separately applicable acceptance evidence, and explicit product reconsideration.
+REQ-REFACTORKIT-TS-001 declares `@implemented-not-e2e-validated`: implementation evidence exists, while packaged or live-provider end-to-end execution is not asserted here. Source-built eligibility and support code do not bypass per-capability contracts or acceptance evidence, and the exception does not authorize unrelated RefactorKit operations.
 
 ## Provider Foundations Are Not IDE Capabilities
 
-In the provider contract, structural outline and identifier search are foundations. TypeScript references are experimental, and TypeScript rename is experimental proposal-only. General Java refactoring beyond the managed import transaction is not integrated. None of these facts creates a current IDE action, contextual contribution, or roadmap commitment.
+In the provider contract, structural outline remains a foundation. Identifier search and definition participate only through the separately approved saved-snapshot semantic-navigation boundary. TypeScript references are experimental, TypeScript rename is experimental proposal-only, and general Java refactoring beyond the managed import transaction is not integrated. Foundations and experimental operations do not expand the approved IDE capability set.
 
 Announced search operations with optional JSON output remain provider/IDE TODO. Human-oriented stdout must never be parsed as an IDE protocol.
 
