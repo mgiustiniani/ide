@@ -121,9 +121,18 @@ describe("@REQ-REFACTORKIT-TS-001 RefactorKit per-operation method capabilities"
     ["non-array collection", {}],
     ["non-object method", ["diagnostics.v2"]],
     ["unknown method field", [{ ...genericMethod(), unexpected: true }]],
-    ["missing stability", [{ name: "symbol.search", requiresProject: true, writesWorkspace: false }]],
-    ["missing requiresProject", [{ name: "symbol.search", stability: "beta-contract", writesWorkspace: false }]],
-    ["missing writesWorkspace", [{ name: "symbol.search", stability: "beta-contract", requiresProject: true }]],
+    [
+      "missing stability",
+      [{ name: "symbol.search", requiresProject: true, writesWorkspace: false }],
+    ],
+    [
+      "missing requiresProject",
+      [{ name: "symbol.search", stability: "beta-contract", writesWorkspace: false }],
+    ],
+    [
+      "missing writesWorkspace",
+      [{ name: "symbol.search", stability: "beta-contract", requiresProject: true }],
+    ],
     ["empty name", [{ ...genericMethod(), name: "" }]],
     ["wrongly typed stability", [{ ...genericMethod(), stability: 2 }]],
     ["wrongly typed requiresProject", [{ ...genericMethod(), requiresProject: "true" }]],
