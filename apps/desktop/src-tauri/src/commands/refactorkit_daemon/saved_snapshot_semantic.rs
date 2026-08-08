@@ -1060,7 +1060,7 @@ fn normalize_semantic_start(
     //   (a) snapshotHash must be the 64-hex sha256 digest equal to the project.open
     //       snapshot_identity digest (same value) — a same-value binding, not just a
     //       shape check;
-    //   (b) semanticLease must be a non-empty opaque daemon-side lease token;
+    //   (b) semanticLease must match the provider's exact `semantic-[0-9a-f-]{36}` contract;
     //   (c) index must be present and structurally valid (status == "ready" or a
     //       structurally valid index descriptor).
     // The validated semanticLease and start snapshotHash are retained on
@@ -1149,15 +1149,17 @@ fn normalize_semantic_start(
     })
 }
 
-/// A semanticLease is a non-empty opaque daemon-side token (e.g. `semantic-<uuid>` or a hex
-/// token). It must be trimmed, free of control characters, and bounded in length.
+/// Match RefactorKit's exact TypeScript semantic-lease wire contract from
+/// `TypeScriptDiagnosticsProtocol.LEASE`: `semantic-` followed by exactly 36 lowercase
+/// hexadecimal-or-hyphen ASCII bytes. The provider currently mints UUID text in that suffix, but
+/// its declared validator intentionally does not impose UUID hyphen positions or version bits.
 fn valid_semantic_lease(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= MAX_METADATA_BYTES
-        && value.trim() == value
-        && !value.chars().any(char::is_control)
-        && value.starts_with("semantic-")
-        && value.strip_prefix("semantic-").is_some_and(|rest| !rest.is_empty())
+    value.strip_prefix("semantic-").is_some_and(|suffix| {
+        suffix.len() == 36
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte) || byte == b'-')
+    })
 }
 
 /// The semantic index descriptor is accepted when status is `ready` or when it is present and
@@ -1508,7 +1510,8 @@ fn authorize_search(
         || request.session_id != authority.session_id
         || request.semantic_lease != authority.semantic_lease
         || request.snapshot_identity != authority.snapshot_identity
-        || request.snapshot_identity.strip_prefix("sha256:") != Some(authority.start_snapshot_hash.as_str())
+        || request.snapshot_identity.strip_prefix("sha256:")
+            != Some(authority.start_snapshot_hash.as_str())
         || request.provider_version != authority.provider_version
         || request.backend != authority.backend
         || request.toolchain.node_executable != authority.toolchain.node_executable
@@ -1535,7 +1538,8 @@ fn authorize_definition(
         || request.session_id != authority.session_id
         || request.semantic_lease != authority.semantic_lease
         || request.snapshot_identity != authority.snapshot_identity
-        || request.snapshot_identity.strip_prefix("sha256:") != Some(authority.start_snapshot_hash.as_str())
+        || request.snapshot_identity.strip_prefix("sha256:")
+            != Some(authority.start_snapshot_hash.as_str())
         || request.provider_version != authority.provider_version
         || request.backend != authority.backend
     {
@@ -1792,7 +1796,11 @@ fn tree_fingerprint(root: &Path) -> String {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let mut canonical = String::new();
     for (path, digest) in entries {
-        let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+        let rel = path
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         canonical.push_str(&format!("{rel} {}\n", hex_lower(&digest)));
     }
     hex_lower(&Sha256::digest(canonical.as_bytes()))
@@ -1844,18 +1852,33 @@ mod tests {
         use git2::Repository;
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
         Repository::discover(manifest)
-            .and_then(|repo| repo.revparse_single("HEAD").map(|object| object.id().to_string()))
+            .and_then(|repo| {
+                repo.revparse_single("HEAD")
+                    .map(|object| object.id().to_string())
+            })
             .unwrap_or_else(|_| "not-provided".into())
     }
 
-    /// Cryptographic build-to-source provenance: hash the RefactorKit provider SOURCE TREE at the
-    /// pinned commit, independent of any dirty working-tree state. Reads `IDE_REFORKIT_SOURCE_ROOT`
-    /// and `IDE_REFORKIT_SOURCE_COMMIT`; when both are set and the commit resolves to a valid git
-    /// object, computes a deterministic fingerprint of the COMMITTED source tree (path + git blob
-    /// sha for every non-directory entry), so the fingerprint is reproducible across runs regardless
-    /// of `sourceGitClean`. When either env var is unset, the commit hash is not a valid git object,
-    /// or git discovery fails, returns "not-provided" and NO cryptographic build-to-source
-    /// relationship is claimed.
+    /// Stable source fingerprint algorithm recorded in every receipt. This is Git's exact tree
+    /// object identity, not an IDE-defined traversal or a hash of working-tree bytes.
+    const PROVIDER_SOURCE_FINGERPRINT_ALGORITHM: &str = "git-tree-oid-sha1-v1";
+
+    fn provider_source_tree_identity_at(root: &Path, commit: &str) -> Option<String> {
+        use git2::Repository;
+        Repository::discover(root)
+            .ok()?
+            .revparse_single(commit)
+            .ok()?
+            .peel_to_tree()
+            .ok()
+            .map(|tree| tree.id().to_string())
+    }
+
+    /// Exact committed-source identity. Reads `IDE_REFORKIT_SOURCE_ROOT` and
+    /// `IDE_REFORKIT_SOURCE_COMMIT`, resolves `<commit>^{tree}`, and returns the Git tree object ID.
+    /// The receipt always pairs this value with `git-tree-oid-sha1-v1`, making the contract
+    /// independently reproducible with `git rev-parse '<commit>^{tree}'`. Dirty working-tree state
+    /// cannot alter this identity. Invalid or missing input returns `not-provided`.
     fn provider_source_tree_hash() -> String {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
@@ -1865,61 +1888,7 @@ mod tests {
             Ok(commit) => commit,
             Err(_) => return "not-provided".into(),
         };
-        use git2::Repository;
-        let repo = match Repository::discover(&root) {
-            Ok(repo) => repo,
-            Err(_) => return "not-provided".into(),
-        };
-        // Resolve the pinned commit and peel to its committed tree. If the commit hash is not a
-        // valid git object, revparse_single/peel_to_tree fails and we fall back to "not-provided".
-        let tree = match repo
-            .revparse_single(&commit)
-            .and_then(|object| object.peel_to_tree())
-        {
-            Ok(tree) => tree,
-            Err(_) => return "not-provided".into(),
-        };
-        // Collect every non-directory (blob) entry's relative path + git blob sha from the committed
-        // tree. The blob sha is itself a deterministic content hash, so the fingerprint is
-        // independent of any dirty working-tree files. Symlinks/submodules and other entry kinds are
-        // skipped to keep the fingerprint deterministic.
-        let mut entries: Vec<(PathBuf, git2::Oid)> = Vec::new();
-        let mut stack: Vec<(git2::Tree, PathBuf)> = vec![(tree, PathBuf::new())];
-        while let Some((tree, prefix)) = stack.pop() {
-            let mut iter = tree.iter();
-            while let Some(entry) = iter.next() {
-                let name = match entry.name() {
-                    Some(name) => name,
-                    None => return "not-provided".into(),
-                };
-                let path = prefix.join(name);
-                match entry.kind() {
-                    Some(git2::ObjectType::Tree) => {
-                        let subtree = match entry
-                            .to_object(&repo)
-                            .and_then(|object| object.peel_to_tree())
-                        {
-                            Ok(subtree) => subtree,
-                            Err(_) => return "not-provided".into(),
-                        };
-                        stack.push((subtree, path));
-                    }
-                    Some(git2::ObjectType::Blob) => {
-                        entries.push((path, entry.id()));
-                    }
-                    _ => {
-                        // Skip submodules and other entry kinds so the fingerprint stays deterministic.
-                    }
-                }
-            }
-        }
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut canonical = String::new();
-        for (path, blob_id) in entries {
-            let rel = path.to_string_lossy().into_owned();
-            canonical.push_str(&format!("{rel} {}\n", blob_id.to_string()));
-        }
-        hex_lower(&Sha256::digest(canonical.as_bytes()))
+        provider_source_tree_identity_at(&root, &commit).unwrap_or_else(|| "not-provided".into())
     }
 
     /// Provider source git HEAD: the current commit of the RefactorKit provider source tree from
@@ -1932,35 +1901,36 @@ mod tests {
         };
         use git2::Repository;
         Repository::discover(&root)
-            .and_then(|repo| repo.revparse_single("HEAD").map(|object| object.id().to_string()))
+            .and_then(|repo| {
+                repo.revparse_single("HEAD")
+                    .map(|object| object.id().to_string())
+            })
             .unwrap_or_else(|_| "not-provided".into())
     }
 
-    /// Provider source git cleanliness: true only when `git status --porcelain` over the provider
-    /// source tree is empty (no modified, staged, or untracked files). When the env var is unset or
-    /// git discovery fails, returns false and NO cleanliness claim is made.
+    /// Provider source git cleanliness: true only when the independent Git CLI reports an empty
+    /// `status --porcelain=v1 --untracked-files=all`. Ignored Gradle build outputs are intentionally
+    /// outside Git cleanliness, while modified, staged, and untracked source files fail closed.
     fn provider_source_git_clean() -> bool {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
             Err(_) => return false,
         };
-        use git2::Repository;
-        Repository::discover(&root)
-            .map(|repo| {
-                repo.statuses(None)
-                    .map(|statuses| statuses.len() == 0)
-                    .unwrap_or(false)
-            })
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["status", "--porcelain=v1", "--untracked-files=all"])
+            .output()
+            .map(|output| output.status.success() && output.stdout.is_empty())
             .unwrap_or(false)
     }
 
     /// Build-to-source containment: whether the built daemon binary (`IDE_REFORKIT_DAEMON`) lives
     /// within the provider source tree (`IDE_REFORKIT_SOURCE_ROOT`) after canonicalization. This
-    /// only confirms path containment — the binary is located inside the source root at the expected
-    /// Gradle install path. Per ADR 0011 it does NOT prove the binary was compiled from the hashed
-    /// source tree: there is no compiler provenance and `sourceGitClean=false`, so no
-    /// source-to-binary derivation is claimed. When either env var is unset or canonicalization
-    /// fails, returns false and NO containment claim is made.
+    /// helper only confirms path containment. The separate create-new build attestation validates
+    /// the clean detached source identity, exact Gradle/JDK invocation, build log, and resulting
+    /// daemon hash without claiming a signed or hermetic compiler chain. When either env var is
+    /// unset or canonicalization fails, returns false and NO containment claim is made.
     fn daemon_binary_inside_source_tree() -> bool {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
@@ -1989,13 +1959,11 @@ mod tests {
     ///       refactorkit-daemon` (install application directory followed by `bin/refactorkit-daemon`
     ///       launcher).
     ///
-    /// This only confirms the binary is a build artifact at the expected Gradle install path inside
-    /// the source root. It does NOT prove the binary was compiled from the hashed source tree
-    /// (`sourceTreeHash`): because `sourceGitClean=false` and there is no compiler provenance, no
-    /// cryptographic or compiler-based derivation of the binary from `sourceTreeHash` is claimed.
-    /// `sourceTreeHash` and `daemonBinarySha256` are recorded but, together with this flag, do NOT
-    /// establish a build-to-source link. When either env var is unset or verification fails, returns
-    /// false and NO build-to-source claim is made.
+    /// This helper only confirms the expected path layout. Final evidence additionally requires a
+    /// validated create-new build attestation from a clean detached worktree, including exact source
+    /// HEAD/tree, Gradle command, JDK 21 versions, build-log hash, and daemon hash. That observed
+    /// build chain is explicitly not a signed or hermetic compiler attestation. When either env var
+    /// is unset or verification fails, returns false and NO layout claim is made.
     fn daemon_binary_build_layout_verified() -> bool {
         let root = match env::var("IDE_REFORKIT_SOURCE_ROOT") {
             Ok(root) => PathBuf::from(root),
@@ -2019,7 +1987,8 @@ mod tests {
         let Ok(relative) = daemon.strip_prefix(&root) else {
             return false;
         };
-        let Ok(relative) = relative.strip_prefix(Path::new("modules/refactorkit-daemon/build/install"))
+        let Ok(relative) =
+            relative.strip_prefix(Path::new("modules/refactorkit-daemon/build/install"))
         else {
             return false;
         };
@@ -2033,6 +2002,364 @@ mod tests {
         rest.len() == 2
             && rest[0].as_os_str() == "bin"
             && rest[1].as_os_str() == "refactorkit-daemon"
+    }
+
+    struct ValidatedBuildAttestation {
+        path: String,
+        sha256: String,
+        build_log_path: String,
+        build_log_sha256: String,
+        java_home: String,
+        java_version: String,
+        javac_version: String,
+        gradle_version: String,
+        build_command: Value,
+        build_started_epoch_seconds: u64,
+        build_finished_epoch_seconds: u64,
+    }
+
+    fn attest_string<'a>(object: &'a Map<String, Value>, field: &str) -> Result<&'a str, String> {
+        object
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("build attestation field {field} must be a non-empty string"))
+    }
+
+    /// Validate the create-new artifact emitted immediately by the clean detached-worktree build.
+    /// This does not claim a signed or hermetic compiler chain; it binds the observed clean Git
+    /// identity, exact Gradle command/JDK, build log, and resulting daemon launcher bytes.
+    fn validate_build_attestation(
+        attestation_path: &Path,
+        expected_source_root: &Path,
+        expected_commit: &str,
+        expected_tree: &str,
+        expected_daemon: &Path,
+    ) -> Result<ValidatedBuildAttestation, String> {
+        let metadata = fs::symlink_metadata(attestation_path)
+            .map_err(|error| format!("cannot stat build attestation: {error}"))?;
+        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > 64 * 1024 {
+            return Err("build attestation must be a non-empty regular file <= 64 KiB".into());
+        }
+        let bytes = fs::read(attestation_path)
+            .map_err(|error| format!("cannot read build attestation: {error}"))?;
+        let value: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("cannot parse build attestation JSON: {error}"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| "build attestation must be a JSON object".to_string())?;
+        let fields = [
+            "schemaVersion",
+            "sourceRoot",
+            "sourceGitHead",
+            "sourceGitTree",
+            "sourceGitDetached",
+            "sourceGitCleanBefore",
+            "sourceGitCleanAfter",
+            "buildCommand",
+            "javaHome",
+            "jdkMajor",
+            "javaVersion",
+            "javacVersion",
+            "gradleVersion",
+            "buildLogPath",
+            "buildLogSha256",
+            "daemonPath",
+            "daemonSha256",
+            "buildStartedEpochSeconds",
+            "buildFinishedEpochSeconds",
+            "createdAtUtc",
+        ];
+        if object.len() != fields.len() || fields.iter().any(|field| !object.contains_key(*field)) {
+            return Err("build attestation fields do not match schema v1 exactly".into());
+        }
+        if attest_string(object, "schemaVersion")? != "refactorkit-daemon-build-attestation-v1" {
+            return Err("unsupported build attestation schema".into());
+        }
+        let source_root = fs::canonicalize(attest_string(object, "sourceRoot")?)
+            .map_err(|error| format!("cannot canonicalize attested source root: {error}"))?;
+        let expected_source_root = fs::canonicalize(expected_source_root)
+            .map_err(|error| format!("cannot canonicalize expected source root: {error}"))?;
+        if source_root != expected_source_root {
+            return Err("attested source root does not match audited source root".into());
+        }
+        if attest_string(object, "sourceGitHead")? != expected_commit
+            || attest_string(object, "sourceGitTree")? != expected_tree
+            || object.get("sourceGitDetached").and_then(Value::as_bool) != Some(true)
+            || object.get("sourceGitCleanBefore").and_then(Value::as_bool) != Some(true)
+            || object.get("sourceGitCleanAfter").and_then(Value::as_bool) != Some(true)
+        {
+            return Err(
+                "attested source Git identity/cleanliness does not match audit input".into(),
+            );
+        }
+        let git_output = |arguments: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&source_root)
+                .args(arguments)
+                .output()
+                .map_err(|error| format!("cannot execute Git for build attestation: {error}"))
+        };
+        let actual_head_output = git_output(&["rev-parse", "HEAD"])?;
+        let actual_head = String::from_utf8(actual_head_output.stdout)
+            .map_err(|_| "attested source HEAD is not UTF-8".to_string())?
+            .trim()
+            .to_string();
+        let status = git_output(&["status", "--porcelain=v1", "--untracked-files=all"])?;
+        let symbolic = git_output(&["symbolic-ref", "-q", "HEAD"])?;
+        if !actual_head_output.status.success()
+            || actual_head != expected_commit
+            || !status.status.success()
+            || !status.stdout.is_empty()
+            || symbolic.status.success()
+        {
+            return Err("audited source is not currently clean, detached, and commit-exact".into());
+        }
+        let expected_command = json!([
+            "./gradlew",
+            "--no-daemon",
+            "clean",
+            ":modules:refactorkit-daemon:installDist"
+        ]);
+        if object.get("buildCommand") != Some(&expected_command) {
+            return Err("attested Gradle build command is not the required exact command".into());
+        }
+        if object.get("jdkMajor").and_then(Value::as_u64) != Some(21) {
+            return Err("attested build did not use JDK 21".into());
+        }
+        let java_home = fs::canonicalize(attest_string(object, "javaHome")?)
+            .map_err(|error| format!("cannot canonicalize attested JAVA_HOME: {error}"))?;
+        if !java_home.join("bin/java").is_file() || !java_home.join("bin/javac").is_file() {
+            return Err("attested JAVA_HOME lacks java or javac".into());
+        }
+        let daemon = fs::canonicalize(attest_string(object, "daemonPath")?)
+            .map_err(|error| format!("cannot canonicalize attested daemon: {error}"))?;
+        let expected_daemon = fs::canonicalize(expected_daemon)
+            .map_err(|error| format!("cannot canonicalize expected daemon: {error}"))?;
+        if daemon != expected_daemon {
+            return Err("attested daemon path does not match audited daemon".into());
+        }
+        let daemon_bytes =
+            fs::read(&daemon).map_err(|error| format!("cannot read attested daemon: {error}"))?;
+        if attest_string(object, "daemonSha256")? != hex_lower(&Sha256::digest(&daemon_bytes)) {
+            return Err("attested daemon SHA-256 does not match audited daemon bytes".into());
+        }
+        let build_log = fs::canonicalize(attest_string(object, "buildLogPath")?)
+            .map_err(|error| format!("cannot canonicalize attested build log: {error}"))?;
+        if !fs::symlink_metadata(&build_log)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false)
+        {
+            return Err("attested build log is not a regular file".into());
+        }
+        let build_log_sha256 = hex_lower(&Sha256::digest(
+            fs::read(&build_log).map_err(|error| format!("cannot read build log: {error}"))?,
+        ));
+        if attest_string(object, "buildLogSha256")? != build_log_sha256 {
+            return Err("attested build-log SHA-256 does not match build-log bytes".into());
+        }
+        let started = object
+            .get("buildStartedEpochSeconds")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "buildStartedEpochSeconds must be an unsigned integer".to_string())?;
+        let finished = object
+            .get("buildFinishedEpochSeconds")
+            .and_then(Value::as_u64)
+            .filter(|finished| *finished >= started)
+            .ok_or_else(|| "buildFinishedEpochSeconds must be >= build start".to_string())?;
+        let daemon_modified = fs::metadata(&daemon)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .ok_or_else(|| "daemon modification time is unavailable".to_string())?;
+        if daemon_modified < started {
+            return Err("daemon launcher predates the clean build start".into());
+        }
+        let java_version = attest_string(object, "javaVersion")?.to_string();
+        let javac_version = attest_string(object, "javacVersion")?.to_string();
+        let gradle_version = attest_string(object, "gradleVersion")?.to_string();
+        if !java_version.contains("version \"21") || !javac_version.starts_with("javac 21") {
+            return Err("attested Java tool versions are not JDK 21".into());
+        }
+        Ok(ValidatedBuildAttestation {
+            path: fs::canonicalize(attestation_path)
+                .map_err(|error| format!("cannot canonicalize build attestation: {error}"))?
+                .to_string_lossy()
+                .into_owned(),
+            sha256: hex_lower(&Sha256::digest(&bytes)),
+            build_log_path: build_log.to_string_lossy().into_owned(),
+            build_log_sha256,
+            java_home: java_home.to_string_lossy().into_owned(),
+            java_version,
+            javac_version,
+            gradle_version,
+            build_command: expected_command,
+            build_started_epoch_seconds: started,
+            build_finished_epoch_seconds: finished,
+        })
+    }
+
+    #[cfg(unix)]
+    struct NodeAuditControls {
+        root: PathBuf,
+        wrapper: PathBuf,
+        trace: PathBuf,
+        guard_path: PathBuf,
+        real_node: PathBuf,
+    }
+
+    #[cfg(unix)]
+    fn shell_quote_path(path: &Path) -> String {
+        format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+    }
+
+    /// Install a controlled Node wrapper and inherited preload. The wrapper records each Node
+    /// process, the preload records language-server/TypeScript module resolution and child-process
+    /// attempts, and PATH guards fail package-manager launches. This is process evidence, not a
+    /// system-call-complete sandbox: an absolute package-manager executable launched directly by
+    /// JVM code would not pass through the PATH guards.
+    #[cfg(unix)]
+    fn create_node_audit_controls(
+        real_node: &Path,
+        language_server: &Path,
+        typescript: &Path,
+        workspace: &Path,
+    ) -> NodeAuditControls {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target/rk-semantic-process-traces")
+            .join(format!("trace-{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        let trace = root.join("node-process-trace.jsonl");
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&trace)
+            .unwrap();
+        let preload = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/node-process-audit-preload.cjs"),
+        )
+        .unwrap();
+        let wrapper = root.join("controlled-node");
+        let wrapper_text = format!(
+            "#!/bin/sh\nset -eu\nprintf '%s\\n' '{{\"event\":\"wrapper-invocation\"}}' >> {}\nexport IDE_NODE_AUDIT_TRACE={}\nexport IDE_NODE_AUDIT_LANGUAGE_SERVER_ROOT={}\nexport IDE_NODE_AUDIT_TYPESCRIPT_ROOT={}\nexport IDE_NODE_AUDIT_WORKSPACE_ROOT={}\nexport NODE_OPTIONS={}\nexec {} \"$@\"\n",
+            shell_quote_path(&trace),
+            shell_quote_path(&trace),
+            shell_quote_path(language_server),
+            shell_quote_path(typescript),
+            shell_quote_path(workspace),
+            shell_quote_path(Path::new(&format!("--require={}", preload.display()))),
+            shell_quote_path(real_node),
+        );
+        fs::write(&wrapper, wrapper_text).unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let guard_path = root.join("path-guards");
+        fs::create_dir(&guard_path).unwrap();
+        for command in ["npm", "npx", "pnpm", "yarn", "bun", "bunx", "corepack"] {
+            let guard = guard_path.join(command);
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&guard)
+                .unwrap();
+            file.write_all(
+                b"#!/bin/sh\nprintf '{\"event\":\"prohibited-path-command\",\"command\":\"%s\"}\\n' \"$(basename \"$0\")\" >> \"$IDE_NODE_AUDIT_TRACE\"\nexit 97\n",
+            )
+            .unwrap();
+            fs::set_permissions(&guard, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        NodeAuditControls {
+            root,
+            wrapper: fs::canonicalize(wrapper).unwrap(),
+            trace: fs::canonicalize(trace).unwrap(),
+            guard_path: fs::canonicalize(guard_path).unwrap(),
+            real_node: fs::canonicalize(real_node).unwrap(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn validate_node_process_trace(
+        controls: &NodeAuditControls,
+        language_server: &Path,
+        typescript: &Path,
+    ) -> (String, Value) {
+        let bytes = fs::read(&controls.trace).unwrap();
+        assert!(!bytes.is_empty() && bytes.len() <= 8 * 1024 * 1024);
+        let mut wrapper_invocations = 0u64;
+        let mut process_starts = 0u64;
+        let mut language_server_observations = 0u64;
+        let mut typescript_observations = 0u64;
+        let mut child_process_attempts = 0u64;
+        for line in bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+        {
+            let event: Value = serde_json::from_slice(line).unwrap();
+            let object = event.as_object().unwrap();
+            let event_name = object.get("event").and_then(Value::as_str).unwrap();
+            assert!(
+                !event_name.starts_with("prohibited-"),
+                "prohibited package-manager/project execution observed: {event}"
+            );
+            if event_name == "wrapper-invocation" {
+                wrapper_invocations += 1;
+            }
+            if event_name == "process-start" {
+                process_starts += 1;
+                assert_eq!(
+                    object.get("execPath").and_then(Value::as_str),
+                    Some(controls.real_node.to_str().unwrap()),
+                    "every traced process must execute the explicitly supplied real Node binary"
+                );
+            }
+            if event_name == "child-process-attempt" {
+                child_process_attempts += 1;
+            }
+            let serialized = event.to_string();
+            if serialized.contains(language_server.to_str().unwrap()) {
+                language_server_observations += 1;
+            }
+            if serialized.contains(typescript.to_str().unwrap()) {
+                typescript_observations += 1;
+            }
+        }
+        assert!(
+            wrapper_invocations >= 2,
+            "expected controlled-wrapper invocations for the Node probe and language server"
+        );
+        assert!(
+            process_starts >= 2,
+            "expected traced language-server and TypeScript child processes"
+        );
+        assert!(
+            language_server_observations > 0,
+            "trace must bind execution to the supplied language-server package root"
+        );
+        assert!(
+            typescript_observations > 0,
+            "trace must bind execution/module resolution to the supplied TypeScript package root"
+        );
+        (
+            hex_lower(&Sha256::digest(&bytes)),
+            json!({
+                "wrapperInvocationCount": wrapper_invocations,
+                "processStartCount": process_starts,
+                "languageServerPathObservationCount": language_server_observations,
+                "typeScriptPathObservationCount": typescript_observations,
+                "childProcessAttemptCount": child_process_attempts,
+                "prohibitedInvocationCount": 0,
+                "pathGuardedPackageManagers": ["npm", "npx", "pnpm", "yarn", "bun", "bunx", "corepack"]
+            }),
+        )
     }
 
     fn runtime() -> SemanticRuntimeRequest {
@@ -2200,7 +2527,7 @@ mod tests {
         let mut upstream = json!({
             "languageId": "typescript",
             "status": "started",
-            "semanticLease": "semantic-lease-1",
+            "semanticLease": "semantic-00000000-0000-4000-8000-000000000001",
             "snapshotHash": digest,
             "completeness": "full-typescript",
             "serverName": "typescript-language-server",
@@ -2223,7 +2550,7 @@ mod tests {
         let base = json!({
             "languageId": "typescript",
             "status": "started",
-            "semanticLease": "semantic-lease-9",
+            "semanticLease": "semantic-00000000-0000-4000-8000-000000000009",
             "snapshotHash": digest,
             "completeness": "full-typescript",
             "serverName": "typescript-language-server",
@@ -2236,17 +2563,27 @@ mod tests {
         });
         assert!(normalize_semantic_start(&base, &request, &digest).is_ok());
 
-        // (b) semanticLease must be a non-empty opaque token.
+        // (b) semanticLease must match the exact provider contract:
+        // `semantic-` followed by exactly 36 lowercase hexadecimal/hyphen bytes.
         for lease in [
             "lease-1",
             "",
             "semantic-",
-            "semantic-lease-\u{0000}x",
-            "  semantic-lease-2",
+            "semantic-lease-1",
+            "semantic-00000000-0000-4000-8000-00000000000",
+            "semantic-00000000-0000-4000-8000-0000000000000",
+            "semantic-00000000-0000-4000-8000-00000000000g",
+            "semantic-00000000-0000-4000-8000-00000000000A",
+            "semantic-00000000_0000-4000-8000-000000000000",
+            "semantic-00000000-0000-4000-8000-00000000000\u{0000}",
+            " semantic-00000000-0000-4000-8000-000000000000",
         ] {
             let mut bad = base.clone();
             bad["semanticLease"] = json!(lease);
-            assert!(normalize_semantic_start(&bad, &request, &digest).is_err(), "lease {lease}");
+            assert!(
+                normalize_semantic_start(&bad, &request, &digest).is_err(),
+                "lease {lease}"
+            );
         }
 
         // (a) snapshotHash must equal the project.open snapshot digest (same value).
@@ -2291,7 +2628,7 @@ mod tests {
         let snapshot_identity = format!("sha256:{digest}");
         let upstream = UpstreamStart {
             completeness: "full-typescript".into(),
-            semantic_lease: "semantic-lease-1".into(),
+            semantic_lease: "semantic-00000000-0000-4000-8000-000000000001".into(),
             snapshot_hash: digest.clone(),
             server_name: Some("typescript-language-server".into()),
             server_version: Some("5.1.3".into()),
@@ -2325,7 +2662,9 @@ mod tests {
         // Adapter contract: startSnapshotHash must be a PREFIXED sha256 identity.
         let start_hash = result["startSnapshotHash"].as_str().unwrap();
         assert!(
-            start_hash.strip_prefix("sha256:").is_some_and(sha256_digest),
+            start_hash
+                .strip_prefix("sha256:")
+                .is_some_and(sha256_digest),
             "startSnapshotHash must be sha256:<64hex>, got: {start_hash}"
         );
         assert!(result.get("providerProjectSnapshotIdentity").is_some());
@@ -2424,7 +2763,7 @@ mod tests {
             workspace_id: "workspace".into(),
             workspace_generation: 3,
             session_id: format!("refactorkit-semantic-session-v1:{}", "e".repeat(64)),
-            semantic_lease: "semantic-lease-1".into(),
+            semantic_lease: "semantic-00000000-0000-4000-8000-000000000001".into(),
             snapshot_identity: format!("sha256:{}", "f".repeat(64)),
             provider_version: PROVIDER_VERSION.into(),
             backend: BACKEND.into(),
@@ -2471,6 +2810,60 @@ mod tests {
     }
 
     #[test]
+    fn provider_source_fingerprint_is_exact_git_tree_object_identity() {
+        let root = temp_root("provider-tree-identity");
+        fs::write(root.join("src/provider.txt"), "committed provider bytes\n").unwrap();
+        for arguments in [
+            vec!["init", "--quiet"],
+            vec!["add", "src/provider.txt"],
+            vec![
+                "-c",
+                "user.name=Fingerprint Test",
+                "-c",
+                "user.email=fingerprint@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ],
+        ] {
+            let status = std::process::Command::new("git")
+                .args(arguments)
+                .current_dir(&root)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        let git_text = |arguments: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(arguments)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        };
+        let commit = git_text(&["rev-parse", "HEAD"]);
+        let independently_resolved = git_text(&["rev-parse", "HEAD^{tree}"]);
+        assert_eq!(
+            provider_source_tree_identity_at(&root, &commit).as_deref(),
+            Some(independently_resolved.as_str())
+        );
+        assert_eq!(
+            PROVIDER_SOURCE_FINGERPRINT_ALGORITHM,
+            "git-tree-oid-sha1-v1"
+        );
+
+        // The contract identifies the committed tree, so later dirty bytes cannot change it.
+        fs::write(root.join("src/provider.txt"), "dirty provider bytes\n").unwrap();
+        assert_eq!(
+            provider_source_tree_identity_at(&root, &commit).as_deref(),
+            Some(independently_resolved.as_str())
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn build_layout_verification_requires_expected_gradle_install_path() {
         // Build-to-source layout (RQR-TS002-PROVENANCE-002): a daemon binary that is merely
         // co-located in the source tree but NOT at the expected
@@ -2478,12 +2871,10 @@ mod tests {
         // accepted as a build artifact of the hashed source tree.
         let root = temp_root("build-layout");
         env::set_var("IDE_REFORKIT_SOURCE_ROOT", root.to_str().unwrap());
-        let bin_dir = root.join(
-            "modules/refactorkit-daemon/build/install/refactorkit-daemon/bin",
-        );
+        let bin_dir = root.join("modules/refactorkit-daemon/build/install/refactorkit-daemon/bin");
         fs::create_dir_all(&bin_dir).unwrap();
         let launcher = bin_dir.join("refactorkit-daemon");
-        fs::write(&launcher, "#!/bin/sh\n" ).unwrap();
+        fs::write(&launcher, "#!/bin/sh\n").unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", launcher.to_str().unwrap());
         assert!(
             daemon_binary_build_layout_verified(),
@@ -2493,7 +2884,7 @@ mod tests {
         // Contained in the source tree but NOT the expected build layout: rejected.
         let stray = root.join("modules/refactorkit-daemon/build/scripts/refactorkit-daemon");
         fs::create_dir_all(stray.parent().unwrap()).unwrap();
-        fs::write(&stray, "#!/bin/sh\n" ).unwrap();
+        fs::write(&stray, "#!/bin/sh\n").unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", stray.to_str().unwrap());
         assert!(
             !daemon_binary_build_layout_verified(),
@@ -2502,7 +2893,7 @@ mod tests {
 
         // Missing trailing launcher component: rejected.
         let partial = bin_dir.join("other-daemon");
-        fs::write(&partial, "#!/bin/sh\n" ).unwrap();
+        fs::write(&partial, "#!/bin/sh\n").unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", partial.to_str().unwrap());
         assert!(!daemon_binary_build_layout_verified());
 
@@ -2512,7 +2903,7 @@ mod tests {
             "modules/refactorkit-daemon/build/install/refactorkit-daemon/bin/refactorkit-daemon",
         );
         fs::create_dir_all(outside.parent().unwrap()).unwrap();
-        fs::write(&outside, "#!/bin/sh\n" ).unwrap();
+        fs::write(&outside, "#!/bin/sh\n").unwrap();
         env::set_var("IDE_REFORKIT_DAEMON", outside.to_str().unwrap());
         assert!(!daemon_binary_build_layout_verified());
 
@@ -2522,15 +2913,32 @@ mod tests {
         fs::remove_dir_all(outside_root).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
-    #[ignore = "requires an isolated source-built RefactorKit 0.7.0-SNAPSHOT daemon and explicit external TypeScript toolchain"]
+    #[ignore = "requires a create-new clean-build attestation, its exact RefactorKit 0.7.0-SNAPSHOT daemon, and an explicit external TypeScript toolchain"]
     fn packaged_v070_saved_snapshot_start_search_definition_stop_smoke() {
-        let daemon = env::var("IDE_REFORKIT_DAEMON").unwrap();
-        let node = fs::canonicalize(env::var("IDE_REFORKIT_NODE").unwrap()).unwrap();
+        let daemon = fs::canonicalize(env::var("IDE_REFORKIT_DAEMON").unwrap()).unwrap();
+        let real_node = fs::canonicalize(env::var("IDE_REFORKIT_NODE").unwrap()).unwrap();
         let language_server =
             fs::canonicalize(env::var("IDE_REFORKIT_LANGUAGE_SERVER_ROOT").unwrap()).unwrap();
         let typescript =
             fs::canonicalize(env::var("IDE_REFORKIT_TYPESCRIPT_ROOT").unwrap()).unwrap();
+        let source_root = fs::canonicalize(env::var("IDE_REFORKIT_SOURCE_ROOT").unwrap()).unwrap();
+        let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT").unwrap();
+        let source_tree_hash = provider_source_tree_identity_at(&source_root, &source_commit)
+            .expect("provider commit must resolve to an exact Git tree object");
+        let build_attestation = validate_build_attestation(
+            Path::new(&env::var("IDE_REFORKIT_BUILD_ATTESTATION").unwrap()),
+            &source_root,
+            &source_commit,
+            &source_tree_hash,
+            &daemon,
+        )
+        .unwrap();
+        let prior_path = env::var_os("PATH");
+        let prior_java_home = env::var_os("JAVA_HOME");
+        env::set_var("JAVA_HOME", &build_attestation.java_home);
+
         let root = temp_root("packaged-v070");
         fs::write(
             root.join("tsconfig.json"),
@@ -2549,6 +2957,19 @@ mod tests {
         )
         .unwrap();
         crate::workspace::set_workspace_root_override(root.clone()).unwrap();
+        let node_audit =
+            create_node_audit_controls(&real_node, &language_server, &typescript, &root);
+        let node = node_audit.wrapper.clone();
+        env::set_var("IDE_NODE_AUDIT_TRACE", &node_audit.trace);
+        env::set_var("IDE_NODE_AUDIT_LANGUAGE_SERVER_ROOT", &language_server);
+        env::set_var("IDE_NODE_AUDIT_TYPESCRIPT_ROOT", &typescript);
+        env::set_var("IDE_NODE_AUDIT_WORKSPACE_ROOT", &root);
+        let guarded_path = format!(
+            "{}:{}",
+            node_audit.guard_path.display(),
+            prior_path.as_deref().unwrap_or_default().to_string_lossy()
+        );
+        env::set_var("PATH", guarded_path);
         env::set_var("IDE_REFORKIT_DAEMON", &daemon);
 
         // Byte-tree audit: snapshot every non-directory workspace file path + content sha256 before
@@ -2661,8 +3082,7 @@ mod tests {
         // Checkpoint after symbol.search: the workspace tree must still equal baseline.
         let search_fingerprint = tree_fingerprint(&root);
         assert_eq!(
-            search_fingerprint,
-            before_tree_fingerprint,
+            search_fingerprint, before_tree_fingerprint,
             "after symbol.search the workspace byte tree must equal baseline"
         );
 
@@ -2686,8 +3106,7 @@ mod tests {
         // Checkpoint after symbol.definition: the workspace tree must still equal baseline.
         let definition_fingerprint = tree_fingerprint(&root);
         assert_eq!(
-            definition_fingerprint,
-            before_tree_fingerprint,
+            definition_fingerprint, before_tree_fingerprint,
             "after symbol.definition the workspace byte tree must equal baseline"
         );
 
@@ -2711,6 +3130,8 @@ mod tests {
             !root.join("CANARY_RAN").exists(),
             "project scripts must never execute; canary marker must not exist"
         );
+        let (node_process_trace_sha256, node_process_trace_summary) =
+            validate_node_process_trace(&node_audit, &language_server, &typescript);
 
         // Final checkpoint after semantic.stop: the workspace tree must still equal baseline. The
         // five per-boundary checkpoints (after project.open, semantic.start, symbol.search,
@@ -2721,32 +3142,59 @@ mod tests {
         let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
 
         let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
-        // Provider source provenance: providerSourceCommit is the git commit id from
-        // IDE_REFORKIT_SOURCE_COMMIT (never from the IDE Cargo manifest; no CARGO_MANIFEST_DIR
-        // fallback). sourceTreeHash is now a deterministic fingerprint of the COMMITTED source tree
-        // at IDE_REFORKIT_SOURCE_COMMIT (path + git blob sha), independent of any dirty
-        // working-tree state (sourceGitClean=false), so the receipt is reproducible across runs. If
-        // either env var is unset or the commit is not a valid git object, sourceTreeHash is
-        // "not-provided" and NO cryptographic relationship is claimed.
-        let source_commit = env::var("IDE_REFORKIT_SOURCE_COMMIT")
-            .unwrap_or_else(|_| "not-provided".into());
-        let source_tree_hash = provider_source_tree_hash();
-        // Build-to-source layout verification (RQR-TS002-003 / PROVENANCE-002): buildLayoutVerified
-        // only confirms the built daemon binary is a build artifact at the expected Gradle install
-        // path (<root>/modules/refactorkit-daemon/build/install/<app>/bin/refactorkit-daemon)
-        // inside the provider source root: path containment plus the expected source-built Gradle
-        // install layout. We additionally record the provider source git HEAD and cleanliness (git
-        // status --porcelain empty) so the receipt binds a specific source revision.
-        //
-        // Per ADR 0011, this does NOT prove the binary was compiled from the hashed source tree:
-        // because sourceGitClean=false and there is no compiler provenance, no cryptographic or
-        // compiler-based derivation of the binary from sourceTreeHash is claimed. sourceTreeHash,
-        // daemonBinarySha256, and buildLayoutVerified together do NOT establish a build-to-source
-        // link.
+        // Exact committed source identity: `sourceTreeHash` is the provider commit's Git tree
+        // object ID and is always paired with an explicit algorithm/version. The independent unit
+        // test compares this implementation to `git rev-parse HEAD^{tree}` and dirties the fixture
+        // afterward to prove working-tree bytes cannot affect the result.
+        assert_eq!(provider_source_tree_hash(), source_tree_hash);
         let source_git_head = provider_source_git_head();
         let source_git_clean = provider_source_git_clean();
         let daemon_inside = daemon_binary_inside_source_tree();
         let build_layout_verified = daemon_binary_build_layout_verified();
+        assert_eq!(
+            source_git_head, source_commit,
+            "clean-build source HEAD must be exact"
+        );
+        assert!(
+            source_git_clean,
+            "final audit refuses dirty provider source"
+        );
+        assert!(daemon_inside && build_layout_verified);
+        let audit_test_executable = fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+        let audit_test_executable_sha256 =
+            hex_lower(&Sha256::digest(&fs::read(&audit_test_executable).unwrap()));
+        let audit_rust_source = Path::new(file!());
+        let audit_rust_source = if audit_rust_source.is_absolute() {
+            audit_rust_source.to_path_buf()
+        } else {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(audit_rust_source)
+        };
+        let audit_rust_source = fs::canonicalize(audit_rust_source).unwrap();
+        let audit_rust_source_sha256 =
+            hex_lower(&Sha256::digest(&fs::read(&audit_rust_source).unwrap()));
+        let build_attestation_script = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/build-refactorkit-daemon-attested.sh"),
+        )
+        .unwrap();
+        let build_attestation_script_sha256 = hex_lower(&Sha256::digest(
+            &fs::read(&build_attestation_script).unwrap(),
+        ));
+        let node_audit_preload = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/node-process-audit-preload.cjs"),
+        )
+        .unwrap();
+        let node_audit_preload_sha256 =
+            hex_lower(&Sha256::digest(&fs::read(&node_audit_preload).unwrap()));
+        let ide_repository = git2::Repository::discover(env!("CARGO_MANIFEST_DIR")).unwrap();
+        let ide_repository_root = ide_repository.workdir().unwrap();
+        let ide_source_git_clean = std::process::Command::new("git")
+            .arg("-C")
+            .arg(ide_repository_root)
+            .args(["status", "--porcelain=v1", "--untracked-files=all"])
+            .output()
+            .map(|output| output.status.success() && output.stdout.is_empty())
+            .unwrap_or(false);
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -2756,27 +3204,76 @@ mod tests {
         let ide_revision = ide_revision();
         let mut checkpoint_list: Vec<(String, String)> = open_start_checkpoints;
         checkpoint_list.push(("after-symbol-search".to_string(), search_fingerprint));
-        checkpoint_list.push(("after-symbol-definition".to_string(), definition_fingerprint));
-        checkpoint_list.push(("after-semantic-stop".to_string(), after_tree_fingerprint.clone()));
+        checkpoint_list.push((
+            "after-symbol-definition".to_string(),
+            definition_fingerprint,
+        ));
+        checkpoint_list.push((
+            "after-semantic-stop".to_string(),
+            after_tree_fingerprint.clone(),
+        ));
         let checkpoint_fingerprints = checkpoint_list
             .into_iter()
             .map(|(label, fingerprint)| json!({"label": label, "fingerprint": fingerprint}))
             .collect::<Vec<_>>();
 
         let receipt = serde_json::to_string_pretty(&json!({
-            "auditCommand": audit_command,
-            "daemonBinarySha256": daemon_binary_sha256,
-            "providerSourceCommit": source_commit,
-            "sourceTreeHash": source_tree_hash,
-            "sourceGitHead": source_git_head,
-            "sourceGitClean": source_git_clean,
-            "daemonBinaryInsideSourceTree": daemon_inside,
-            "buildLayoutVerified": build_layout_verified,
-            "ideRevision": ide_revision,
-            "checkpoints": checkpoint_fingerprints,
-            "baselineTreeFingerprint": before_tree_fingerprint,
-            "afterTreeFingerprint": after_tree_fingerprint,
-            "treesEqual": trees_equal,
+            "receiptSchemaVersion": "refactorkit-saved-snapshot-audit-v2",
+            "auditHarness": {
+                "auditCommand": audit_command,
+                "testExecutablePath": audit_test_executable,
+                "testExecutableSha256": audit_test_executable_sha256,
+                "rustSourcePath": audit_rust_source,
+                "rustSourceSha256": audit_rust_source_sha256,
+                "buildAttestationScriptPath": build_attestation_script,
+                "buildAttestationScriptSha256": build_attestation_script_sha256,
+                "nodeAuditPreloadPath": node_audit_preload,
+                "nodeAuditPreloadSha256": node_audit_preload_sha256,
+                "ideRevision": ide_revision,
+                "ideSourceGitClean": ide_source_git_clean
+            },
+            "providerBuild": {
+                "daemonBinarySha256": daemon_binary_sha256,
+                "sourceCommit": source_commit,
+                "sourceTreeHash": source_tree_hash,
+                "sourceTreeFingerprintAlgorithm": PROVIDER_SOURCE_FINGERPRINT_ALGORITHM,
+                "sourceTreeGitObjectType": "tree",
+                "sourceGitHead": source_git_head,
+                "sourceGitClean": source_git_clean,
+                "sourceGitDetached": true,
+                "daemonBinaryInsideSourceTree": daemon_inside,
+                "buildLayoutVerified": build_layout_verified,
+                "attestationPath": build_attestation.path,
+                "attestationSha256": build_attestation.sha256,
+                "buildLogPath": build_attestation.build_log_path,
+                "buildLogSha256": build_attestation.build_log_sha256,
+                "buildCommand": build_attestation.build_command,
+                "javaHome": build_attestation.java_home,
+                "javaVersion": build_attestation.java_version,
+                "javacVersion": build_attestation.javac_version,
+                "gradleVersion": build_attestation.gradle_version,
+                "buildStartedEpochSeconds": build_attestation.build_started_epoch_seconds,
+                "buildFinishedEpochSeconds": build_attestation.build_finished_epoch_seconds,
+                "provenanceScope": "observed-clean-detached-gradle-build-v1; not signed or hermetic"
+            },
+            "processExecution": {
+                "controlledNodeWrapperPath": node_audit.wrapper,
+                "controlledRealNodePath": node_audit.real_node,
+                "suppliedLanguageServerPackageRoot": language_server,
+                "suppliedTypeScriptPackageRoot": typescript,
+                "tracePath": node_audit.trace,
+                "traceSha256": node_process_trace_sha256,
+                "traceSummary": node_process_trace_summary,
+                "packageScriptCanaryMarkerAbsent": !root.join("CANARY_RAN").exists(),
+                "scope": "controlled Node preload plus inherited child-process hooks and PATH package-manager guards; not system-call complete"
+            },
+            "workspaceAudit": {
+                "checkpoints": checkpoint_fingerprints,
+                "baselineTreeFingerprint": before_tree_fingerprint,
+                "afterTreeFingerprint": after_tree_fingerprint,
+                "treesEqual": trees_equal,
+                "scope": "sampled non-directory path/content bytes; excludes metadata, empty directories, and transient between-checkpoint writes"
+            },
             "timestamp": timestamp
         }))
         .unwrap();
@@ -2820,6 +3317,22 @@ mod tests {
         );
 
         env::remove_var("IDE_REFORKIT_DAEMON");
+        env::remove_var("IDE_NODE_AUDIT_TRACE");
+        env::remove_var("IDE_NODE_AUDIT_LANGUAGE_SERVER_ROOT");
+        env::remove_var("IDE_NODE_AUDIT_TYPESCRIPT_ROOT");
+        env::remove_var("IDE_NODE_AUDIT_WORKSPACE_ROOT");
+        match prior_path {
+            Some(value) => env::set_var("PATH", value),
+            None => env::remove_var("PATH"),
+        }
+        match prior_java_home {
+            Some(value) => env::set_var("JAVA_HOME", value),
+            None => env::remove_var("JAVA_HOME"),
+        }
+        assert!(
+            node_audit.root.is_dir(),
+            "process trace controls must remain durable"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
