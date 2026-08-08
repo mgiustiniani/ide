@@ -33,6 +33,11 @@ const FIXED_TIMESTAMP = "2026-07-17T00:00:00Z" as const;
 const CONFIGURATION_PATH = ".ide/xcom2.json" as const;
 const MODULE_ROOT = "mods/IntentOnly" as const;
 const ACTIVITY_NAME = "XCOM 2 Project" as const;
+const BUILD_RECIPE_REVIEW_NAME = "Default Build recipe" as const;
+const LEGACY_RECOGNITION_LIMITATION =
+  "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution." as const;
+const RECIPE_REVIEW_RECOGNITION_LIMITATION =
+  "Recognition remains read-only: recipe review provides no Build, Run, Deploy, Cook, Launch, Problems, Logs, language support, or bottom contribution." as const;
 const WARNING_TITLE = "XCOM 2 project configuration needs attention" as const;
 const CHECKING_TEXT = "Checking XCOM 2 project configuration…" as const;
 const SECRET_CANARY = "SCENARIO-OWNER-SECRET-CANARY-7d8ab3d6" as const;
@@ -1144,6 +1149,8 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
   ): Promise<void> {
     const expected = Object.fromEntries(expectedRows.map(({ field, value }) => [field, value]));
     assert.equal(new Set(expectedRows.map(({ field }) => field)).size, expectedRows.length);
+    assert.equal(expected.limitation, LEGACY_RECOGNITION_LIMITATION);
+    expected.limitation = RECIPE_REVIEW_RECOGNITION_LIMITATION;
     const snapshot = await this.recognitionSnapshot();
     assert.equal(snapshot.shown, true);
     assert.deepEqual(snapshot.fields, expected);
@@ -1177,7 +1184,11 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     const snapshot = await this.recognitionSnapshot();
     assert.deepEqual(snapshot.fields, this.#expectedRecognitionFields);
     assert.deepEqual(snapshot.tableRows, this.#expectedActivationReasons);
-    assert.deepEqual(snapshot.controls, []);
+    assert.deepEqual(
+      snapshot.controls,
+      [BUILD_RECIPE_REVIEW_NAME],
+      "configured diagnostics must expose only the accessible metadata-review control and no execution control",
+    );
     await this.assertRecognitionOnlyChrome(snapshot);
     this.#configuredRecognition = snapshot;
     this.#evidence.configuredRecognitionOnlyExclusionsMatched = true;
@@ -1356,7 +1367,11 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
     assert.deepEqual(snapshot.fields, this.#expectedRecognitionFields);
     assert.deepEqual(snapshot.tableRows, this.#expectedEvidenceRows);
     assert.equal(snapshot.warnings.length, 1);
-    assert.deepEqual(snapshot.controls, []);
+    assert.deepEqual(
+      snapshot.controls,
+      [BUILD_RECIPE_REVIEW_NAME],
+      "recognized diagnostics must expose only the accessible metadata-review control and no execution control",
+    );
     await this.assertRecognitionOnlyChrome(snapshot);
     this.#recognizedRecognition = snapshot;
     this.#evidence.recognizedRecognitionOnlyExclusionsMatched = true;
@@ -2096,10 +2111,7 @@ export class NativeXcom2ModuleConfigurationDiagnosticsSession {
   }
 
   private async assertRecognitionOnlyChrome(snapshot: RecognitionSnapshot): Promise<void> {
-    assert.equal(
-      snapshot.fields.limitation,
-      "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.",
-    );
+    assert.equal(snapshot.fields.limitation, RECIPE_REVIEW_RECOGNITION_LIMITATION);
     assert.deepEqual(await this.activityNames(), ACTIVE_ACTIVITY_NAMES);
     const bottomNames = await this.bottomContributionNames();
     assert.deepEqual(bottomNames, BASE_BOTTOM_TOOL_NAMES);

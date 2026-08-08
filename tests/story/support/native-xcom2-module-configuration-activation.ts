@@ -41,6 +41,11 @@ const CONFIGURATION_SHA256 =
   "53d92f8cd91d90f49a98a133b5de3ef3862b5472805248780d561e2c9b765dfb" as const;
 const MODULE_ROOT = "mods/IntentOnly" as const;
 const ACTIVITY_NAME = "XCOM 2 Project" as const;
+const BUILD_RECIPE_REVIEW_NAME = "Default Build recipe" as const;
+const LEGACY_RECOGNITION_LIMITATION =
+  "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution." as const;
+const RECIPE_REVIEW_RECOGNITION_LIMITATION =
+  "Recognition remains read-only: recipe review provides no Build, Run, Deploy, Cook, Launch, Problems, Logs, language support, or bottom contribution." as const;
 const BASE_ACTIVITY_NAMES = Object.freeze(["Explorer", "Search", "Docs", "Settings"]);
 const CONFIGURED_ACTIVITY_NAMES = Object.freeze([
   "Explorer",
@@ -812,6 +817,8 @@ export class NativeXcom2ModuleConfigurationActivationSession {
     assert.equal(expectedRows.length, 7);
     assert.equal(new Set(expectedRows.map(({ field }) => field)).size, 7);
     const expected = Object.fromEntries(expectedRows.map(({ field, value }) => [field, value]));
+    assert.equal(expected.limitation, LEGACY_RECOGNITION_LIMITATION);
+    expected.limitation = RECIPE_REVIEW_RECOGNITION_LIMITATION;
     const snapshot = await this.recognitionSnapshot();
     assert.equal(snapshot.shown, true);
     assert.deepEqual(snapshot.fields, expected);
@@ -853,11 +860,12 @@ export class NativeXcom2ModuleConfigurationActivationSession {
     assert.deepEqual(activityNames, CONFIGURED_ACTIVITY_NAMES);
     assert.deepEqual(bottomNames, BASE_BOTTOM_TOOL_NAMES);
     assert.equal(snapshot.shown, true);
-    assert.deepEqual(snapshot.interactiveControls, []);
-    assert.equal(
-      snapshot.fields.limitation,
-      "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.",
+    assert.deepEqual(
+      snapshot.interactiveControls,
+      [BUILD_RECIPE_REVIEW_NAME],
+      "configured recognition must expose only the accessible metadata-review control and no execution control",
     );
+    assert.equal(snapshot.fields.limitation, RECIPE_REVIEW_RECOGNITION_LIMITATION);
     assert.equal(
       activityNames.some((name) => /build|problems|logs/iu.test(name)),
       false,
@@ -877,7 +885,7 @@ export class NativeXcom2ModuleConfigurationActivationSession {
     assert.deepEqual(snapshot.fields, this.#expectedRecognitionFields);
     assert.deepEqual(snapshot.reasonRows, this.#expectedReasonRows);
     assert.deepEqual(snapshot.alerts, []);
-    assert.deepEqual(snapshot.interactiveControls, []);
+    assert.deepEqual(snapshot.interactiveControls, [BUILD_RECIPE_REVIEW_NAME]);
     this.#preRemovalRecognitionSnapshot = snapshot;
     await rm(this.configurationPath());
     await assert.rejects(lstat(this.configurationPath()), { code: "ENOENT" });

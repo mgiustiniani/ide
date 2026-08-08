@@ -79,9 +79,12 @@ When<StoryWorld>(
   },
 );
 
-Then<StoryWorld>("the review identifies the action by exact enum value {string}", function (action: string) {
-  recipe(this).assertAction(action);
-});
+Then<StoryWorld>(
+  "the review identifies the action by exact enum value {string}",
+  function (action: string) {
+    recipe(this).assertAction(action);
+  },
+);
 
 Then<StoryWorld>(
   "it labels {string} as untrusted project input that will not be executed by this review",

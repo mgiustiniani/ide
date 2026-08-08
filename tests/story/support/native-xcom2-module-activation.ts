@@ -28,6 +28,11 @@ const GENERIC_WORKSPACE = "xcom-reference-notes" as const;
 const AMBIGUOUS_WORKSPACE = "ambiguous-wotc" as const;
 const CREDIBLE_WORKSPACE = "credible-wotc" as const;
 const ACTIVITY_NAME = "XCOM 2 Project" as const;
+const BUILD_RECIPE_REVIEW_NAME = "Default Build recipe" as const;
+const LEGACY_RECOGNITION_LIMITATION =
+  "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution." as const;
+const RECIPE_REVIEW_RECOGNITION_LIMITATION =
+  "Recognition remains read-only: recipe review provides no Build, Run, Deploy, Cook, Launch, Problems, Logs, language support, or bottom contribution." as const;
 const WORKSPACE_NAMES = [GENERIC_WORKSPACE, AMBIGUOUS_WORKSPACE, CREDIBLE_WORKSPACE] as const;
 const WORKSPACE_FIXTURES = Object.freeze({
   [GENERIC_WORKSPACE]: Object.freeze(["README.md", "notes/reference.txt"]),
@@ -753,6 +758,8 @@ export class NativeXcom2ModuleActivationSession {
     assert.equal(expectedRows.length, 5);
     assert.equal(new Set(expectedRows.map(({ field }) => field)).size, 5);
     const expected = Object.fromEntries(expectedRows.map(({ field, value }) => [field, value]));
+    assert.equal(expected.limitation, LEGACY_RECOGNITION_LIMITATION);
+    expected.limitation = RECIPE_REVIEW_RECOGNITION_LIMITATION;
     const snapshot = await this.recognitionSnapshot();
     assert.equal(snapshot.shown, true);
     assert.deepEqual(snapshot.fields, expected);
@@ -787,15 +794,12 @@ export class NativeXcom2ModuleActivationSession {
     assert.deepEqual(activityNames, CREDIBLE_ACTIVITY_NAMES);
     assert.deepEqual(bottomNames, BASE_BOTTOM_TOOL_NAMES);
     const snapshot = await this.recognitionSnapshot();
-    assert.equal(
-      snapshot.interactiveControls.length,
-      0,
-      "recognition panel exposed a project action",
+    assert.deepEqual(
+      snapshot.interactiveControls,
+      [BUILD_RECIPE_REVIEW_NAME],
+      "recognition panel must expose only the accessible metadata-review control and no execution control",
     );
-    assert.equal(
-      snapshot.fields.limitation,
-      "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.",
-    );
+    assert.equal(snapshot.fields.limitation, RECIPE_REVIEW_RECOGNITION_LIMITATION);
     this.#evidence.recognitionOnlyExclusionsMatched = true;
   }
 
