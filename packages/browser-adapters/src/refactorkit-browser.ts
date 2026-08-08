@@ -18,6 +18,8 @@ import type {
   SavedSnapshotSemanticSessionStopResult,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
+  TypeScriptDiagnosticsRequest,
+  TypeScriptDiagnosticsResponse,
 } from "@ide/contracts";
 import type { RefactorKitPort } from "@ide/web-core/ports";
 
@@ -77,7 +79,7 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
     return unavailable();
   }
 
-  diagnostics(): Promise<RefactorKitCommandResult> {
+  diagnostics(_request: TypeScriptDiagnosticsRequest): Promise<TypeScriptDiagnosticsResponse> {
     return unavailable();
   }
 
