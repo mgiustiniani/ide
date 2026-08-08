@@ -636,20 +636,106 @@ export class NativeXcom2MachineSettingsMissingSteamSession {
   async assertEveryProductDetail(rows: readonly FieldRow[]): Promise<void> {
     const expected = Object.fromEntries(rows.map(({ field, value }) => [field, value]));
     assert.deepEqual(expected, EXPECTED_PRODUCT_DETAILS);
-    for (const card of await this.productCards()) {
-      const productName = normalizeText(await (await card.$("h3")).getText());
-      const download = await card.$(
-        `[role="progressbar"][aria-label="${productName} download progress"]`,
+
+    // Capture the scoped DOM state in one WebDriver round trip. Repeating an element query for
+    // every term and value exceeds Cucumber's step budget without strengthening the assertions.
+    const snapshot = await this.browser().execute(() => {
+      const normalized = (value: string | null): string =>
+        (value ?? "").replace(/\s+/gu, " ").trim();
+      const productRegions = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[role="dialog"][aria-modal="true"] [aria-label="XCOM 2 setup monitor details"] [aria-label="Monitored Steam products"]',
+        ),
+      ];
+      const cards =
+        productRegions.length === 1
+          ? [...productRegions[0]!.querySelectorAll<HTMLElement>("article")]
+          : [];
+
+      return {
+        productRegionCount: productRegions.length,
+        cards: cards.map((card) => {
+          const productName = normalized(card.querySelector("h3")?.textContent ?? null);
+          const progress = (kind: "download" | "staging") => {
+            const matches = [...card.querySelectorAll<HTMLElement>('[role="progressbar"]')].filter(
+              (element) => element.getAttribute("aria-label") === `${productName} ${kind} progress`,
+            );
+            return {
+              count: matches.length,
+              valueText: matches[0]?.getAttribute("aria-valuetext") ?? null,
+              valueNow: matches[0]?.getAttribute("aria-valuenow") ?? null,
+            };
+          };
+          const definition = (label: string) => {
+            const matches = [...card.querySelectorAll<HTMLElement>("dt")].filter(
+              (term) => normalized(term.textContent).replace(/:\s*$/u, "") === label,
+            );
+            return {
+              count: matches.length,
+              value: normalized(
+                matches[0]?.parentElement?.querySelector("dd")?.textContent ?? null,
+              ),
+            };
+          };
+          const labelled = (label: "Completeness" | "Stability" | "Mutation") => {
+            const matches = [...card.querySelectorAll<HTMLElement>("dt")].filter((term) =>
+              normalized(term.textContent).startsWith(`${label}: `),
+            );
+            const termText = normalized(matches[0]?.textContent ?? null);
+            return {
+              count: matches.length,
+              value: termText.slice(label.length + 2),
+              evidence: [
+                ...(matches[0]?.parentElement?.querySelectorAll<HTMLElement>("dd li") ?? []),
+              ].map((item) => normalized(item.textContent)),
+            };
+          };
+
+          return {
+            productName,
+            download: progress("download"),
+            staging: progress("staging"),
+            paragraphTexts: [...card.querySelectorAll<HTMLElement>("p")].map((paragraph) =>
+              normalized(paragraph.textContent),
+            ),
+            definitions: Object.fromEntries(
+              [
+                "StateFlags",
+                "Size on disk",
+                "Install directory present",
+                "Download directory present",
+                "Last update",
+              ].map((label) => [label, definition(label)]),
+            ),
+            labelled: Object.fromEntries(
+              (["Completeness", "Stability", "Mutation"] as const).map((label) => [
+                label,
+                labelled(label),
+              ]),
+            ),
+          };
+        }),
+      };
+    });
+
+    assert.equal(snapshot.productRegionCount, 1);
+    assert.equal(snapshot.cards.length, 3);
+    for (const card of snapshot.cards) {
+      assert.ok(card.productName);
+      assert.equal(card.download.count, 1);
+      assert.equal(card.download.valueText, expected["Download progress"]);
+      assert.equal(card.download.valueNow, null);
+      assert.equal(card.staging.count, 1);
+      assert.equal(card.staging.valueText, expected["Staging progress"]);
+      assert.equal(card.staging.valueNow, null);
+      assert.equal(
+        card.paragraphTexts.filter((text) => text === expected["Download bytes"]).length,
+        1,
       );
-      const staging = await card.$(
-        `[role="progressbar"][aria-label="${productName} staging progress"]`,
+      assert.equal(
+        card.paragraphTexts.filter((text) => text === expected["Staging bytes"]).length,
+        1,
       );
-      assert.equal(await download.getAttribute("aria-valuetext"), expected["Download progress"]);
-      assert.equal(await download.getAttribute("aria-valuenow"), null);
-      assert.equal(await staging.getAttribute("aria-valuetext"), expected["Staging progress"]);
-      assert.equal(await staging.getAttribute("aria-valuenow"), null);
-      assert.equal((await exactTextElements(card, "p", expected["Download bytes"]!)).length, 1);
-      assert.equal((await exactTextElements(card, "p", expected["Staging bytes"]!)).length, 1);
 
       for (const label of [
         "StateFlags",
@@ -658,13 +744,15 @@ export class NativeXcom2MachineSettingsMissingSteamSession {
         "Download directory present",
         "Last update",
       ] as const) {
-        assert.equal(await definitionValue(card, label), expected[label]);
+        assert.equal(card.definitions[label]?.count, 1);
+        assert.equal(card.definitions[label]?.value, expected[label]);
       }
       for (const label of ["Completeness", "Stability", "Mutation"] as const) {
-        const observation = await labelledEvidence(card, label);
-        assert.equal(observation.value, expected[label]);
+        const observation = card.labelled[label];
+        assert.equal(observation?.count, 1);
+        assert.equal(observation?.value, expected[label]);
         if (label !== "Mutation") {
-          assert.deepEqual(observation.evidence, [expected[`${label} evidence`]]);
+          assert.deepEqual(observation?.evidence, [expected[`${label} evidence`]]);
         }
       }
     }
