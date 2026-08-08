@@ -7,7 +7,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
+use crate::commands::refactorkit_daemon::{
+    run_saved_snapshot_diagnostics, SavedSnapshotSemanticState, TypeScriptDiagnosticsError,
+    TypeScriptDiagnosticsRequest, TypeScriptDiagnosticsResponse,
+};
 use crate::commands::workspace_registry::workspace_id_for_path;
 use crate::workspace::{ensure_within_root, workspace_root};
 
@@ -132,7 +137,6 @@ pub struct RefactorKitCommandMetadata {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum RefactorKitAction {
     Scan,
-    Diagnostics,
     Symbols,
     Definition,
     References,
@@ -142,7 +146,6 @@ impl RefactorKitAction {
     fn as_str(self) -> &'static str {
         match self {
             Self::Scan => "scan",
-            Self::Diagnostics => "diagnostics",
             Self::Symbols => "symbols",
             Self::Definition => "definition",
             Self::References => "references",
@@ -505,8 +508,11 @@ pub fn run_refactorkit_scan() -> Result<RefactorKitCommandResult, String> {
 }
 
 #[tauri::command]
-pub fn run_refactorkit_diagnostics() -> Result<RefactorKitCommandResult, String> {
-    run_refactorkit_action(RefactorKitAction::Diagnostics)
+pub fn run_refactorkit_diagnostics(
+    request: TypeScriptDiagnosticsRequest,
+    state: State<'_, SavedSnapshotSemanticState>,
+) -> Result<TypeScriptDiagnosticsResponse, TypeScriptDiagnosticsError> {
+    run_saved_snapshot_diagnostics(request, &state)
 }
 
 #[tauri::command]
@@ -1048,10 +1054,27 @@ mod tests {
     #[test]
     fn fixed_actions_map_to_expected_refactorkit_subcommands() {
         assert_eq!(RefactorKitAction::Scan.as_str(), "scan");
-        assert_eq!(RefactorKitAction::Diagnostics.as_str(), "diagnostics");
         assert_eq!(RefactorKitAction::Symbols.as_str(), "symbols");
         assert_eq!(RefactorKitAction::Definition.as_str(), "definition");
         assert_eq!(RefactorKitAction::References.as_str(), "references");
+    }
+
+    #[test]
+    fn diagnostics_command_uses_the_correlated_saved_snapshot_boundary() {
+        let _: for<'a> fn(
+            TypeScriptDiagnosticsRequest,
+            State<'a, SavedSnapshotSemanticState>,
+        )
+            -> Result<TypeScriptDiagnosticsResponse, TypeScriptDiagnosticsError> =
+            run_refactorkit_diagnostics;
+        let source = include_str!("refactorkit.rs");
+        assert!(source.contains("request: TypeScriptDiagnosticsRequest"));
+        assert!(source.contains("State<'_, SavedSnapshotSemanticState>"));
+        assert!(source.contains("run_saved_snapshot_diagnostics(request, &state)"));
+        assert!(!source.contains(concat!(
+            "pub fn run_refactorkit_diagnostics() -> Result<",
+            "RefactorKitCommandResult, String>"
+        )));
     }
 
     #[test]
@@ -1280,11 +1303,7 @@ mod tests {
         fs::write(&source, "class Service {}\n").unwrap();
         let output = successful_output("Service.java:3\n");
 
-        for action in [
-            RefactorKitAction::Scan,
-            RefactorKitAction::Diagnostics,
-            RefactorKitAction::Symbols,
-        ] {
+        for action in [RefactorKitAction::Scan, RefactorKitAction::Symbols] {
             assert!(locations_from_output(action, &output, &root).is_empty());
         }
 

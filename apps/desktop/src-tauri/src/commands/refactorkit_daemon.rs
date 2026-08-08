@@ -4,6 +4,7 @@ mod application;
 mod capability_policy;
 mod contract;
 mod path_policy;
+mod saved_snapshot_diagnostics;
 mod saved_snapshot_semantic;
 mod transport;
 
@@ -17,6 +18,10 @@ pub use application::RefactorKitDaemonState;
 pub use capability_policy::RefactorKitCapabilities;
 pub use contract::{
     ApplyRequest, ApprovalEvidence, DiscardRequest, PreviewRequest, RollbackRequest,
+};
+pub use saved_snapshot_diagnostics::{
+    run_saved_snapshot_diagnostics, TypeScriptDiagnosticsError, TypeScriptDiagnosticsRequest,
+    TypeScriptDiagnosticsResponse,
 };
 pub use saved_snapshot_semantic::{
     ExternalToolchainRequest, ResolveSavedSnapshotDefinitionRequest, SavedSnapshotSemanticError,

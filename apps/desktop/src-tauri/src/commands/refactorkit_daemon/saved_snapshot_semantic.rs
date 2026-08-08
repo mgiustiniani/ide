@@ -87,7 +87,7 @@ impl SavedSnapshotSemanticError {
     }
 }
 
-type SemanticResult<T> = Result<T, SavedSnapshotSemanticError>;
+pub(super) type SemanticResult<T> = Result<T, SavedSnapshotSemanticError>;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -174,26 +174,26 @@ pub struct ResolveSavedSnapshotDefinitionRequest {
 }
 
 #[derive(Clone)]
-struct AuthorizedToolchain {
-    node_executable: String,
-    language_server_package_root: String,
-    type_script_package_root: String,
+pub(super) struct AuthorizedToolchain {
+    pub(super) node_executable: String,
+    pub(super) language_server_package_root: String,
+    pub(super) type_script_package_root: String,
 }
 
 #[derive(Clone)]
-struct SemanticAuthority {
-    language_id: String,
-    workspace_root: PathBuf,
+pub(super) struct SemanticAuthority {
+    pub(super) language_id: String,
+    pub(super) workspace_root: PathBuf,
     workspace_root_text: String,
-    workspace_id: String,
-    workspace_generation: u64,
-    session_id: String,
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
+    pub(super) session_id: String,
     snapshot_identity: String,
-    semantic_lease: String,
-    start_snapshot_hash: String,
-    provider_version: String,
-    backend: String,
-    toolchain: AuthorizedToolchain,
+    pub(super) semantic_lease: String,
+    pub(super) start_snapshot_hash: String,
+    pub(super) provider_version: String,
+    pub(super) backend: String,
+    pub(super) toolchain: AuthorizedToolchain,
     semantic_completeness: String,
 }
 
@@ -217,9 +217,9 @@ struct RetainedSearch {
 }
 
 #[derive(Default)]
-struct SemanticManager {
+pub(super) struct SemanticManager {
     session: Option<Session>,
-    authority: Option<SemanticAuthority>,
+    pub(super) authority: Option<SemanticAuthority>,
     search: Option<RetainedSearch>,
 }
 
@@ -652,6 +652,57 @@ fn call_active(
     result
 }
 
+pub(super) fn diagnostics_lock<'a>(
+    state: &'a SavedSnapshotSemanticState,
+    stage: &'static str,
+) -> SemanticResult<std::sync::MutexGuard<'a, SemanticManager>> {
+    lock(state, stage)
+}
+
+pub(super) fn diagnostics_ensure_live(
+    manager: &mut SemanticManager,
+    stage: &'static str,
+) -> SemanticResult<()> {
+    ensure_live(manager, stage)
+}
+
+pub(super) fn diagnostics_authorize_current_workspace(
+    authority: &SemanticAuthority,
+    stage: &'static str,
+) -> SemanticResult<()> {
+    authorize_current_workspace(authority, stage)
+}
+
+pub(super) fn diagnostics_call_active(
+    manager: &mut SemanticManager,
+    method: &str,
+    params: Value,
+    code: &'static str,
+    stage: &'static str,
+) -> SemanticResult<Value> {
+    let result = manager
+        .session
+        .as_mut()
+        .ok_or_else(|| SavedSnapshotSemanticError::request(code, stage))
+        .and_then(|session| {
+            session_call_detailed(
+                session,
+                method,
+                params,
+                std::time::Duration::from_millis(30_000),
+            )
+            .map_err(|error| SavedSnapshotSemanticError::transport(code, stage, error))
+        });
+    if result.is_err() {
+        reset(manager, false);
+    }
+    result
+}
+
+pub(super) fn diagnostics_reset(manager: &mut SemanticManager) {
+    reset(manager, false);
+}
+
 fn semantic_start_params(language_id: &str, toolchain: &AuthorizedToolchain) -> Value {
     json!({
         "languageId": language_id,
@@ -865,6 +916,22 @@ fn verify_v070_capabilities(
         false,
         None,
     )?;
+    verify_method(
+        object,
+        "diagnostics.v2",
+        "additive-api-0.2",
+        true,
+        false,
+        Some(&[
+            "requestCorrelation",
+            "semanticLease",
+            "immutableEditorOverlay",
+            "exactUtf16Ranges",
+            "structuredReadiness",
+            "compilerAttestation",
+            "boundedResponse",
+        ]),
+    )?;
     verify_method(object, "symbol.search", "beta-contract", true, false, None)?;
     verify_method(
         object,
@@ -998,6 +1065,30 @@ fn verify_language_capabilities(
                 "language-capabilities",
             ));
         }
+    }
+    let diagnostics: Vec<_> = adapter
+        .capabilities
+        .iter()
+        .filter(|capability| capability.operation == "diagnostics")
+        .collect();
+    if diagnostics.len() != 1 {
+        return Err(SavedSnapshotSemanticError::response(
+            "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
+            "language-capabilities",
+        ));
+    }
+    let diagnostics = diagnostics[0];
+    if diagnostics.stability != "experimental"
+        || diagnostics.evidence != "compiler"
+        || diagnostics.mutation_authority != "none"
+        || diagnostics.backend != "typescript-compiler-exact-v1"
+        || diagnostics.extensions != request.extensions
+        || !runtime_capability_is_diagnostics(&diagnostics.runtime)
+    {
+        return Err(SavedSnapshotSemanticError::response(
+            "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
+            "language-capabilities",
+        ));
     }
     Ok(())
 }
@@ -1187,6 +1278,7 @@ fn index_is_ready_or_valid(index: Option<&Value>) -> bool {
 /// `providerProjectSnapshotIdentity` (both identity fields are kept). Internal correlation keeps
 /// the bare digest on `SemanticAuthority.start_snapshot_hash`, so search/definition binding is
 /// unchanged; only the wire shape is prefixed.
+#[allow(clippy::too_many_arguments)]
 fn assemble_start_result(
     language_id: &str,
     workspace_root: &str,
@@ -1685,6 +1777,18 @@ fn limits_are_v062(limits: &LanguageAdapterResourceLimits) -> bool {
         && limits.max_processes == Some(MAX_PROCESSES)
 }
 
+fn runtime_capability_is_diagnostics(runtime: &LanguageAdapterRuntime) -> bool {
+    runtime.execution_mode == "external-process"
+        && runtime.supports_timeout
+        && runtime.supports_cancellation
+        && runtime.uses_workspace_overlay
+        && runtime.records_process_provenance
+        && runtime.limits.request_timeout_millis == Some(30_000)
+        && runtime.limits.max_input_bytes == Some(536_870_912)
+        && runtime.limits.max_output_bytes == Some(8_388_608)
+        && runtime.limits.max_processes == Some(1)
+}
+
 fn runtime_json(runtime: &SemanticRuntimeRequest) -> Value {
     json!({
         "executionMode": runtime.execution_mode,
@@ -1776,7 +1880,7 @@ fn snapshot_workspace_tree(root: &Path) -> Vec<(PathBuf, [u8; 32])> {
             if file_type.is_dir() {
                 stack.push(path);
             } else {
-                let digest: [u8; 32] = Sha256::digest(&fs::read(&path).unwrap()).into();
+                let digest: [u8; 32] = Sha256::digest(fs::read(&path).unwrap()).into();
                 entries.push((path, digest));
             }
         }
@@ -2382,6 +2486,22 @@ mod tests {
         runtime_json(&runtime())
     }
 
+    fn diagnostics_runtime_value() -> Value {
+        json!({
+            "executionMode": "external-process",
+            "supportsTimeout": true,
+            "supportsCancellation": true,
+            "usesWorkspaceOverlay": true,
+            "recordsProcessProvenance": true,
+            "limits": {
+                "requestTimeoutMillis": 30_000,
+                "maxInputBytes": 536_870_912_u64,
+                "maxOutputBytes": 8_388_608_u64,
+                "maxProcesses": 1
+            }
+        })
+    }
+
     fn start_request() -> StartSavedSnapshotSemanticSessionRequest {
         StartSavedSnapshotSemanticSessionRequest {
             language_id: "typescript".into(),
@@ -2421,6 +2541,10 @@ mod tests {
                 {"name": "typescript.semantic.start", "stability": "experimental", "requiresProject": true, "writesWorkspace": false,
                     "features": {"explicitToolchain": true, "hashBoundProvenance": true, "noPackageScripts": true}},
                 {"name": "typescript.semantic.stop", "stability": "experimental", "requiresProject": true, "writesWorkspace": false},
+                {"name": "diagnostics.v2", "stability": "additive-api-0.2", "requiresProject": true, "writesWorkspace": false,
+                    "features": {"requestCorrelation": true, "semanticLease": true, "savedDiskAuthority": true,
+                        "immutableEditorOverlay": true, "exactUtf16Ranges": true, "structuredReadiness": true,
+                        "compilerAttestation": true, "boundedResponse": true}},
                 {"name": "symbol.search", "stability": "beta-contract", "requiresProject": true, "writesWorkspace": false},
                 {"name": "symbol.definition", "stability": "beta-contract", "requiresProject": true, "writesWorkspace": false}
             ],
@@ -2435,7 +2559,9 @@ mod tests {
                         {"operation": "definition", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "none",
                             "backend": BACKEND, "runtime": runtime_value(), "extensions": ["ts", "tsx"]},
                         {"operation": "workspaceSymbols", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "none",
-                            "backend": BACKEND, "runtime": runtime_value(), "extensions": ["ts", "tsx"]}
+                            "backend": BACKEND, "runtime": runtime_value(), "extensions": ["ts", "tsx"]},
+                        {"operation": "diagnostics", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "none",
+                            "backend": "typescript-compiler-exact-v1", "runtime": diagnostics_runtime_value(), "extensions": ["ts", "tsx"]}
                     ]
                 }],
                 "vocabulary": {
@@ -2916,7 +3042,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     #[ignore = "requires a create-new clean-build attestation, its exact RefactorKit 0.7.0-SNAPSHOT daemon, and an explicit external TypeScript toolchain"]
-    fn packaged_v070_saved_snapshot_start_search_definition_stop_smoke() {
+    fn packaged_v070_saved_snapshot_diagnostics_smoke() {
         let daemon = fs::canonicalize(env::var("IDE_REFORKIT_DAEMON").unwrap()).unwrap();
         let real_node = fs::canonicalize(env::var("IDE_REFORKIT_NODE").unwrap()).unwrap();
         let language_server =
@@ -2983,7 +3109,7 @@ mod tests {
             "workspace.lock must never be created by a read-only semantic session (pre-open)"
         );
         let before_tree_fingerprint = tree_fingerprint(&root);
-        let audit_command = "packaged_v070_saved_snapshot_start_search_definition_stop_smoke";
+        let audit_command = "packaged_v070_saved_snapshot_diagnostics_smoke";
         // Drain any checkpoints left by prior runs so this run's open/start boundaries are isolated.
         let _ = take_checkpoints();
 
@@ -3049,6 +3175,64 @@ mod tests {
                 "checkpoint {label} must equal baseline: {label} {checkpoint_fingerprint} vs baseline {before_tree_fingerprint}"
             );
         }
+
+        let diagnostics_request: crate::commands::refactorkit_daemon::TypeScriptDiagnosticsRequest =
+            serde_json::from_value(json!({
+                "schemaVersion": 2,
+                "operation": "diagnostics.v2",
+                "requestId": "diagnostics-smoke-1",
+                "languageId": "typescript",
+                "workspaceId": workspace_id,
+                "workspaceGeneration": 1,
+                "sessionId": session_id,
+                "expectedSnapshotHash": start_snapshot_hash.strip_prefix("sha256:").unwrap(),
+                "semanticLease": semantic_lease,
+                "sourceAuthority": {
+                    "kind": "immutable-editor-overlay",
+                    "documents": [{
+                        "path": "src/service.ts",
+                        "version": 9,
+                        "content": "export class Service { amount: number = \"wrong\"; }\n"
+                    }]
+                }
+            }))
+            .unwrap();
+        let diagnostics = crate::commands::refactorkit_daemon::run_saved_snapshot_diagnostics(
+            diagnostics_request,
+            &state,
+        )
+        .unwrap();
+        let diagnostics = serde_json::to_value(diagnostics).unwrap();
+        assert_eq!(diagnostics["schemaVersion"], 2);
+        assert_eq!(diagnostics["operation"], "diagnostics.v2");
+        assert_eq!(diagnostics["status"], "ready");
+        assert_eq!(diagnostics["backend"], "typescript-compiler-exact-v1");
+        assert_eq!(diagnostics["truncated"], false);
+        assert_eq!(diagnostics["diagnosticsTotal"], 1);
+        assert_eq!(diagnostics["diagnosticsReturned"], 1);
+        assert_eq!(diagnostics["sourceAuthority"]["documents"][0]["version"], 9);
+        let exact_diagnostic = &diagnostics["diagnostics"][0];
+        assert_eq!(exact_diagnostic["code"], "TS2322");
+        assert_eq!(exact_diagnostic["evidence"], "compiler");
+        assert_eq!(exact_diagnostic["location"]["encoding"], "utf-16");
+        assert_eq!(
+            exact_diagnostic["location"]["range"],
+            json!({
+                "start": {"line": 0, "character": 23},
+                "end": {"line": 0, "character": 29}
+            })
+        );
+        assert!(diagnostics["compilerAttestation"]["compilerSha256"]
+            .as_str()
+            .is_some_and(sha256_digest));
+        assert!(diagnostics["compilerAttestation"]["process"]["processId"]
+            .as_u64()
+            .is_some_and(|value| value > 0));
+        let diagnostics_fingerprint = tree_fingerprint(&root);
+        assert_eq!(
+            diagnostics_fingerprint, before_tree_fingerprint,
+            "after diagnostics.v2 the workspace byte tree must equal baseline"
+        );
 
         let searched = search(
             SearchSavedSnapshotSymbolsRequest {
@@ -3141,7 +3325,7 @@ mod tests {
         let after_tree_fingerprint = tree_fingerprint(&root);
         let trees_equal = before_tree_fingerprint == after_tree_fingerprint;
 
-        let daemon_binary_sha256 = hex_lower(&Sha256::digest(&fs::read(&daemon).unwrap()));
+        let daemon_binary_sha256 = hex_lower(&Sha256::digest(fs::read(&daemon).unwrap()));
         // Exact committed source identity: `sourceTreeHash` is the provider commit's Git tree
         // object ID and is always paired with an explicit algorithm/version. The independent unit
         // test compares this implementation to `git rev-parse HEAD^{tree}` and dirties the fixture
@@ -3162,7 +3346,7 @@ mod tests {
         assert!(daemon_inside && build_layout_verified);
         let audit_test_executable = fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
         let audit_test_executable_sha256 =
-            hex_lower(&Sha256::digest(&fs::read(&audit_test_executable).unwrap()));
+            hex_lower(&Sha256::digest(fs::read(&audit_test_executable).unwrap()));
         let audit_rust_source = Path::new(file!());
         let audit_rust_source = if audit_rust_source.is_absolute() {
             audit_rust_source.to_path_buf()
@@ -3171,21 +3355,28 @@ mod tests {
         };
         let audit_rust_source = fs::canonicalize(audit_rust_source).unwrap();
         let audit_rust_source_sha256 =
-            hex_lower(&Sha256::digest(&fs::read(&audit_rust_source).unwrap()));
+            hex_lower(&Sha256::digest(fs::read(&audit_rust_source).unwrap()));
+        let diagnostics_rust_source = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/commands/refactorkit_daemon/saved_snapshot_diagnostics.rs"),
+        )
+        .unwrap();
+        let diagnostics_rust_source_sha256 =
+            hex_lower(&Sha256::digest(fs::read(&diagnostics_rust_source).unwrap()));
         let build_attestation_script = fs::canonicalize(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("scripts/build-refactorkit-daemon-attested.sh"),
         )
         .unwrap();
         let build_attestation_script_sha256 = hex_lower(&Sha256::digest(
-            &fs::read(&build_attestation_script).unwrap(),
+            fs::read(&build_attestation_script).unwrap(),
         ));
         let node_audit_preload = fs::canonicalize(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/node-process-audit-preload.cjs"),
         )
         .unwrap();
         let node_audit_preload_sha256 =
-            hex_lower(&Sha256::digest(&fs::read(&node_audit_preload).unwrap()));
+            hex_lower(&Sha256::digest(fs::read(&node_audit_preload).unwrap()));
         let ide_repository = git2::Repository::discover(env!("CARGO_MANIFEST_DIR")).unwrap();
         let ide_repository_root = ide_repository.workdir().unwrap();
         let ide_source_git_clean = std::process::Command::new("git")
@@ -3203,6 +3394,7 @@ mod tests {
         // IDE revision: the IDE repository HEAD at audit time (independent of the provider commit).
         let ide_revision = ide_revision();
         let mut checkpoint_list: Vec<(String, String)> = open_start_checkpoints;
+        checkpoint_list.push(("after-diagnostics-v2".to_string(), diagnostics_fingerprint));
         checkpoint_list.push(("after-symbol-search".to_string(), search_fingerprint));
         checkpoint_list.push((
             "after-symbol-definition".to_string(),
@@ -3218,13 +3410,32 @@ mod tests {
             .collect::<Vec<_>>();
 
         let receipt = serde_json::to_string_pretty(&json!({
-            "receiptSchemaVersion": "refactorkit-saved-snapshot-audit-v2",
+            "receiptSchemaVersion": "refactorkit-diagnostics-audit-v1",
+            "diagnosticsEvidence": {
+                "operation": diagnostics["operation"],
+                "status": diagnostics["status"],
+                "backend": diagnostics["backend"],
+                "requestId": diagnostics["requestId"],
+                "projectSnapshotHash": diagnostics["projectSnapshotHash"],
+                "providerSnapshotHash": diagnostics["providerSnapshotHash"],
+                "semanticLease": diagnostics["semanticLease"],
+                "sourceAuthority": diagnostics["sourceAuthority"],
+                "runtime": diagnostics["runtime"],
+                "compilerAttestation": diagnostics["compilerAttestation"],
+                "exactDiagnostic": diagnostics["diagnostics"][0],
+                "diagnosticsTotal": diagnostics["diagnosticsTotal"],
+                "diagnosticsReturned": diagnostics["diagnosticsReturned"],
+                "truncated": diagnostics["truncated"],
+                "responseBytes": diagnostics["responseBytes"]
+            },
             "auditHarness": {
                 "auditCommand": audit_command,
                 "testExecutablePath": audit_test_executable,
                 "testExecutableSha256": audit_test_executable_sha256,
                 "rustSourcePath": audit_rust_source,
                 "rustSourceSha256": audit_rust_source_sha256,
+                "diagnosticsRustSourcePath": diagnostics_rust_source,
+                "diagnosticsRustSourceSha256": diagnostics_rust_source_sha256,
                 "buildAttestationScriptPath": build_attestation_script,
                 "buildAttestationScriptSha256": build_attestation_script_sha256,
                 "nodeAuditPreloadPath": node_audit_preload,
