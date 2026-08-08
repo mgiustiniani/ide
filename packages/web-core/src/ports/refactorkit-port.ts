@@ -18,6 +18,8 @@ import type {
   SavedSnapshotSemanticSessionStopResult,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
+  TypeScriptDiagnosticsRequest,
+  TypeScriptDiagnosticsResponse,
 } from "@ide/contracts";
 
 /** Provider-neutral boundary. Adapters alone translate these calls to an installed API. */
@@ -25,7 +27,7 @@ export interface RefactorKitPort {
   getStatus(): Promise<RefactorKitStatus>;
   getCapabilities(): Promise<RefactorKitCapabilities>;
   scan(): Promise<RefactorKitCommandResult>;
-  diagnostics(): Promise<RefactorKitCommandResult>;
+  diagnostics(request: TypeScriptDiagnosticsRequest): Promise<TypeScriptDiagnosticsResponse>;
   symbols(): Promise<RefactorKitCommandResult>;
   definition(symbol: string): Promise<RefactorKitCommandResult>;
   references(symbol: string): Promise<RefactorKitCommandResult>;
