@@ -102,6 +102,34 @@ fn complete_capabilities() -> Value {
     })
 }
 
+fn diagnostics_v2_features() -> Value {
+    json!({
+        "requestCorrelation": true,
+        "semanticLease": true,
+        "savedDiskAuthority": true,
+        "immutableEditorOverlay": true,
+        "exactUtf16Ranges": true,
+        "structuredReadiness": true,
+        "compilerAttestation": true,
+        "boundedResponse": true
+    })
+}
+
+fn capabilities_with_diagnostics_v2() -> Value {
+    let mut capabilities = complete_capabilities();
+    capabilities["version"] = json!("0.7.0-SNAPSHOT");
+    capabilities["methods"] = json!([
+        {"name": "refactor.apply", "stability": "beta-contract", "requiresProject": true, "writesWorkspace": true},
+        {"name": "refactor.discard", "stability": "beta-contract", "requiresProject": false, "writesWorkspace": false},
+        {"name": "patch.rollback", "stability": "beta-contract", "requiresProject": true, "writesWorkspace": true},
+        {"name": "java.importExternalClass", "stability": "experimental", "requiresProject": true, "writesWorkspace": false,
+            "features": {"targetDirectory": true, "preview": true, "apply": true, "discard": true, "rollback": true}},
+        {"name": "diagnostics.v2", "stability": "additive-api-0.2", "requiresProject": true, "writesWorkspace": false,
+            "features": diagnostics_v2_features()}
+    ]);
+    capabilities
+}
+
 fn materialize_operation_defaults(mut schema: Value) -> Value {
     for adapter in schema["adapters"].as_array_mut().unwrap() {
         let backend = adapter["backend"].clone();
@@ -226,6 +254,128 @@ fn capability_mapping_is_exact_for_available_and_unavailable_installations() {
     assert!(unavailable
         .pointer("/javaImportExternalClass/updateGuidance")
         .is_some());
+}
+
+#[test]
+fn modern_method_capabilities_are_strictly_retained_while_legacy_methods_stay_absent() {
+    let advertised = capabilities_with_diagnostics_v2();
+    let normalized = serde_json::to_value(available_managed_capabilities(
+        normalize_server_capabilities(&advertised).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(normalized.get("methods"), advertised.get("methods"));
+
+    let legacy = serde_json::to_value(available_managed_capabilities(
+        normalize_server_capabilities(&complete_capabilities()).unwrap(),
+    ))
+    .unwrap();
+    assert!(legacy.get("methods").is_none());
+    assert!(serde_json::to_value(unavailable_capabilities())
+        .unwrap()
+        .get("methods")
+        .is_none());
+}
+
+#[test]
+fn diagnostics_authorization_rechecks_retained_saved_disk_and_read_only_metadata() {
+    let mut metadata = normalize_server_capabilities(&capabilities_with_diagnostics_v2()).unwrap();
+    assert!(diagnostics_v2_is_authorized(&metadata));
+
+    {
+        let diagnostics = metadata
+            .methods
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|method| method.name == "diagnostics.v2")
+            .unwrap();
+        diagnostics
+            .features
+            .as_mut()
+            .unwrap()
+            .insert("savedDiskAuthority".into(), false);
+    }
+    assert!(!diagnostics_v2_is_authorized(&metadata));
+
+    {
+        let diagnostics = metadata
+            .methods
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|method| method.name == "diagnostics.v2")
+            .unwrap();
+        diagnostics
+            .features
+            .as_mut()
+            .unwrap()
+            .insert("savedDiskAuthority".into(), true);
+        diagnostics.writes_workspace = true;
+    }
+    assert!(!diagnostics_v2_is_authorized(&metadata));
+}
+
+#[test]
+fn malformed_or_unsafe_diagnostics_v2_method_metadata_fails_closed() {
+    let mut cases = Vec::new();
+
+    let mut duplicate = capabilities_with_diagnostics_v2();
+    let duplicate_method = duplicate["methods"][4].clone();
+    duplicate["methods"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate_method);
+    cases.push(("duplicate method", duplicate));
+
+    let mut extra_method_field = capabilities_with_diagnostics_v2();
+    extra_method_field["methods"][4]["fallbackOutput"] = json!(false);
+    cases.push(("extra method field", extra_method_field));
+
+    for (name, pointer, replacement) in [
+        (
+            "wrong stability",
+            "/methods/4/stability",
+            json!("experimental"),
+        ),
+        (
+            "project not required",
+            "/methods/4/requiresProject",
+            json!(false),
+        ),
+        ("workspace write", "/methods/4/writesWorkspace", json!(true)),
+        (
+            "false feature",
+            "/methods/4/features/structuredReadiness",
+            json!(false),
+        ),
+        (
+            "malformed feature",
+            "/methods/4/features/compilerAttestation",
+            json!("true"),
+        ),
+    ] {
+        let mut value = capabilities_with_diagnostics_v2();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        cases.push((name, value));
+    }
+
+    let mut missing_feature = capabilities_with_diagnostics_v2();
+    missing_feature["methods"][4]["features"]
+        .as_object_mut()
+        .unwrap()
+        .remove("savedDiskAuthority");
+    cases.push(("missing saved-disk authority", missing_feature));
+
+    let mut extra_feature = capabilities_with_diagnostics_v2();
+    extra_feature["methods"][4]["features"]["fallbackOutput"] = json!(true);
+    cases.push(("extra feature", extra_feature));
+
+    for (name, candidate) in cases {
+        assert!(
+            normalize_server_capabilities(&candidate).is_err(),
+            "unsafe diagnostics.v2 metadata was accepted: {name}"
+        );
+    }
 }
 
 #[test]
@@ -1149,6 +1299,7 @@ fn packaged_daemon_full_preview_discard_apply_rollback_smoke() {
         .as_ref()
         .unwrap();
     assert!(!capabilities.provider_version.is_empty());
+    assert!(diagnostics_v2_is_authorized(capabilities));
     assert!(capabilities.provider_version.len() <= 128);
     assert!(!capabilities.provider_version.chars().any(char::is_control));
     eprintln!(

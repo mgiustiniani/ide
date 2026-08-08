@@ -15,8 +15,8 @@ use sha2::{Digest, Sha256};
 use crate::commands::workspace_registry::workspace_id_for_path;
 
 use super::capability_policy::{
-    normalize_server_capabilities, LanguageAdapterResourceLimits, LanguageAdapterRuntime,
-    LanguageKernelSchema, ManagedCapabilityMetadata, API_VERSION,
+    diagnostics_v2_is_authorized, normalize_server_capabilities, LanguageAdapterResourceLimits,
+    LanguageAdapterRuntime, LanguageKernelSchema, ManagedCapabilityMetadata, API_VERSION,
 };
 use super::path_policy::canonical_workspace;
 use super::transport::{
@@ -278,6 +278,7 @@ pub fn start(
             )
         })?;
         verify_v070_capabilities(&raw_capabilities, &capabilities, &request)?;
+        session.capabilities = Some(capabilities);
 
         let opened = call_start(
             &mut session,
@@ -663,7 +664,20 @@ pub(super) fn diagnostics_ensure_live(
     manager: &mut SemanticManager,
     stage: &'static str,
 ) -> SemanticResult<()> {
-    ensure_live(manager, stage)
+    ensure_live(manager, stage)?;
+    let authorized = manager
+        .session
+        .as_ref()
+        .and_then(|session| session.capabilities.as_ref())
+        .is_some_and(diagnostics_v2_is_authorized);
+    if authorized {
+        return Ok(());
+    }
+    reset(manager, false);
+    Err(SavedSnapshotSemanticError::request(
+        "REFACTORKIT_DIAGNOSTICS_CAPABILITY_UNAUTHORIZED",
+        stage,
+    ))
 }
 
 pub(super) fn diagnostics_authorize_current_workspace(
@@ -925,6 +939,7 @@ fn verify_v070_capabilities(
         Some(&[
             "requestCorrelation",
             "semanticLease",
+            "savedDiskAuthority",
             "immutableEditorOverlay",
             "exactUtf16Ranges",
             "structuredReadiness",
@@ -941,6 +956,12 @@ fn verify_v070_capabilities(
         false,
         None,
     )?;
+    if !diagnostics_v2_is_authorized(capabilities) {
+        return Err(SavedSnapshotSemanticError::response(
+            "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
+            "server-capabilities",
+        ));
+    }
     verify_language_capabilities(&capabilities.language_kernel.schema, request)
 }
 

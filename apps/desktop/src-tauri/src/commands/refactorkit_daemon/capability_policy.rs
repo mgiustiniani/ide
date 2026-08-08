@@ -1,6 +1,6 @@
 //! Capability DTOs and strict provider-neutral language-kernel policy.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -14,6 +14,19 @@ pub(super) const LANGUAGE_KERNEL_UNAVAILABLE: &str =
 const UPDATE_GUIDANCE: &str =
     "Update RefactorKit to 0.5.0-SNAPSHOT or newer with managed daemon API 0.2 support.";
 const MAX_ITEMS: usize = 512;
+const MAX_METHOD_STRING_BYTES: usize = 256;
+const DIAGNOSTICS_V2_METHOD: &str = "diagnostics.v2";
+const DIAGNOSTICS_V2_STABILITY: &str = "additive-api-0.2";
+const DIAGNOSTICS_V2_FEATURES: [&str; 8] = [
+    "requestCorrelation",
+    "semanticLease",
+    "savedDiskAuthority",
+    "immutableEditorOverlay",
+    "exactUtf16Ranges",
+    "structuredReadiness",
+    "compilerAttestation",
+    "boundedResponse",
+];
 pub(super) const MAX_LANGUAGE_ADAPTERS: usize = 64;
 pub(super) const MAX_LANGUAGE_EXTENSIONS: usize = 64;
 pub(super) const MAX_LANGUAGE_CAPABILITIES: usize = 512;
@@ -47,6 +60,8 @@ pub struct RefactorKitCapabilities {
     pub(super) provider: &'static str,
     pub(super) provider_version: Option<String>,
     pub(super) java_import_external_class: ExternalImportCapability,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) safety: Option<SafetyCapabilities>,
@@ -137,6 +152,17 @@ pub(super) struct LanguageOperationCapability {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct MethodCapability {
+    pub(super) name: String,
+    pub(super) stability: String,
+    pub(super) requires_project: bool,
+    pub(super) writes_workspace: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) features: Option<BTreeMap<String, bool>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct SafetyCapabilities {
     pub(super) preview_before_apply: bool,
     pub(super) snapshot_validation: bool,
@@ -148,6 +174,7 @@ pub(super) struct SafetyCapabilities {
 pub(super) struct ManagedCapabilityMetadata {
     pub(super) provider_version: String,
     pub(super) java_import_external_class: ExternalImportCapability,
+    pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
     pub(super) safety: Option<SafetyCapabilities>,
 }
@@ -177,6 +204,7 @@ pub(super) fn normalize_server_capabilities(
             return Err(UNAVAILABLE.to_string());
         }
     }
+    let normalized_methods = normalize_method_capabilities(methods)?;
     let import = methods
         .iter()
         .find(|method| {
@@ -230,8 +258,140 @@ pub(super) fn normalize_server_capabilities(
             reason: None,
             update_guidance: None,
         },
+        methods: normalized_methods,
         language_kernel,
         safety,
+    })
+}
+
+fn normalize_method_capabilities(
+    methods: &[Value],
+) -> Result<Option<Vec<MethodCapability>>, String> {
+    let mut names = HashSet::with_capacity(methods.len());
+    let mut has_diagnostics_v2 = false;
+    for method in methods {
+        let object = method
+            .as_object()
+            .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+        let name = bounded_method_string(object.get("name"))?;
+        if !names.insert(name.clone()) {
+            return Err(PROTOCOL_FAILED.to_string());
+        }
+        has_diagnostics_v2 |= name == DIAGNOSTICS_V2_METHOD;
+    }
+
+    // RefactorKit 0.6.2 and older providers predate the complete public method DTO. Their
+    // operation list remains useful for the legacy import gate but must not be re-advertised as
+    // richer metadata that the provider never supplied.
+    if !has_diagnostics_v2 {
+        return Ok(None);
+    }
+
+    methods
+        .iter()
+        .map(normalize_method_capability)
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn normalize_method_capability(value: &Value) -> Result<MethodCapability, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    if object.len() < 4
+        || object.len() > 5
+        || object.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "name" | "stability" | "requiresProject" | "writesWorkspace" | "features"
+            )
+        })
+    {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    let name = bounded_method_string(object.get("name"))?;
+    let stability = bounded_method_string(object.get("stability"))?;
+    let requires_project = required_bool(object, "requiresProject")?;
+    let writes_workspace = required_bool(object, "writesWorkspace")?;
+    let features = match object.get("features") {
+        None => None,
+        Some(value) => Some(normalize_method_features(value)?),
+    };
+
+    if name == DIAGNOSTICS_V2_METHOD
+        && (stability != DIAGNOSTICS_V2_STABILITY
+            || !requires_project
+            || writes_workspace
+            || !diagnostics_v2_features_are_exact(features.as_ref()))
+    {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+
+    Ok(MethodCapability {
+        name,
+        stability,
+        requires_project,
+        writes_workspace,
+        features,
+    })
+}
+
+fn normalize_method_features(value: &Value) -> Result<BTreeMap<String, bool>, String> {
+    let object = value
+        .as_object()
+        .filter(|features| !features.is_empty() && features.len() <= MAX_ITEMS)
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    object
+        .iter()
+        .map(|(name, value)| {
+            if name.trim() != name
+                || name.is_empty()
+                || name.len() > MAX_METHOD_STRING_BYTES
+                || name.chars().any(char::is_control)
+            {
+                return Err(PROTOCOL_FAILED.to_string());
+            }
+            value
+                .as_bool()
+                .map(|enabled| (name.clone(), enabled))
+                .ok_or_else(|| PROTOCOL_FAILED.to_string())
+        })
+        .collect()
+}
+
+fn bounded_method_string(value: Option<&Value>) -> Result<String, String> {
+    value
+        .and_then(Value::as_str)
+        .filter(|value| {
+            value.trim() == *value
+                && !value.is_empty()
+                && value.len() <= MAX_METHOD_STRING_BYTES
+                && !value.chars().any(char::is_control)
+        })
+        .map(ToString::to_string)
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())
+}
+
+fn diagnostics_v2_features_are_exact(features: Option<&BTreeMap<String, bool>>) -> bool {
+    features.is_some_and(|features| {
+        features.len() == DIAGNOSTICS_V2_FEATURES.len()
+            && DIAGNOSTICS_V2_FEATURES
+                .iter()
+                .all(|feature| features.get(*feature) == Some(&true))
+    })
+}
+
+pub(super) fn diagnostics_v2_is_authorized(capabilities: &ManagedCapabilityMetadata) -> bool {
+    capabilities.methods.as_ref().is_some_and(|methods| {
+        let matches: Vec<_> = methods
+            .iter()
+            .filter(|method| method.name == DIAGNOSTICS_V2_METHOD)
+            .collect();
+        matches.len() == 1
+            && matches[0].stability == DIAGNOSTICS_V2_STABILITY
+            && matches[0].requires_project
+            && !matches[0].writes_workspace
+            && diagnostics_v2_features_are_exact(matches[0].features.as_ref())
     })
 }
 
@@ -528,6 +688,7 @@ pub(super) fn available_managed_capabilities(
         provider: "refactorkit",
         provider_version: Some(capabilities.provider_version),
         java_import_external_class: capabilities.java_import_external_class,
+        methods: capabilities.methods,
         language_kernel: capabilities.language_kernel,
         safety: capabilities.safety,
     }
@@ -555,6 +716,7 @@ pub(super) fn available_capabilities(version: Option<String>) -> RefactorKitCapa
             reason: None,
             update_guidance: None,
         },
+        methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,
     }
@@ -576,6 +738,7 @@ pub(super) fn unavailable_capabilities() -> RefactorKitCapabilities {
             reason: Some(UNAVAILABLE.to_string()),
             update_guidance: Some(UPDATE_GUIDANCE.to_string()),
         },
+        methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,
     }
