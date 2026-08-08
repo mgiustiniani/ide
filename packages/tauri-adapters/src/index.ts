@@ -17,6 +17,8 @@ import { TauriXcom2ModuleConfigurationAdapter } from "./xcom2-module-configurati
 import { TauriXcom2ModuleScannerAdapter } from "./xcom2-module-scanner-tauri";
 import { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
 import { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
+import { TauriXcom2NativeActivationEvidenceAdapter } from "./xcom2-native-activation-evidence-tauri";
+import { TauriXcom2ProjectBuildRecipeInspectionAdapter } from "./xcom2-project-build-recipe-inspection-tauri";
 
 export { TauriFileTreeAdapter } from "./file-tree-tauri";
 export { TauriEditorAdapter } from "./editor-tauri";
@@ -40,6 +42,16 @@ export { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
 export type { Xcom2SetupMonitorPollOptions } from "./xcom2-setup-monitor-tauri";
 export { TauriXcom2SetupAdapter } from "./xcom2-setup-tauri";
 export type { Xcom2SetupPollOptions } from "./xcom2-setup-tauri";
+export {
+  TauriXcom2NativeActivationEvidenceAdapter,
+  XCOM2_NATIVE_ACTIVATION_EVIDENCE_COMMANDS,
+  createTauriXcom2NativeActivationEvidencePort,
+} from "./xcom2-native-activation-evidence-tauri";
+export {
+  TauriXcom2ProjectBuildRecipeInspectionAdapter,
+  XCOM2_PROJECT_BUILD_RECIPE_INSPECTION_COMMAND,
+  createTauriXcom2ProjectBuildRecipeInspectionPort,
+} from "./xcom2-project-build-recipe-inspection-tauri";
 export {
   TauriXcom2ProjectFoundryAdapter,
   TauriProjectFoundryAdapter,
@@ -80,6 +92,8 @@ export function createTauriAdapters(): {
   xcom2ModuleScannerAdapter: TauriXcom2ModuleScannerAdapter;
   xcom2SetupMonitorAdapter: TauriXcom2SetupMonitorAdapter;
   xcom2SetupAdapter: TauriXcom2SetupAdapter;
+  xcom2NativeActivationEvidenceAdapter: TauriXcom2NativeActivationEvidenceAdapter;
+  xcom2ProjectBuildRecipeInspectionAdapter: TauriXcom2ProjectBuildRecipeInspectionAdapter;
 } {
   const languageSessionAdapter = new TauriLanguageSessionAdapter();
   return {
@@ -97,5 +111,7 @@ export function createTauriAdapters(): {
     xcom2ModuleScannerAdapter: new TauriXcom2ModuleScannerAdapter(),
     xcom2SetupMonitorAdapter: new TauriXcom2SetupMonitorAdapter(),
     xcom2SetupAdapter: new TauriXcom2SetupAdapter(),
+    xcom2NativeActivationEvidenceAdapter: new TauriXcom2NativeActivationEvidenceAdapter(),
+    xcom2ProjectBuildRecipeInspectionAdapter: new TauriXcom2ProjectBuildRecipeInspectionAdapter(),
   };
 }
