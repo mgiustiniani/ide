@@ -51,6 +51,11 @@ const EVIDENCE_VOCABULARY: [&str; 6] = [
 ];
 const MUTATION_VOCABULARY: [&str; 3] = ["managed-stable", "proposal-only", "none"];
 const EXECUTION_VOCABULARY: [&str; 2] = ["in-process", "external-process"];
+const DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY: [&str; 2] = ["saved-disk", "immutable-editor-overlay"];
+const DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY: [&str; 1] = ["exact-utf16-or-explicit-partial"];
+const DIAGNOSTICS_V2_SNAPSHOT_MODES: [&str; 2] = ["immutable-editor-overlay", "saved-disk"];
+const DIAGNOSTICS_V2_RANGE_CAPABILITY: &str = "exact-utf16-or-explicit-partial";
+const DIAGNOSTICS_V2_BACKEND: &str = "typescript-compiler-exact-v1";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,6 +111,10 @@ pub(super) struct LanguageKernelVocabulary {
     pub(super) evidence: [&'static str; 6],
     pub(super) mutation_authority: [&'static str; 3],
     pub(super) execution_mode: [&'static str; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) diagnostic_snapshot_mode: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) diagnostic_range_capability: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -148,6 +157,10 @@ pub(super) struct LanguageOperationCapability {
     pub(super) backend: String,
     pub(super) runtime: LanguageAdapterRuntime,
     pub(super) extensions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) diagnostic_snapshot_modes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) diagnostic_range_capability: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -246,7 +259,7 @@ pub(super) fn normalize_server_capabilities(
         Some(value) => Some(normalize_safety(value)?),
     };
 
-    Ok(ManagedCapabilityMetadata {
+    let normalized = ManagedCapabilityMetadata {
         provider_version,
         java_import_external_class: ExternalImportCapability {
             supported: true,
@@ -261,7 +274,16 @@ pub(super) fn normalize_server_capabilities(
         methods: normalized_methods,
         language_kernel,
         safety,
-    })
+    };
+    if normalized.methods.as_ref().is_some_and(|methods| {
+        methods
+            .iter()
+            .any(|method| method.name == DIAGNOSTICS_V2_METHOD)
+    }) && !diagnostics_v2_is_authorized(&normalized)
+    {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    Ok(normalized)
 }
 
 fn normalize_method_capabilities(
@@ -382,7 +404,7 @@ fn diagnostics_v2_features_are_exact(features: Option<&BTreeMap<String, bool>>) 
 }
 
 pub(super) fn diagnostics_v2_is_authorized(capabilities: &ManagedCapabilityMetadata) -> bool {
-    capabilities.methods.as_ref().is_some_and(|methods| {
+    let method_authorized = capabilities.methods.as_ref().is_some_and(|methods| {
         let matches: Vec<_> = methods
             .iter()
             .filter(|method| method.name == DIAGNOSTICS_V2_METHOD)
@@ -392,6 +414,55 @@ pub(super) fn diagnostics_v2_is_authorized(capabilities: &ManagedCapabilityMetad
             && matches[0].requires_project
             && !matches[0].writes_workspace
             && diagnostics_v2_features_are_exact(matches[0].features.as_ref())
+    });
+    if !capabilities.language_kernel.available || capabilities.language_kernel.reason.is_some() {
+        return false;
+    }
+    let Some(schema) = capabilities.language_kernel.schema.as_ref() else {
+        return false;
+    };
+    let vocabulary_authorized = strings_are_exact(
+        schema.vocabulary.diagnostic_snapshot_mode.as_deref(),
+        &DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY,
+    ) && strings_are_exact(
+        schema.vocabulary.diagnostic_range_capability.as_deref(),
+        &DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY,
+    );
+    let diagnostics: Vec<_> = schema
+        .adapters
+        .iter()
+        .flat_map(|adapter| &adapter.capabilities)
+        .filter(|capability| {
+            capability.operation == "diagnostics" && capability.backend == DIAGNOSTICS_V2_BACKEND
+        })
+        .collect();
+    method_authorized
+        && vocabulary_authorized
+        && !diagnostics.is_empty()
+        && diagnostics
+            .iter()
+            .all(|capability| diagnostics_operation_is_v2_authorized(capability))
+}
+
+pub(super) fn diagnostics_operation_is_v2_authorized(
+    capability: &LanguageOperationCapability,
+) -> bool {
+    capability.operation == "diagnostics"
+        && strings_are_exact(
+            capability.diagnostic_snapshot_modes.as_deref(),
+            &DIAGNOSTICS_V2_SNAPSHOT_MODES,
+        )
+        && capability.diagnostic_range_capability.as_deref()
+            == Some(DIAGNOSTICS_V2_RANGE_CAPABILITY)
+}
+
+fn strings_are_exact(actual: Option<&[String]>, expected: &[&str]) -> bool {
+    actual.is_some_and(|actual| {
+        actual.len() == expected.len()
+            && actual
+                .iter()
+                .zip(expected)
+                .all(|(actual, expected)| actual == expected)
     })
 }
 
@@ -410,6 +481,42 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
     require_exact_vocabulary(vocabulary, "evidence", &EVIDENCE_VOCABULARY)?;
     require_exact_vocabulary(vocabulary, "mutationAuthority", &MUTATION_VOCABULARY)?;
     require_exact_vocabulary(vocabulary, "executionMode", &EXECUTION_VOCABULARY)?;
+    if vocabulary.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "stability"
+                | "evidence"
+                | "mutationAuthority"
+                | "executionMode"
+                | "diagnosticSnapshotMode"
+                | "diagnosticRangeCapability"
+        )
+    }) {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    let diagnostic_vocabulary = match (
+        vocabulary.get("diagnosticSnapshotMode"),
+        vocabulary.get("diagnosticRangeCapability"),
+    ) {
+        (None, None) => None,
+        (Some(_), Some(_)) => {
+            require_exact_vocabulary(
+                vocabulary,
+                "diagnosticSnapshotMode",
+                &DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY,
+            )?;
+            require_exact_vocabulary(
+                vocabulary,
+                "diagnosticRangeCapability",
+                &DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY,
+            )?;
+            Some((
+                retain_vocabulary(vocabulary, "diagnosticSnapshotMode")?,
+                retain_vocabulary(vocabulary, "diagnosticRangeCapability")?,
+            ))
+        }
+        _ => return Err(PROTOCOL_FAILED.to_string()),
+    };
 
     let raw_adapters = object
         .get("adapters")
@@ -473,6 +580,39 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
             {
                 return Err(PROTOCOL_FAILED.to_string());
             }
+            let diagnostic_snapshot_modes =
+                normalize_diagnostic_snapshot_modes(capability.get("diagnosticSnapshotModes"))?;
+            let diagnostic_range_capability =
+                normalize_diagnostic_range_capability(capability.get("diagnosticRangeCapability"))?;
+            if operation != "diagnostics"
+                && (diagnostic_snapshot_modes.is_some() || diagnostic_range_capability.is_some())
+            {
+                return Err(PROTOCOL_FAILED.to_string());
+            }
+            if operation == "diagnostics"
+                && (capability.keys().any(|key| {
+                    !matches!(
+                        key.as_str(),
+                        "operation"
+                            | "stability"
+                            | "evidence"
+                            | "mutationAuthority"
+                            | "backend"
+                            | "runtime"
+                            | "extensions"
+                            | "diagnosticSnapshotModes"
+                            | "diagnosticRangeCapability"
+                    )
+                }) || diagnostic_range_capability.is_some()
+                    && diagnostic_snapshot_modes.is_none()
+                    || diagnostic_snapshot_modes.as_ref().is_some_and(|modes| {
+                        modes.iter().any(|mode| mode == "immutable-editor-overlay")
+                            && diagnostic_range_capability.as_deref()
+                                != Some(DIAGNOSTICS_V2_RANGE_CAPABILITY)
+                    }))
+            {
+                return Err(PROTOCOL_FAILED.to_string());
+            }
             capabilities.push(LanguageOperationCapability {
                 operation,
                 stability,
@@ -481,6 +621,8 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
                 backend: bounded_language_string(capability.get("backend"))?,
                 runtime: normalize_language_runtime(capability.get("runtime"))?,
                 extensions: normalize_language_extensions(capability.get("extensions"))?,
+                diagnostic_snapshot_modes,
+                diagnostic_range_capability,
             });
         }
         capabilities.sort_unstable_by(|left, right| left.operation.cmp(&right.operation));
@@ -503,8 +645,48 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
             evidence: EVIDENCE_VOCABULARY,
             mutation_authority: MUTATION_VOCABULARY,
             execution_mode: EXECUTION_VOCABULARY,
+            diagnostic_snapshot_mode: diagnostic_vocabulary
+                .as_ref()
+                .map(|(snapshot_modes, _)| snapshot_modes.clone()),
+            diagnostic_range_capability: diagnostic_vocabulary
+                .map(|(_, range_capabilities)| range_capabilities),
         },
     })
+}
+
+fn normalize_diagnostic_snapshot_modes(
+    value: Option<&Value>,
+) -> Result<Option<Vec<String>>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let raw_modes = value
+        .as_array()
+        .filter(|modes| {
+            !modes.is_empty() && modes.len() <= DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY.len()
+        })
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    let mut unique = HashSet::with_capacity(raw_modes.len());
+    raw_modes
+        .iter()
+        .map(|mode| {
+            let mode = protocol_enum(mode.as_str(), &DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY)?;
+            if !unique.insert(mode) {
+                return Err(PROTOCOL_FAILED.to_string());
+            }
+            Ok(mode.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn normalize_diagnostic_range_capability(value: Option<&Value>) -> Result<Option<String>, String> {
+    value
+        .map(|value| {
+            protocol_enum(value.as_str(), &DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY)
+                .map(ToString::to_string)
+        })
+        .transpose()
 }
 
 pub(super) fn normalize_language_extensions(value: Option<&Value>) -> Result<Vec<String>, String> {
@@ -602,6 +784,21 @@ pub(super) fn require_exact_vocabulary(
         return Err(PROTOCOL_FAILED.to_string());
     }
     Ok(())
+}
+
+fn retain_vocabulary(object: &Map<String, Value>, field: &str) -> Result<Vec<String>, String> {
+    object
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(ToString::to_string)
+                .ok_or_else(|| PROTOCOL_FAILED.to_string())
+        })
+        .collect()
 }
 
 pub(super) fn protocol_enum(

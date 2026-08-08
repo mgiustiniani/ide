@@ -127,7 +127,52 @@ fn capabilities_with_diagnostics_v2() -> Value {
         {"name": "diagnostics.v2", "stability": "additive-api-0.2", "requiresProject": true, "writesWorkspace": false,
             "features": diagnostics_v2_features()}
     ]);
+    capabilities["languageKernel"] = diagnostics_v2_language_kernel();
     capabilities
+}
+
+fn diagnostics_v2_language_kernel() -> Value {
+    let runtime = json!({
+        "executionMode": "external-process",
+        "supportsTimeout": true,
+        "supportsCancellation": true,
+        "usesWorkspaceOverlay": true,
+        "recordsProcessProvenance": true,
+        "limits": {
+            "requestTimeoutMillis": 30_000,
+            "maxInputBytes": 512 * 1024 * 1024,
+            "maxOutputBytes": 8 * 1024 * 1024,
+            "maxProcesses": 1
+        }
+    });
+    json!({
+        "schemaVersion": 1,
+        "adapters": [{
+            "languageId": "typescript",
+            "extensions": ["ts", "tsx"],
+            "backend": "tree-sitter-jni-0.25.3+typescript-lsp-explicit-v1",
+            "runtime": runtime,
+            "capabilities": [{
+                "operation": "diagnostics",
+                "stability": "experimental",
+                "evidence": "compiler",
+                "mutationAuthority": "none",
+                "backend": "typescript-compiler-exact-v1",
+                "runtime": runtime,
+                "extensions": ["ts", "tsx"],
+                "diagnosticSnapshotModes": ["immutable-editor-overlay", "saved-disk"],
+                "diagnosticRangeCapability": "exact-utf16-or-explicit-partial"
+            }]
+        }],
+        "vocabulary": {
+            "stability": ["stable", "experimental", "structural", "refused", "not-applicable"],
+            "evidence": ["compiler", "language-server", "native-ast", "structural-parse", "lexical", "none"],
+            "mutationAuthority": ["managed-stable", "proposal-only", "none"],
+            "executionMode": ["in-process", "external-process"],
+            "diagnosticSnapshotMode": ["saved-disk", "immutable-editor-overlay"],
+            "diagnosticRangeCapability": ["exact-utf16-or-explicit-partial"]
+        }
+    })
 }
 
 fn materialize_operation_defaults(mut schema: Value) -> Value {
@@ -264,6 +309,24 @@ fn modern_method_capabilities_are_strictly_retained_while_legacy_methods_stay_ab
     ))
     .unwrap();
     assert_eq!(normalized.get("methods"), advertised.get("methods"));
+    assert_eq!(
+        normalized
+            .pointer("/languageKernel/schema/adapters/0/capabilities/0/diagnosticSnapshotModes"),
+        Some(&json!(["immutable-editor-overlay", "saved-disk"]))
+    );
+    assert_eq!(
+        normalized
+            .pointer("/languageKernel/schema/adapters/0/capabilities/0/diagnosticRangeCapability"),
+        Some(&json!("exact-utf16-or-explicit-partial"))
+    );
+    assert_eq!(
+        normalized.pointer("/languageKernel/schema/vocabulary/diagnosticSnapshotMode"),
+        Some(&json!(["saved-disk", "immutable-editor-overlay"]))
+    );
+    assert_eq!(
+        normalized.pointer("/languageKernel/schema/vocabulary/diagnosticRangeCapability"),
+        Some(&json!(["exact-utf16-or-explicit-partial"]))
+    );
 
     let legacy = serde_json::to_value(available_managed_capabilities(
         normalize_server_capabilities(&complete_capabilities()).unwrap(),
@@ -312,6 +375,19 @@ fn diagnostics_authorization_rechecks_retained_saved_disk_and_read_only_metadata
             .insert("savedDiskAuthority".into(), true);
         diagnostics.writes_workspace = true;
     }
+    assert!(!diagnostics_v2_is_authorized(&metadata));
+
+    let mut metadata = normalize_server_capabilities(&capabilities_with_diagnostics_v2()).unwrap();
+    metadata.language_kernel.schema.as_mut().unwrap().adapters[0].capabilities[0]
+        .diagnostic_snapshot_modes = Some(vec!["saved-disk".into()]);
+    assert!(!diagnostics_v2_is_authorized(&metadata));
+
+    let mut metadata = normalize_server_capabilities(&capabilities_with_diagnostics_v2()).unwrap();
+    metadata.language_kernel.schema = None;
+    assert!(!diagnostics_v2_is_authorized(&metadata));
+
+    let mut metadata = normalize_server_capabilities(&capabilities_with_diagnostics_v2()).unwrap();
+    metadata.language_kernel.available = false;
     assert!(!diagnostics_v2_is_authorized(&metadata));
 }
 
@@ -374,6 +450,103 @@ fn malformed_or_unsafe_diagnostics_v2_method_metadata_fails_closed() {
         assert!(
             normalize_server_capabilities(&candidate).is_err(),
             "unsafe diagnostics.v2 metadata was accepted: {name}"
+        );
+    }
+}
+
+#[test]
+fn malformed_or_contradictory_diagnostics_language_metadata_fails_closed() {
+    let mut cases = Vec::new();
+    let operation = "/languageKernel/adapters/0/capabilities/0";
+
+    for (name, pointer, replacement) in [
+        (
+            "snapshot mode order",
+            format!("{operation}/diagnosticSnapshotModes"),
+            json!(["saved-disk", "immutable-editor-overlay"]),
+        ),
+        (
+            "duplicate snapshot mode",
+            format!("{operation}/diagnosticSnapshotModes"),
+            json!(["immutable-editor-overlay", "immutable-editor-overlay"]),
+        ),
+        (
+            "unsupported snapshot mode",
+            format!("{operation}/diagnosticSnapshotModes"),
+            json!(["immutable-editor-overlay", "live-workspace"]),
+        ),
+        (
+            "wrong range capability",
+            format!("{operation}/diagnosticRangeCapability"),
+            json!("approximate-codepoints"),
+        ),
+        (
+            "snapshot vocabulary order",
+            "/languageKernel/vocabulary/diagnosticSnapshotMode".into(),
+            json!(["immutable-editor-overlay", "saved-disk"]),
+        ),
+        (
+            "duplicate range vocabulary",
+            "/languageKernel/vocabulary/diagnosticRangeCapability".into(),
+            json!([
+                "exact-utf16-or-explicit-partial",
+                "exact-utf16-or-explicit-partial"
+            ]),
+        ),
+    ] {
+        let mut value = capabilities_with_diagnostics_v2();
+        *value.pointer_mut(&pointer).unwrap() = replacement;
+        cases.push((name, value));
+    }
+
+    for (name, pointer) in [
+        (
+            "missing snapshot modes",
+            format!("{operation}/diagnosticSnapshotModes"),
+        ),
+        (
+            "missing range capability",
+            format!("{operation}/diagnosticRangeCapability"),
+        ),
+        (
+            "missing snapshot vocabulary",
+            "/languageKernel/vocabulary/diagnosticSnapshotMode".into(),
+        ),
+        (
+            "missing range vocabulary",
+            "/languageKernel/vocabulary/diagnosticRangeCapability".into(),
+        ),
+    ] {
+        let mut value = capabilities_with_diagnostics_v2();
+        let (parent, field) = pointer.rsplit_once('/').unwrap();
+        value
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        cases.push((name, value));
+    }
+
+    let mut extra = capabilities_with_diagnostics_v2();
+    extra.pointer_mut(operation).unwrap()["diagnosticFallbackMode"] = json!("saved-disk");
+    cases.push(("extra diagnostic operation field", extra));
+
+    let mut extra = capabilities_with_diagnostics_v2();
+    extra["languageKernel"]["vocabulary"]["diagnosticFallbackMode"] = json!(["saved-disk"]);
+    cases.push(("extra diagnostic vocabulary field", extra));
+
+    let mut missing_kernel = capabilities_with_diagnostics_v2();
+    missing_kernel
+        .as_object_mut()
+        .unwrap()
+        .remove("languageKernel");
+    cases.push(("missing diagnostics language kernel", missing_kernel));
+
+    for (name, value) in cases {
+        assert!(
+            matches!(normalize_server_capabilities(&value), Err(ref error) if error == PROTOCOL_FAILED),
+            "malformed diagnostics language metadata was accepted: {name}"
         );
     }
 }

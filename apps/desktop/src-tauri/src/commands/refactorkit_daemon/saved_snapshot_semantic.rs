@@ -15,8 +15,9 @@ use sha2::{Digest, Sha256};
 use crate::commands::workspace_registry::workspace_id_for_path;
 
 use super::capability_policy::{
-    diagnostics_v2_is_authorized, normalize_server_capabilities, LanguageAdapterResourceLimits,
-    LanguageAdapterRuntime, LanguageKernelSchema, ManagedCapabilityMetadata, API_VERSION,
+    diagnostics_operation_is_v2_authorized, diagnostics_v2_is_authorized,
+    normalize_server_capabilities, LanguageAdapterResourceLimits, LanguageAdapterRuntime,
+    LanguageKernelSchema, ManagedCapabilityMetadata, API_VERSION,
 };
 use super::path_policy::canonical_workspace;
 use super::transport::{
@@ -1105,6 +1106,7 @@ fn verify_language_capabilities(
         || diagnostics.backend != "typescript-compiler-exact-v1"
         || diagnostics.extensions != request.extensions
         || !runtime_capability_is_diagnostics(&diagnostics.runtime)
+        || !diagnostics_operation_is_v2_authorized(diagnostics)
     {
         return Err(SavedSnapshotSemanticError::response(
             "REFACTORKIT_SEMANTIC_SESSION_START_RESPONSE_REJECTED",
@@ -2582,14 +2584,18 @@ mod tests {
                         {"operation": "workspaceSymbols", "stability": "experimental", "evidence": "language-server", "mutationAuthority": "none",
                             "backend": BACKEND, "runtime": runtime_value(), "extensions": ["ts", "tsx"]},
                         {"operation": "diagnostics", "stability": "experimental", "evidence": "compiler", "mutationAuthority": "none",
-                            "backend": "typescript-compiler-exact-v1", "runtime": diagnostics_runtime_value(), "extensions": ["ts", "tsx"]}
+                            "backend": "typescript-compiler-exact-v1", "runtime": diagnostics_runtime_value(), "extensions": ["ts", "tsx"],
+                            "diagnosticSnapshotModes": ["immutable-editor-overlay", "saved-disk"],
+                            "diagnosticRangeCapability": "exact-utf16-or-explicit-partial"}
                     ]
                 }],
                 "vocabulary": {
                     "stability": ["stable", "experimental", "structural", "refused", "not-applicable"],
                     "evidence": ["compiler", "language-server", "native-ast", "structural-parse", "lexical", "none"],
                     "mutationAuthority": ["managed-stable", "proposal-only", "none"],
-                    "executionMode": ["in-process", "external-process"]
+                    "executionMode": ["in-process", "external-process"],
+                    "diagnosticSnapshotMode": ["saved-disk", "immutable-editor-overlay"],
+                    "diagnosticRangeCapability": ["exact-utf16-or-explicit-partial"]
                 }
             },
             "safety": {"previewBeforeApply": true, "snapshotValidation": true, "transactionRollback": true, "workspaceScopedWrites": true}
