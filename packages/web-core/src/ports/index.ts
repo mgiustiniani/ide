@@ -15,6 +15,10 @@ export type { JavaIntelligencePort } from "./java-intelligence-port";
 export type { Xcom2ModuleConfigurationPort } from "./xcom2-module-configuration-port";
 export type { Xcom2ModuleScannerPort } from "./xcom2-module-scanner-port";
 export type {
+  Xcom2NativeActivationEvidenceBeginRequest,
+  Xcom2NativeActivationEvidencePort,
+} from "./xcom2-native-activation-evidence-port";
+export type {
   Xcom2ProjectBuildRecipeInspectionPort,
   Xcom2ProjectBuildRecipeInspectionRequest,
 } from "./xcom2-project-build-recipe-inspection-port";
