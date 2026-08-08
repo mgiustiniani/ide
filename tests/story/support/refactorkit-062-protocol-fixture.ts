@@ -552,10 +552,6 @@ export class RefactorKit062ProtocolFixture {
     this.#capabilities = this.#statusController.result.current.capabilities ?? undefined;
   }
 
-  async requestCurrentSnapshotDiagnostics(): Promise<void> {
-    this.#diagnostics = await this.#adapter.diagnostics();
-  }
-
   confirmParticipatingBuffersMatchSavedFiles(): void {
     assert.ok(PARTICIPATING_BUFFERS.every(({ saved }) => saved));
     assert.ok(
