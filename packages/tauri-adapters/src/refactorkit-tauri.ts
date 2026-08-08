@@ -21,7 +21,7 @@ import type {
   RefactorKitLanguageAdapterRuntime,
   RefactorKitLanguageCapability,
   RefactorKitLanguageKernel,
-  RefactorKitLanguageKernelStatus,
+  RefactorKitMethodCapability,
   RefactorKitPatchPlan,
   RefactorKitSafetyCapabilities,
   RefactorKitPlanDiagnostic,
@@ -93,6 +93,13 @@ const LANGUAGE_EVIDENCE = [
 ] as const;
 const LANGUAGE_MUTATION_AUTHORITY = ["managed-stable", "proposal-only", "none"] as const;
 const LANGUAGE_EXECUTION_MODE = ["in-process", "external-process"] as const;
+const DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY = ["saved-disk", "immutable-editor-overlay"] as const;
+const DIAGNOSTIC_OPERATION_SNAPSHOT_MODES = ["immutable-editor-overlay", "saved-disk"] as const;
+const DIAGNOSTIC_RANGE_CAPABILITY = "exact-utf16-or-explicit-partial" as const;
+const DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY = [DIAGNOSTIC_RANGE_CAPABILITY] as const;
+const DIAGNOSTICS_V2_METHOD = "diagnostics.v2" as const;
+const DIAGNOSTICS_OPERATION = "diagnostics" as const;
+const DIAGNOSTICS_V2_BACKEND = "typescript-compiler-exact-v1" as const;
 const UTF8_ENCODER = new TextEncoder();
 const UPDATE_REQUIRED =
   "This RefactorKit operation requires an updated managed backend with targetDirectory preview, apply, discard, and rollback support.";
@@ -109,6 +116,29 @@ export type TauriRefactorKitManagedErrorCode =
   | "REFACTORKIT_ROLLBACK_FAILED";
 
 type RecordValue = Record<string, unknown>;
+type DiagnosticSnapshotMode = (typeof DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY)[number];
+type DiagnosticRangeCapability = typeof DIAGNOSTIC_RANGE_CAPABILITY;
+
+interface NormalizedLanguageCapability extends RefactorKitLanguageCapability {
+  diagnosticSnapshotModes?: DiagnosticSnapshotMode[];
+  diagnosticRangeCapability?: DiagnosticRangeCapability;
+}
+
+interface NormalizedLanguageAdapter extends RefactorKitLanguageAdapter {
+  capabilities: NormalizedLanguageCapability[];
+}
+
+interface NormalizedLanguageKernel extends RefactorKitLanguageKernel {
+  adapters: NormalizedLanguageAdapter[];
+  vocabulary: RefactorKitLanguageKernel["vocabulary"] & {
+    diagnosticSnapshotMode?: DiagnosticSnapshotMode[];
+    diagnosticRangeCapability?: DiagnosticRangeCapability[];
+  };
+}
+
+type NormalizedLanguageKernelStatus =
+  | { available: true; schema: NormalizedLanguageKernel }
+  | { available: false; schema: null; reason: string };
 
 export class TauriRefactorKitManagedCommandError extends TauriAdapterError {
   constructor(
@@ -1591,20 +1621,92 @@ function normalizeLanguageRuntime(
   return normalized;
 }
 
+function exactProtocolFieldsWithOptional(
+  command: string,
+  record: RecordValue,
+  required: readonly string[],
+  optional: readonly string[],
+  field: string,
+): void {
+  const allowed = new Set([...required, ...optional]);
+  const actual = Object.keys(record);
+  if (
+    required.some((key) => !Object.prototype.hasOwnProperty.call(record, key)) ||
+    actual.some((key) => !allowed.has(key))
+  ) {
+    throw invalidProtocolShape(command, `invalid fields ${field}`);
+  }
+}
+
+function normalizeDiagnosticSnapshotModes(
+  command: string,
+  value: unknown,
+  field: string,
+): DiagnosticSnapshotMode[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY.length
+  ) {
+    throw invalidProtocolShape(command, `invalid ${field}`);
+  }
+  const modes = value.map((mode) => {
+    if (!DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY.includes(mode as DiagnosticSnapshotMode)) {
+      throw invalidProtocolShape(command, `invalid ${field}`);
+    }
+    return mode as DiagnosticSnapshotMode;
+  });
+  const uniqueModes = new Set(modes);
+  const orderedIndexes = modes.map((mode) => DIAGNOSTIC_OPERATION_SNAPSHOT_MODES.indexOf(mode));
+  if (
+    uniqueModes.size !== modes.length ||
+    orderedIndexes.some((index, position) => position > 0 && index <= orderedIndexes[position - 1])
+  ) {
+    throw invalidProtocolShape(command, `invalid or duplicate ${field}`);
+  }
+  return modes;
+}
+
+function normalizeDiagnosticRangeCapability(
+  command: string,
+  value: unknown,
+  field: string,
+): DiagnosticRangeCapability {
+  if (value !== DIAGNOSTIC_RANGE_CAPABILITY) {
+    throw invalidProtocolShape(command, `invalid ${field}`);
+  }
+  return value;
+}
+
 function normalizeLanguageCapability(
   command: string,
   value: unknown,
   field: string,
-): RefactorKitLanguageCapability {
+): NormalizedLanguageCapability {
   const capability = protocolRecord(command, value, field);
-  exactProtocolFields(
-    command,
-    capability,
-    ["operation", "stability", "evidence", "mutationAuthority", "backend", "runtime", "extensions"],
-    field,
-  );
-  const normalized: RefactorKitLanguageCapability = {
-    operation: boundedLanguageString(command, capability, "operation"),
+  const operation = boundedLanguageString(command, capability, "operation");
+  const requiredFields = [
+    "operation",
+    "stability",
+    "evidence",
+    "mutationAuthority",
+    "backend",
+    "runtime",
+    "extensions",
+  ] as const;
+  if (operation === DIAGNOSTICS_OPERATION) {
+    exactProtocolFieldsWithOptional(
+      command,
+      capability,
+      requiredFields,
+      ["diagnosticSnapshotModes", "diagnosticRangeCapability"],
+      field,
+    );
+  } else {
+    exactProtocolFields(command, capability, requiredFields, field);
+  }
+  const normalized: NormalizedLanguageCapability = {
+    operation,
     stability: enumValue(command, capability, "stability", LANGUAGE_STABILITY),
     evidence: enumValue(command, capability, "evidence", LANGUAGE_EVIDENCE),
     mutationAuthority: enumValue(
@@ -1617,6 +1719,39 @@ function normalizeLanguageCapability(
     runtime: normalizeLanguageRuntime(command, capability.runtime, `${field}.runtime`),
     extensions: normalizeLanguageExtensions(command, capability.extensions, `${field}.extensions`),
   };
+  const diagnosticSnapshotModes = Object.prototype.hasOwnProperty.call(
+    capability,
+    "diagnosticSnapshotModes",
+  )
+    ? normalizeDiagnosticSnapshotModes(
+        command,
+        capability.diagnosticSnapshotModes,
+        `${field}.diagnosticSnapshotModes`,
+      )
+    : undefined;
+  const diagnosticRangeCapability = Object.prototype.hasOwnProperty.call(
+    capability,
+    "diagnosticRangeCapability",
+  )
+    ? normalizeDiagnosticRangeCapability(
+        command,
+        capability.diagnosticRangeCapability,
+        `${field}.diagnosticRangeCapability`,
+      )
+    : undefined;
+  if (
+    (diagnosticRangeCapability !== undefined && diagnosticSnapshotModes === undefined) ||
+    (diagnosticSnapshotModes?.includes("immutable-editor-overlay") === true &&
+      diagnosticRangeCapability !== DIAGNOSTIC_RANGE_CAPABILITY)
+  ) {
+    throw invalidProtocolShape(command, `incoherent ${field} diagnostic metadata`);
+  }
+  if (diagnosticSnapshotModes !== undefined) {
+    normalized.diagnosticSnapshotModes = diagnosticSnapshotModes;
+  }
+  if (diagnosticRangeCapability !== undefined) {
+    normalized.diagnosticRangeCapability = diagnosticRangeCapability;
+  }
   if (
     normalized.mutationAuthority === "managed-stable" &&
     (normalized.stability !== "stable" ||
@@ -1644,7 +1779,7 @@ function requireExactVocabulary(
   }
 }
 
-function normalizeLanguageKernel(command: string, value: unknown): RefactorKitLanguageKernel {
+function normalizeLanguageKernel(command: string, value: unknown): NormalizedLanguageKernel {
   const schema = protocolRecord(command, value, "languageKernel.schema");
   exactProtocolFields(
     command,
@@ -1657,23 +1792,49 @@ function normalizeLanguageKernel(command: string, value: unknown): RefactorKitLa
   }
 
   const vocabulary = protocolRecord(command, schema.vocabulary, "languageKernel.schema.vocabulary");
-  exactProtocolFields(
+  exactProtocolFieldsWithOptional(
     command,
     vocabulary,
     ["stability", "evidence", "mutationAuthority", "executionMode"],
+    ["diagnosticSnapshotMode", "diagnosticRangeCapability"],
     "languageKernel.schema.vocabulary",
   );
   requireExactVocabulary(command, vocabulary, "stability", LANGUAGE_STABILITY);
   requireExactVocabulary(command, vocabulary, "evidence", LANGUAGE_EVIDENCE);
   requireExactVocabulary(command, vocabulary, "mutationAuthority", LANGUAGE_MUTATION_AUTHORITY);
   requireExactVocabulary(command, vocabulary, "executionMode", LANGUAGE_EXECUTION_MODE);
+  const hasDiagnosticSnapshotVocabulary = Object.prototype.hasOwnProperty.call(
+    vocabulary,
+    "diagnosticSnapshotMode",
+  );
+  const hasDiagnosticRangeVocabulary = Object.prototype.hasOwnProperty.call(
+    vocabulary,
+    "diagnosticRangeCapability",
+  );
+  if (hasDiagnosticSnapshotVocabulary !== hasDiagnosticRangeVocabulary) {
+    throw invalidProtocolShape(command, "incomplete languageKernel diagnostic vocabulary");
+  }
+  if (hasDiagnosticSnapshotVocabulary) {
+    requireExactVocabulary(
+      command,
+      vocabulary,
+      "diagnosticSnapshotMode",
+      DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY,
+    );
+    requireExactVocabulary(
+      command,
+      vocabulary,
+      "diagnosticRangeCapability",
+      DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY,
+    );
+  }
 
   if (!Array.isArray(schema.adapters) || schema.adapters.length > MAX_LANGUAGE_ADAPTERS) {
     throw invalidProtocolShape(command, "invalid languageKernel adapters");
   }
   const languageIds = new Set<string>();
   const ownedExtensions = new Set<string>();
-  const adapters: RefactorKitLanguageAdapter[] = schema.adapters.map((value, adapterIndex) => {
+  const adapters: NormalizedLanguageAdapter[] = schema.adapters.map((value, adapterIndex) => {
     const field = `languageKernel.schema.adapters[${adapterIndex}]`;
     const adapter = protocolRecord(command, value, field);
     exactProtocolFields(
@@ -1734,22 +1895,27 @@ function normalizeLanguageKernel(command: string, value: unknown): RefactorKitLa
     };
   });
 
+  const normalizedVocabulary: NormalizedLanguageKernel["vocabulary"] = {
+    stability: [...LANGUAGE_STABILITY],
+    evidence: [...LANGUAGE_EVIDENCE],
+    mutationAuthority: [...LANGUAGE_MUTATION_AUTHORITY],
+    executionMode: [...LANGUAGE_EXECUTION_MODE],
+  };
+  if (hasDiagnosticSnapshotVocabulary) {
+    normalizedVocabulary.diagnosticSnapshotMode = [...DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY];
+    normalizedVocabulary.diagnosticRangeCapability = [DIAGNOSTIC_RANGE_CAPABILITY];
+  }
   return {
     schemaVersion: 1,
     adapters,
-    vocabulary: {
-      stability: [...LANGUAGE_STABILITY],
-      evidence: [...LANGUAGE_EVIDENCE],
-      mutationAuthority: [...LANGUAGE_MUTATION_AUTHORITY],
-      executionMode: [...LANGUAGE_EXECUTION_MODE],
-    },
+    vocabulary: normalizedVocabulary,
   };
 }
 
 function normalizeLanguageKernelStatus(
   command: string,
   value: unknown,
-): RefactorKitLanguageKernelStatus {
+): NormalizedLanguageKernelStatus {
   const status = protocolRecord(command, value, "languageKernel");
   const available = protocolBoolean(command, status, "available");
   if (available) {
@@ -1765,6 +1931,44 @@ function normalizeLanguageKernelStatus(
     schema: null,
     reason: protocolString(command, status, "reason", MAX_TEXT, false),
   };
+}
+
+function assertDiagnosticsV2LanguageMetadata(
+  command: string,
+  methods: readonly RefactorKitMethodCapability[] | undefined,
+  languageKernel: NormalizedLanguageKernelStatus | undefined,
+): void {
+  if (!methods?.some(({ name }) => name === DIAGNOSTICS_V2_METHOD)) return;
+  if (!languageKernel?.available) {
+    throw invalidProtocolShape(command, "diagnostics.v2 languageKernel is unavailable");
+  }
+  const { vocabulary, adapters } = languageKernel.schema;
+  if (
+    vocabulary.diagnosticSnapshotMode === undefined ||
+    vocabulary.diagnosticRangeCapability === undefined
+  ) {
+    throw invalidProtocolShape(command, "diagnostics.v2 vocabulary is unavailable");
+  }
+  const diagnostics = adapters.flatMap(({ capabilities }) =>
+    capabilities.filter(
+      ({ operation, backend }) =>
+        operation === DIAGNOSTICS_OPERATION && backend === DIAGNOSTICS_V2_BACKEND,
+    ),
+  );
+  if (
+    diagnostics.length === 0 ||
+    diagnostics.some(
+      ({ diagnosticSnapshotModes, diagnosticRangeCapability }) =>
+        diagnosticSnapshotModes === undefined ||
+        diagnosticSnapshotModes.length !== DIAGNOSTIC_OPERATION_SNAPSHOT_MODES.length ||
+        diagnosticSnapshotModes.some(
+          (mode, index) => mode !== DIAGNOSTIC_OPERATION_SNAPSHOT_MODES[index],
+        ) ||
+        diagnosticRangeCapability !== DIAGNOSTIC_RANGE_CAPABILITY,
+    )
+  ) {
+    throw invalidProtocolShape(command, "incoherent diagnostics.v2 language metadata");
+  }
 }
 
 function normalizeSafety(command: string, value: unknown): RefactorKitSafetyCapabilities {
@@ -1812,9 +2016,12 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
       throw invalidProtocolShape(command, "invalid method capability metadata");
     }
   }
+  let languageKernel: NormalizedLanguageKernelStatus | undefined;
   if (Object.prototype.hasOwnProperty.call(record, "languageKernel")) {
-    normalized.languageKernel = normalizeLanguageKernelStatus(command, record.languageKernel);
+    languageKernel = normalizeLanguageKernelStatus(command, record.languageKernel);
+    normalized.languageKernel = languageKernel;
   }
+  assertDiagnosticsV2LanguageMetadata(command, normalized.methods, languageKernel);
   if (Object.prototype.hasOwnProperty.call(record, "safety")) {
     normalized.safety = normalizeSafety(command, record.safety);
   }
