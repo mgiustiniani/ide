@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  normalizeRefactorKitMethodCapabilities,
   normalizeSavedSnapshotDefinitionResult,
   normalizeSavedSnapshotSemanticSessionStartResult,
   normalizeSavedSnapshotSemanticSessionStopResult,
@@ -1803,6 +1804,14 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
       stability: enumValue(command, capability, "stability", ["experimental", "preview", "stable"]),
     },
   };
+  if (Object.prototype.hasOwnProperty.call(record, "methods")) {
+    try {
+      const methods = normalizeRefactorKitMethodCapabilities(record.methods);
+      if (methods !== undefined) normalized.methods = methods;
+    } catch {
+      throw invalidProtocolShape(command, "invalid method capability metadata");
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(record, "languageKernel")) {
     normalized.languageKernel = normalizeLanguageKernelStatus(command, record.languageKernel);
   }
