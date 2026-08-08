@@ -15,9 +15,16 @@ import {
   type Xcom2ProjectConfigurationReason,
 } from "@ide/contracts";
 import { Xcom2ModuleConfigurationDiagnosticAlert } from "../Xcom2ModuleConfigurationDiagnosticAlert";
+import {
+  Xcom2ProjectBuildRecipeContribution,
+  type Xcom2ProjectBuildRecipeContributionPresentation,
+} from "./Xcom2ProjectBuildRecipeContribution";
 
 export const XCOM2_PROJECT_RECOGNITION_LIMITATION =
   "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution.";
+
+const XCOM2_PROJECT_RECOGNITION_WITH_RECIPE_LIMITATION =
+  "Recognition remains read-only: recipe review provides no Build, Run, Deploy, Cook, Launch, Problems, Logs, language support, or bottom contribution.";
 
 export interface Xcom2ProjectRecognitionPanelProps {
   /** Legacy convention-recognition snapshot retained for additive desktop migration. */
@@ -32,6 +39,8 @@ export interface Xcom2ProjectRecognitionPanelProps {
   readonly activeProjectDecisions?: readonly Readonly<Xcom2ProjectActivationDecision>[];
   /** Complete safe presentation to mirror for a project configuration stop. */
   readonly diagnosticPresentation?: Readonly<Xcom2ModuleConfigurationDiagnosticPresentation> | null;
+  /** Optional build-recipe contribution attached only to its matching active module card. */
+  readonly buildRecipeContribution?: Readonly<Xcom2ProjectBuildRecipeContributionPresentation> | null;
 }
 
 interface EvidenceRow {
@@ -103,12 +112,14 @@ function LegacyRecognitionDecision({
   confidence,
   completeness,
   reasons,
+  buildRecipeContribution,
 }: {
   readonly moduleRoot: string;
   readonly state: "active" | "needs-confirmation";
   readonly confidence: Xcom2ModuleActivationSnapshot["confidence"];
   readonly completeness: Xcom2ModuleActivationSnapshot["completeness"];
   readonly reasons: readonly Readonly<EvidenceRow>[];
+  readonly buildRecipeContribution?: Readonly<Xcom2ProjectBuildRecipeContributionPresentation>;
 }): JSX.Element {
   return (
     <section aria-label={`Recognized module ${moduleRoot}`} className={MODULE_CLASS_NAME}>
@@ -117,9 +128,20 @@ function LegacyRecognitionDecision({
         <Definition term="state" value={state} />
         <Definition term="confidence" value={confidence} />
         <Definition term="completeness" value={completeness} />
-        <Definition term="limitation" value={XCOM2_PROJECT_RECOGNITION_LIMITATION} wide />
+        <Definition
+          term="limitation"
+          value={
+            buildRecipeContribution
+              ? XCOM2_PROJECT_RECOGNITION_WITH_RECIPE_LIMITATION
+              : XCOM2_PROJECT_RECOGNITION_LIMITATION
+          }
+          wide
+        />
       </dl>
       <EvidenceTable caption={`Recognition evidence for ${moduleRoot}`} rows={reasons} />
+      {buildRecipeContribution ? (
+        <Xcom2ProjectBuildRecipeContribution contribution={buildRecipeContribution} />
+      ) : null}
     </section>
   );
 }
@@ -127,9 +149,11 @@ function LegacyRecognitionDecision({
 function LegacyDecisionPanel({
   decision,
   snapshot,
+  buildRecipeContribution,
 }: {
   readonly decision: Readonly<Xcom2ModuleActivationDecision>;
   readonly snapshot: Readonly<Xcom2ModuleActivationSnapshot>;
+  readonly buildRecipeContribution?: Readonly<Xcom2ProjectBuildRecipeContributionPresentation>;
 }): JSX.Element {
   return (
     <LegacyRecognitionDecision
@@ -141,6 +165,7 @@ function LegacyDecisionPanel({
         kind: evidenceKind,
         relativePath,
       }))}
+      buildRecipeContribution={buildRecipeContribution}
     />
   );
 }
@@ -148,9 +173,11 @@ function LegacyDecisionPanel({
 function ProjectDecisionPanel({
   decision,
   recognitionSnapshot,
+  buildRecipeContribution,
 }: {
   readonly decision: Readonly<Xcom2ProjectActivationDecision>;
   readonly recognitionSnapshot: Readonly<Xcom2ModuleActivationSnapshot>;
+  readonly buildRecipeContribution?: Readonly<Xcom2ProjectBuildRecipeContributionPresentation>;
 }): JSX.Element {
   const configurationReasons: Array<Readonly<Xcom2ProjectConfigurationReason>> = [];
   const recognitionReasons: EvidenceRow[] = [];
@@ -172,6 +199,7 @@ function ProjectDecisionPanel({
         confidence={decision.recognitionConfidence}
         completeness={recognitionSnapshot.completeness}
         reasons={recognitionReasons}
+        buildRecipeContribution={buildRecipeContribution}
       />
     );
   }
@@ -198,9 +226,20 @@ function ProjectDecisionPanel({
         <Definition term="source" value={decision.source} />
         <Definition term="activation confidence" value={decision.activationConfidence} />
         <Definition term="recognition confidence" value={decision.recognitionConfidence} />
-        <Definition term="limitation" value={XCOM2_PROJECT_RECOGNITION_LIMITATION} wide />
+        <Definition
+          term="limitation"
+          value={
+            buildRecipeContribution
+              ? XCOM2_PROJECT_RECOGNITION_WITH_RECIPE_LIMITATION
+              : XCOM2_PROJECT_RECOGNITION_LIMITATION
+          }
+          wide
+        />
       </dl>
       <EvidenceTable caption={`Activation reasons for ${decision.moduleRoot}`} rows={rows} />
+      {buildRecipeContribution ? (
+        <Xcom2ProjectBuildRecipeContribution contribution={buildRecipeContribution} />
+      ) : null}
     </section>
   );
 }
@@ -230,6 +269,7 @@ export function Xcom2ProjectRecognitionPanel({
   recognitionSnapshot,
   activeProjectDecisions,
   diagnosticPresentation,
+  buildRecipeContribution,
 }: Xcom2ProjectRecognitionPanelProps): JSX.Element {
   const headingId = useId();
   const projectMode = activeProjectDecisions !== undefined;
@@ -254,6 +294,11 @@ export function Xcom2ProjectRecognitionPanel({
                 key={decision.moduleRoot}
                 decision={decision}
                 recognitionSnapshot={effectiveRecognitionSnapshot}
+                buildRecipeContribution={
+                  buildRecipeContribution?.moduleRoot === decision.moduleRoot
+                    ? buildRecipeContribution
+                    : undefined
+                }
               />
             ))
           : activeDecisions.map((decision) => (
@@ -261,6 +306,11 @@ export function Xcom2ProjectRecognitionPanel({
                 key={decision.moduleRoot}
                 decision={decision}
                 snapshot={snapshot}
+                buildRecipeContribution={
+                  buildRecipeContribution?.moduleRoot === decision.moduleRoot
+                    ? buildRecipeContribution
+                    : undefined
+                }
               />
             ))}
 
