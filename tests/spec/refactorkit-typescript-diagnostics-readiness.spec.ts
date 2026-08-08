@@ -30,7 +30,7 @@ function capabilities(): RefactorKitCapabilities {
     api: "refactorkit",
     apiVersion: "0.2",
     provider: "an-arbitrary-provider-name",
-    providerVersion: "0.6.2",
+    providerVersion: "0.7.0-SNAPSHOT",
     javaImportExternalClass: {
       supported: false,
       targetDirectory: false,
@@ -55,7 +55,7 @@ function capabilities(): RefactorKitCapabilities {
                 stability: "experimental",
                 evidence: "compiler",
                 mutationAuthority: "none",
-                backend: "typescript-semantic-diagnostics-v1",
+                backend: "typescript-compiler-exact-v1",
                 runtime: structuredClone(runtime),
                 extensions: ["ts", "tsx"],
               },
@@ -88,11 +88,12 @@ function readySession(): TypeScriptDiagnosticsSemanticSession {
     workspaceId: "workspace:authorized",
     workspaceGeneration: 7,
     sessionId: "typescript-session:7",
+    semanticLease: "semantic-7f07212d-9a7a-4f86-a300-6ee5e7c6dbdd",
     snapshotHash: "sha256:current-source-snapshot",
-    providerVersion: "0.6.2",
+    providerVersion: "0.7.0-SNAPSHOT",
     toolchain: {
       evidence: "compiler",
-      backend: "typescript-semantic-diagnostics-v1",
+      backend: "typescript-compiler-exact-v1",
       runtime: structuredClone(runtime),
       extensions: ["ts", "tsx"],
     },
@@ -103,11 +104,16 @@ function input(): TypeScriptDiagnosticsPolicyInput {
   return {
     languageId: "typescript",
     sourceExtension: "ts",
+    requestId: "diagnostics-request:7",
     workspaceId: "workspace:authorized",
     workspaceGeneration: 7,
     authorizedWorkspaceId: "workspace:authorized",
     authorizedWorkspaceGeneration: 7,
     snapshotHash: "sha256:current-source-snapshot",
+    sourceAuthority: {
+      kind: "immutable-editor-overlay",
+      documents: [{ path: "src/example.ts", version: 7, content: "const value = 1;\n" }],
+    },
     capabilities: capabilities(),
     semanticSession: readySession(),
   };
@@ -128,13 +134,19 @@ describe("@REQ-REFACTORKIT-TS-001 TypeScript diagnostics readiness", () => {
     expect(decision).toEqual({
       kind: "ready",
       request: {
+        schemaVersion: 2,
+        operation: "diagnostics.v2",
+        requestId: "diagnostics-request:7",
         languageId: "typescript",
         workspaceId: "workspace:authorized",
         workspaceGeneration: 7,
         sessionId: "typescript-session:7",
-        snapshotHash: "sha256:current-source-snapshot",
-        providerVersion: "0.6.2",
-        backend: "typescript-semantic-diagnostics-v1",
+        expectedSnapshotHash: "sha256:current-source-snapshot",
+        semanticLease: "semantic-7f07212d-9a7a-4f86-a300-6ee5e7c6dbdd",
+        sourceAuthority: {
+          kind: "immutable-editor-overlay",
+          documents: [{ path: "src/example.ts", version: 7, content: "const value = 1;\n" }],
+        },
       },
     });
     if (decision.kind !== "ready") throw new Error("Expected diagnostics readiness");
@@ -342,7 +354,7 @@ describe("@REQ-REFACTORKIT-TS-001 TypeScript diagnostics readiness", () => {
       "provider-version-mismatch",
       (value: TypeScriptDiagnosticsPolicyInput) => {
         const session = value.semanticSession;
-        if (session.state === "ready") session.providerVersion = "0.6.1";
+        if (session.state === "ready") session.providerVersion = "0.6.2";
       },
     ],
     [
