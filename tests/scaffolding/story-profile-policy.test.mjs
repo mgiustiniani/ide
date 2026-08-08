@@ -684,6 +684,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
     "@REQ-XCOM2-MACHINE-SETTINGS-001",
+    "@REQ-XCOM2-PROJECT-BUILD-RECIPE-001",
     "@REQ-XCOM2-PROJECT-FOUNDRY-001",
     "@REQ-XCOM2-PROJECT-FOUNDRY-002",
     "@REQ-XCOM2-PROJECT-FOUNDRY-003",
@@ -691,16 +692,14 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(partial.flatMap(requirementIds), []);
-  assert.deepEqual(notImplemented.flatMap(requirementIds).sort(), [
-    "@REQ-XCOM2-PROJECT-BUILD-RECIPE-001",
-  ]);
+  assert.deepEqual(notImplemented.flatMap(requirementIds), []);
   assert.equal(declared.length, 18);
   assert.equal(validated.length, 9);
-  assert.equal(harnessOnly.length, 8);
+  assert.equal(harnessOnly.length, 9);
   assert.equal(partial.length, 0);
-  assert.equal(notImplemented.length, 1);
+  assert.equal(notImplemented.length, 0);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 8);
+  assert.equal(harness.length, 9);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -708,7 +707,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /8 scenarios \(8 skipped\)[\s\S]*301 steps \(301 skipped\)/,
+    /9 scenarios \(9 skipped\)[\s\S]*343 steps \(343 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -716,7 +715,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 8);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 9);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
