@@ -200,8 +200,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "it can authorize at most one future {string} Build request and no Deploy, Cook, or Launch request",
-  function (action: string) {
-    recipe(this).assertApprovalScope(action);
+  async function (action: string) {
+    await recipe(this).assertApprovalScope(action);
   },
 );
 
@@ -254,8 +254,8 @@ Then<StoryWorld>("no Build, Deploy, Cook, or Launch action has occurred", functi
 
 When<StoryWorld>(
   "each of these changes is considered before any future use of the approval:",
-  function (table: DataTable) {
-    recipe(this).assertRevocationCauses(table.hashes());
+  async function (table: DataTable) {
+    await recipe(this).assertRevocationCauses(table.hashes());
   },
 );
 
@@ -268,8 +268,8 @@ Then<StoryWorld>(
 
 Then<StoryWorld>(
   "a revoked approval cannot be restored or reused without a fresh inspection, review, and approval",
-  function () {
-    recipe(this).assertFreshReviewRequired();
+  async function () {
+    await recipe(this).assertFreshReviewRequired();
   },
 );
 

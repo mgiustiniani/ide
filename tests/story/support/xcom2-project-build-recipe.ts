@@ -7,16 +7,22 @@ import { tmpdir } from "node:os";
 
 import {
   approveXcom2ProjectBuildRecipe,
-  consumeXcom2ProjectBuildRecipeApproval,
-  reconcileXcom2ProjectBuildRecipeApproval,
   reviewXcom2ProjectBuildRecipe,
   type Xcom2NativeActivationEvidenceState,
   type Xcom2ProjectBuildRecipeApprovalDecision,
   type Xcom2ProjectBuildRecipeCandidate,
-  type Xcom2ProjectBuildRecipeReconciliationDecision,
   type Xcom2ProjectBuildRecipeReviewResult,
 } from "../../../packages/contracts/src/index.js";
 import { createBrowserAdapters } from "../../../packages/browser-adapters/src/index.js";
+import {
+  createXcom2ProjectBuildRecipeReviewService,
+  type Xcom2ProjectBuildRecipeReviewService,
+  type Xcom2ProjectBuildRecipeServiceConsumptionDecision,
+} from "../../../packages/web-core/src/xcom2/project-build-recipe-review-service.js";
+import type {
+  Xcom2ProjectBuildRecipeInspectionPort,
+  Xcom2ProjectBuildRecipeInspectionRequest,
+} from "../../../packages/web-core/src/ports/xcom2-project-build-recipe-inspection-port.js";
 import { act, fireEvent, render, within, type RenderResult } from "@testing-library/react";
 
 interface StoryDom {
@@ -57,9 +63,34 @@ interface AccessCounters {
   readonly "pfx_copy access": number;
 }
 
+type ApprovedDecision = Extract<
+  Xcom2ProjectBuildRecipeApprovalDecision,
+  { readonly kind: "approved" }
+>;
+
+interface ApprovalServiceEvidence {
+  readonly service: Xcom2ProjectBuildRecipeReviewService;
+  readonly approval: ApprovedDecision;
+  readonly initialCandidate: Readonly<Xcom2ProjectBuildRecipeCandidate>;
+  readonly freshCandidate: Readonly<Xcom2ProjectBuildRecipeCandidate>;
+  readonly inspectionRequests: Xcom2ProjectBuildRecipeInspectionRequest[];
+}
+
+interface RevocationServiceEvidence extends ApprovalServiceEvidence {
+  readonly cause: string;
+  readonly expectedFreshInspection: boolean;
+  readonly authorityBeforeAwait: unknown;
+  readonly decision: Xcom2ProjectBuildRecipeServiceConsumptionDecision;
+}
+
 const REQUIREMENT = "REQ-XCOM2-PROJECT-BUILD-RECIPE-001" as const;
 const WORKSPACE_ID = "xcom2-build-recipe-story" as const;
 const MODULE_ROOT = "Mods/RecipeFixture" as const;
+const INSPECTION_REQUEST = Object.freeze({
+  workspaceId: WORKSPACE_ID,
+  generation: 1,
+  moduleRoot: MODULE_ROOT,
+}) satisfies Readonly<Xcom2ProjectBuildRecipeInspectionRequest>;
 const SCRIPT_PATH = ".scripts/build.ps1" as const;
 const CONFIGURATION_PATH = ".ide/xcom2.json" as const;
 const NOTICE_PATH = "Mods/RecipeFixture/.scripts/X2ModBuildCommon.NOTICE.txt" as const;
@@ -220,17 +251,18 @@ export class Xcom2ProjectBuildRecipeHarness {
   #initialTree?: TreeRecording;
   #finalTree?: TreeRecording;
   #browserUnavailableObserved = false;
+  #productionUiConsumerAbsent = false;
   #canaryAbsentFromRenderedUi = false;
   #approvalNativeCallBaseline = 0;
   #approvalControlDisabledAtRequest = false;
   #approvalRequestStarts = 0;
   #inspectedCandidate?: Readonly<Xcom2ProjectBuildRecipeCandidate>;
   #readyReview?: Extract<Xcom2ProjectBuildRecipeReviewResult, { readonly kind: "ready" }>;
-  #approvalDecision?: Extract<
-    Xcom2ProjectBuildRecipeApprovalDecision,
-    { readonly kind: "approved" }
-  >;
-  #revocationDecisions: readonly Readonly<Xcom2ProjectBuildRecipeReconciliationDecision>[] = [];
+  #approvalDecision?: ApprovedDecision;
+  #approvalServiceEvidence?: ApprovalServiceEvidence;
+  #unchangedFreshConsumption?: Xcom2ProjectBuildRecipeServiceConsumptionDecision;
+  #unchangedFreshInspectionCount = 0;
+  #revocationEvidence: readonly RevocationServiceEvidence[] = [];
   #displayedDigest?: string;
   #nativeActivationState: Readonly<Xcom2NativeActivationEvidenceState> = Object.freeze({
     kind: "revoked",
@@ -418,14 +450,11 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   async assertBrowserUnavailable(): Promise<void> {
-    const request = Object.freeze({
-      workspaceId: WORKSPACE_ID,
-      generation: 1,
-      moduleRoot: MODULE_ROOT,
-    });
     let rejection: unknown;
     try {
-      await createBrowserAdapters().xcom2ProjectBuildRecipeInspectionAdapter.inspect(request);
+      await createBrowserAdapters().xcom2ProjectBuildRecipeInspectionAdapter.inspect(
+        INSPECTION_REQUEST,
+      );
     } catch (error) {
       rejection = error;
     }
@@ -526,7 +555,15 @@ export class Xcom2ProjectBuildRecipeHarness {
     });
     const review = findReviewRoot(this.#requireSurface());
     assert.match(review.textContent ?? "", /X2ModBuildCommon, MIT-licensed/u);
-    this.#assertReviewField("notice identity", NOTICE_IDENTITY);
+    const renderedIdentity = this.#reviewFieldText("notice identity");
+    const renderedNotice = this.#reviewFieldText("attribution notice");
+    assert.equal(renderedIdentity, NOTICE_IDENTITY);
+    assert.equal(renderedNotice, NOTICE.trim());
+    assert.notEqual(
+      renderedNotice,
+      renderedIdentity,
+      "Rendered attribution notice text must be distinct from its notice identity",
+    );
   }
 
   assertStructuredRoles(rows: readonly Readonly<Record<string, string>>[]): void {
@@ -717,9 +754,17 @@ export class Xcom2ProjectBuildRecipeHarness {
     const reviewRoot = findReviewRoot(this.#requireSurface());
     const controls = exactControls(reviewRoot, name);
     assert.equal(controls.length, 1);
-    const decision = approveXcom2ProjectBuildRecipe(this.#requireReadyReview());
-    if (decision.kind !== "approved") throw new Error(`Approval was refused: ${decision.code}`);
-    this.#approvalDecision = decision;
+    const serviceEvidence = await this.#createApprovedServiceEvidence(
+      this.#createRecipeCandidate(),
+    );
+    assert.deepEqual(serviceEvidence.initialCandidate, this.#requireInspectedCandidate());
+    assert.notStrictEqual(
+      serviceEvidence.freshCandidate,
+      serviceEvidence.initialCandidate,
+      "Fresh inspection evidence must not reuse the retained candidate object",
+    );
+    this.#approvalServiceEvidence = serviceEvidence;
+    this.#approvalDecision = serviceEvidence.approval;
     this.#approvalNativeCallBaseline = this.#nativeCalls.length;
     fireEvent.click(controls[0]!);
     this.#approvalControlDisabledAtRequest =
@@ -738,7 +783,7 @@ export class Xcom2ProjectBuildRecipeHarness {
 
   assertExactApprovalRequest(): void {
     const approval = this.#requireApprovalDecision();
-    const review = this.#requireReadyReview();
+    const review = this.#requireApprovalServiceReadyReview();
     assert.deepEqual(Object.keys(approval.request), ["recipeDigest", "recipe"]);
     assert.equal(approval.request.recipeDigest, this.#displayedDigest);
     assert.deepEqual(approval.request.recipe, review.recipe);
@@ -777,9 +822,10 @@ export class Xcom2ProjectBuildRecipeHarness {
     assert.equal(approval.request.recipeDigest, this.#displayedDigest);
   }
 
-  assertApprovalScope(action: string): void {
+  async assertApprovalScope(action: string): Promise<void> {
     assert.equal(action, "default");
     const approval = this.#requireApprovalDecision();
+    const evidence = this.#requireApprovalServiceEvidence();
     assert.equal(approval.request.recipe.action, action);
     assert.deepEqual(Object.keys(approval.state).sort(), [
       "authority",
@@ -787,6 +833,34 @@ export class Xcom2ProjectBuildRecipeHarness {
       "kind",
       "request",
     ]);
+    assert.deepEqual(evidence.inspectionRequests, [INSPECTION_REQUEST]);
+
+    const firstPromise = evidence.service.consumeApproval(INSPECTION_REQUEST);
+    assert.deepEqual(evidence.service.state.authority, {
+      kind: "revoked",
+      authority: "volatile-one-shot",
+      consumed: false,
+    });
+    const first = await firstPromise;
+    assert.deepEqual(evidence.inspectionRequests, [INSPECTION_REQUEST, INSPECTION_REQUEST]);
+    assert.deepEqual(evidence.initialCandidate, evidence.freshCandidate);
+    assert.deepEqual(first, {
+      kind: "authorized",
+      action: "default",
+      recipeDigest: approval.request.recipeDigest,
+      state: { kind: "consumed", authority: "volatile-one-shot", consumed: true },
+    });
+
+    const replay = await evidence.service.consumeApproval(INSPECTION_REQUEST);
+    assert.deepEqual(replay, {
+      kind: "refused",
+      code: "authority-consumed",
+      state: first.state,
+    });
+    assert.equal(evidence.inspectionRequests.length, 2);
+    this.#unchangedFreshConsumption = first;
+    this.#unchangedFreshInspectionCount = evidence.inspectionRequests.length;
+
     const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
     assert.doesNotMatch(text, /(?:Deploy|Cook|Launch) approved/iu);
   }
@@ -797,10 +871,14 @@ export class Xcom2ProjectBuildRecipeHarness {
       false,
     );
     const review = findReviewRoot(this.#requireSurface());
-    assert.equal(exactControls(review, "Build").length, 0);
-    assert.equal(exactControls(review, "Deploy").length, 0);
-    assert.equal(exactControls(review, "Cook").length, 0);
-    assert.equal(exactControls(review, "Launch").length, 0);
+    for (const action of ["Consume approval", "Execute", "Build", "Deploy", "Cook", "Launch"]) {
+      assert.equal(
+        exactControls(review, action).length,
+        0,
+        `Production UI unexpectedly exposes ${action}`,
+      );
+    }
+    this.#productionUiConsumerAbsent = true;
   }
 
   assertAccessibleResult(result: string): void {
@@ -855,74 +933,98 @@ export class Xcom2ProjectBuildRecipeHarness {
     assert.equal(this.#processAttempts.length, 0);
   }
 
-  assertRevocationCauses(rows: readonly Readonly<Record<string, string>>[]): void {
+  async assertRevocationCauses(rows: readonly Readonly<Record<string, string>>[]): Promise<void> {
     assert.deepEqual(tableValues(rows, "revocation cause"), [...EXPECTED_REVOCATIONS]);
-    const approval = this.#requireApprovalDecision().state;
-    const changedReviews = this.#revocationCandidates().map((candidate) =>
-      reviewXcom2ProjectBuildRecipe(candidate),
-    );
-    this.#revocationDecisions = Object.freeze([
-      reconcileXcom2ProjectBuildRecipeApproval(approval, { kind: "workspace-refresh" }),
-      ...changedReviews.map((review) =>
-        reconcileXcom2ProjectBuildRecipeApproval(approval, {
-          kind: "current-review",
-          review,
-        }),
-      ),
-    ]);
-    assert.equal(this.#revocationDecisions.length, EXPECTED_REVOCATIONS.length);
+    const evidence: RevocationServiceEvidence[] = [];
+
+    const refreshed = await this.#createApprovedServiceEvidence(this.#createRecipeCandidate());
+    refreshed.service.refresh();
+    const refreshAuthority = structuredClone(refreshed.service.state.authority);
+    const refreshDecision = await refreshed.service.consumeApproval(INSPECTION_REQUEST);
+    evidence.push({
+      ...refreshed,
+      cause: EXPECTED_REVOCATIONS[0],
+      expectedFreshInspection: false,
+      authorityBeforeAwait: refreshAuthority,
+      decision: refreshDecision,
+    });
+
+    for (const [index, changedCandidate] of this.#revocationCandidates().entries()) {
+      const changed = await this.#createApprovedServiceEvidence(changedCandidate);
+      if (index === 3) {
+        assert.notDeepEqual(changed.freshCandidate.script, changed.initialCandidate.script);
+      }
+      if (index === 4) {
+        assert.notDeepEqual(changed.freshCandidate.provenance, changed.initialCandidate.provenance);
+        assert.notDeepEqual(
+          changed.freshCandidate.provenance.notice,
+          changed.initialCandidate.provenance.notice,
+        );
+      }
+      const decisionPromise = changed.service.consumeApproval(INSPECTION_REQUEST);
+      const authorityBeforeAwait = structuredClone(changed.service.state.authority);
+      const decision = await decisionPromise;
+      evidence.push({
+        ...changed,
+        cause: EXPECTED_REVOCATIONS[index + 1]!,
+        expectedFreshInspection: true,
+        authorityBeforeAwait,
+        decision,
+      });
+    }
+
+    this.#revocationEvidence = Object.freeze(evidence);
+    assert.equal(this.#revocationEvidence.length, EXPECTED_REVOCATIONS.length);
+
+    assert.equal(this.#revocationEvidence[4]!.decision.kind, "refused");
+    assert.equal(this.#revocationEvidence[5]!.decision.kind, "refused");
   }
 
   assertSynchronousRevocation(): void {
-    assert.equal(this.#revocationDecisions.length, EXPECTED_REVOCATIONS.length);
-    for (const [index, decision] of this.#revocationDecisions.entries()) {
+    assert.equal(this.#revocationEvidence.length, EXPECTED_REVOCATIONS.length);
+    for (const lifecycle of this.#revocationEvidence) {
       assert.deepEqual(
-        decision,
-        {
-          kind: "revoked",
-          code: index === 0 ? "workspace-refresh" : "recipe-changed",
-          state: { kind: "revoked", authority: "volatile-one-shot", consumed: false },
-        },
-        EXPECTED_REVOCATIONS[index],
+        lifecycle.authorityBeforeAwait,
+        { kind: "revoked", authority: "volatile-one-shot", consumed: false },
+        lifecycle.cause,
       );
-    }
-  }
-
-  assertFreshReviewRequired(): void {
-    const approval = this.#requireApprovalDecision();
-    const current = {
-      workspaceId: approval.request.recipe.workspace.id,
-      workspaceGeneration: approval.request.recipe.workspace.generation,
-      moduleId: approval.request.recipe.module.id,
-      moduleRoot: approval.request.recipe.module.root,
-      activationGeneration: approval.request.recipe.module.activationGeneration,
-      inspectionGeneration: approval.request.recipe.inspectionGeneration,
-    };
-    for (const decision of this.#revocationDecisions) {
-      assert.equal(decision.kind, "revoked");
-      if (decision.kind !== "revoked") continue;
       assert.deepEqual(
-        consumeXcom2ProjectBuildRecipeApproval(decision.state, {
-          action: "default",
-          recipeDigest: approval.request.recipeDigest,
-          current,
-        }),
+        lifecycle.decision,
         {
           kind: "refused",
           code: "authority-revoked",
-          state: decision.state,
+          state: { kind: "revoked", authority: "volatile-one-shot", consumed: false },
         },
+        lifecycle.cause,
       );
+      assert.equal(
+        lifecycle.inspectionRequests.length,
+        lifecycle.expectedFreshInspection ? 2 : 1,
+        lifecycle.cause,
+      );
+      if (lifecycle.expectedFreshInspection) {
+        assert.deepEqual(lifecycle.inspectionRequests, [INSPECTION_REQUEST, INSPECTION_REQUEST]);
+      }
+    }
+  }
+
+  async assertFreshReviewRequired(): Promise<void> {
+    for (const lifecycle of this.#revocationEvidence) {
+      const inspectionCount = lifecycle.inspectionRequests.length;
+      const decision = await lifecycle.service.consumeApproval(INSPECTION_REQUEST);
       assert.deepEqual(
-        reconcileXcom2ProjectBuildRecipeApproval(decision.state, {
-          kind: "current-review",
-          review: this.#requireReadyReview(),
-        }),
+        decision,
         {
           kind: "refused",
-          code: "authority-unavailable",
-          state: decision.state,
+          code: "authority-revoked",
+          state: { kind: "revoked", authority: "volatile-one-shot", consumed: false },
         },
+        lifecycle.cause,
+      );
+      assert.equal(
+        lifecycle.inspectionRequests.length,
+        inspectionCount,
+        `Revoked authority unexpectedly initiated inspection for ${lifecycle.cause}`,
       );
     }
   }
@@ -980,6 +1082,15 @@ export class Xcom2ProjectBuildRecipeHarness {
         absentFromRenderedUi: this.#canaryAbsentFromRenderedUi,
       },
       browserUnavailableObserved: this.#browserUnavailableObserved,
+      approvalDecisionEvidence: {
+        unchangedFreshInspectionCount: this.#unchangedFreshInspectionCount,
+        unchangedFreshDecision: this.#unchangedFreshConsumption,
+        revocationFreshInspectionCounts: this.#revocationEvidence.map(
+          ({ cause, inspectionRequests }) =>
+            Object.freeze({ cause, count: inspectionRequests.length }),
+        ),
+        productionUiExecutionOrConsumptionActionAbsent: this.#productionUiConsumerAbsent,
+      },
       accessCounts: this.#accessCounters(),
     };
   }
@@ -1373,11 +1484,18 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   #assertReviewField(label: string, expected: string): void {
+    assert.equal(this.#reviewFieldText(label), expected);
+  }
+
+  #reviewFieldText(label: string): string {
     const review = findReviewRoot(this.#requireSurface());
     const term = within(review).getByText(label, { exact: true });
+    assert.equal(term.tagName, "DT", `Expected ${label} to be an accessible description term`);
     const container = term.closest("div") ?? term.parentElement;
     assert.ok(container);
-    assert.ok(within(container).getByText(expected, { exact: true }));
+    const descriptions = container.querySelectorAll(":scope > dd");
+    assert.equal(descriptions.length, 1, `Expected one rendered description for ${label}`);
+    return descriptions[0]!.textContent ?? "";
   }
 
   #createRecipeCandidate(): Xcom2ProjectBuildRecipeCandidate {
@@ -1495,14 +1613,24 @@ export class Xcom2ProjectBuildRecipeHarness {
 
   #revocationCandidates(): readonly Xcom2ProjectBuildRecipeCandidate[] {
     const changed = Array.from({ length: 8 }, () =>
-      structuredClone(this.#requireInspectedCandidate()),
+      structuredClone(this.#createRecipeCandidate()),
     ) as Xcom2ProjectBuildRecipeCandidate[];
     changed[0]!.workspace.id = `${WORKSPACE_ID}:switched`;
     changed[1]!.workspace.generation += 1;
     changed[2]!.module.id = "xcom2-module:Replacement";
     changed[2]!.module.root = "Mods/Replacement";
     changed[2]!.arguments[0]!.value = "Mods/Replacement";
-    (changed[3]!.script as { entryType: string }).entryType = "symlink";
+    changed[3]!.script.sha256 = "0".repeat(64);
+    changed[3]!.script.byteSize += 1;
+    Object.defineProperty(changed[4]!.provenance, "project", {
+      enumerable: true,
+      value: "ChangedBuildConcepts",
+    });
+    Object.defineProperty(changed[4]!.provenance, "license", {
+      enumerable: true,
+      value: "changed-license",
+    });
+    changed[4]!.provenance.notice.identity = `${NOTICE_IDENTITY}:changed`;
     changed[4]!.provenance.notice.text += " Updated attribution.";
     changed[4]!.provenance.notice.sha256 = sha256(changed[4]!.provenance.notice.text);
     changed[5]!.inspectionGeneration += 1;
@@ -1511,6 +1639,42 @@ export class Xcom2ProjectBuildRecipeHarness {
     changed[6]!.unresolvedPrerequisites[4]!.identity = "workshop:changed";
     (changed[7] as { schemaVersion: number }).schemaVersion = 2;
     return changed;
+  }
+
+  async #createApprovedServiceEvidence(
+    fresh: Readonly<Xcom2ProjectBuildRecipeCandidate>,
+  ): Promise<ApprovalServiceEvidence> {
+    const initialCandidate = structuredClone(this.#createRecipeCandidate());
+    const freshCandidate = structuredClone(fresh);
+    const inspectionRequests: Xcom2ProjectBuildRecipeInspectionRequest[] = [];
+    const port: Xcom2ProjectBuildRecipeInspectionPort = {
+      inspect: async (request) => {
+        const inspectionIndex = inspectionRequests.length;
+        inspectionRequests.push(structuredClone(request));
+        const candidate = inspectionIndex === 0 ? initialCandidate : freshCandidate;
+        assert.ok(
+          inspectionIndex <= 1,
+          `Unexpected third inspection for one-shot approval evidence: ${inspectionIndex + 1}`,
+        );
+        await Promise.resolve();
+        return structuredClone(candidate);
+      },
+    };
+    const service = createXcom2ProjectBuildRecipeReviewService(port);
+    const review = await service.review(INSPECTION_REQUEST);
+    assert.equal(review.kind, "ready");
+    const approval = service.approve();
+    if (approval.kind !== "approved") {
+      throw new Error(`Pure service approval evidence was refused: ${approval.code}`);
+    }
+    assert.deepEqual(inspectionRequests, [INSPECTION_REQUEST]);
+    return {
+      service,
+      approval,
+      initialCandidate,
+      freshCandidate,
+      inspectionRequests,
+    };
   }
 
   #scriptEntry(): TreeEntry {
@@ -1584,11 +1748,22 @@ export class Xcom2ProjectBuildRecipeHarness {
     return this.#readyReview;
   }
 
-  #requireApprovalDecision(): Extract<
-    Xcom2ProjectBuildRecipeApprovalDecision,
-    { readonly kind: "approved" }
+  #requireApprovalServiceEvidence(): ApprovalServiceEvidence {
+    assert.ok(this.#approvalServiceEvidence, "Pure approval service evidence has not started");
+    return this.#approvalServiceEvidence;
+  }
+
+  #requireApprovalServiceReadyReview(): Extract<
+    Xcom2ProjectBuildRecipeReviewResult,
+    { readonly kind: "ready" }
   > {
-    assert.ok(this.#approvalDecision, "Production exact-recipe approval has not started");
+    const review = this.#requireApprovalServiceEvidence().service.state.review;
+    assert.ok(review && review.kind === "ready", "Pure approval service review is not ready");
+    return review;
+  }
+
+  #requireApprovalDecision(): ApprovedDecision {
+    assert.ok(this.#approvalDecision, "Pure exact-recipe approval evidence has not started");
     return this.#approvalDecision;
   }
 }
