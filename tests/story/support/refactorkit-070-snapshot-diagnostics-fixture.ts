@@ -167,10 +167,7 @@ const SOURCE_BUILT_DIAGNOSTICS_V2_ADVERTISEMENT = {
   },
 } as const;
 
-/**
- * Current production native normalization. It deliberately does not invent the
- * diagnostics.v2 method or diagnostic-specific metadata that production drops.
- */
+/** Current production native normalization with retained diagnostics.v2 metadata. */
 const CURRENT_IDE_CAPABILITIES = {
   api: "refactorkit",
   apiVersion: "0.2",
@@ -189,24 +186,8 @@ const CURRENT_IDE_CAPABILITIES = {
     available: true,
     schema: {
       schemaVersion: 1,
-      adapters: SOURCE_BUILT_DIAGNOSTICS_V2_ADVERTISEMENT.languageKernel.adapters.map(
-        (adapter) => ({
-          ...adapter,
-          capabilities: adapter.capabilities.map(
-            ({
-              diagnosticSnapshotModes: _snapshotModes,
-              diagnosticRangeCapability: _range,
-              ...capability
-            }) => capability,
-          ),
-        }),
-      ),
-      vocabulary: {
-        stability: LANGUAGE_VOCABULARY.stability,
-        evidence: LANGUAGE_VOCABULARY.evidence,
-        mutationAuthority: LANGUAGE_VOCABULARY.mutationAuthority,
-        executionMode: LANGUAGE_VOCABULARY.executionMode,
-      },
+      adapters: SOURCE_BUILT_DIAGNOSTICS_V2_ADVERTISEMENT.languageKernel.adapters,
+      vocabulary: LANGUAGE_VOCABULARY,
     },
   },
   safety: SOURCE_BUILT_DIAGNOSTICS_V2_ADVERTISEMENT.safety,
