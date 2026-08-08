@@ -14,5 +14,9 @@ export type { DocumentSyncPort } from "./document-sync-port";
 export type { JavaIntelligencePort } from "./java-intelligence-port";
 export type { Xcom2ModuleConfigurationPort } from "./xcom2-module-configuration-port";
 export type { Xcom2ModuleScannerPort } from "./xcom2-module-scanner-port";
+export type {
+  Xcom2ProjectBuildRecipeInspectionPort,
+  Xcom2ProjectBuildRecipeInspectionRequest,
+} from "./xcom2-project-build-recipe-inspection-port";
 export type { Xcom2SetupMonitorPort } from "./xcom2-setup-monitor-port";
 export type { Xcom2SetupPort, Xcom2SetupSubscription } from "./xcom2-setup-port";
