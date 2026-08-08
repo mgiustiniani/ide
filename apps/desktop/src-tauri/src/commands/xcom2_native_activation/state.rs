@@ -6,6 +6,7 @@ use super::contract::{
     NativeActivationCandidate, SelectedActivationModule,
 };
 use super::filesystem::{FileIdentity, WorkspaceBinding};
+use crate::commands::workspace_registry::CurrentWorkspaceBinding;
 
 #[derive(Debug, Clone)]
 pub(super) struct RetainedModule {
@@ -24,6 +25,7 @@ pub(super) struct PendingAuthority {
     pub activation_generation: u64,
     pub activation_attempt_receipt: String,
     pub binding: WorkspaceBinding,
+    pub registry_binding: CurrentWorkspaceBinding,
     pub candidate: NativeActivationCandidate,
     pub modules: BTreeMap<String, RetainedModule>,
 }
@@ -35,6 +37,7 @@ pub(super) struct AcceptedAuthority {
     pub activation_generation: u64,
     pub activation_attempt_receipt: String,
     pub binding: WorkspaceBinding,
+    pub registry_binding: CurrentWorkspaceBinding,
     pub acknowledgment: ActivationAcknowledgment,
     pub modules: Vec<RetainedModule>,
 }

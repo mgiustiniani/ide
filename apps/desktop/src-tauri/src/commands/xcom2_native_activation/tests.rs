@@ -6,7 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::state::Authority;
 use super::*;
-use crate::commands::workspace_registry::workspace_id_for_path;
+use crate::commands::workspace_registry::{
+    ensure_workspace_at, read_registry_at, workspace_id_for_path, WorkspaceMarker,
+};
 use crate::commands::xcom2_module_evidence::{Xcom2ModuleScanLimits, REQUIRED_LIMITS};
 
 const CANARY: &str = "RUST_BUILD_RECIPE_CANARY_MUST_NOT_RUN";
@@ -14,24 +16,53 @@ const NOTICE: &str = "Synthetic fixture derived from X2ModBuildCommon concepts. 
 
 struct Fixture {
     root: PathBuf,
+    registry_home: PathBuf,
+    registry_path: PathBuf,
+    workspace_id: String,
     process_canary: PathBuf,
 }
 
 impl Fixture {
     fn new(label: &str) -> Self {
+        Self::new_with_workspace_id(label, None)
+    }
+
+    fn new_with_workspace_id(label: &str, persisted_workspace_id: Option<&str>) -> Self {
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!(
+        let unique = format!(
             "ide-xcom2-native-activation-{label}-{nonce}-{}",
             NEXT_ID.fetch_add(1, Ordering::Relaxed)
-        ));
+        );
+        let root = std::env::temp_dir().join(&unique);
+        let registry_home = std::env::temp_dir().join(format!("{unique}-registry"));
+        let registry_path = registry_home.join("workspaces.json");
         let module = root.join("Mods/RecipeFixture");
         fs::create_dir_all(root.join(".ide")).expect("create .ide");
+        fs::create_dir_all(&registry_home).expect("create registry home");
         fs::create_dir_all(module.join(".scripts")).expect("create scripts");
         fs::create_dir_all(module.join("Highlander/XComGame")).expect("create Highlander source");
+        let root = root.canonicalize().expect("canonical fixture");
+        if let Some(workspace_id) = persisted_workspace_id {
+            let marker = WorkspaceMarker {
+                id: workspace_id.to_string(),
+                path: root.to_string_lossy().to_string(),
+                name: label.to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                updated_at: "2026-01-01T00:00:00Z".to_string(),
+            };
+            fs::write(
+                root.join(".ide/workspace.json"),
+                serde_json::to_vec_pretty(&marker).expect("serialize persisted marker"),
+            )
+            .expect("write persisted marker");
+        }
+        let workspace_id = ensure_workspace_at(&root, &registry_path)
+            .expect("register fixture workspace")
+            .id;
         fs::write(
             root.join(".ide/xcom2.json"),
             br#"{"version":1,"target":"wotc","moduleRoots":["Mods/RecipeFixture"]}"#,
@@ -56,14 +87,17 @@ impl Fixture {
         )
         .expect("write synthetic notice");
         Self {
-            root: root.canonicalize().expect("canonical fixture"),
+            root,
+            registry_home,
+            registry_path,
+            workspace_id,
             process_canary,
         }
     }
 
     fn request(&self) -> BeginActivationEvidenceRequest {
         BeginActivationEvidenceRequest {
-            workspace_id: workspace_id_for_path(&self.root),
+            workspace_id: self.workspace_id.clone(),
             workspace_generation: 7,
             scan_id: "xcom2-module-scan:fixture".to_string(),
             scan_generation: 5,
@@ -76,6 +110,7 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
+        let _ = fs::remove_dir_all(&self.registry_home);
     }
 }
 
@@ -83,7 +118,13 @@ fn begin_fixture(
     fixture: &Fixture,
     state: &Xcom2NativeActivationState,
 ) -> NativeActivationCandidate {
-    application::begin(state, &fixture.root, fixture.request()).expect("begin activation")
+    application::begin_with_registry(
+        state,
+        &fixture.root,
+        &fixture.registry_path,
+        fixture.request(),
+    )
+    .expect("begin activation")
 }
 
 fn acknowledge_fixture(
@@ -132,6 +173,118 @@ fn red_to_green_native_attempt_correlates_scan_configuration_and_random_handles(
     assert_ne!(scan_handle, &first.scan.evidence_handles[0].evidence_handle);
     assert!(scan_handle.len() <= 256);
     assert!(!scan_handle.contains("Mods/RecipeFixture"));
+}
+
+#[test]
+fn registry_binding_accepts_persisted_marker_and_fallback_ids_but_refuses_mismatch() {
+    let persisted_id = "story-credible-wotc";
+    let persisted = Fixture::new_with_workspace_id("persisted-id", Some(persisted_id));
+    assert_ne!(persisted_id, workspace_id_for_path(&persisted.root));
+    let state = Xcom2NativeActivationState::default();
+    let candidate = begin_fixture(&persisted, &state);
+    assert_eq!(candidate.scan.workspace_id, persisted_id);
+    assert_eq!(candidate.configuration.workspace_id, persisted_id);
+    assert!(candidate
+        .scan
+        .activation_attempt_receipt
+        .starts_with("xcom2-attempt:"));
+    assert!(candidate.scan.evidence_handles[0]
+        .evidence_handle
+        .starts_with("xcom2-evidence:"));
+    assert!(matches!(
+        acknowledge_fixture(&candidate, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+    let recipe = application::inspect(
+        &state,
+        BuildRecipeInspectionRequest {
+            workspace_id: persisted_id.to_string(),
+            generation: 7,
+            module_root: "Mods/RecipeFixture".to_string(),
+        },
+    )
+    .expect("inspect persisted-id workspace");
+    assert_eq!(recipe.workspace.id, persisted_id);
+    assert_eq!(recipe.workspace.generation, 7);
+
+    let fallback = Fixture::new("fallback-id");
+    assert_eq!(fallback.workspace_id, workspace_id_for_path(&fallback.root));
+    begin_fixture(&fallback, &Xcom2NativeActivationState::default());
+
+    let mut unknown = persisted.request();
+    unknown.workspace_id = "caller-controlled-workspace".to_string();
+    assert_eq!(
+        application::begin_with_registry(
+            &state,
+            &persisted.root,
+            &persisted.registry_path,
+            unknown,
+        ),
+        Err("workspace-identity-mismatch".to_string())
+    );
+    assert!(matches!(
+        state.inner.lock().expect("state lock").authority,
+        Authority::Revoked(ActivationRevocationCode::MixedActivationAttempt)
+    ));
+}
+
+#[test]
+fn registry_binding_refuses_stale_current_id_root_mismatch_and_post_begin_change() {
+    let stale = Fixture::new("stale-current");
+    let mut stale_registry = read_registry_at(&stale.registry_path).expect("read registry");
+    stale_registry.current_workspace_id = Some("workspace-no-longer-registered".to_string());
+    fs::write(
+        &stale.registry_path,
+        serde_json::to_vec_pretty(&stale_registry).expect("serialize stale registry"),
+    )
+    .expect("write stale registry");
+    assert_eq!(
+        application::begin_with_registry(
+            &Xcom2NativeActivationState::default(),
+            &stale.root,
+            &stale.registry_path,
+            stale.request(),
+        ),
+        Err("workspace-authority-unavailable".to_string())
+    );
+
+    let mismatch = Fixture::new("root-mismatch");
+    let other_root = mismatch.registry_home.join("other-root");
+    fs::create_dir(&other_root).expect("create other root");
+    let mut mismatch_registry = read_registry_at(&mismatch.registry_path).expect("read registry");
+    mismatch_registry.workspaces[0].root_path = other_root.to_string_lossy().to_string();
+    fs::write(
+        &mismatch.registry_path,
+        serde_json::to_vec_pretty(&mismatch_registry).expect("serialize mismatched registry"),
+    )
+    .expect("write mismatched registry");
+    assert_eq!(
+        application::begin_with_registry(
+            &Xcom2NativeActivationState::default(),
+            &mismatch.root,
+            &mismatch.registry_path,
+            mismatch.request(),
+        ),
+        Err("workspace-authority-unavailable".to_string())
+    );
+
+    let changed = Fixture::new_with_workspace_id("changed-current", Some("persisted-current"));
+    let state = Xcom2NativeActivationState::default();
+    let candidate = begin_fixture(&changed, &state);
+    let mut changed_registry = read_registry_at(&changed.registry_path).expect("read registry");
+    changed_registry.current_workspace_id = None;
+    fs::write(
+        &changed.registry_path,
+        serde_json::to_vec_pretty(&changed_registry).expect("serialize changed registry"),
+    )
+    .expect("write changed registry");
+    assert!(matches!(
+        acknowledge_fixture(&candidate, &state),
+        AcknowledgmentDecision::Refused {
+            code: AcknowledgmentRefusalCode::StaleCorrelation,
+            ..
+        }
+    ));
 }
 
 #[test]

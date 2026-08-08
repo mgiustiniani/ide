@@ -233,6 +233,52 @@ pub(crate) fn ensure_workspace_at(
         .ok_or_else(|| "Workspace registry update did not include current workspace".to_string())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CurrentWorkspaceBinding {
+    pub workspace_id: String,
+    pub canonical_root: PathBuf,
+    registry_path: PathBuf,
+}
+
+pub(crate) fn current_workspace_binding_at(
+    root: &Path,
+    registry_path: &Path,
+) -> Result<CurrentWorkspaceBinding, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| "Current workspace root is unavailable".to_string())?;
+    if !canonical_root.is_dir() {
+        return Err("Current workspace root is unavailable".to_string());
+    }
+
+    let registry = read_registry_at(registry_path)?;
+    let workspace_id = registry
+        .current_workspace_id
+        .ok_or_else(|| "Workspace registry has no current workspace".to_string())?;
+    let workspace = registry
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.id == workspace_id)
+        .ok_or_else(|| "Current workspace is not registered".to_string())?;
+    let registered_root = Path::new(&workspace.root_path)
+        .canonicalize()
+        .map_err(|_| "Registered current workspace root is unavailable".to_string())?;
+    if registered_root != canonical_root {
+        return Err("Registered current workspace root does not match the active root".to_string());
+    }
+
+    Ok(CurrentWorkspaceBinding {
+        workspace_id,
+        canonical_root,
+        registry_path: registry_path.to_path_buf(),
+    })
+}
+
+pub(crate) fn current_workspace_binding_is_current(binding: &CurrentWorkspaceBinding) -> bool {
+    current_workspace_binding_at(&binding.canonical_root, &binding.registry_path)
+        .is_ok_and(|current| current == *binding)
+}
+
 pub(crate) fn read_registry_at(path: &Path) -> Result<WorkspaceRegistry, String> {
     if !path.exists() {
         return Ok(WorkspaceRegistry::default());

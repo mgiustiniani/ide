@@ -20,7 +20,10 @@ use super::policy::{
     validate_begin_request, JS_MAX_SAFE_INTEGER,
 };
 use super::state::{AcceptedAuthority, Authority, PendingAuthority, Xcom2NativeActivationState};
-use crate::commands::workspace_registry::workspace_id_for_path;
+use crate::app_config::workspace_registry_path;
+use crate::commands::workspace_registry::{
+    current_workspace_binding_at, current_workspace_binding_is_current,
+};
 use crate::commands::xcom2_module_configuration::{
     read_configuration_at, validate_request as validate_configuration_request,
     Xcom2ModuleConfigurationReadRequest,
@@ -35,6 +38,22 @@ pub(super) fn begin(
     root: &Path,
     request: BeginActivationEvidenceRequest,
 ) -> Result<NativeActivationCandidate, String> {
+    let registry_path = match workspace_registry_path() {
+        Ok(path) => path,
+        Err(_) => {
+            state.revoke(ActivationRevocationCode::WorkspaceActivationStarted);
+            return Err("workspace-authority-unavailable".to_string());
+        }
+    };
+    begin_with_registry(state, root, &registry_path, request)
+}
+
+pub(super) fn begin_with_registry(
+    state: &Xcom2NativeActivationState,
+    root: &Path,
+    registry_path: &Path,
+    request: BeginActivationEvidenceRequest,
+) -> Result<NativeActivationCandidate, String> {
     // Every begin call is a revocation boundary, including malformed or failed attempts.
     state.revoke(ActivationRevocationCode::WorkspaceActivationStarted);
     validate_begin_request(&request)?;
@@ -47,7 +66,9 @@ pub(super) fn begin(
         return Err("candidate-invalid".to_string());
     }
     let binding = bind_workspace(root)?;
-    if workspace_id_for_path(&binding.canonical_root) != request.workspace_id {
+    let registry_binding = current_workspace_binding_at(&binding.canonical_root, registry_path)
+        .map_err(|_| "workspace-authority-unavailable".to_string())?;
+    if registry_binding.workspace_id != request.workspace_id {
         state.revoke(ActivationRevocationCode::MixedActivationAttempt);
         return Err("workspace-identity-mismatch".to_string());
     }
@@ -80,6 +101,11 @@ pub(super) fn begin(
         }
     };
 
+    if !binding_is_current(&binding) || !current_workspace_binding_is_current(&registry_binding) {
+        revoke_matching_preparation(state, activation_generation, &receipt);
+        return Err("activation-attempt-stale".to_string());
+    }
+
     let mut inner = state
         .inner
         .lock()
@@ -99,6 +125,7 @@ pub(super) fn begin(
         activation_generation,
         activation_attempt_receipt: receipt,
         binding,
+        registry_binding,
         candidate: candidate.clone(),
         modules,
     }));
@@ -287,7 +314,9 @@ pub(super) fn acknowledge(
     if selected != expected_active_handles(&pending.modules) {
         return refused(AcknowledgmentRefusalCode::IncompleteEvidence, snapshot);
     }
-    if !binding_is_current(&pending.binding) {
+    if !binding_is_current(&pending.binding)
+        || !current_workspace_binding_is_current(&pending.registry_binding)
+    {
         return refused(AcknowledgmentRefusalCode::StaleCorrelation, snapshot);
     }
 
@@ -316,6 +345,7 @@ pub(super) fn acknowledge(
         activation_generation: pending.activation_generation,
         activation_attempt_receipt: pending.activation_attempt_receipt.clone(),
         binding: pending.binding.clone(),
+        registry_binding: pending.registry_binding.clone(),
         acknowledgment: acknowledgment.clone(),
         modules,
     };
@@ -417,6 +447,9 @@ pub(super) fn inspect(
         (accepted, module, inner.next_inspection_generation)
     };
 
+    if !current_workspace_binding_is_current(&accepted.registry_binding) {
+        return Err("stale-workspace".to_string());
+    }
     let facts = inspect_recipe(
         &accepted.binding,
         &module.module_root,
