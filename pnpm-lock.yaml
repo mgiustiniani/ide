@@ -38,6 +38,9 @@ importers:
       "@vitest/coverage-v8":
         specifier: 3.2.7
         version: 3.2.7(supports-color@10.2.2)(vitest@3.2.7(@types/node@20.19.43)(jiti@1.21.7)(jsdom@29.1.1)(supports-color@10.2.2)(tsx@4.20.6)(yaml@2.9.0))
+      c8:
+        specifier: 10.1.3
+        version: 10.1.3
       eslint:
         specifier: ^9.10.0
         version: 9.39.4(jiti@1.21.7)(supports-color@10.2.2)
@@ -47,6 +50,15 @@ importers:
       globals:
         specifier: 17.7.0
         version: 17.7.0
+      istanbul-lib-coverage:
+        specifier: 3.2.2
+        version: 3.2.2
+      istanbul-lib-report:
+        specifier: 3.0.1
+        version: 3.0.1
+      istanbul-reports:
+        specifier: 3.2.0
+        version: 3.2.0
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
@@ -1823,6 +1835,12 @@ packages:
         integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==,
       }
 
+  "@types/istanbul-lib-coverage@2.0.6":
+    resolution:
+      {
+        integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==,
+      }
+
   "@types/json-schema@7.0.15":
     resolution:
       {
@@ -2450,6 +2468,19 @@ packages:
       {
         integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==,
       }
+
+  c8@10.1.3:
+    resolution:
+      {
+        integrity: sha512-LvcyrOAaOnrrlMpW22n690PUvxiq4Uf9WMhQwNJ9vgagkL/ph1+D4uvjvDA5XCbykrc0sx+ay6pVi9YZ1GnhyA==,
+      }
+    engines: { node: ">=18" }
+    hasBin: true
+    peerDependencies:
+      monocart-coverage-reports: ^2
+    peerDependenciesMeta:
+      monocart-coverage-reports:
+        optional: true
 
   cac@6.7.14:
     resolution:
@@ -5290,6 +5321,13 @@ packages:
         integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==,
       }
 
+  v8-to-istanbul@9.3.0:
+    resolution:
+      {
+        integrity: sha512-kiGUalWN+rgBJ/1OHZsBtU4rXZOfj/7rKQxULKlIzwzQSvMJUUNgPwJEEh7gU6xEVxC0ahoOBvN2YI8GH6FNgA==,
+      }
+    engines: { node: ">=10.12.0" }
+
   validate-npm-package-license@3.0.4:
     resolution:
       {
@@ -6467,6 +6505,8 @@ snapshots:
 
   "@types/estree@1.0.9": {}
 
+  "@types/istanbul-lib-coverage@2.0.6": {}
+
   "@types/json-schema@7.0.15": {}
 
   "@types/node@20.19.43":
@@ -6923,6 +6963,20 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
+
+  c8@10.1.3:
+    dependencies:
+      "@bcoe/v8-coverage": 1.0.2
+      "@istanbuljs/schema": 0.1.6
+      find-up: 5.0.0
+      foreground-child: 3.3.1
+      istanbul-lib-coverage: 3.2.2
+      istanbul-lib-report: 3.0.1
+      istanbul-reports: 3.2.0
+      test-exclude: 7.0.2
+      v8-to-istanbul: 9.3.0
+      yargs: 17.7.3
+      yargs-parser: 21.1.1
 
   cac@6.7.14: {}
 
@@ -8604,6 +8658,12 @@ snapshots:
   util-arity@1.1.0: {}
 
   util-deprecate@1.0.2: {}
+
+  v8-to-istanbul@9.3.0:
+    dependencies:
+      "@jridgewell/trace-mapping": 0.3.31
+      "@types/istanbul-lib-coverage": 2.0.6
+      convert-source-map: 2.0.0
 
   validate-npm-package-license@3.0.4:
     dependencies:

@@ -15,5 +15,11 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["cucumber.js", "vitest.spec.config.ts", "tests/story/**/*.ts", "tests/spec/**/*.ts"]
+  "include": [
+    "cucumber.js",
+    "vitest.spec.config.ts",
+    "vitest.req-xcom2-project-build-recipe.coverage.config.ts",
+    "tests/story/**/*.ts",
+    "tests/spec/**/*.ts"
+  ]
 }

@@ -108,6 +108,12 @@ const xcom2ProjectFoundryTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+const xcom2ProjectBuildRecipeTauriHarness = {
+  ...common,
+  tags: "@REQ-XCOM2-PROJECT-BUILD-RECIPE-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const xcom2ProjectFoundryApplyTauriHarness = {
   ...common,
   tags: "@REQ-XCOM2-PROJECT-FOUNDRY-002",
@@ -176,6 +182,7 @@ export {
   desktopLayoutNativeGui,
   xcom2MachineSettingsTauriHarness,
   xcom2ProjectFoundryTauriHarness,
+  xcom2ProjectBuildRecipeTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,
   xcom2ProjectFoundryDestinationConflictTauriHarness,
   xcom2ProjectFoundryVerifiedCleanupTauriHarness,
