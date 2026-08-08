@@ -916,7 +916,22 @@ A separate supporting source-built diagnostics smoke observed the same clean det
 
 ## ADR 0012 — Native Activation-Evidence Authority for XCOM 2 Build-Recipe Inspection
 
-**Status:** Accepted planned architecture; implementation-informed at exact repository commit `0d7637b86273e96cc1b4da37c4378f9183ce6a81`. `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remains declared `@not-implemented` pending the independent technical gate. This ADR records the authority decision and bounded implementation evidence; it is not requirement completion, validation, or promotion evidence.
+**Status:** Accepted. The architectural decision and rationale were accepted with implementation-informed evidence at exact repository commit `0d7637b86273e96cc1b4da37c4378f9183ce6a81`. At repository HEAD `c7c922c05d5d10b14f004402d7934179185b8ae5`, `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` is declared `@implemented-not-e2e-validated`. This lifecycle statement remains evidence-bounded and is not a final delivery or reviewer verdict.
+
+### Lifecycle and evidence amendment
+
+The original `0d7637b86273e96cc1b4da37c4378f9183ce6a81` rationale and evidence boundary below remain historical; this amendment does not rewrite them. The technical gate returned PASS at pre-promotion production revision `6e4276bf7781d78ad38e628fd02649f2eb4a12ff`. Status-only promotion followed at `3644142043a3a490062cb9932162aa992ffacbde`, and HEAD `c7c922c05d5d10b14f004402d7934179185b8ae5` routes the promoted scenario through the implemented deterministic Tauri-harness aggregate.
+
+At that current declaration boundary:
+
+- the production-composed focused deterministic Tauri-harness Story passed 1 scenario and 41 Gherkin steps; the runner reported 42 step executions when its cleanup hook is included;
+- the implemented inventory is 18 scenarios: 9 `@implemented-and-validated` and 9 `@implemented-not-e2e-validated`;
+- the full implemented Story aggregate passed 2 web scenarios/16 runner steps, 9 deterministic Tauri-harness scenarios/343 runner steps, and 7 native GUI scenarios/198 runner steps, for 18 scenarios/557 runner steps total; and
+- the pre-promotion technical gate reported 380 passing Specs, 1,792 passing package tests, and 265 passing Cargo tests with 10 ignored; canonical dual-runner coverage evidence was valid at that revision.
+
+These evidence classes remain separate. No post-documentation technical-gate or requirements-quality-reviewer rerun has yet been recorded, and no final requirements-quality-reviewer PASS is claimed. The native GUI evidence covers activation regressions only, not recipe review or approval. There is no application-package, bundle, installer, cross-platform, Rust-coverage, or manual-accessibility claim.
+
+The accepted authority boundary is unchanged: metadata-only review and volatile exact one-shot approval, opaque native activation evidence, exact lifecycle revocation, and browser unavailability. It adds no Build, Deploy, Cook, or Launch behavior; process, shell, network, or write authority; SDK, game, prefix, or proprietary-data access; or copied `modxcom`, GPL, proprietary, source, asset, or log content.
 
 ### Context
 
@@ -949,13 +964,13 @@ Adopt **native activation-evidence authority with opaque acknowledgment and toke
 
 ### Evidence
 
-The decision is informed by the following bounded repository evidence at `0d7637b86273e96cc1b4da37c4378f9183ce6a81`:
+The decision was initially informed by the following bounded repository evidence at `0d7637b86273e96cc1b4da37c4378f9183ce6a81`. The later lifecycle and validation evidence is recorded separately in the amendment above:
 
 - [`xcom2_native_activation/application.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/application.rs), [`state.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/state.rs), and [`filesystem.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/filesystem.rs) retain opaque native attempts, validate exact acknowledgments, hold accepted roots in volatile state, perform lifecycle revocation, and inspect the fixed contained metadata without executing project input.
 - [`xcom2_native_activation.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation.rs) exposes the four narrow begin, acknowledge, revoke, and inspect commands. [`xcom2-native-activation-evidence-tauri.ts`](packages/tauri-adapters/src/xcom2-native-activation-evidence-tauri.ts) and [`xcom2-project-build-recipe-inspection-tauri.ts`](packages/tauri-adapters/src/xcom2-project-build-recipe-inspection-tauri.ts) enforce the corresponding strict TypeScript/native envelopes.
 - [`xcom2-native-activation-evidence-policy.ts`](packages/contracts/src/domain/xcom2-native-activation-evidence-policy.ts) selects only evaluator-approved active handles and keeps the inspection request token-free. [`xcom2-project-build-recipe-policy.ts`](packages/contracts/src/domain/xcom2-project-build-recipe-policy.ts) validates and digests the closed metadata and constrains approval to volatile one-shot policy state with execution unavailable.
 - [`useXcom2ModuleActivationController.ts`](apps/desktop/src/features/xcom2-module-activation/useXcom2ModuleActivationController.ts) evaluates safe facts before sending the opaque acknowledgment and treats cached React restoration as revocation-only. [`useXcom2ProjectBuildRecipeController.ts`](apps/desktop/src/features/xcom2-project-build-recipe/useXcom2ProjectBuildRecipeController.ts) exposes metadata review/approval without a build consumer.
-- The canonical [`project-build-recipe.feature`](features/xcom2/project-build-recipe.feature) still declares `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` as `@not-implemented`. No passing independent technical gate, native GUI/E2E validation, packaged behavior, cross-platform behavior, execution, or requirement-status promotion is claimed here.
+- At that original evidence boundary, the canonical [`project-build-recipe.feature`](features/xcom2/project-build-recipe.feature) declared `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` as `@not-implemented`, and no passing technical gate or status promotion had yet occurred. That statement is intentionally historical; the current declaration and later evidence are recorded in the lifecycle and evidence amendment. Neither boundary claims native GUI/E2E recipe review, packaged behavior, cross-platform behavior, or execution.
 
 ### Consequences
 
@@ -972,5 +987,5 @@ The decision is informed by the following bounded repository evidence at `0d7637
 - The begin/evaluate/acknowledge/revoke protocol adds volatile state, correlation, and lifecycle complexity across Rust, Tauri adapters, and desktop composition.
 - Opaque handles still cross the renderer boundary during activation and therefore require strict redaction, bounded lifetime, exact validation, and no persistence or logging.
 - A refresh, switch, failed activation, cached restoration, identity change, incomplete scan, or metadata change can require a fresh begin/evaluation/acknowledgment and recipe review.
-- The current evidence is Linux- and implementation-bounded. The requirement remains `@not-implemented` until the independent technical gate passes and the planner performs any separately authorized status/documentation reconciliation.
+- The current evidence remains platform- and implementation-bounded. The promoted requirement is only `@implemented-not-e2e-validated`; native GUI evidence covers activation regressions rather than recipe review, and final post-documentation technical and requirements-quality review remain outstanding.
 - This decision intentionally leaves execution, process isolation, machine prerequisite grants, `pfx_copy`, Build/Deploy/Cook/Launch consumers, proprietary compatibility, packaging, and cross-platform validation unresolved.
