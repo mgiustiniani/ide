@@ -38,7 +38,7 @@ Inline source groups such as **[S-Java]** resolve to the official source appendi
 
 ### Current RefactorKit audit buckets
 
-- **Current IDE capability:** provider status/capability discovery and the managed Java external-class import transaction, with deterministic harness evidence kept separate from provider and native/package evidence.
+- **Current IDE capability:** provider status/capability discovery, the managed Java external-class import transaction, and the two capability-specific RefactorKit TypeScript option-B slices in ADR 0011. Deterministic harness evidence remains separate from provider-smoke, native GUI/E2E, and package evidence.
 - **Parked for confirmed defects:** TypeScript diagnostics and saved-snapshot semantic navigation. Neither support code nor deterministic fixtures override the observed protocol/runtimes failures.
 - **Working provider foundation, IDE TODO:** structural outline and identifier search.
 - **Experimental provider foundation, IDE TODO:** TypeScript references and proposal-only rename, plus other operations advertised experimental.
