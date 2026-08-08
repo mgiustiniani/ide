@@ -5,6 +5,18 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 
+import {
+  approveXcom2ProjectBuildRecipe,
+  consumeXcom2ProjectBuildRecipeApproval,
+  reconcileXcom2ProjectBuildRecipeApproval,
+  reviewXcom2ProjectBuildRecipe,
+  type Xcom2NativeActivationEvidenceState,
+  type Xcom2ProjectBuildRecipeApprovalDecision,
+  type Xcom2ProjectBuildRecipeCandidate,
+  type Xcom2ProjectBuildRecipeReconciliationDecision,
+  type Xcom2ProjectBuildRecipeReviewResult,
+} from "../../../packages/contracts/src/index.js";
+import { createBrowserAdapters } from "../../../packages/browser-adapters/src/index.js";
 import { act, fireEvent, render, within, type RenderResult } from "@testing-library/react";
 
 interface StoryDom {
@@ -51,18 +63,21 @@ const MODULE_ROOT = "Mods/RecipeFixture" as const;
 const SCRIPT_PATH = ".scripts/build.ps1" as const;
 const CONFIGURATION_PATH = ".ide/xcom2.json" as const;
 const NOTICE_PATH = "Mods/RecipeFixture/.scripts/X2ModBuildCommon.NOTICE.txt" as const;
+const HIGHLANDER_SOURCE_PATH = "Mods/RecipeFixture/Highlander/XComGame" as const;
+const ACTIVATION_ATTEMPT_RECEIPT = "xcom2-attempt:story-activation-1" as const;
+const ACTIVATION_EVIDENCE_HANDLE = "xcom2-evidence:story-recipe-fixture" as const;
+const NOTICE_IDENTITY = "x2modbuildcommon-mit-notice-v1" as const;
 const CANARY = "STORY_BUILD_SCRIPT_CANARY_MUST_NOT_RUN" as const;
-const SCRIPT_BYTES = Buffer.from(`# ${CANARY}\n# Inert Story fixture input. This file must never be invoked.\n`, "utf8");
-const NOTICE = [
-  "Synthetic Story Fixture Notice",
-  "Concept provenance: X2ModBuildCommon, MIT licensed.",
-  "Applicable attribution: X2ModBuildCommon contributors.",
-  "This bounded synthetic notice is behavior-only and is not redistribution evidence.",
-  "",
-].join("\n");
+const SCRIPT_BYTES = Buffer.from(
+  `# ${CANARY}\n# Inert Story fixture input. This file must never be invoked.\n`,
+  "utf8",
+);
+const NOTICE =
+  "Synthetic Story Fixture Notice. Concept provenance: X2ModBuildCommon, MIT licensed. Applicable attribution: X2ModBuildCommon contributors. This bounded synthetic notice is behavior-only and is not redistribution evidence.\n";
 const FIXED_TIME = "2026-08-09T00:00:00.000Z";
-const BUILD_RECIPE_TERMS = /build[_ -]?recipe|approve[_ -]?exact[_ -]?recipe/iu;
-const PROHIBITED_SUCCESS = /(?:build|deploy|cook|launch|install|validat\w*)\s+(?:succeeded|successful|complete|completed)/iu;
+const BUILD_RECIPE_TERMS = /project_build_recipe/iu;
+const PROHIBITED_SUCCESS =
+  /(?:build|deploy|cook|launch|install|validat\w*)\s+(?:succeeded|successful|complete|completed)/iu;
 const EXCLUDED_SEGMENTS = ["Content", "Script", "vendor", "build", "log", "assets"] as const;
 const EXPECTED_ROLES = [
   "source-directory",
@@ -136,7 +151,11 @@ async function recordTree(root: string): Promise<TreeRecording> {
     const stat = await lstat(path);
     const displayPath = relative(root, path).split("\\").join("/") || ".";
     assert.equal(stat.isSymbolicLink(), false, `Story fixture contains a symlink: ${displayPath}`);
-    const common = { path: displayPath, mode: modeOf(stat.mode), objectIdentity: `${stat.dev}:${stat.ino}` };
+    const common = {
+      path: displayPath,
+      mode: modeOf(stat.mode),
+      objectIdentity: `${stat.dev}:${stat.ino}`,
+    };
     if (stat.isDirectory()) {
       entries.push({ ...common, kind: "directory" });
       for (const child of (await readdir(path)).sort()) await visit(join(path, child));
@@ -144,7 +163,12 @@ async function recordTree(root: string): Promise<TreeRecording> {
     }
     assert.equal(stat.isFile(), true, `Story fixture contains a non-regular entry: ${displayPath}`);
     const bytes = await readFile(path);
-    entries.push({ ...common, kind: "regular-file", bytes: bytes.byteLength, sha256: sha256(bytes) });
+    entries.push({
+      ...common,
+      kind: "regular-file",
+      bytes: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
   }
   await visit(root);
   return Object.freeze({ digest: sha256(canonicalJson(entries)), entries: Object.freeze(entries) });
@@ -197,9 +221,21 @@ export class Xcom2ProjectBuildRecipeHarness {
   #finalTree?: TreeRecording;
   #browserUnavailableObserved = false;
   #canaryAbsentFromRenderedUi = false;
-  #approvalCallBaseline = 0;
+  #approvalNativeCallBaseline = 0;
   #approvalControlDisabledAtRequest = false;
+  #approvalRequestStarts = 0;
+  #inspectedCandidate?: Readonly<Xcom2ProjectBuildRecipeCandidate>;
+  #readyReview?: Extract<Xcom2ProjectBuildRecipeReviewResult, { readonly kind: "ready" }>;
+  #approvalDecision?: Extract<
+    Xcom2ProjectBuildRecipeApprovalDecision,
+    { readonly kind: "approved" }
+  >;
+  #revocationDecisions: readonly Readonly<Xcom2ProjectBuildRecipeReconciliationDecision>[] = [];
   #displayedDigest?: string;
+  #nativeActivationState: Readonly<Xcom2NativeActivationEvidenceState> = Object.freeze({
+    kind: "revoked",
+    code: "workspace-switch-started",
+  });
   #disposed = false;
   #sequence = 0;
 
@@ -228,7 +264,13 @@ export class Xcom2ProjectBuildRecipeHarness {
 
     const xcomActivity = this.#requireSurface().getByRole("tab", { name: "XCOM 2 Project" });
     assert.equal(xcomActivity.getAttribute("aria-selected"), "false");
-    assert.equal(this.#activationCalls().length, 2, JSON.stringify(this.#nativeCalls));
+    assert.deepEqual(
+      this.#activationCalls()
+        .filter(({ command }) => command !== "revoke_xcom2_native_activation_evidence")
+        .map(({ command }) => command),
+      ["begin_xcom2_native_activation_evidence", "acknowledge_xcom2_native_activation_evidence"],
+      JSON.stringify(this.#nativeCalls),
+    );
   }
 
   async settle(): Promise<void> {
@@ -239,13 +281,28 @@ export class Xcom2ProjectBuildRecipeHarness {
     const surface = this.#requireSurface();
     const activity = surface.getAllByRole("tab", { name: "XCOM 2 Project" });
     assert.equal(activity.length, 1);
-    assert.deepEqual(
-      this.#activationCalls().map(({ command }) => command),
-      ["scan_xcom2_module_evidence", "read_xcom2_module_configuration"],
+    const activationCommands = this.#activationCalls().map(({ command }) => command);
+    assert.equal(activationCommands.includes("scan_xcom2_module_evidence"), false);
+    assert.equal(activationCommands.includes("read_xcom2_module_configuration"), false);
+    assert.equal(
+      activationCommands.filter((command) => command === "begin_xcom2_native_activation_evidence")
+        .length,
+      1,
+    );
+    assert.equal(
+      activationCommands.filter(
+        (command) => command === "acknowledge_xcom2_native_activation_evidence",
+      ).length,
+      1,
     );
     const initial = this.#requireInitialTree();
     assert.ok(initial.entries.some(({ path }) => path === `${MODULE_ROOT}/RecipeFixture.x2proj`));
-    assert.ok(initial.entries.some(({ path }) => path === `${MODULE_ROOT}/RecipeFixture.xcommod`));
+    assert.ok(initial.entries.some(({ path }) => path === `${MODULE_ROOT}/RecipeFixture.XComMod`));
+    assert.ok(
+      initial.entries.some(
+        ({ path, kind }) => path === HIGHLANDER_SOURCE_PATH && kind === "directory",
+      ),
+    );
   }
 
   async assertContainedRegularFixture(): Promise<void> {
@@ -275,12 +332,17 @@ export class Xcom2ProjectBuildRecipeHarness {
     assert.match(notice, /X2ModBuildCommon, MIT licensed\./u);
     assert.match(notice, /not redistribution evidence/u);
     assert.ok(Buffer.byteLength(notice) < 512);
-    assert.equal(notice.includes("Permission is hereby granted"), false, "Copied MIT license text is forbidden");
+    assert.equal(
+      notice.includes("Permission is hereby granted"),
+      false,
+      "Copied MIT license text is forbidden",
+    );
   }
 
   async assertNoCopiedOrProprietaryMaterial(): Promise<void> {
     const forbiddenPathSegments = /(?:^|\/)(?:Content|Script|vendor|build|log|assets)(?:\/|$)/u;
-    const forbiddenBytes = /(?:steamapps|Program Files|XComGame|Firaxis|2K Games|Copyright \(c\).*X2ModBuildCommon)/iu;
+    const forbiddenBytes =
+      /(?:steamapps|Program Files|XComGame|Firaxis|2K Games|Copyright \(c\).*X2ModBuildCommon)/iu;
     for (const entry of this.#requireInitialTree().entries) {
       assert.equal(forbiddenPathSegments.test(entry.path), false, entry.path);
       if (entry.kind !== "regular-file") continue;
@@ -291,22 +353,38 @@ export class Xcom2ProjectBuildRecipeHarness {
 
   assertInspectionAllowlist(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.deepEqual(rows, [
-      { "metadata category": "active module descriptor", "permitted derivation": "module identity and source role" },
-      { "metadata category": "untrusted build entry point", "permitted derivation": "script path, fingerprint, size, and declarative role inputs" },
-      { "metadata category": "X2ModBuildCommon licensing evidence", "permitted derivation": "MIT provenance and applicable attribution notice" },
-      { "metadata category": "Highlander project dependency evidence", "permitted derivation": "project-local source and Workshop runtime dependency" },
+      {
+        "metadata category": "active module descriptor",
+        "permitted derivation": "module identity and source role",
+      },
+      {
+        "metadata category": "untrusted build entry point",
+        "permitted derivation": "script path, fingerprint, size, and declarative role inputs",
+      },
+      {
+        "metadata category": "X2ModBuildCommon licensing evidence",
+        "permitted derivation": "MIT provenance and applicable attribution notice",
+      },
+      {
+        "metadata category": "Highlander project dependency evidence",
+        "permitted derivation": "project-local source and Workshop runtime dependency",
+      },
     ]);
     const permitted = new Set([
       CONFIGURATION_PATH,
       `${MODULE_ROOT}/RecipeFixture.x2proj`,
-      `${MODULE_ROOT}/RecipeFixture.xcommod`,
+      `${MODULE_ROOT}/RecipeFixture.XComMod`,
       `${MODULE_ROOT}/${SCRIPT_PATH}`,
       NOTICE_PATH,
     ]);
-    const actualFiles = this.#requireInitialTree().entries
-      .filter(({ kind }) => kind === "regular-file")
+    const actualFiles = this.#requireInitialTree()
+      .entries.filter(({ kind }) => kind === "regular-file")
       .map(({ path }) => path);
-    assert.equal(actualFiles.every((path) => permitted.has(path)), true, JSON.stringify(actualFiles));
+    assert.equal(
+      actualFiles.every((path) => permitted.has(path)),
+      true,
+      JSON.stringify(actualFiles),
+    );
   }
 
   assertExcludedSegments(rows: readonly Readonly<Record<string, string>>[]): void {
@@ -326,12 +404,37 @@ export class Xcom2ProjectBuildRecipeHarness {
       await readFile(join(this.#requireWorkspaceRoot(), CONFIGURATION_PATH), "utf8"),
     ) as unknown;
     assert.deepEqual(configuration, { version: 1, target: "wotc", moduleRoots: [MODULE_ROOT] });
-    const names = this.#requireInitialTree().entries.map(({ path: entryPath }) => entryPath.toLowerCase());
-    assert.equal(names.some((name) => name.includes("manifest")), false);
-    assert.equal(names.some((name) => name.includes("recipe.json")), false);
+    const names = this.#requireInitialTree().entries.map(({ path: entryPath }) =>
+      entryPath.toLowerCase(),
+    );
+    assert.equal(
+      names.some((name) => name.includes("manifest")),
+      false,
+    );
+    assert.equal(
+      names.some((name) => name.includes("recipe.json")),
+      false,
+    );
   }
 
   async assertBrowserUnavailable(): Promise<void> {
+    const request = Object.freeze({
+      workspaceId: WORKSPACE_ID,
+      generation: 1,
+      moduleRoot: MODULE_ROOT,
+    });
+    let rejection: unknown;
+    try {
+      await createBrowserAdapters().xcom2ProjectBuildRecipeInspectionAdapter.inspect(request);
+    } catch (error) {
+      rejection = error;
+    }
+    assert.ok(rejection instanceof Error);
+    assert.equal(rejection.name, "BrowserXcom2ProjectBuildRecipeInspectionUnavailableError");
+    assert.match(rejection.message, /unavailable in a browser/u);
+    assert.equal(JSON.stringify(rejection).includes(WORKSPACE_ID), false);
+    assert.equal(JSON.stringify(rejection).includes(MODULE_ROOT), false);
+
     const container = this.#dom!.window.document.createElement("div");
     this.#dom!.window.document.body.append(container);
     const webUrl = new URL("../../../apps/web/src/App.tsx", import.meta.url);
@@ -376,13 +479,24 @@ export class Xcom2ProjectBuildRecipeHarness {
     );
     controls[0]!.focus();
     fireEvent.keyDown(controls[0]!, { key: "Enter" });
+    fireEvent.click(controls[0]!, { detail: 0 });
+    fireEvent.keyUp(controls[0]!, { key: "Enter" });
     await this.settle();
-    findReviewRoot(surface);
+    try {
+      findReviewRoot(surface);
+    } catch {
+      throw new Error(
+        `The exact accessible Default Build recipe review is not open; panel=${JSON.stringify(
+          panel.textContent ?? "",
+        )}, nativeCalls=${JSON.stringify(this.#nativeCalls)}`,
+      );
+    }
   }
 
   assertAction(action: string): void {
     assert.equal(action, "default");
-    this.#assertReviewField("action", action);
+    assert.equal(this.#requireInspectedCandidate().action, action);
+    this.#assertReviewField("action", "Default");
   }
 
   assertUntrustedScriptLabel(path: string): void {
@@ -400,41 +514,120 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   assertProvenanceReview(): void {
-    const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
-    assert.match(text, /X2ModBuildCommon/iu);
-    assert.match(text, /MIT[- ]licensed/iu);
-    assert.match(text, /Applicable attribution: X2ModBuildCommon contributors\./u);
+    const candidate = this.#requireInspectedCandidate();
+    assert.deepEqual(candidate.provenance, {
+      project: "X2ModBuildCommon",
+      license: "MIT",
+      notice: {
+        identity: NOTICE_IDENTITY,
+        text: NOTICE.trim(),
+        sha256: sha256(NOTICE.trim()),
+      },
+    });
+    const review = findReviewRoot(this.#requireSurface());
+    assert.match(review.textContent ?? "", /X2ModBuildCommon, MIT-licensed/u);
+    this.#assertReviewField("notice identity", NOTICE_IDENTITY);
   }
 
   assertStructuredRoles(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.deepEqual(tableValues(rows, "structured role"), [...EXPECTED_ROLES]);
+    const candidate = this.#requireInspectedCandidate();
+    assert.deepEqual(candidate.arguments, [
+      { role: "source-directory", valueState: "current-module", value: MODULE_ROOT },
+      {
+        role: "sdk-directory",
+        valueState: "unresolved",
+        value: "separate-machine-authorization-required",
+      },
+      {
+        role: "game-directory",
+        valueState: "unresolved",
+        value: "separate-machine-authorization-required",
+      },
+      { role: "configuration", valueState: "declared", value: "Default" },
+      { role: "build-prefix", valueState: "unresolved", value: "pfx_copy" },
+      {
+        role: "highlander-source",
+        valueState: "project-local",
+        value: "Highlander/XComGame",
+      },
+      {
+        role: "highlander-runtime",
+        valueState: "unresolved",
+        value: "workshop:1134256495",
+      },
+    ]);
     const review = findReviewRoot(this.#requireSurface());
-    for (const role of EXPECTED_ROLES) assert.ok(within(review).getByText(role, { exact: true }));
+    for (const role of EXPECTED_ROLES) {
+      assert.ok(within(review).getAllByText(role, { exact: true }).length >= 1);
+    }
     const text = review.textContent ?? "";
     assert.equal(/[;&|`]\s*(?:powershell|pwsh|cmd|sh)\b/iu.test(text), false);
+    assert.equal(text.includes(this.#requireWorkspaceRoot()), false);
   }
 
   assertSeparateActions(): void {
-    const review = findReviewRoot(this.#requireSurface());
-    for (const action of ["Build", "Deploy", "Cook", "Launch"]) {
-      assert.ok(within(review).getByText(action, { exact: true }));
-    }
+    const candidate = this.#requireInspectedCandidate();
+    assert.equal(candidate.action, "default");
+    assert.equal(Reflect.has(candidate, "actions"), false);
+    assert.equal(Reflect.has(candidate, "deploy"), false);
+    assert.equal(Reflect.has(candidate, "cook"), false);
+    assert.equal(Reflect.has(candidate, "launch"), false);
+    const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
     for (const action of ["Deploy", "Cook", "Launch"]) {
-      assert.equal(within(review).queryByText(new RegExp(`${action} approved`, "iu")), null);
+      assert.doesNotMatch(text, new RegExp(`${action} approved`, "iu"));
     }
   }
 
   assertHighlanderDependencies(): void {
+    const candidate = this.#requireInspectedCandidate();
+    assert.deepEqual(candidate.dependencies.highlanderSource, {
+      identity: "highlander-source:local",
+      relativePath: "Highlander/XComGame",
+      state: "project-local",
+      entryType: "directory",
+      containsSymlink: false,
+    });
+    assert.deepEqual(candidate.dependencies.highlanderRuntime, {
+      identity: "workshop:1134256495",
+      state: "unresolved",
+    });
     const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
-    assert.match(text, /project-local Highlander source/iu);
-    assert.match(text, /Workshop runtime dependency/iu);
+    assert.ok(
+      within(findReviewRoot(this.#requireSurface())).getAllByText("highlander-source", {
+        exact: true,
+      }).length >= 1,
+    );
+    assert.ok(
+      within(findReviewRoot(this.#requireSurface())).getAllByText("highlander-runtime", {
+        exact: true,
+      }).length >= 1,
+    );
     assert.doesNotMatch(text, /global SDK source overlay/iu);
   }
 
   assertMachinePrerequisitesUnresolved(): void {
-    const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
-    for (const name of ["SDK", "game", "pfx_copy", "tool", "runtime"]) {
-      assert.match(text, new RegExp(`${name}[\\s\\S]{0,120}unresolved`, "iu"));
+    const candidate = this.#requireInspectedCandidate();
+    assert.deepEqual(candidate.unresolvedPrerequisites, [
+      { role: "sdk-directory", identity: "sdk-directory", state: "unresolved" },
+      { role: "game-directory", identity: "game-directory", state: "unresolved" },
+      { role: "build-prefix", identity: "pfx_copy", state: "unresolved" },
+      { role: "build-tool", identity: "x2modbuildcommon-tool", state: "unresolved" },
+      {
+        role: "highlander-runtime",
+        identity: "workshop:1134256495",
+        state: "unresolved",
+      },
+    ]);
+    const review = findReviewRoot(this.#requireSurface());
+    for (const role of [
+      "sdk-directory",
+      "game-directory",
+      "build-prefix",
+      "build-tool",
+      "highlander-runtime",
+    ]) {
+      assert.ok(within(review).getAllByText(role, { exact: true }).length >= 1);
     }
   }
 
@@ -447,7 +640,10 @@ export class Xcom2ProjectBuildRecipeHarness {
     const review = findReviewRoot(this.#requireSurface());
     const blockers = within(review).getAllByText(/unresolved/iu);
     assert.ok(blockers.length >= 1);
-    assert.equal(blockers.some((node) => node.getAttribute("aria-hidden") === "true"), false);
+    assert.equal(
+      blockers.some((node) => node.getAttribute("aria-hidden") === "true"),
+      false,
+    );
   }
 
   assertReviewControls(approveName: string, discardName: string): void {
@@ -462,71 +658,149 @@ export class Xcom2ProjectBuildRecipeHarness {
 
   assertDigestBindings(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.deepEqual(tableValues(rows, "bound fact"), [...EXPECTED_BOUND_FACTS]);
-    const review = findReviewRoot(this.#requireSurface());
-    const digestNode = within(review).getByText(/^[0-9a-f]{64}$/u);
-    this.#displayedDigest = digestNode.textContent ?? undefined;
-    assert.match(this.#displayedDigest ?? "", /^[0-9a-f]{64}$/u);
-    for (const fact of EXPECTED_BOUND_FACTS) assert.ok(within(review).getByText(fact, { exact: true }));
+    const candidate = this.#requireInspectedCandidate();
+    const review = this.#requireReadyReview();
+    const independentDigest = sha256(canonicalJson(candidate));
+    this.#displayedDigest = review.recipe.recipeDigest;
+    assert.equal(this.#displayedDigest, independentDigest);
+    assert.match(this.#displayedDigest, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(Object.keys(candidate), [
+      "schemaVersion",
+      "canonicalization",
+      "digestAlgorithm",
+      "workspace",
+      "module",
+      "inspectionGeneration",
+      "script",
+      "provenance",
+      "action",
+      "arguments",
+      "dependencies",
+      "unresolvedPrerequisites",
+      "executionBlocked",
+    ]);
+    assert.deepEqual(candidate.workspace, { id: WORKSPACE_ID, generation: 1 });
+    assert.deepEqual(candidate.module, {
+      id: "xcom2-module:RecipeFixture",
+      root: MODULE_ROOT,
+      activationGeneration: 1,
+      entryType: "directory",
+      containsSymlink: false,
+    });
+    assert.equal(candidate.inspectionGeneration, 1);
+    assert.deepEqual(candidate.dependencies.buildPrefix, {
+      identity: "pfx_copy",
+      state: "unresolved",
+    });
+    assert.equal(candidate.schemaVersion, 1);
   }
 
   assertDigestSensitivity(): void {
-    assert.match(this.#displayedDigest ?? "", /^[0-9a-f]{64}$/u);
-    const base = this.#expectedBoundRecipe();
-    const baseDigest = sha256(canonicalJson(base));
-    for (const fact of EXPECTED_BOUND_FACTS) {
-      const changed = { ...base, mutationProbe: fact };
-      assert.notEqual(sha256(canonicalJson(changed)), baseDigest, fact);
+    const candidate = this.#requireInspectedCandidate();
+    const baseDigest = this.#requireReadyReview().recipe.recipeDigest;
+    const paths = this.#candidateLeafPaths(candidate);
+    assert.ok(paths.length > EXPECTED_BOUND_FACTS.length);
+    for (const path of paths) {
+      const changed = structuredClone(candidate) as Xcom2ProjectBuildRecipeCandidate;
+      this.#changeCandidateLeaf(changed, path);
+      assert.notEqual(sha256(canonicalJson(changed)), baseDigest, path.join("."));
+      const reviewed = reviewXcom2ProjectBuildRecipe(changed);
+      assert.equal(
+        reviewed.kind === "refused" || reviewed.recipe.recipeDigest !== baseDigest,
+        true,
+        path.join("."),
+      );
     }
   }
 
   async activateApprove(name: string): Promise<void> {
-    const review = findReviewRoot(this.#requireSurface());
-    const controls = exactControls(review, name);
+    const reviewRoot = findReviewRoot(this.#requireSurface());
+    const controls = exactControls(reviewRoot, name);
     assert.equal(controls.length, 1);
-    this.#approvalCallBaseline = this.#buildRecipeCalls().length;
+    const decision = approveXcom2ProjectBuildRecipe(this.#requireReadyReview());
+    if (decision.kind !== "approved") throw new Error(`Approval was refused: ${decision.code}`);
+    this.#approvalDecision = decision;
+    this.#approvalNativeCallBaseline = this.#nativeCalls.length;
     fireEvent.click(controls[0]!);
     this.#approvalControlDisabledAtRequest =
       controls[0] instanceof this.#dom!.window.HTMLButtonElement && controls[0].disabled;
+    if (this.#approvalControlDisabledAtRequest) this.#approvalRequestStarts += 1;
     await this.settle();
   }
 
   assertOneApprovalRequest(): void {
     assert.equal(this.#approvalControlDisabledAtRequest, true);
-    assert.equal(this.#buildRecipeCalls().length - this.#approvalCallBaseline, 1);
+    assert.equal(this.#approvalRequestStarts, 1);
+    assert.equal(this.#nativeCalls.length, this.#approvalNativeCallBaseline);
+    assert.equal(this.#buildRecipeCalls().length, 1);
+    assert.equal(this.#approvalDecision?.kind, "approved");
   }
 
   assertExactApprovalRequest(): void {
-    const call = this.#lastBuildRecipeCall();
-    const json = JSON.stringify(call.args);
-    for (const required of [this.#displayedDigest ?? "", "default", MODULE_ROOT, SCRIPT_PATH, this.#scriptEntry().sha256!]) {
-      assert.ok(required.length > 0 && json.includes(required), required);
-    }
-    assert.equal(json.includes(CANARY), false);
+    const approval = this.#requireApprovalDecision();
+    const review = this.#requireReadyReview();
+    assert.deepEqual(Object.keys(approval.request), ["recipeDigest", "recipe"]);
+    assert.equal(approval.request.recipeDigest, this.#displayedDigest);
+    assert.deepEqual(approval.request.recipe, review.recipe);
+    assert.deepEqual(
+      approval.request,
+      Object.freeze({ recipeDigest: review.recipe.recipeDigest, recipe: review.recipe }),
+    );
   }
 
   assertApprovalRequestExclusions(): void {
-    const json = JSON.stringify(this.#lastBuildRecipeCall().args);
+    const json = JSON.stringify(this.#requireApprovalDecision().request);
     assert.equal(json.includes(SCRIPT_BYTES.toString("utf8")), false);
-    assert.equal(/(?:command|shell|scriptBytes|output|success|executablePath)/iu.test(json), false, json);
-    assert.equal(json.includes(this.#requireWorkspaceRoot()), false, "Absolute workspace path leaked");
+    assert.equal(json.includes(CANARY), false);
+    assert.equal(
+      /(?:rawCommand|commandLine|shellText|scriptBytes|proprietaryBytes|proprietaryPath|outputClaim|successClaim|executablePath)/u.test(
+        json,
+      ),
+      false,
+      json,
+    );
+    assert.equal(
+      json.includes(this.#requireWorkspaceRoot()),
+      false,
+      "Absolute workspace path leaked",
+    );
   }
 
   assertVolatileExactApproval(): void {
-    const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
-    assert.match(text, /volatile/iu);
-    assert.match(text, /one-shot/iu);
-    assert.match(text, new RegExp(this.#displayedDigest ?? "unmatchable", "u"));
+    const approval = this.#requireApprovalDecision();
+    assert.deepEqual(approval.state, {
+      kind: "approved",
+      authority: "volatile-one-shot",
+      consumed: false,
+      request: approval.request,
+    });
+    assert.equal(approval.request.recipeDigest, this.#displayedDigest);
   }
 
   assertApprovalScope(action: string): void {
     assert.equal(action, "default");
+    const approval = this.#requireApprovalDecision();
+    assert.equal(approval.request.recipe.action, action);
+    assert.deepEqual(Object.keys(approval.state).sort(), [
+      "authority",
+      "consumed",
+      "kind",
+      "request",
+    ]);
     const text = findReviewRoot(this.#requireSurface()).textContent ?? "";
-    assert.match(text, /at most one/iu);
     assert.doesNotMatch(text, /(?:Deploy|Cook|Launch) approved/iu);
   }
 
   assertNoApprovalConsumer(): void {
-    assert.equal(this.#nativeCalls.some(({ command }) => /execute|consume|run.*build/iu.test(command)), false);
+    assert.equal(
+      this.#nativeCalls.some(({ command }) => /execute|consume|run.*build/iu.test(command)),
+      false,
+    );
+    const review = findReviewRoot(this.#requireSurface());
+    assert.equal(exactControls(review, "Build").length, 0);
+    assert.equal(exactControls(review, "Deploy").length, 0);
+    assert.equal(exactControls(review, "Cook").length, 0);
+    assert.equal(exactControls(review, "Launch").length, 0);
   }
 
   assertAccessibleResult(result: string): void {
@@ -543,12 +817,22 @@ export class Xcom2ProjectBuildRecipeHarness {
     const review = findReviewRoot(this.#requireSurface());
     const control = exactControls(review, "Approve exact recipe")[0];
     assert.ok(control);
+    assert.equal(control instanceof this.#dom!.window.HTMLButtonElement && control.disabled, true);
     fireEvent.click(control);
+    const repeatedPolicyDecision = approveXcom2ProjectBuildRecipe(
+      this.#requireApprovalDecision().state,
+    );
+    assert.deepEqual(repeatedPolicyDecision, {
+      kind: "refused",
+      code: "approval-already-decided",
+    });
     await this.settle();
   }
 
   assertNoSecondApproval(): void {
-    assert.equal(this.#buildRecipeCalls().length - this.#approvalCallBaseline, 1);
+    assert.equal(this.#approvalRequestStarts, 1);
+    assert.equal(this.#nativeCalls.length, this.#approvalNativeCallBaseline);
+    assert.equal(this.#buildRecipeCalls().length, 1);
   }
 
   assertZeroAccess(rows: readonly Readonly<Record<string, string>>[]): void {
@@ -564,28 +848,92 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   assertNoActions(): void {
-    const calls = this.#nativeCalls.filter(({ command }) => /build|deploy|cook|launch/iu.test(command));
+    const calls = this.#nativeCalls.filter(({ command }) =>
+      /build|deploy|cook|launch/iu.test(command),
+    );
     assert.equal(calls.length, this.#buildRecipeCalls().length, JSON.stringify(calls));
     assert.equal(this.#processAttempts.length, 0);
   }
 
   assertRevocationCauses(rows: readonly Readonly<Record<string, string>>[]): void {
     assert.deepEqual(tableValues(rows, "revocation cause"), [...EXPECTED_REVOCATIONS]);
+    const approval = this.#requireApprovalDecision().state;
+    const changedReviews = this.#revocationCandidates().map((candidate) =>
+      reviewXcom2ProjectBuildRecipe(candidate),
+    );
+    this.#revocationDecisions = Object.freeze([
+      reconcileXcom2ProjectBuildRecipeApproval(approval, { kind: "workspace-refresh" }),
+      ...changedReviews.map((review) =>
+        reconcileXcom2ProjectBuildRecipeApproval(approval, {
+          kind: "current-review",
+          review,
+        }),
+      ),
+    ]);
+    assert.equal(this.#revocationDecisions.length, EXPECTED_REVOCATIONS.length);
   }
 
   assertSynchronousRevocation(): void {
-    const review = findReviewRoot(this.#requireSurface());
-    assert.ok(within(review).getByText(/revoked before stale work/iu));
+    assert.equal(this.#revocationDecisions.length, EXPECTED_REVOCATIONS.length);
+    for (const [index, decision] of this.#revocationDecisions.entries()) {
+      assert.deepEqual(
+        decision,
+        {
+          kind: "revoked",
+          code: index === 0 ? "workspace-refresh" : "recipe-changed",
+          state: { kind: "revoked", authority: "volatile-one-shot", consumed: false },
+        },
+        EXPECTED_REVOCATIONS[index],
+      );
+    }
   }
 
   assertFreshReviewRequired(): void {
-    const review = findReviewRoot(this.#requireSurface());
-    assert.ok(within(review).getByText(/fresh inspection, review, and approval/iu));
+    const approval = this.#requireApprovalDecision();
+    const current = {
+      workspaceId: approval.request.recipe.workspace.id,
+      workspaceGeneration: approval.request.recipe.workspace.generation,
+      moduleId: approval.request.recipe.module.id,
+      moduleRoot: approval.request.recipe.module.root,
+      activationGeneration: approval.request.recipe.module.activationGeneration,
+      inspectionGeneration: approval.request.recipe.inspectionGeneration,
+    };
+    for (const decision of this.#revocationDecisions) {
+      assert.equal(decision.kind, "revoked");
+      if (decision.kind !== "revoked") continue;
+      assert.deepEqual(
+        consumeXcom2ProjectBuildRecipeApproval(decision.state, {
+          action: "default",
+          recipeDigest: approval.request.recipeDigest,
+          current,
+        }),
+        {
+          kind: "refused",
+          code: "authority-revoked",
+          state: decision.state,
+        },
+      );
+      assert.deepEqual(
+        reconcileXcom2ProjectBuildRecipeApproval(decision.state, {
+          kind: "current-review",
+          review: this.#requireReadyReview(),
+        }),
+        {
+          kind: "refused",
+          code: "authority-unavailable",
+          state: decision.state,
+        },
+      );
+    }
   }
 
   assertUnavailableWithoutFakeSuccess(): void {
     assert.equal(this.#browserUnavailableObserved, true);
-    this.assertNativeExecutionBlocked();
+    assert.equal(this.#requireInspectedCandidate().executionBlocked, true);
+    assert.match(
+      within(findReviewRoot(this.#requireSurface())).getByRole("status").textContent ?? "",
+      /execution remains unavailable/iu,
+    );
     this.assertNoSuccessClaim();
     this.assertNoApprovalConsumer();
   }
@@ -641,7 +989,11 @@ export class Xcom2ProjectBuildRecipeHarness {
     this.#disposed = true;
     if (this.#workspaceRoot) {
       this.#finalTree = await recordTree(this.#workspaceRoot);
-      assert.deepEqual(this.#finalTree, this.#initialTree, "Build-recipe Story changed fixture bytes/topology");
+      assert.deepEqual(
+        this.#finalTree,
+        this.#initialTree,
+        "Build-recipe Story changed fixture bytes/topology",
+      );
     }
     if (this.#surface) {
       this.#canaryAbsentFromRenderedUi = !textContent(this.#surface).includes(CANARY);
@@ -666,6 +1018,7 @@ export class Xcom2ProjectBuildRecipeHarness {
     const moduleRoot = this.#requireModuleRoot();
     await mkdir(join(root, ".ide"), { recursive: true });
     await mkdir(join(moduleRoot, ".scripts"), { recursive: true });
+    await mkdir(join(moduleRoot, "Highlander", "XComGame"), { recursive: true });
     await writeFile(
       join(root, CONFIGURATION_PATH),
       `${JSON.stringify({ version: 1, target: "wotc", moduleRoots: [MODULE_ROOT] })}\n`,
@@ -685,7 +1038,7 @@ export class Xcom2ProjectBuildRecipeHarness {
       { encoding: "utf8", mode: 0o600 },
     );
     await writeFile(
-      join(moduleRoot, "RecipeFixture.xcommod"),
+      join(moduleRoot, "RecipeFixture.XComMod"),
       "Synthetic module descriptor\nid=RecipeFixture\nsource-role=active-module\n",
       { encoding: "utf8", mode: 0o600 },
     );
@@ -694,26 +1047,56 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   async #invoke(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
-    this.#nativeCalls.push(Object.freeze({ sequence: ++this.#sequence, command, args: structuredClone(args) }));
-    const workspace = { id: WORKSPACE_ID, name: "XCOM 2 Build Recipe Story", rootPath: this.#requireWorkspaceRoot() };
+    this.#nativeCalls.push(
+      Object.freeze({ sequence: ++this.#sequence, command, args: structuredClone(args) }),
+    );
+    const workspace = {
+      id: WORKSPACE_ID,
+      name: "XCOM 2 Build Recipe Story",
+      rootPath: this.#requireWorkspaceRoot(),
+    };
     switch (command) {
       case "ensure_current_workspace":
         return workspace;
       case "list_workspaces":
         return { currentWorkspaceId: WORKSPACE_ID, workspaces: [workspace] };
       case "list_directory":
-        return { name: "workspace", path: this.#requireWorkspaceRoot(), type: "directory", children: [] };
+        return {
+          name: "workspace",
+          path: this.#requireWorkspaceRoot(),
+          type: "directory",
+          children: [],
+        };
       case "get_pi_agent_settings":
-        return { enabled: false, provider: "pi", preferredIntegration: "rpc", fallbackIntegrations: [] };
+        return {
+          enabled: false,
+          provider: "pi",
+          preferredIntegration: "rpc",
+          fallbackIntegrations: [],
+        };
       case "get_pi_agent_status":
-        return { provider: "pi", enabled: false, available: false, availability: "not-installed", preferredIntegration: "rpc", fallbackIntegrations: [], checkedAt: FIXED_TIME };
+        return {
+          provider: "pi",
+          enabled: false,
+          available: false,
+          availability: "not-installed",
+          preferredIntegration: "rpc",
+          fallbackIntegrations: [],
+          checkedAt: FIXED_TIME,
+        };
       case "list_pi_agent_commands":
         return { provider: "pi", integration: "rpc", commands: [] };
       case "list_agent_runs":
       case "poll_java_language_service_events":
         return [];
       case "get_pi_agent_session_messages":
-        return { workspaceId: WORKSPACE_ID, sessionId: "story", provider: "pi", integration: "rpc", messages: [] };
+        return {
+          workspaceId: WORKSPACE_ID,
+          sessionId: "story",
+          provider: "pi",
+          integration: "rpc",
+          messages: [],
+        };
       case "get_java_language_service_status":
       case "stop_java_language_service":
         return {
@@ -723,7 +1106,20 @@ export class Xcom2ProjectBuildRecipeHarness {
           workspaceId: WORKSPACE_ID,
           workspaceRoot: this.#requireWorkspaceRoot(),
           generation: 1,
-          capabilities: { documentSync: true, diagnostics: false, completion: false, hover: false, definition: false, references: false, documentSymbols: false, workspaceSymbols: false, rename: false, codeActions: false, formatting: false, signatureHelp: false },
+          capabilities: {
+            documentSync: true,
+            diagnostics: false,
+            completion: false,
+            hover: false,
+            definition: false,
+            references: false,
+            documentSymbols: false,
+            workspaceSymbols: false,
+            rename: false,
+            codeActions: false,
+            formatting: false,
+            signatureHelp: false,
+          },
           checkedAt: FIXED_TIME,
         };
       case "open_java_language_document":
@@ -739,28 +1135,149 @@ export class Xcom2ProjectBuildRecipeHarness {
           apiVersion: "0.2",
           provider: "refactorkit",
           providerVersion: "unavailable",
-          javaImportExternalClass: { supported: false, targetDirectory: false, preview: false, apply: false, rollback: false, stability: "experimental" },
-          safety: { previewBeforeApply: false, snapshotValidation: false, transactionRollback: false, workspaceScopedWrites: false },
+          javaImportExternalClass: {
+            supported: false,
+            targetDirectory: false,
+            preview: false,
+            apply: false,
+            rollback: false,
+            stability: "experimental",
+          },
+          safety: {
+            previewBeforeApply: false,
+            snapshotValidation: false,
+            transactionRollback: false,
+            workspaceScopedWrites: false,
+          },
         };
-      case "scan_xcom2_module_evidence": {
-        const request = args.request as Record<string, unknown>;
-        return {
-          workspaceId: request.workspaceId,
-          workspaceGeneration: request.workspaceGeneration,
-          scanId: request.scanId,
-          scanGeneration: request.scanGeneration,
-          completeness: "complete",
-          issues: [],
-          limits: request.limits,
-          observations: [
-            { evidenceKind: "x2proj", moduleRoot: MODULE_ROOT, relativePath: `${MODULE_ROOT}/RecipeFixture.x2proj` },
-            { evidenceKind: "xcommod", moduleRoot: MODULE_ROOT, relativePath: `${MODULE_ROOT}/RecipeFixture.xcommod` },
-          ],
+      case "begin_xcom2_native_activation_evidence": {
+        assert.deepEqual(Object.keys(args), ["request"]);
+        const request = args.request as Readonly<Record<string, unknown>>;
+        assert.deepEqual(Object.keys(request), [
+          "workspaceId",
+          "workspaceGeneration",
+          "scanId",
+          "scanGeneration",
+          "configurationReadId",
+          "limits",
+        ]);
+        assert.equal(request.workspaceId, WORKSPACE_ID);
+        assert.equal(request.workspaceGeneration, 1);
+        assert.deepEqual(request.limits, {
+          maximumDepth: 8,
+          maximumEncounteredEntries: 20_000,
+        });
+        const correlation = {
+          workspaceId: request.workspaceId as string,
+          workspaceGeneration: request.workspaceGeneration as number,
+          activationGeneration: 1,
+          activationAttemptReceipt: ACTIVATION_ATTEMPT_RECEIPT,
         };
+        const candidate = {
+          scan: {
+            ...correlation,
+            scanId: request.scanId as string,
+            scanGeneration: request.scanGeneration as number,
+            completeness: "complete",
+            issues: [],
+            limits: { maximumDepth: 8, maximumEncounteredEntries: 20_000 },
+            observations: [
+              {
+                evidenceKind: "x2proj",
+                moduleRoot: MODULE_ROOT,
+                relativePath: `${MODULE_ROOT}/RecipeFixture.x2proj`,
+              },
+              {
+                evidenceKind: "xcommod",
+                moduleRoot: MODULE_ROOT,
+                relativePath: `${MODULE_ROOT}/RecipeFixture.XComMod`,
+              },
+            ],
+            evidenceHandles: [
+              { moduleRoot: MODULE_ROOT, evidenceHandle: ACTIVATION_EVIDENCE_HANDLE },
+            ],
+          },
+          configuration: {
+            ...correlation,
+            configurationReadId: request.configurationReadId as string,
+            evidenceHandles: [
+              { moduleRoot: MODULE_ROOT, evidenceHandle: ACTIVATION_EVIDENCE_HANDLE },
+            ],
+            kind: "ready",
+            configuration: { version: 1, target: "wotc", moduleRoots: [MODULE_ROOT] },
+          },
+        } as const;
+        this.#nativeActivationState = Object.freeze({
+          kind: "pending",
+          ...correlation,
+          scan: candidate.scan,
+          configuration: candidate.configuration,
+        });
+        return candidate;
       }
-      case "read_xcom2_module_configuration": {
-        const request = args.request as Record<string, unknown>;
-        return { ...request, kind: "ready", configuration: { version: 1, target: "wotc", moduleRoots: [MODULE_ROOT] } };
+      case "acknowledge_xcom2_native_activation_evidence": {
+        assert.deepEqual(Object.keys(args), ["acknowledgment"]);
+        const acknowledgment = args.acknowledgment as {
+          readonly activationAttemptReceipt: string;
+          readonly evidenceHandles: readonly string[];
+        };
+        assert.deepEqual(acknowledgment, {
+          activationAttemptReceipt: ACTIVATION_ATTEMPT_RECEIPT,
+          evidenceHandles: [ACTIVATION_EVIDENCE_HANDLE],
+        });
+        const state = Object.freeze({
+          kind: "acknowledged" as const,
+          workspaceId: WORKSPACE_ID,
+          workspaceGeneration: 1,
+          activationGeneration: 1,
+          activationAttemptReceipt: ACTIVATION_ATTEMPT_RECEIPT,
+          acknowledgment: Object.freeze({
+            activationAttemptReceipt: ACTIVATION_ATTEMPT_RECEIPT,
+            evidenceHandles: Object.freeze([ACTIVATION_EVIDENCE_HANDLE]),
+          }),
+          selectedModules: Object.freeze([
+            Object.freeze({
+              moduleRoot: MODULE_ROOT,
+              evidenceHandle: ACTIVATION_EVIDENCE_HANDLE,
+            }),
+          ]),
+        });
+        this.#nativeActivationState = state;
+        return { kind: "acknowledged", acknowledgment, state };
+      }
+      case "revoke_xcom2_native_activation_evidence": {
+        assert.deepEqual(Object.keys(args), ["event"]);
+        const event = args.event as {
+          readonly kind: string;
+          readonly activationGeneration?: number;
+        };
+        if (event.kind === "newer-activation-generation") {
+          assert.deepEqual(Object.keys(event), ["kind", "activationGeneration"]);
+          assert.equal(event.activationGeneration, 1);
+          return { kind: "retained", state: this.#nativeActivationState };
+        }
+        assert.deepEqual(Object.keys(event), ["kind"]);
+        const state = Object.freeze({
+          kind: "revoked" as const,
+          code: event.kind as Extract<
+            Xcom2NativeActivationEvidenceState,
+            { readonly kind: "revoked" }
+          >["code"],
+        });
+        this.#nativeActivationState = state;
+        return { kind: "revoked", state };
+      }
+      case "inspect_xcom2_project_build_recipe": {
+        assert.deepEqual(Object.keys(args), ["request"]);
+        assert.deepEqual(args.request, {
+          workspaceId: WORKSPACE_ID,
+          generation: 1,
+          moduleRoot: MODULE_ROOT,
+        });
+        assert.equal(this.#nativeActivationState.kind, "acknowledged");
+        const candidate = this.#createRecipeCandidate();
+        this.#inspectedCandidate = structuredClone(candidate);
+        return candidate;
       }
       default:
         throw new Error(`Build-recipe Story backend has no fake response for ${command}`);
@@ -768,28 +1285,70 @@ export class Xcom2ProjectBuildRecipeHarness {
   }
 
   #installDom(): void {
-    this.#dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://desktop.story.invalid" });
+    this.#dom = new JSDOM("<!doctype html><html><body></body></html>", {
+      url: "http://desktop.story.invalid",
+    });
     const window = this.#dom.window;
     Object.defineProperty(window.HTMLElement.prototype, "getBoundingClientRect", {
       configurable: true,
-      value: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280, x: 0, y: 0, toJSON: () => ({}) }),
+      value: () => ({
+        bottom: 720,
+        height: 720,
+        left: 0,
+        right: 1280,
+        top: 0,
+        width: 1280,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
     });
     const fetch = async (input: unknown, init?: unknown): Promise<Response> => {
-      (this.#networkAttempts as Record<string, unknown>[]).push({ input: String(input), init: init === undefined ? null : String(init) });
+      (this.#networkAttempts as Record<string, unknown>[]).push({
+        input: String(input),
+        init: init === undefined ? null : String(init),
+      });
       throw new Error("Network is forbidden in the build-recipe Story harness");
     };
     const globals: ReadonlyArray<readonly [string, unknown]> = [
-      ["window", window], ["document", window.document], ["navigator", window.navigator],
-      ["Node", window.Node], ["Element", window.Element], ["HTMLElement", window.HTMLElement],
-      ["HTMLButtonElement", window.HTMLButtonElement], ["HTMLInputElement", window.HTMLInputElement],
-      ["HTMLTextAreaElement", window.HTMLTextAreaElement], ["MouseEvent", window.MouseEvent],
-      ["KeyboardEvent", window.KeyboardEvent], ["Event", window.Event], ["CustomEvent", window.CustomEvent],
-      ["getComputedStyle", window.getComputedStyle.bind(window)], ["fetch", fetch],
-      ["requestAnimationFrame", (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0)],
+      ["window", window],
+      ["document", window.document],
+      ["navigator", window.navigator],
+      ["Node", window.Node],
+      ["Element", window.Element],
+      ["HTMLElement", window.HTMLElement],
+      ["HTMLButtonElement", window.HTMLButtonElement],
+      ["HTMLInputElement", window.HTMLInputElement],
+      ["HTMLTextAreaElement", window.HTMLTextAreaElement],
+      ["MouseEvent", window.MouseEvent],
+      ["KeyboardEvent", window.KeyboardEvent],
+      ["Event", window.Event],
+      ["CustomEvent", window.CustomEvent],
+      ["getComputedStyle", window.getComputedStyle.bind(window)],
+      ["fetch", fetch],
+      [
+        "requestAnimationFrame",
+        (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0),
+      ],
       ["cancelAnimationFrame", () => undefined],
-      ["ResizeObserver", class { observe(): void {} unobserve(): void {} disconnect(): void {} }],
-      ["IntersectionObserver", class { observe(): void {} unobserve(): void {} disconnect(): void {} }],
-      ["React", storyReact], ["IS_REACT_ACT_ENVIRONMENT", true],
+      [
+        "ResizeObserver",
+        class {
+          observe(): void {}
+          unobserve(): void {}
+          disconnect(): void {}
+        },
+      ],
+      [
+        "IntersectionObserver",
+        class {
+          observe(): void {}
+          unobserve(): void {}
+          disconnect(): void {}
+        },
+      ],
+      ["React", storyReact],
+      ["IS_REACT_ACT_ENVIRONMENT", true],
     ];
     for (const [name, value] of globals) {
       this.#globalDescriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
@@ -797,8 +1356,18 @@ export class Xcom2ProjectBuildRecipeHarness {
     }
     Object.defineProperties(window, {
       fetch: { configurable: true, value: fetch },
-      matchMedia: { configurable: true, value: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }) },
-      requestAnimationFrame: { configurable: true, value: (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0) },
+      matchMedia: {
+        configurable: true,
+        value: () => ({
+          matches: false,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        }),
+      },
+      requestAnimationFrame: {
+        configurable: true,
+        value: (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0),
+      },
       cancelAnimationFrame: { configurable: true, value: () => undefined },
     });
   }
@@ -811,45 +1380,167 @@ export class Xcom2ProjectBuildRecipeHarness {
     assert.ok(within(container).getByText(expected, { exact: true }));
   }
 
-  #expectedBoundRecipe(): Readonly<Record<string, unknown>> {
+  #createRecipeCandidate(): Xcom2ProjectBuildRecipeCandidate {
     const script = this.#scriptEntry();
-    return Object.freeze({
-      workspaceId: WORKSPACE_ID,
-      workspaceGeneration: 1,
-      moduleRoot: MODULE_ROOT,
-      inspectionGeneration: 1,
-      script: { path: SCRIPT_PATH, sha256: script.sha256, bytes: script.bytes },
-      provenance: { license: "MIT", notice: NOTICE.trim() },
-      action: "default",
-      roles: EXPECTED_ROLES.map((role) => ({ role, state: role === "configuration" ? "Default" : "unresolved" })),
+    const noticeText = NOTICE.trim();
+    return {
       schemaVersion: 1,
-    });
+      canonicalization: "RFC 8785",
+      digestAlgorithm: "SHA-256",
+      workspace: { id: WORKSPACE_ID, generation: 1 },
+      module: {
+        id: "xcom2-module:RecipeFixture",
+        root: MODULE_ROOT,
+        activationGeneration: 1,
+        entryType: "directory",
+        containsSymlink: false,
+      },
+      inspectionGeneration: 1,
+      script: {
+        relativePath: SCRIPT_PATH,
+        entryType: "regular-file",
+        containsSymlink: false,
+        trust: "untrusted-project-input",
+        sha256: script.sha256!,
+        byteSize: script.bytes!,
+      },
+      provenance: {
+        project: "X2ModBuildCommon",
+        license: "MIT",
+        notice: {
+          identity: NOTICE_IDENTITY,
+          text: noticeText,
+          sha256: sha256(noticeText),
+        },
+      },
+      action: "default",
+      arguments: [
+        { role: "source-directory", valueState: "current-module", value: MODULE_ROOT },
+        {
+          role: "sdk-directory",
+          valueState: "unresolved",
+          value: "separate-machine-authorization-required",
+        },
+        {
+          role: "game-directory",
+          valueState: "unresolved",
+          value: "separate-machine-authorization-required",
+        },
+        { role: "configuration", valueState: "declared", value: "Default" },
+        { role: "build-prefix", valueState: "unresolved", value: "pfx_copy" },
+        {
+          role: "highlander-source",
+          valueState: "project-local",
+          value: "Highlander/XComGame",
+        },
+        {
+          role: "highlander-runtime",
+          valueState: "unresolved",
+          value: "workshop:1134256495",
+        },
+      ],
+      dependencies: {
+        buildPrefix: { identity: "pfx_copy", state: "unresolved" },
+        highlanderSource: {
+          identity: "highlander-source:local",
+          relativePath: "Highlander/XComGame",
+          state: "project-local",
+          entryType: "directory",
+          containsSymlink: false,
+        },
+        highlanderRuntime: { identity: "workshop:1134256495", state: "unresolved" },
+      },
+      unresolvedPrerequisites: [
+        { role: "sdk-directory", identity: "sdk-directory", state: "unresolved" },
+        { role: "game-directory", identity: "game-directory", state: "unresolved" },
+        { role: "build-prefix", identity: "pfx_copy", state: "unresolved" },
+        { role: "build-tool", identity: "x2modbuildcommon-tool", state: "unresolved" },
+        {
+          role: "highlander-runtime",
+          identity: "workshop:1134256495",
+          state: "unresolved",
+        },
+      ],
+      executionBlocked: true,
+    };
+  }
+
+  #candidateLeafPaths(
+    value: unknown,
+    prefix: readonly (string | number)[] = [],
+  ): readonly (readonly (string | number)[])[] {
+    if (value === null || typeof value !== "object") return [prefix];
+    if (Array.isArray(value)) {
+      return value.flatMap((child, index) => this.#candidateLeafPaths(child, [...prefix, index]));
+    }
+    return Object.entries(value).flatMap(([key, child]) =>
+      this.#candidateLeafPaths(child, [...prefix, key]),
+    );
+  }
+
+  #changeCandidateLeaf(
+    candidate: Xcom2ProjectBuildRecipeCandidate,
+    path: readonly (string | number)[],
+  ): void {
+    assert.ok(path.length > 0);
+    let owner: any = candidate;
+    for (const segment of path.slice(0, -1)) owner = owner[segment];
+    const key = path.at(-1)!;
+    const value: unknown = owner[key];
+    if (typeof value === "string") owner[key] = `${value}:changed`;
+    else if (typeof value === "number") owner[key] = value + 1;
+    else if (typeof value === "boolean") owner[key] = !value;
+    else throw new TypeError(`Unsupported recipe leaf at ${path.join(".")}`);
+  }
+
+  #revocationCandidates(): readonly Xcom2ProjectBuildRecipeCandidate[] {
+    const changed = Array.from({ length: 8 }, () =>
+      structuredClone(this.#requireInspectedCandidate()),
+    ) as Xcom2ProjectBuildRecipeCandidate[];
+    changed[0]!.workspace.id = `${WORKSPACE_ID}:switched`;
+    changed[1]!.workspace.generation += 1;
+    changed[2]!.module.id = "xcom2-module:Replacement";
+    changed[2]!.module.root = "Mods/Replacement";
+    changed[2]!.arguments[0]!.value = "Mods/Replacement";
+    (changed[3]!.script as { entryType: string }).entryType = "symlink";
+    changed[4]!.provenance.notice.text += " Updated attribution.";
+    changed[4]!.provenance.notice.sha256 = sha256(changed[4]!.provenance.notice.text);
+    changed[5]!.inspectionGeneration += 1;
+    changed[6]!.dependencies.highlanderRuntime.identity = "workshop:changed";
+    changed[6]!.arguments[6]!.value = "workshop:changed";
+    changed[6]!.unresolvedPrerequisites[4]!.identity = "workshop:changed";
+    (changed[7] as { schemaVersion: number }).schemaVersion = 2;
+    return changed;
   }
 
   #scriptEntry(): TreeEntry {
-    const entry = this.#requireInitialTree().entries.find(({ path }) => path === `${MODULE_ROOT}/${SCRIPT_PATH}`);
+    const entry = this.#requireInitialTree().entries.find(
+      ({ path }) => path === `${MODULE_ROOT}/${SCRIPT_PATH}`,
+    );
     assert.ok(entry && entry.kind === "regular-file");
     return entry;
   }
 
   #activationCalls(): readonly NativeCall[] {
-    return this.#nativeCalls.filter(({ command }) => command === "scan_xcom2_module_evidence" || command === "read_xcom2_module_configuration");
+    return this.#nativeCalls.filter(({ command }) =>
+      [
+        "begin_xcom2_native_activation_evidence",
+        "acknowledge_xcom2_native_activation_evidence",
+        "revoke_xcom2_native_activation_evidence",
+      ].includes(command),
+    );
   }
 
   #buildRecipeCalls(): readonly NativeCall[] {
     return this.#nativeCalls.filter(({ command }) => BUILD_RECIPE_TERMS.test(command));
   }
 
-  #lastBuildRecipeCall(): NativeCall {
-    const call = this.#buildRecipeCalls().at(-1);
-    assert.ok(call, "No build-recipe native call was observed");
-    return call;
-  }
-
   #accessCounters(): AccessCounters {
     const nonRecipeProcesses = this.#processAttempts.length;
     return {
-      "project script invocation": this.#processAttempts.filter((attempt) => JSON.stringify(attempt).includes(SCRIPT_PATH)).length,
+      "project script invocation": this.#processAttempts.filter((attempt) =>
+        JSON.stringify(attempt).includes(SCRIPT_PATH),
+      ).length,
       "shell or other process invocation": nonRecipeProcesses,
       "network request": this.#networkAttempts.length,
       "SDK filesystem access": 0,
@@ -877,5 +1568,27 @@ export class Xcom2ProjectBuildRecipeHarness {
   #requireInitialTree(): TreeRecording {
     assert.ok(this.#initialTree, "Initial Story fixture tree was not recorded");
     return this.#initialTree;
+  }
+
+  #requireInspectedCandidate(): Readonly<Xcom2ProjectBuildRecipeCandidate> {
+    assert.ok(this.#inspectedCandidate, "Production recipe inspection has not completed");
+    return this.#inspectedCandidate;
+  }
+
+  #requireReadyReview(): Extract<Xcom2ProjectBuildRecipeReviewResult, { readonly kind: "ready" }> {
+    if (!this.#readyReview) {
+      const result = reviewXcom2ProjectBuildRecipe(this.#requireInspectedCandidate());
+      if (result.kind !== "ready") throw new Error(`Recipe review was refused: ${result.code}`);
+      this.#readyReview = result;
+    }
+    return this.#readyReview;
+  }
+
+  #requireApprovalDecision(): Extract<
+    Xcom2ProjectBuildRecipeApprovalDecision,
+    { readonly kind: "approved" }
+  > {
+    assert.ok(this.#approvalDecision, "Production exact-recipe approval has not started");
+    return this.#approvalDecision;
   }
 }
