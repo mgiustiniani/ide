@@ -7,7 +7,7 @@ Business Need: Safe review and one-shot approval of an XCOM 2 project build reci
   The fixture for future acceptance must be sanitized and hand-authored from MIT X2ModBuildCommon concepts, retain an attribution notice, and contain no copied source, asset, or log material.
   Approval is volatile and one-shot. It is exact-recipe review authority only, not evidence of a successful build or authority to execute one.
 
-  @REQ-XCOM2-PROJECT-BUILD-RECIPE-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @not-implemented
+  @REQ-XCOM2-PROJECT-BUILD-RECIPE-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @security @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Review and approve one exact blocked Default Build recipe without trusting or executing it
     Given the current authorized workspace has exactly one current active XCOM 2 module
     And the module and every file eligible for recipe inspection are regular, non-symlink entries contained by that authorized workspace
