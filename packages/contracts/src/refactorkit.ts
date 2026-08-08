@@ -122,6 +122,146 @@ export interface RefactorKitSafetyCapabilities {
   workspaceScopedWrites: boolean;
 }
 
+export interface RefactorKitDiagnosticsV2MethodFeatures {
+  requestCorrelation: true;
+  semanticLease: true;
+  savedDiskAuthority: true;
+  immutableEditorOverlay: true;
+  exactUtf16Ranges: true;
+  structuredReadiness: true;
+  compilerAttestation: true;
+  boundedResponse: true;
+}
+
+/** Provider-advertised metadata for one public RefactorKit operation. */
+export interface RefactorKitMethodCapability {
+  name: string;
+  stability: string;
+  requiresProject: boolean;
+  writesWorkspace: boolean;
+  features?: Record<string, boolean>;
+}
+
+const METHOD_CAPABILITY_FIELDS = new Set([
+  "name",
+  "stability",
+  "requiresProject",
+  "writesWorkspace",
+  "features",
+]);
+
+const DIAGNOSTICS_V2_FEATURE_NAMES = [
+  "requestCorrelation",
+  "semanticLease",
+  "savedDiskAuthority",
+  "immutableEditorOverlay",
+  "exactUtf16Ranges",
+  "structuredReadiness",
+  "compilerAttestation",
+  "boundedResponse",
+] as const satisfies readonly (keyof RefactorKitDiagnosticsV2MethodFeatures)[];
+
+const INVALID_METHOD_CAPABILITIES = "Invalid RefactorKit method capability metadata";
+
+function isMethodCapabilityRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOwnField(value: object, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function rejectMethodCapabilities(): never {
+  throw new TypeError(INVALID_METHOD_CAPABILITIES);
+}
+
+function normalizeMethodCapabilities(value: unknown): RefactorKitMethodCapability[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return rejectMethodCapabilities();
+
+  const names = new Set<string>();
+  return value.map((candidate) => {
+    if (!isMethodCapabilityRecord(candidate)) return rejectMethodCapabilities();
+
+    const fields = Reflect.ownKeys(candidate);
+    if (
+      fields.some((field) => typeof field !== "string" || !METHOD_CAPABILITY_FIELDS.has(field)) ||
+      !hasOwnField(candidate, "name") ||
+      !hasOwnField(candidate, "stability") ||
+      !hasOwnField(candidate, "requiresProject") ||
+      !hasOwnField(candidate, "writesWorkspace")
+    ) {
+      return rejectMethodCapabilities();
+    }
+
+    const { name, stability, requiresProject, writesWorkspace } = candidate;
+    if (
+      typeof name !== "string" ||
+      name.length === 0 ||
+      typeof stability !== "string" ||
+      stability.length === 0 ||
+      typeof requiresProject !== "boolean" ||
+      typeof writesWorkspace !== "boolean" ||
+      names.has(name)
+    ) {
+      return rejectMethodCapabilities();
+    }
+
+    let features: Record<string, boolean> | undefined;
+    if (hasOwnField(candidate, "features")) {
+      const advertisedFeatures = candidate.features;
+      if (!isMethodCapabilityRecord(advertisedFeatures)) return rejectMethodCapabilities();
+
+      const featureFields = Reflect.ownKeys(advertisedFeatures);
+      if (
+        featureFields.length === 0 ||
+        featureFields.some(
+          (field) => typeof field !== "string" || typeof advertisedFeatures[field] !== "boolean",
+        )
+      ) {
+        return rejectMethodCapabilities();
+      }
+      const featureNames = featureFields as string[];
+      features = Object.fromEntries(
+        featureNames.map((field) => [field, advertisedFeatures[field] as boolean]),
+      );
+    }
+
+    if (
+      name === "diagnostics.v2" &&
+      (stability !== "additive-api-0.2" ||
+        requiresProject !== true ||
+        writesWorkspace !== false ||
+        features === undefined ||
+        Reflect.ownKeys(features).length !== DIAGNOSTICS_V2_FEATURE_NAMES.length ||
+        DIAGNOSTICS_V2_FEATURE_NAMES.some((feature) => features?.[feature] !== true))
+    ) {
+      return rejectMethodCapabilities();
+    }
+
+    names.add(name);
+    const normalized: RefactorKitMethodCapability = {
+      name,
+      stability,
+      requiresProject,
+      writesWorkspace,
+    };
+    if (features !== undefined) normalized.features = features;
+    return normalized;
+  });
+}
+
+/** Strictly validates and clones untrusted provider method metadata. */
+export function normalizeRefactorKitMethodCapabilities(
+  value: unknown,
+): RefactorKitMethodCapability[] | undefined {
+  try {
+    return normalizeMethodCapabilities(value);
+  } catch {
+    return rejectMethodCapabilities();
+  }
+}
+
 /** Capabilities are authoritative; the IDE must not infer them from a version number. */
 export interface RefactorKitCapabilities {
   api: string;
@@ -129,6 +269,8 @@ export interface RefactorKitCapabilities {
   provider: string;
   providerVersion: string | null;
   javaImportExternalClass: RefactorKitExternalClassImportCapability;
+  /** Absent for legacy adapters, including RefactorKit 0.6.2. */
+  methods?: RefactorKitMethodCapability[];
   /** Absent only for legacy adapters that predate language-kernel discovery. */
   languageKernel?: RefactorKitLanguageKernelStatus;
   safety?: RefactorKitSafetyCapabilities;
