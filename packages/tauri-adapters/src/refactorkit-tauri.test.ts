@@ -3,6 +3,9 @@ import type {
   SavedSnapshotSemanticSessionStartRequest,
   SavedSnapshotSemanticSessionStopRequest,
   SavedSnapshotSymbolSearchRequest,
+  TypeScriptDiagnosticsCompilerAttestation,
+  TypeScriptDiagnosticsRequest,
+  TypeScriptDiagnosticsResponseRuntime,
 } from "@ide/contracts";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -167,6 +170,222 @@ const rustCommandResult = {
     outputLimitBytes: 524_288,
   },
 };
+
+const DIAGNOSTICS_OPERATION_RUNTIME = {
+  executionMode: "external-process" as const,
+  supportsTimeout: true,
+  supportsCancellation: true,
+  usesWorkspaceOverlay: true,
+  recordsProcessProvenance: true,
+  limits: {
+    requestTimeoutMillis: 30_000,
+    maxInputBytes: 536_870_912,
+    maxOutputBytes: 8_388_608,
+    maxProcesses: 1,
+  },
+};
+
+const DIAGNOSTICS_RESPONSE_RUNTIME = {
+  ...DIAGNOSTICS_OPERATION_RUNTIME,
+  limits: {
+    ...DIAGNOSTICS_OPERATION_RUNTIME.limits,
+    maxStderrBytes: 65_536,
+    compilerHeapMiB: 512,
+    maxDiagnostics: 500,
+    maxDiagnosticMessageChars: 4_096,
+    maxResponseBytes: 2_097_152,
+  },
+} satisfies TypeScriptDiagnosticsResponseRuntime;
+
+const DIAGNOSTICS_COMPILER_ATTESTATION = {
+  toolchainProvider: "typescript-lsp-explicit-v1",
+  nodeVersion: "22.23.0",
+  typeScriptVersion: "5.9.3",
+  compilerSha256: "e".repeat(64),
+  toolchainEvidenceSha256: "f".repeat(64),
+  process: {
+    executableSha256: "1".repeat(64),
+    argumentsSha256: "2".repeat(64),
+    processId: 42,
+  },
+} satisfies TypeScriptDiagnosticsCompilerAttestation;
+
+const DIAGNOSTICS_REQUEST = {
+  schemaVersion: 2,
+  operation: "diagnostics.v2",
+  requestId: "desktop-diagnostics:1:1",
+  languageId: "typescript",
+  workspaceId: "workspace:authorized",
+  workspaceGeneration: 7,
+  sessionId: `refactorkit-semantic-session-v1:${"a".repeat(64)}`,
+  expectedSnapshotHash: `sha256:${"b".repeat(64)}`,
+  semanticLease: "semantic-00000000-0000-4000-8000-000000000001",
+  sourceAuthority: {
+    kind: "immutable-editor-overlay",
+    documents: [
+      {
+        path: "src/broken.ts",
+        version: 9,
+        content: 'const amount: number = "wrong";\n',
+      },
+    ],
+  },
+} as const satisfies TypeScriptDiagnosticsRequest;
+
+const DIAGNOSTICS_EXACT_RESULT = {
+  severity: "error",
+  message: "Type 'string' is not assignable to type 'number'.",
+  code: "TS2322",
+  evidence: "compiler",
+  category: "type-resolution",
+  location: {
+    kind: "range",
+    path: "src/broken.ts",
+    encoding: "utf-16",
+    range: {
+      start: { line: 0, character: 6 },
+      end: { line: 0, character: 12 },
+    },
+  },
+} as const;
+
+function setDiagnosticsResponseBytes(candidate: Record<string, unknown>): void {
+  candidate.responseBytes = 0;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const bytes = Buffer.byteLength(JSON.stringify(candidate), "utf8");
+    candidate.responseBytes = bytes;
+    if (Buffer.byteLength(JSON.stringify(candidate), "utf8") === bytes) return;
+  }
+  throw new Error("diagnostics.v2 response byte count did not converge");
+}
+
+function diagnosticsResponse(
+  status: "ready" | "refused" | "error" = "ready",
+): Record<string, unknown> {
+  const diagnostics = status === "ready" ? [structuredClone(DIAGNOSTICS_EXACT_RESULT)] : [];
+  const candidate: Record<string, unknown> = {
+    schemaVersion: 2,
+    operation: "diagnostics.v2",
+    requestId: DIAGNOSTICS_REQUEST.requestId,
+    languageId: "typescript",
+    status,
+    workspaceId: DIAGNOSTICS_REQUEST.workspaceId,
+    workspaceGeneration: DIAGNOSTICS_REQUEST.workspaceGeneration,
+    sessionId: DIAGNOSTICS_REQUEST.sessionId,
+    provider: { name: "refactorkit", version: "0.7.0-SNAPSHOT", apiVersion: "0.2" },
+    backend: "typescript-compiler-exact-v1",
+    semanticLease: DIAGNOSTICS_REQUEST.semanticLease,
+    projectSnapshotHash: DIAGNOSTICS_REQUEST.expectedSnapshotHash,
+    providerSnapshotHash: "c".repeat(64),
+    sourceAuthority: {
+      kind: "immutable-editor-overlay",
+      baseSnapshotHash: DIAGNOSTICS_REQUEST.expectedSnapshotHash,
+      overlayHash: "3".repeat(64),
+      providerSnapshotHash: "c".repeat(64),
+      documents: [{ path: "src/broken.ts", version: 9, contentSha256: "4".repeat(64) }],
+    },
+    rangeEncoding: "utf-16",
+    rangeCapability: "exact-utf16-or-explicit-partial",
+    runtime: structuredClone(DIAGNOSTICS_RESPONSE_RUNTIME),
+    compilerAttestation:
+      status === "refused" ? null : structuredClone(DIAGNOSTICS_COMPILER_ATTESTATION),
+    failure:
+      status === "ready"
+        ? null
+        : {
+            code:
+              status === "refused"
+                ? "diagnostics.semanticLeaseStale"
+                : "typescript.compilerDiagnosticsTimeout",
+            message:
+              status === "refused"
+                ? "Semantic session lease is stale or belongs to another snapshot"
+                : "Exact compiler diagnostics timed out",
+          },
+    diagnostics,
+    diagnosticsTotal: diagnostics.length,
+    diagnosticsReturned: diagnostics.length,
+    truncated: false,
+    responseBytes: 0,
+  };
+  setDiagnosticsResponseBytes(candidate);
+  return candidate;
+}
+
+const DIAGNOSTICS_METHOD_FEATURES = {
+  requestCorrelation: true,
+  semanticLease: true,
+  savedDiskAuthority: true,
+  immutableEditorOverlay: true,
+  exactUtf16Ranges: true,
+  structuredReadiness: true,
+  compilerAttestation: true,
+  boundedResponse: true,
+};
+
+function diagnosticsV2Method() {
+  return {
+    name: "diagnostics.v2",
+    stability: "additive-api-0.2",
+    requiresProject: true,
+    writesWorkspace: false,
+    features: { ...DIAGNOSTICS_METHOD_FEATURES },
+  };
+}
+
+function genericMethod(name: string) {
+  return {
+    name,
+    stability: "beta-contract",
+    requiresProject: true,
+    writesWorkspace: false,
+    features: { retained: true },
+  };
+}
+
+function diagnosticsV2Capabilities() {
+  return {
+    ...structuredClone(actualSchemaV1Capabilities),
+    providerVersion: "0.7.0-SNAPSHOT",
+    methods: [
+      genericMethod("symbol.definition"),
+      diagnosticsV2Method(),
+      genericMethod("symbol.references"),
+    ],
+    languageKernel: {
+      available: true,
+      schema: {
+        schemaVersion: 1,
+        adapters: [
+          {
+            languageId: "typescript",
+            extensions: ["ts", "tsx"],
+            backend: "tree-sitter-jni-0.25.3+typescript-lsp-explicit-v1",
+            runtime: structuredClone(DIAGNOSTICS_OPERATION_RUNTIME),
+            capabilities: [
+              {
+                operation: "diagnostics",
+                stability: "experimental",
+                evidence: "compiler",
+                mutationAuthority: "none",
+                backend: "typescript-compiler-exact-v1",
+                runtime: structuredClone(DIAGNOSTICS_OPERATION_RUNTIME),
+                extensions: ["ts", "tsx"],
+                diagnosticSnapshotModes: ["immutable-editor-overlay", "saved-disk"],
+                diagnosticRangeCapability: "exact-utf16-or-explicit-partial",
+              },
+            ],
+          },
+        ],
+        vocabulary: {
+          ...LANGUAGE_VOCABULARY,
+          diagnosticSnapshotMode: ["saved-disk", "immutable-editor-overlay"],
+          diagnosticRangeCapability: ["exact-utf16-or-explicit-partial"],
+        },
+      },
+    },
+  };
+}
 
 const SEMANTIC_SESSION_ID = `refactorkit-semantic-session-v1:${"a".repeat(64)}`;
 const SNAPSHOT_IDENTITY = `sha256:${"b".repeat(64)}`;
@@ -404,22 +623,131 @@ describe("TauriRefactorKitAdapter", () => {
     await expect(adapter.symbols()).resolves.toMatchObject({ locations: [] });
   });
 
-  it("flattens Rust command metadata without leaking backend-only fields", async () => {
+  it("forwards the exact schema-v2 diagnostics request inside only { request } and accepts ready", async () => {
     const adapter = new TauriRefactorKitAdapter();
-    invokeMock.mockResolvedValueOnce({
-      ...rustCommandResult,
-      command: {
-        ...rustCommandResult.command,
-        executable: "/opt/refactorkit/bin/refactorkit",
-        args: ["diagnostics", "/workspace/project"],
-      },
-    });
+    const candidate = diagnosticsResponse();
+    invokeMock.mockResolvedValueOnce(candidate);
 
-    await expect(adapter.diagnostics()).resolves.toMatchObject({
-      command: ["/opt/refactorkit/bin/refactorkit", "diagnostics", "/workspace/project"],
-    });
-    expect(invokeMock).toHaveBeenCalledWith("run_refactorkit_diagnostics", undefined);
+    const result = await adapter.diagnostics(DIAGNOSTICS_REQUEST);
+
+    expect(result).toEqual(candidate);
+    expect(result).not.toBe(candidate);
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") throw new Error("expected ready diagnostics");
+    expect(result.diagnostics).toEqual([DIAGNOSTICS_EXACT_RESULT]);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const [command, argumentsValue] = invokeMock.mock.calls[0]!;
+    expect(command).toBe("run_refactorkit_diagnostics");
+    expect(Reflect.ownKeys(argumentsValue as object)).toEqual(["request"]);
+    expect((argumentsValue as { request: unknown }).request).toBe(DIAGNOSTICS_REQUEST);
   });
+
+  it.each(["refused", "error"] as const)(
+    "accepts one correlated structured diagnostics %s response without fallback output",
+    async (status) => {
+      const candidate = diagnosticsResponse(status);
+      invokeMock.mockResolvedValueOnce(candidate);
+
+      const result = await new TauriRefactorKitAdapter().diagnostics(DIAGNOSTICS_REQUEST);
+
+      expect(result).toEqual(candidate);
+      expect(result.status).toBe(status);
+      expect(result.failure).not.toBeNull();
+      expect(result.diagnostics).toEqual([]);
+      expect(result).not.toHaveProperty("stdout");
+      expect(invokeMock).toHaveBeenCalledWith("run_refactorkit_diagnostics", {
+        request: DIAGNOSTICS_REQUEST,
+      });
+    },
+  );
+
+  it.each([
+    [
+      "malformed response runtime",
+      "response-schema-invalid",
+      (value: Record<string, unknown>) => {
+        delete value.runtime;
+      },
+      true,
+    ],
+    [
+      "extra legacy output field",
+      "response-schema-invalid",
+      (value: Record<string, unknown>) => {
+        value.stdout = "legacy fallback output";
+      },
+      true,
+    ],
+    [
+      "stale request correlation",
+      "response-correlation-mismatch",
+      (value: Record<string, unknown>) => {
+        value.requestId = "desktop-diagnostics:stale";
+      },
+      true,
+    ],
+    [
+      "unaccepted backend",
+      "response-backend-mismatch",
+      (value: Record<string, unknown>) => {
+        value.backend = "typescript-language-server";
+      },
+      true,
+    ],
+    [
+      "malformed compiler attestation",
+      "response-status-invalid",
+      (value: Record<string, unknown>) => {
+        (value.compilerAttestation as Record<string, unknown>).compilerSha256 = "not-a-sha256";
+      },
+      true,
+    ],
+    [
+      "response beyond advertised bounds",
+      "response-bounds-exceeded",
+      (value: Record<string, unknown>) => {
+        value.responseBytes = DIAGNOSTICS_RESPONSE_RUNTIME.limits.maxResponseBytes + 1;
+      },
+      false,
+    ],
+    [
+      "reversed exact UTF-16 range",
+      "response-diagnostic-invalid",
+      (value: Record<string, unknown>) => {
+        const diagnostic = (value.diagnostics as Record<string, unknown>[])[0]!;
+        const location = diagnostic.location as Record<string, unknown>;
+        const range = location.range as Record<string, unknown>;
+        (range.end as Record<string, unknown>).character = 5;
+      },
+      true,
+    ],
+  ] as const)(
+    "rejects and redacts a diagnostics response with %s",
+    async (_case, reason, mutate, recount) => {
+      const candidate = diagnosticsResponse();
+      mutate(candidate);
+      if (recount) setDiagnosticsResponseBytes(candidate);
+      invokeMock.mockResolvedValueOnce(candidate);
+
+      const error = await new TauriRefactorKitAdapter()
+        .diagnostics(DIAGNOSTICS_REQUEST)
+        .catch((value: unknown) => value);
+
+      expect(error).toMatchObject({
+        name: "TauriRefactorKitDiagnosticsResponseError",
+        command: "run_refactorkit_diagnostics",
+        code: "REFACTORKIT_TYPESCRIPT_DIAGNOSTICS_RESPONSE_REJECTED",
+        reason,
+        cause: undefined,
+      });
+      expect(error).not.toHaveProperty("response");
+      expect(JSON.stringify(error)).not.toContain("legacy fallback output");
+      expect(invokeMock).toHaveBeenCalledWith("run_refactorkit_diagnostics", {
+        request: DIAGNOSTICS_REQUEST,
+      });
+    },
+  );
 
   it.each([
     {
@@ -708,6 +1036,166 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     expect(invokeMock.mock.calls).toEqual([["get_refactorkit_capabilities", undefined]]);
   });
 
+  it("retains ordered method metadata while independently cloning methods and feature maps", async () => {
+    const response = diagnosticsV2Capabilities();
+    const sourceMethods = response.methods;
+    const sourceDiagnostics = sourceMethods[1]!;
+    const sourceFeatures = sourceDiagnostics.features as Record<string, boolean>;
+    invokeMock.mockResolvedValueOnce(response);
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.methods).toEqual(sourceMethods);
+    expect(normalized.methods?.map(({ name }) => name)).toEqual([
+      "symbol.definition",
+      "diagnostics.v2",
+      "symbol.references",
+    ]);
+    expect(normalized.methods).not.toBe(sourceMethods);
+    expect(normalized.methods?.[1]).not.toBe(sourceDiagnostics);
+    expect(normalized.methods?.[1]?.features).not.toBe(sourceFeatures);
+    sourceFeatures.requestCorrelation = false;
+    sourceMethods.reverse();
+    expect(normalized.methods?.map(({ name }) => name)).toEqual([
+      "symbol.definition",
+      "diagnostics.v2",
+      "symbol.references",
+    ]);
+    expect(normalized.methods?.[1]?.features?.requestCorrelation).toBe(true);
+  });
+
+  it.each([
+    [
+      "malformed method entry",
+      (value: any) => {
+        value.methods[0] = "symbol.definition";
+      },
+    ],
+    [
+      "duplicate method name",
+      (value: any) => {
+        value.methods.push(genericMethod("symbol.definition"));
+      },
+    ],
+    [
+      "unsafe diagnostics workspace write",
+      (value: any) => {
+        value.methods[1].writesWorkspace = true;
+      },
+    ],
+    [
+      "diagnostics method contradicted by unavailable language metadata",
+      (value: any) => {
+        value.languageKernel = { available: false, schema: null, reason: "unavailable" };
+      },
+    ],
+  ])("rejects and redacts %s", async (_case, mutate) => {
+    const response = diagnosticsV2Capabilities() as any;
+    mutate(response);
+    response.privateDetail = PRIVATE_NATIVE_DETAIL;
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .getCapabilities()
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_capabilities",
+      cause: undefined,
+    });
+    expect(String(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+    expect(JSON.stringify(error)).not.toContain(PRIVATE_NATIVE_DETAIL);
+  });
+
+  it("retains diagnostics snapshot modes and range capability in operation and vocabulary metadata", async () => {
+    const response = diagnosticsV2Capabilities();
+    invokeMock.mockResolvedValueOnce(response);
+
+    const normalized = (await new TauriRefactorKitAdapter().getCapabilities()) as any;
+    const capability = normalized.languageKernel.schema.adapters[0].capabilities[0];
+
+    expect(capability).toMatchObject({
+      operation: "diagnostics",
+      diagnosticSnapshotModes: ["immutable-editor-overlay", "saved-disk"],
+      diagnosticRangeCapability: "exact-utf16-or-explicit-partial",
+    });
+    expect(normalized.languageKernel.schema.vocabulary).toMatchObject({
+      diagnosticSnapshotMode: ["saved-disk", "immutable-editor-overlay"],
+      diagnosticRangeCapability: ["exact-utf16-or-explicit-partial"],
+    });
+    expect(capability.diagnosticSnapshotModes).not.toBe(
+      response.languageKernel.schema.adapters[0]!.capabilities[0]!.diagnosticSnapshotModes,
+    );
+    expect(normalized.languageKernel.schema.vocabulary.diagnosticSnapshotMode).not.toBe(
+      response.languageKernel.schema.vocabulary.diagnosticSnapshotMode,
+    );
+  });
+
+  it.each([
+    [
+      "incomplete diagnostic vocabulary",
+      (value: any) => {
+        delete value.languageKernel.schema.vocabulary.diagnosticRangeCapability;
+      },
+    ],
+    [
+      "reordered diagnostic snapshot vocabulary",
+      (value: any) => {
+        value.languageKernel.schema.vocabulary.diagnosticSnapshotMode.reverse();
+      },
+    ],
+    [
+      "missing diagnostics snapshot modes",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].diagnosticSnapshotModes;
+      },
+    ],
+    [
+      "duplicate diagnostics snapshot mode",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].diagnosticSnapshotModes = [
+          "immutable-editor-overlay",
+          "immutable-editor-overlay",
+        ];
+      },
+    ],
+    [
+      "unsafe diagnostics snapshot-mode order",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].diagnosticSnapshotModes.reverse();
+      },
+    ],
+    [
+      "missing diagnostics range capability",
+      (value: any) => {
+        delete value.languageKernel.schema.adapters[0].capabilities[0].diagnosticRangeCapability;
+      },
+    ],
+    [
+      "unknown diagnostics range capability",
+      (value: any) => {
+        value.languageKernel.schema.adapters[0].capabilities[0].diagnosticRangeCapability =
+          "best-effort-utf8";
+      },
+    ],
+  ])("rejects invalid language-kernel diagnostics metadata: %s", async (_case, mutate) => {
+    const response = diagnosticsV2Capabilities() as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+
+    const error = await new TauriRefactorKitAdapter()
+      .getCapabilities()
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_capabilities",
+      cause: undefined,
+    });
+    expect(error).not.toHaveProperty("response");
+  });
+
   it("normalizes an arbitrary adapter exactly without language-specific inference", async () => {
     const providerNeutralCapabilities = {
       ...actualSchemaV1Capabilities,
@@ -861,6 +1349,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     invokeMock.mockResolvedValueOnce(legacy);
     const normalizedLegacy = await new TauriRefactorKitAdapter().getCapabilities();
     expect(normalizedLegacy).toEqual(legacy);
+    expect(normalizedLegacy).not.toHaveProperty("methods");
     expect(normalizedLegacy).not.toHaveProperty("languageKernel");
     expect(normalizedLegacy).not.toHaveProperty("safety");
   });

@@ -12,6 +12,7 @@ import type {
   SavedSnapshotSemanticSessionStopResult,
   SavedSnapshotSymbolSearchRequest,
   SavedSnapshotSymbolSearchResult,
+  TypeScriptDiagnosticsRequest,
 } from "@ide/contracts";
 import type { RefactorKitPort } from "@ide/web-core/ports";
 import { describe, expect, it, vi } from "vitest";
@@ -31,7 +32,9 @@ const TRANSACTION_ID = "transaction-secret-64ce";
 const REQUEST_ID = "request-secret-099b";
 const WORKSPACE_ID = "workspace-secret-b012";
 const SEMANTIC_SESSION_ID = "semantic-session-secret-9c31";
+const SEMANTIC_LEASE = `semantic-${"a".repeat(36)}`;
 const SNAPSHOT_ID = "snapshot-secret-a742";
+const START_SNAPSHOT_HASH = `sha256:${"b".repeat(64)}`;
 const SYMBOL_QUERY = "symbol-query-secret-ec17";
 const WORKSPACE_ROOT = "/workspace/secret-project";
 const PROVIDER = "provider-secret-92d1";
@@ -48,7 +51,9 @@ const FORBIDDEN_IDENTIFIERS = [
   REQUEST_ID,
   WORKSPACE_ID,
   SEMANTIC_SESSION_ID,
+  SEMANTIC_LEASE,
   SNAPSHOT_ID,
+  START_SNAPSHOT_HASH,
   SYMBOL_QUERY,
   WORKSPACE_ROOT,
   PROVIDER,
@@ -140,12 +145,29 @@ const semanticSessionStopRequest = {
   sessionId: SEMANTIC_SESSION_ID,
 } satisfies SavedSnapshotSemanticSessionStopRequest;
 
+const diagnosticsRequest = {
+  schemaVersion: 2,
+  operation: "diagnostics.v2",
+  requestId: REQUEST_ID,
+  languageId: "typescript",
+  workspaceId: WORKSPACE_ID,
+  workspaceGeneration: 11,
+  sessionId: SEMANTIC_SESSION_ID,
+  expectedSnapshotHash: START_SNAPSHOT_HASH,
+  semanticLease: SEMANTIC_LEASE,
+  sourceAuthority: {
+    kind: "immutable-editor-overlay",
+    documents: [{ path: "src/secret.ts", version: 3, content: SOURCE_ID }],
+  },
+} as const satisfies TypeScriptDiagnosticsRequest;
+
 const symbolSearchRequest = {
   languageId: "typescript",
   query: SYMBOL_QUERY,
   workspaceId: WORKSPACE_ID,
   workspaceGeneration: 11,
   sessionId: SEMANTIC_SESSION_ID,
+  semanticLease: SEMANTIC_LEASE,
   snapshotIdentity: SNAPSHOT_ID,
   providerVersion: semanticSessionStartRequest.providerVersion,
   backend: semanticSessionStartRequest.backend,
@@ -158,6 +180,7 @@ const definitionRequest = {
   workspaceId: WORKSPACE_ID,
   workspaceGeneration: 11,
   sessionId: SEMANTIC_SESSION_ID,
+  semanticLease: SEMANTIC_LEASE,
   snapshotIdentity: SNAPSHOT_ID,
   providerVersion: semanticSessionStartRequest.providerVersion,
   backend: semanticSessionStartRequest.backend,
@@ -218,7 +241,10 @@ describe("BrowserRefactorKitAdapter", () => {
 
   it.each([
     ["scan", (adapter: BrowserRefactorKitAdapter) => adapter.scan()],
-    ["diagnostics", (adapter: BrowserRefactorKitAdapter) => adapter.diagnostics()],
+    [
+      "diagnostics",
+      (adapter: BrowserRefactorKitAdapter) => adapter.diagnostics(diagnosticsRequest),
+    ],
     ["symbols", (adapter: BrowserRefactorKitAdapter) => adapter.symbols()],
     ["definition", (adapter: BrowserRefactorKitAdapter) => adapter.definition(SYMBOL_ID)],
     ["references", (adapter: BrowserRefactorKitAdapter) => adapter.references(SYMBOL_ID)],
@@ -259,9 +285,10 @@ describe("BrowserRefactorKitAdapter", () => {
     },
   );
 
-  it("rejects semantic operations without mutating requests, persistence, fetch, or XHR", async () => {
+  it("rejects diagnostics and semantic operations without mutating requests, persistence, fetch, or XHR", async () => {
     const adapter = new BrowserRefactorKitAdapter();
     const requests = [
+      diagnosticsRequest,
       semanticSessionStartRequest,
       semanticSessionStopRequest,
       symbolSearchRequest,
@@ -273,6 +300,7 @@ describe("BrowserRefactorKitAdapter", () => {
     const storageSetItemSpy = vi.spyOn(Storage.prototype, "setItem");
 
     try {
+      await expectStaticUnavailable(adapter.diagnostics(diagnosticsRequest));
       await expectStaticUnavailable(
         adapter.startSavedSnapshotSemanticSession(semanticSessionStartRequest),
       );
@@ -309,6 +337,8 @@ const semanticSessionStartResult = {
   workspaceGeneration: semanticSessionStartRequest.workspaceGeneration,
   sessionId: SEMANTIC_SESSION_ID,
   providerProjectSnapshotIdentity: SNAPSHOT_ID,
+  semanticLease: SEMANTIC_LEASE,
+  startSnapshotHash: START_SNAPSHOT_HASH,
   provider: semanticSessionStartRequest.provider,
   providerVersion: semanticSessionStartRequest.providerVersion,
   backend: semanticSessionStartRequest.backend,
