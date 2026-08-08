@@ -22,6 +22,13 @@ export type JavaIntelligencePresentationMode = "settings" | "project";
 export type JavaIntelligenceOperation =
   "scan" | "diagnostics" | "symbols" | "definition" | "references";
 
+/** Provider-neutral, presentation-only state supplied by the host diagnostics controller. */
+export type LanguageToolingDiagnosticsPresentation =
+  | { readonly state: "checking" }
+  | { readonly state: "ready"; readonly diagnosticCount: number }
+  | { readonly state: "refused"; readonly message: string }
+  | { readonly state: "error"; readonly message: string };
+
 export interface JavaIntelligencePanelProps {
   /** Settings shows global tooling; project (default) includes workspace operations. */
   presentationMode?: JavaIntelligencePresentationMode;
@@ -45,11 +52,16 @@ export interface JavaIntelligencePanelProps {
   runningOperation?: JavaIntelligenceOperation | null;
   latestOperation?: JavaIntelligenceOperation | null;
   result?: RefactorKitCommandResult | null;
+  /** Closed host-owned compiler-diagnostics presentation; diagnostic details remain in Problems. */
+  languageToolingDiagnostics?: LanguageToolingDiagnosticsPresentation | null;
   symbol?: string;
   onSymbolChange?: (symbol: string) => void;
   onRefresh?: () => void | Promise<void>;
   onScan?: () => void | Promise<void>;
+  /** Existing legacy Java command callback. */
   onDiagnostics?: () => void | Promise<void>;
+  /** Requests host-owned compiler diagnostics without defining request policy in the UI. */
+  onRequestLanguageToolingDiagnostics?: () => void | Promise<void>;
   onSymbols?: () => void | Promise<void>;
   onDefinition?: (symbol: string) => void | Promise<void>;
   onReferences?: (symbol: string) => void | Promise<void>;
@@ -78,6 +90,38 @@ const statusLabels: Record<JavaIntelligenceAvailabilityStatus, string> = {
   unavailable: "Unavailable",
   error: "Availability check failed",
 };
+
+const diagnosticsStateStyles: Record<LanguageToolingDiagnosticsPresentation["state"], string> = {
+  checking: statusStyles.checking,
+  ready: statusStyles.available,
+  refused: statusStyles.unavailable,
+  error: statusStyles.error,
+};
+
+const diagnosticsStateLabels: Record<LanguageToolingDiagnosticsPresentation["state"], string> = {
+  checking: "Checking",
+  ready: "Ready",
+  refused: "Refused",
+  error: "Error",
+};
+
+const MAX_DIAGNOSTICS_MESSAGE_LENGTH = 240;
+
+function safeDiagnosticsMessage(message: string, fallback: string): string {
+  const sanitized = message
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\b(?:file|https?):\/\/\S+/giu, "[redacted resource]")
+    .replace(/(?:[A-Za-z]:\\|\/)(?:[^\s/\\]+[/\\])+[^\s,;)]*/gu, "[redacted path]")
+    .replace(/\b[a-f0-9]{64}\b/giu, "[redacted identifier]")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const text = sanitized || fallback;
+  const characters = Array.from(text);
+  return characters.length <= MAX_DIAGNOSTICS_MESSAGE_LENGTH
+    ? text
+    : `${characters.slice(0, MAX_DIAGNOSTICS_MESSAGE_LENGTH - 1).join("")}…`;
+}
 
 const lifecycleStyles: Record<LanguageServiceState, string> = {
   unavailable: statusStyles.unavailable,
@@ -332,6 +376,95 @@ function LanguageServiceSection({
   );
 }
 
+interface LanguageToolingDiagnosticsSectionProps {
+  presentation?: LanguageToolingDiagnosticsPresentation | null;
+  onRequest?: () => void | Promise<void>;
+}
+
+function LanguageToolingDiagnosticsSection({
+  presentation,
+  onRequest,
+}: LanguageToolingDiagnosticsSectionProps): JSX.Element | null {
+  if (!presentation && !onRequest) return null;
+
+  const checking = presentation?.state === "checking";
+  let summary: string | null = null;
+  if (presentation?.state === "checking") {
+    summary = "Checking compiler diagnostics for the current authorized source snapshot.";
+  } else if (presentation?.state === "ready") {
+    const count = presentation.diagnosticCount;
+    summary =
+      count === 0
+        ? "No compiler diagnostics were reported for the current source snapshot."
+        : `${count} compiler ${count === 1 ? "diagnostic is" : "diagnostics are"} available in Problems and editor markers.`;
+  } else if (presentation?.state === "refused") {
+    summary = `Request refused. ${safeDiagnosticsMessage(
+      presentation.message,
+      "No safe refusal detail was provided.",
+    )}`;
+  } else if (presentation?.state === "error") {
+    summary = `Diagnostics request failed. ${safeDiagnosticsMessage(
+      presentation.message,
+      "No safe error detail was provided.",
+    )}`;
+  }
+
+  return (
+    <section
+      className="border-b border-[var(--border-default)] px-3 py-2"
+      aria-labelledby="language-tooling-diagnostics-heading"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h4
+            id="language-tooling-diagnostics-heading"
+            className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+          >
+            Compiler diagnostics
+          </h4>
+          <p
+            id="language-tooling-diagnostics-description"
+            className="mt-1 text-[0.68rem] leading-4 text-[var(--text-secondary)]"
+          >
+            Requests are host-managed. Diagnostic details remain in Problems and editor markers.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={!onRequest || checking}
+          onClick={() => void onRequest?.()}
+          aria-describedby="language-tooling-diagnostics-description"
+        >
+          {checking ? "Checking diagnostics…" : "Request diagnostics"}
+        </Button>
+      </div>
+
+      {presentation && summary ? (
+        <div
+          className={`mt-2 flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${diagnosticsStateStyles[presentation.state]}`}
+          role={presentation.state === "error" ? "alert" : "status"}
+          aria-label={`Compiler diagnostics status: ${diagnosticsStateLabels[presentation.state]}`}
+          aria-live={presentation.state === "error" ? "assertive" : "polite"}
+          aria-atomic="true"
+          data-diagnostics-state={presentation.state}
+        >
+          {checking ? (
+            <span
+              className="mt-1 h-2 w-2 shrink-0 animate-pulse rounded-full bg-current"
+              aria-hidden="true"
+            />
+          ) : null}
+          <p className="min-w-0 break-words">
+            <strong>{diagnosticsStateLabels[presentation.state]}.</strong> {summary}
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function JavaIntelligencePanel({
   presentationMode,
   mode,
@@ -350,11 +483,13 @@ export function JavaIntelligencePanel({
   runningOperation,
   latestOperation,
   result,
+  languageToolingDiagnostics,
   symbol = "",
   onSymbolChange,
   onRefresh,
   onScan,
   onDiagnostics,
+  onRequestLanguageToolingDiagnostics,
   onSymbols,
   onDefinition,
   onReferences,
@@ -475,6 +610,11 @@ export function JavaIntelligencePanel({
           ) : null}
 
           <RefactorKitLanguageLab capabilities={capabilities} daemonStatus={status} />
+
+          <LanguageToolingDiagnosticsSection
+            presentation={languageToolingDiagnostics}
+            onRequest={onRequestLanguageToolingDiagnostics}
+          />
 
           {!isSettingsMode ? (
             <>

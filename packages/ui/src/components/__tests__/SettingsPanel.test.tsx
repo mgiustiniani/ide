@@ -191,12 +191,14 @@ describe("SettingsPanel", () => {
       onRestartJavaLanguageService: vi.fn(),
       onRefreshJavaLanguageService: vi.fn(),
       onRefreshJavaRefactorKit: vi.fn(),
+      onRequestLanguageToolingDiagnostics: vi.fn(),
     };
     render(
       React.createElement(SettingsPanel, {
         javaLanguageServiceStatus,
         javaRefactorKitStatus: { available: true, version: "2.1.0", path: "/tools/refactorkit" },
         javaRefactorKitCapabilities: PROVIDER_NEUTRAL_LANGUAGE_KERNEL_CAPABILITIES,
+        languageToolingDiagnostics: { state: "ready", diagnosticCount: 3 },
         ...callbacks,
       }),
     );
@@ -238,6 +240,9 @@ describe("SettingsPanel", () => {
         name: "Daemon-advertised language adapters in canonical order",
       }).children,
     ).toHaveLength(3);
+    expect(
+      screen.getByRole("status", { name: "Compiler diagnostics status: Ready" }).textContent,
+    ).toContain("3 compiler diagnostics are available in Problems and editor markers.");
 
     for (const operation of [
       "Scan",
@@ -260,10 +265,12 @@ describe("SettingsPanel", () => {
     });
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Refresh" }));
     fireEvent.click(screen.getByRole("button", { name: "Refresh RefactorKit availability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Request diagnostics" }));
     expect(callbacks.onStopJavaLanguageService).toHaveBeenCalledTimes(1);
     expect(callbacks.onRestartJavaLanguageService).toHaveBeenCalledTimes(1);
     expect(callbacks.onRefreshJavaLanguageService).toHaveBeenCalledTimes(1);
     expect(callbacks.onRefreshJavaRefactorKit).toHaveBeenCalledTimes(1);
+    expect(callbacks.onRequestLanguageToolingDiagnostics).toHaveBeenCalledTimes(1);
   });
 
   it("forwards and renders an unavailable browser RefactorKit discovery reason", () => {

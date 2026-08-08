@@ -102,6 +102,75 @@ describe("JavaIntelligencePanel", () => {
     expect(screen.queryByRole("button", { name: "Symbols" })).toBeNull();
   });
 
+  it("presents all closed compiler-diagnostics states accessibly without duplicating Problems", () => {
+    const onRequestLanguageToolingDiagnostics = vi.fn();
+    const commonProps = {
+      presentationMode: "settings" as const,
+      status: { available: true },
+      onRequestLanguageToolingDiagnostics,
+    };
+    const { rerender } = render(
+      <JavaIntelligencePanel {...commonProps} languageToolingDiagnostics={{ state: "checking" }} />,
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Compiler diagnostics status: Checking" }).textContent,
+    ).toContain("Checking compiler diagnostics for the current authorized source snapshot.");
+    expect(
+      (screen.getByRole("button", { name: "Checking diagnostics…" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    rerender(
+      <JavaIntelligencePanel
+        {...commonProps}
+        languageToolingDiagnostics={{ state: "ready", diagnosticCount: 2 }}
+      />,
+    );
+    expect(
+      screen.getByRole("status", { name: "Compiler diagnostics status: Ready" }).textContent,
+    ).toContain("2 compiler diagnostics are available in Problems and editor markers.");
+    expect(screen.queryByRole("tree", { name: /Problems/u })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Request diagnostics" }));
+    expect(onRequestLanguageToolingDiagnostics).toHaveBeenCalledTimes(1);
+
+    const secretPath = "/home/alice/private/project/tsconfig.json";
+    const secretHash = "a".repeat(64);
+    rerender(
+      <JavaIntelligencePanel
+        {...commonProps}
+        languageToolingDiagnostics={{
+          state: "refused",
+          message: `Authority refused ${secretPath} ${secretHash} ${"x".repeat(500)}`,
+        }}
+      />,
+    );
+    const refused = screen.getByRole("status", {
+      name: "Compiler diagnostics status: Refused",
+    });
+    expect(refused.textContent).toContain("[redacted path]");
+    expect(refused.textContent).toContain("[redacted identifier]");
+    expect(refused.textContent).not.toContain(secretPath);
+    expect(refused.textContent).not.toContain(secretHash);
+    expect(refused.querySelector("p")?.textContent?.endsWith("…")).toBe(true);
+    expect(refused.querySelector("p")?.textContent?.length).toBeLessThanOrEqual(270);
+
+    const secretUrl = "https://provider.invalid/private?token=secret";
+    rerender(
+      <JavaIntelligencePanel
+        {...commonProps}
+        languageToolingDiagnostics={{
+          state: "error",
+          message: `Provider failed at ${secretUrl}\u0000`,
+        }}
+      />,
+    );
+    const error = screen.getByRole("alert", { name: "Compiler diagnostics status: Error" });
+    expect(error.textContent).toContain("Diagnostics request failed.");
+    expect(error.textContent).toContain("[redacted resource]");
+    expect(error.textContent).not.toContain(secretUrl);
+    expect(error.textContent).not.toContain("\u0000");
+  });
+
   it("renders the explicit unavailable language-kernel reason", () => {
     render(
       <JavaIntelligencePanel

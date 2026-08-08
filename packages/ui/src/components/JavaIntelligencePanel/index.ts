@@ -4,4 +4,5 @@ export type {
   JavaIntelligenceOperation,
   JavaIntelligencePanelProps,
   JavaIntelligencePresentationMode,
+  LanguageToolingDiagnosticsPresentation,
 } from "./JavaIntelligencePanel";

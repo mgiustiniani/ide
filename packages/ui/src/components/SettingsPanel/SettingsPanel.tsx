@@ -28,7 +28,10 @@ import type {
 import { DEFAULT_PI_AGENT_SETTINGS } from "@ide/contracts";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
-import { JavaIntelligencePanel } from "../JavaIntelligencePanel";
+import {
+  JavaIntelligencePanel,
+  type LanguageToolingDiagnosticsPresentation,
+} from "../JavaIntelligencePanel";
 import { Xcom2SetupPanel } from "../Xcom2SetupPanel";
 import { Xcom2ModuleConfigurationDiagnosticAlert } from "../Xcom2ModuleConfigurationDiagnosticAlert";
 
@@ -65,6 +68,8 @@ export interface SettingsPanelProps {
   isJavaRefactorKitChecking?: boolean;
   /** RefactorKit availability error supplied by the host. */
   javaRefactorKitError?: string | null;
+  /** Closed provider-neutral compiler-diagnostics state supplied by the host controller. */
+  languageToolingDiagnostics?: LanguageToolingDiagnosticsPresentation | null;
   /** Latest host-provided XCOM 2 machine setup snapshot. */
   xcom2SetupSnapshot?: Xcom2SetupMonitorSnapshot | null;
   /** Whether the XCOM 2 setup state is currently loading. */
@@ -110,6 +115,8 @@ export interface SettingsPanelProps {
   onSetupJavaLanguageService?: () => void | Promise<void>;
   /** Refreshes global RefactorKit availability. */
   onRefreshJavaRefactorKit?: () => void | Promise<void>;
+  /** Requests host-owned compiler diagnostics for the current authorized source snapshot. */
+  onRequestLanguageToolingDiagnostics?: () => void | Promise<void>;
   /** Refreshes global XCOM 2 machine, Steam, and SDK setup state. */
   onRefreshXcom2Setup?: () => void | Promise<void>;
   /** Requests a host-owned, dry-run-only XCOM 2 setup plan. */
@@ -299,6 +306,7 @@ export function SettingsPanel({
   javaRefactorKitCapabilities,
   isJavaRefactorKitChecking = false,
   javaRefactorKitError,
+  languageToolingDiagnostics,
   xcom2SetupSnapshot,
   isXcom2SetupLoading = false,
   isXcom2SetupStale = false,
@@ -322,6 +330,7 @@ export function SettingsPanel({
   onRefreshJavaLanguageService,
   onSetupJavaLanguageService,
   onRefreshJavaRefactorKit,
+  onRequestLanguageToolingDiagnostics,
   onRefreshXcom2Setup,
   onPlanXcom2Setup,
   onPrepareXcom2Setup,
@@ -750,12 +759,14 @@ export function SettingsPanel({
                   capabilities={javaRefactorKitCapabilities}
                   isChecking={isJavaRefactorKitChecking}
                   error={javaRefactorKitError}
+                  languageToolingDiagnostics={languageToolingDiagnostics}
                   onStartLanguageService={onStartJavaLanguageService}
                   onStopLanguageService={onStopJavaLanguageService}
                   onRestartLanguageService={onRestartJavaLanguageService}
                   onRefreshLanguageService={onRefreshJavaLanguageService}
                   onSetupLanguageService={onSetupJavaLanguageService}
                   onRefresh={onRefreshJavaRefactorKit}
+                  onRequestLanguageToolingDiagnostics={onRequestLanguageToolingDiagnostics}
                 />
               </div>
             ) : activeSection === "xcom2" ? (
