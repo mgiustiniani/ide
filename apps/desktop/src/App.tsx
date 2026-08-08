@@ -50,6 +50,7 @@ import {
   type WorkspaceControllerCollaborators,
 } from "./features/workspace/useWorkspaceController";
 import { useXcom2ModuleActivationController } from "./features/xcom2-module-activation/useXcom2ModuleActivationController";
+import { useXcom2ProjectBuildRecipeController } from "./features/xcom2-project-build-recipe/useXcom2ProjectBuildRecipeController";
 import {
   useXcom2SetupController,
   type Xcom2SetupEventSources,
@@ -104,10 +105,10 @@ const {
   languageSessionAdapter,
   documentSyncAdapter,
   javaIntelligenceAdapter,
-  xcom2ModuleConfigurationAdapter,
-  xcom2ModuleScannerAdapter,
   xcom2SetupAdapter,
   xcom2SetupMonitorAdapter,
+  xcom2NativeActivationEvidenceAdapter,
+  xcom2ProjectBuildRecipeInspectionAdapter,
 } = createTauriAdapters();
 
 const xcom2SetupEventSources: Xcom2SetupEventSources = {
@@ -224,8 +225,24 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     deferWorkspaceActivation: true,
   });
   const xcom2ModuleActivation = useXcom2ModuleActivationController({
-    scanner: xcom2ModuleScannerAdapter,
-    configuration: xcom2ModuleConfigurationAdapter,
+    nativeEvidence: xcom2NativeActivationEvidenceAdapter,
+  });
+  const xcom2BuildRecipeCurrentModule = useMemo(() => {
+    const project = xcom2ModuleActivation.projectSnapshot;
+    const [currentModule] = xcom2ModuleActivation.activeProjectDecisions;
+    if (!project || !currentModule || xcom2ModuleActivation.activeProjectDecisions.length !== 1) {
+      return null;
+    }
+    return Object.freeze({
+      workspaceId: project.workspaceId,
+      workspaceGeneration: project.workspaceGeneration,
+      moduleRoot: currentModule.moduleRoot,
+    });
+  }, [xcom2ModuleActivation.activeProjectDecisions, xcom2ModuleActivation.projectSnapshot]);
+  const xcom2ProjectBuildRecipe = useXcom2ProjectBuildRecipeController({
+    inspection: xcom2ProjectBuildRecipeInspectionAdapter,
+    currentModule: xcom2BuildRecipeCurrentModule,
+    authorizeInspection: xcom2ModuleActivation.authorizeBuildRecipeInspection,
   });
   const workspace = useWorkspaceController({
     workspace: workspaceAdapter,
@@ -528,6 +545,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
           recognitionSnapshot={xcom2ModuleActivation.snapshot}
           activeProjectDecisions={xcom2ModuleActivation.activeProjectDecisions}
           diagnosticPresentation={xcom2ModuleConfigurationDiagnosticPresentation}
+          buildRecipeContribution={xcom2ProjectBuildRecipe.contribution}
         />
       ),
     } satisfies PanelLayoutActivityContribution);
@@ -538,6 +556,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     xcom2ModuleActivation.projectSnapshot,
     xcom2ModuleActivation.snapshot,
     xcom2ModuleConfigurationDiagnosticPresentation,
+    xcom2ProjectBuildRecipe.contribution,
   ]);
 
   useLayoutEffect(() => {

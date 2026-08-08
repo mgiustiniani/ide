@@ -230,6 +230,10 @@ const testHarness = vi.hoisted(() => {
     harness.xcom2ModuleConfigurationStoppedExtras = null;
     harness.xcom2ModuleConfigurationGate = null;
     harness.xcom2ModuleConfigurationError = null;
+    harness.xcom2NativeActivationGeneration = 0;
+    harness.xcom2NativeActivationCandidate = null;
+    harness.xcom2ProjectBuildRecipeCandidate = null;
+    harness.xcom2ProjectBuildRecipeError = new Error("Build recipe fixture unavailable");
     harness.xcom2Transaction = null;
     harness.xcom2Transactions = [];
     harness.xcom2TransactionError = null;
@@ -676,6 +680,109 @@ vi.mock("@ide/tauri-adapters", () => {
   };
   testHarness.xcom2ModuleConfigurationAdapter = xcom2ModuleConfigurationAdapter;
 
+  const xcom2NativeActivationEvidenceAdapter = {
+    begin: vi.fn(async (request: any) => {
+      const activationGeneration = ++testHarness.xcom2NativeActivationGeneration;
+      const configurationRequest = {
+        workspaceId: request.workspaceId,
+        workspaceGeneration: request.workspaceGeneration,
+        activationGeneration,
+        configurationReadId: request.configurationReadId,
+      };
+      const scanRequest = {
+        workspaceId: request.workspaceId,
+        workspaceGeneration: request.workspaceGeneration,
+        scanId: request.scanId,
+        scanGeneration: request.scanGeneration,
+        limits: request.limits,
+      };
+      const [scan, configuration] = await Promise.all([
+        xcom2ModuleScannerAdapter.scan(scanRequest),
+        xcom2ModuleConfigurationAdapter.read(configurationRequest),
+      ]);
+      const receipt = `activation-attempt:${activationGeneration}`;
+      const handleByRoot = new Map<string, string>();
+      for (const root of [
+        ...scan.observations.map(({ moduleRoot }: any) => moduleRoot),
+        ...(configuration.kind === "ready" ? configuration.configuration.moduleRoots : []),
+      ]) {
+        if (!handleByRoot.has(root)) handleByRoot.set(root, `evidence:${root}`);
+      }
+      const handles = (roots: readonly string[]) =>
+        [...new Set(roots)].map((moduleRoot) => ({
+          moduleRoot,
+          evidenceHandle: handleByRoot.get(moduleRoot),
+        }));
+      const configurationCorrelation = {
+        workspaceId: configuration.workspaceId,
+        workspaceGeneration: configuration.workspaceGeneration,
+        activationGeneration: configuration.activationGeneration,
+        activationAttemptReceipt: receipt,
+        configurationReadId: configuration.configurationReadId,
+        evidenceHandles: handles(
+          configuration.kind === "ready" ? configuration.configuration.moduleRoots : [],
+        ),
+      };
+      const normalizedConfiguration =
+        configuration.kind === "ready"
+          ? {
+              ...configurationCorrelation,
+              kind: "ready",
+              configuration: configuration.configuration,
+            }
+          : configuration.kind === "stopped"
+            ? { ...configurationCorrelation, kind: "stopped", code: configuration.code }
+            : { ...configurationCorrelation, kind: "absent" };
+      const candidate = {
+        scan: {
+          ...scan,
+          activationGeneration,
+          activationAttemptReceipt: receipt,
+          evidenceHandles: handles(scan.observations.map(({ moduleRoot }: any) => moduleRoot)),
+        },
+        configuration: normalizedConfiguration,
+      };
+      testHarness.xcom2NativeActivationCandidate = candidate;
+      return candidate;
+    }),
+    acknowledge: vi.fn(async (acknowledgment: any) => {
+      const candidate = testHarness.xcom2NativeActivationCandidate;
+      const selectedByHandle = new Map(
+        [...candidate.scan.evidenceHandles, ...candidate.configuration.evidenceHandles].map(
+          (entry: any) => [entry.evidenceHandle, entry],
+        ),
+      );
+      const selectedModules = acknowledgment.evidenceHandles.map((handle: string) =>
+        selectedByHandle.get(handle),
+      );
+      const state = {
+        kind: "acknowledged",
+        workspaceId: candidate.scan.workspaceId,
+        workspaceGeneration: candidate.scan.workspaceGeneration,
+        activationGeneration: candidate.scan.activationGeneration,
+        activationAttemptReceipt: candidate.scan.activationAttemptReceipt,
+        acknowledgment,
+        selectedModules,
+      };
+      return { kind: "acknowledged", acknowledgment, state };
+    }),
+    revoke: vi.fn(async (event: any) => ({
+      kind: "revoked",
+      state: { kind: "revoked", code: event.kind },
+    })),
+  };
+  testHarness.xcom2NativeActivationEvidenceAdapter = xcom2NativeActivationEvidenceAdapter;
+
+  const xcom2ProjectBuildRecipeInspectionAdapter = {
+    inspect: vi.fn(async () => {
+      if (testHarness.xcom2ProjectBuildRecipeError) {
+        throw testHarness.xcom2ProjectBuildRecipeError;
+      }
+      return testHarness.xcom2ProjectBuildRecipeCandidate;
+    }),
+  };
+  testHarness.xcom2ProjectBuildRecipeInspectionAdapter = xcom2ProjectBuildRecipeInspectionAdapter;
+
   const xcom2SetupMonitorAdapter = {
     getSnapshot: vi.fn(() =>
       testHarness.xcom2SetupError
@@ -738,6 +845,8 @@ vi.mock("@ide/tauri-adapters", () => {
       xcom2ModuleScannerAdapter,
       xcom2SetupAdapter,
       xcom2SetupMonitorAdapter,
+      xcom2NativeActivationEvidenceAdapter,
+      xcom2ProjectBuildRecipeInspectionAdapter,
     })),
   };
 });
@@ -3392,6 +3501,48 @@ describe("App", () => {
     for (const label of ["XCOM 2 Project", "Build", "Problems", "Logs", "Language"]) {
       expect(within(bottomTabList).queryByRole("tab", { name: label })).toBeNull();
     }
+  });
+
+  it("wires one metadata-only build recipe contribution to the current active module", async () => {
+    testHarness.xcom2ModuleScanObservations = [
+      {
+        evidenceKind: "x2proj",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.x2proj",
+      },
+      {
+        evidenceKind: "xcommod",
+        moduleRoot: "MyMod",
+        relativePath: "MyMod/MyMod.xcommod",
+      },
+    ];
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByRole("tab", { name: "XCOM 2 Project" });
+    const contribution =
+      testHarness.latestPanelLayoutProps.activityContributions[0].content.props
+        .buildRecipeContribution;
+    expect(contribution).toMatchObject({
+      moduleRoot: "MyMod",
+      viewState: { kind: "idle" },
+    });
+    expect(testHarness.xcom2ProjectBuildRecipeInspectionAdapter.inspect).not.toHaveBeenCalled();
+    expect(Object.keys(testHarness.xcom2ProjectBuildRecipeInspectionAdapter)).toEqual(["inspect"]);
+
+    await act(() => contribution.onOpenReview());
+
+    expect(
+      testHarness.xcom2ProjectBuildRecipeInspectionAdapter.inspect,
+    ).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: "workspace-one",
+      generation: 1,
+      moduleRoot: "MyMod",
+    });
+    expect(
+      testHarness.latestPanelLayoutProps.activityContributions[0].content.props
+        .buildRecipeContribution.viewState,
+    ).toEqual({ kind: "error", code: "inspection-failed" });
   });
 
   it("renders combined configured and recognized activation from the joint project decision", async () => {

@@ -1,12 +1,19 @@
 import {
   XCOM2_MODULE_SCAN_LIMITS,
+  acknowledgeXcom2NativeActivationEvidence,
+  authorizeXcom2NativeBuildRecipeInspection,
+  beginXcom2NativeActivationEvidence,
+  transitionXcom2NativeActivationEvidence,
   type WorkspaceInfo,
   type Xcom2ModuleActivationDecision,
   type Xcom2ModuleActivationSnapshot,
   type Xcom2ModuleConfigurationReadRequest,
-  type Xcom2ModuleConfigurationReadResult,
-  type Xcom2ModuleScanCorrelation,
   type Xcom2ModuleScanRequest,
+  type Xcom2NativeAcceptedActivationSnapshot,
+  type Xcom2NativeActivationEvidenceState,
+  type Xcom2NativeActivationLifecycleEvent,
+  type Xcom2NativeInspectionAuthorizationDecision,
+  type Xcom2NativeInspectionCurrent,
   type Xcom2ProjectActivationDecision,
   type Xcom2ProjectActivationSnapshot,
 } from "@ide/contracts";
@@ -15,14 +22,13 @@ import {
   evaluateXcom2ProjectActivation,
   selectActiveXcom2ModuleDecisions,
 } from "@ide/web-core";
-import type { Xcom2ModuleConfigurationPort, Xcom2ModuleScannerPort } from "@ide/web-core/ports";
+import type { Xcom2NativeActivationEvidencePort } from "@ide/web-core/ports";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const INITIAL_WORKSPACE_GENERATION = 1;
 const SCAN_ID_PREFIX = "xcom2-module-scan:";
 const CONFIGURATION_READ_ID_PREFIX = "xcom2-configuration-read:";
-const SCAN_ERROR = "Unable to recognize XCOM 2 modules in the current workspace.";
-const CONFIGURATION_ERROR = "Unable to read XCOM 2 module configuration in the current workspace.";
+const ACTIVATION_ERROR = "Unable to recognize XCOM 2 modules in the current workspace.";
 const NO_ACTIVE_MODULES = Object.freeze([] as readonly Readonly<Xcom2ModuleActivationDecision>[]);
 const NO_ACTIVE_PROJECTS = Object.freeze([] as readonly Readonly<Xcom2ProjectActivationDecision>[]);
 
@@ -42,11 +48,11 @@ export interface Xcom2ModuleActivationWorkspaceCollaborator {
   refreshWorkspace(workspaceGeneration: number, workspaceId: string): Promise<void>;
   restoreWorkspace(token: Xcom2ModuleActivationWorkspaceSwitchToken): void;
   settleFailedWorkspaceActivation(token: Xcom2ModuleActivationWorkspaceSwitchToken): void;
+  settleFailedWorkspaceRefresh(workspaceGeneration: number, workspaceId: string): void;
 }
 
 export interface UseXcom2ModuleActivationControllerDependencies {
-  scanner: Pick<Xcom2ModuleScannerPort, "scan">;
-  configuration: Pick<Xcom2ModuleConfigurationPort, "read">;
+  nativeEvidence: Pick<Xcom2NativeActivationEvidencePort, "begin" | "acknowledge" | "revoke">;
 }
 
 export interface Xcom2ModuleActivationController {
@@ -59,13 +65,16 @@ export interface Xcom2ModuleActivationController {
   isScanning: boolean;
   error: string | null;
   refreshWorkspace(workspaceGeneration: number, workspaceId: string): Promise<void>;
+  authorizeBuildRecipeInspection(
+    current: Readonly<Xcom2NativeInspectionCurrent>,
+  ): Readonly<Xcom2NativeInspectionAuthorizationDecision>;
   workspaceCollaborator: Xcom2ModuleActivationWorkspaceCollaborator;
 }
 
 interface ActivationAuthority {
   readonly token: Xcom2ModuleActivationWorkspaceSwitchToken;
   readonly scanRequest: Readonly<Xcom2ModuleScanRequest>;
-  readonly configurationRequest: Readonly<Xcom2ModuleConfigurationReadRequest>;
+  readonly configurationReadId: string;
 }
 
 interface SwitchState {
@@ -93,30 +102,6 @@ function nextGeneration(current: number, label: string): number {
   return current + 1;
 }
 
-function exactlyMatchesScan(
-  snapshot: Readonly<Xcom2ModuleScanCorrelation>,
-  request: Readonly<Xcom2ModuleScanRequest>,
-): boolean {
-  return (
-    snapshot.workspaceId === request.workspaceId &&
-    snapshot.workspaceGeneration === request.workspaceGeneration &&
-    snapshot.scanId === request.scanId &&
-    snapshot.scanGeneration === request.scanGeneration
-  );
-}
-
-function exactlyMatchesConfiguration(
-  result: Readonly<Xcom2ModuleConfigurationReadResult>,
-  request: Readonly<Xcom2ModuleConfigurationReadRequest>,
-): boolean {
-  return (
-    result.workspaceId === request.workspaceId &&
-    result.workspaceGeneration === request.workspaceGeneration &&
-    result.activationGeneration === request.activationGeneration &&
-    result.configurationReadId === request.configurationReadId
-  );
-}
-
 function projectMatchesRecognition(
   project: Readonly<Xcom2ProjectActivationSnapshot>,
   recognition: Readonly<Xcom2ModuleActivationSnapshot>,
@@ -129,10 +114,44 @@ function projectMatchesRecognition(
   );
 }
 
+function acceptedSnapshotFromState(
+  state: Extract<Xcom2NativeActivationEvidenceState, { readonly kind: "acknowledged" }>,
+): Readonly<Xcom2NativeAcceptedActivationSnapshot> {
+  return Object.freeze({
+    workspaceId: state.workspaceId,
+    workspaceGeneration: state.workspaceGeneration,
+    activationGeneration: state.activationGeneration,
+    activationAttemptReceipt: state.activationAttemptReceipt,
+    modules: Object.freeze(
+      state.selectedModules.map(({ moduleRoot, evidenceHandle }) =>
+        Object.freeze({ moduleRoot, evidenceHandle }),
+      ),
+    ),
+  });
+}
+
+function sameAcknowledgedState(
+  expected: Extract<Xcom2NativeActivationEvidenceState, { readonly kind: "acknowledged" }>,
+  actual: Extract<Xcom2NativeActivationEvidenceState, { readonly kind: "acknowledged" }>,
+): boolean {
+  return (
+    actual.workspaceId === expected.workspaceId &&
+    actual.workspaceGeneration === expected.workspaceGeneration &&
+    actual.activationGeneration === expected.activationGeneration &&
+    actual.activationAttemptReceipt === expected.activationAttemptReceipt &&
+    actual.selectedModules.length === expected.selectedModules.length &&
+    actual.selectedModules.every(
+      (module, index) =>
+        module.moduleRoot === expected.selectedModules[index]?.moduleRoot &&
+        module.evidenceHandle === expected.selectedModules[index]?.evidenceHandle,
+    )
+  );
+}
+
 /**
- * Owns one-shot configured and convention-based XCOM 2 project activation. Native
- * results have no authority unless their identity and every correlation field still
- * match the current activation object.
+ * Owns native activation-evidence custody. Native convention/configuration facts are
+ * evaluated only by the existing pure TypeScript activation policies; native receives
+ * only the selected opaque receipt and handles in acknowledgment.
  */
 export function useXcom2ModuleActivationController(
   dependencies: UseXcom2ModuleActivationControllerDependencies,
@@ -140,20 +159,56 @@ export function useXcom2ModuleActivationController(
   const mountedRef = useRef(true);
   const workspaceGenerationRef = useRef(INITIAL_WORKSPACE_GENERATION);
   const workspaceIdRef = useRef<string | null>(null);
-  const activationGenerationRef = useRef(0);
-  const scanGenerationRef = useRef(0);
+  const requestGenerationRef = useRef(0);
   const currentActivationRef = useRef<ActivationAuthority | null>(null);
   const switchStateRef = useRef<SwitchState | null>(null);
   const committedSnapshotRef = useRef<Readonly<Xcom2ModuleActivationSnapshot> | null>(null);
   const committedProjectSnapshotRef = useRef<Readonly<Xcom2ProjectActivationSnapshot> | null>(null);
+  const nativeEvidenceStateRef = useRef<Readonly<Xcom2NativeActivationEvidenceState> | null>(null);
+  const nativeAcceptedSnapshotRef = useRef<Readonly<Xcom2NativeAcceptedActivationSnapshot> | null>(
+    null,
+  );
+  const revocationBarrierRef = useRef<Promise<void>>(Promise.resolve());
 
   const [snapshot, setSnapshot] = useState<Readonly<Xcom2ModuleActivationSnapshot> | null>(null);
   const [projectSnapshot, setProjectSnapshot] =
     useState<Readonly<Xcom2ProjectActivationSnapshot> | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, setNativeAuthorityRevision] = useState(0);
 
-  const revoke = useCallback((): void => {
+  const signalNativeRevocation = useCallback(
+    (event: Readonly<Xcom2NativeActivationLifecycleEvent>): Promise<void> => {
+      const retained = nativeEvidenceStateRef.current;
+      if (retained) {
+        nativeEvidenceStateRef.current = transitionXcom2NativeActivationEvidence(
+          retained,
+          event,
+        ).state;
+      }
+      nativeAcceptedSnapshotRef.current = null;
+      if (mountedRef.current) setNativeAuthorityRevision((revision) => revision + 1);
+
+      let started: Promise<unknown>;
+      try {
+        // Invoke immediately so native revocation starts in this synchronous lifecycle turn.
+        started = Promise.resolve(dependencies.nativeEvidence.revoke(Object.freeze({ ...event })));
+      } catch (revocationError) {
+        started = Promise.reject(revocationError);
+      }
+      const safe = started.catch((revocationError) => {
+        console.error("[Xcom2ModuleActivation] Native evidence revocation failed", {
+          errorType: getErrorType(revocationError),
+        });
+      });
+      const barrier = Promise.all([revocationBarrierRef.current, safe]).then(() => undefined);
+      revocationBarrierRef.current = barrier;
+      return barrier;
+    },
+    [dependencies.nativeEvidence],
+  );
+
+  const clearPresentation = useCallback((): void => {
     currentActivationRef.current = null;
     setSnapshot(null);
     setProjectSnapshot(null);
@@ -175,16 +230,21 @@ export function useXcom2ModuleActivationController(
         started: false,
       };
 
-      // Revocation is synchronous: no old contribution survives native root activation.
-      revoke();
+      // No old contribution or native authority survives native root transition.
+      clearPresentation();
+      void signalNativeRevocation({ kind: "workspace-switch-started" });
       return token;
     },
-    [revoke],
+    [clearPresentation, signalNativeRevocation],
   );
 
-  const activateWorkspace = useCallback((workspace: WorkspaceInfo): void => {
-    workspaceIdRef.current = workspace.id;
-  }, []);
+  const activateWorkspace = useCallback(
+    (workspace: WorkspaceInfo): void => {
+      workspaceIdRef.current = workspace.id;
+      void signalNativeRevocation({ kind: "workspace-activation-started" });
+    },
+    [signalNativeRevocation],
+  );
 
   const runActivation = useCallback(
     async (
@@ -203,44 +263,37 @@ export function useXcom2ModuleActivationController(
       }
       switchState.started = true;
 
-      let activationGeneration: number;
-      let scanGeneration: number;
+      let requestGeneration: number;
       try {
-        activationGeneration = nextGeneration(
-          activationGenerationRef.current,
+        requestGeneration = nextGeneration(
+          requestGenerationRef.current,
           "XCOM 2 activation generation",
         );
-        scanGeneration = nextGeneration(scanGenerationRef.current, "XCOM 2 scan generation");
       } catch (startError) {
         if (mountedRef.current && switchStateRef.current?.token === token) {
-          setError(SCAN_ERROR);
+          setError(ACTIVATION_ERROR);
           setIsScanning(false);
+          void signalNativeRevocation({ kind: "activation-attempt-failed" });
           console.error("[Xcom2ModuleActivation] Failed to start project activation", {
             errorType: getErrorType(startError),
           });
         }
         return;
       }
-      activationGenerationRef.current = activationGeneration;
-      scanGenerationRef.current = scanGeneration;
+      requestGenerationRef.current = requestGeneration;
 
       const scanRequest = Object.freeze({
         workspaceId,
         workspaceGeneration: token.generation,
-        scanId: `${SCAN_ID_PREFIX}${scanGeneration}`,
-        scanGeneration,
+        scanId: `${SCAN_ID_PREFIX}${requestGeneration}`,
+        scanGeneration: requestGeneration,
         limits: Object.freeze({
           maximumDepth: XCOM2_MODULE_SCAN_LIMITS.maximumDepth,
           maximumEncounteredEntries: XCOM2_MODULE_SCAN_LIMITS.maximumEncounteredEntries,
         }),
       } satisfies Xcom2ModuleScanRequest);
-      const configurationRequest = Object.freeze({
-        workspaceId,
-        workspaceGeneration: token.generation,
-        activationGeneration,
-        configurationReadId: `${CONFIGURATION_READ_ID_PREFIX}${activationGeneration}`,
-      } satisfies Xcom2ModuleConfigurationReadRequest);
-      const authority: ActivationAuthority = { token, scanRequest, configurationRequest };
+      const configurationReadId = `${CONFIGURATION_READ_ID_PREFIX}${requestGeneration}`;
+      const authority: ActivationAuthority = { token, scanRequest, configurationReadId };
       currentActivationRef.current = authority;
       setIsScanning(true);
       setError(null);
@@ -252,65 +305,168 @@ export function useXcom2ModuleActivationController(
         workspaceGenerationRef.current === scanRequest.workspaceGeneration &&
         workspaceIdRef.current === scanRequest.workspaceId;
 
-      const [scanResult, configurationResult] = await Promise.allSettled([
-        invokeSafely(() => dependencies.scanner.scan(scanRequest)),
-        invokeSafely(() => dependencies.configuration.read(configurationRequest)),
-      ]);
+      // A generation transition revokes old native custody before the next begin can run.
+      await signalNativeRevocation({
+        kind: "newer-activation-generation",
+        activationGeneration: requestGeneration,
+      });
+      if (!isCurrent()) return;
+      await revocationBarrierRef.current;
       if (!isCurrent()) return;
 
-      let recognition: Readonly<Xcom2ModuleActivationSnapshot> | null = null;
-      if (scanResult.status === "fulfilled" && exactlyMatchesScan(scanResult.value, scanRequest)) {
-        const evaluated = evaluateXcom2ModuleActivation(scanResult.value);
-        if (exactlyMatchesScan(evaluated, scanRequest)) recognition = evaluated;
-      } else if (scanResult.status === "rejected") {
-        console.error("[Xcom2ModuleActivation] Module scan failed", {
-          errorType: getErrorType(scanResult.reason),
-        });
-      }
-      if (!isCurrent()) return;
-
-      let project: Readonly<Xcom2ProjectActivationSnapshot> | null = null;
-      if (
-        recognition &&
-        configurationResult.status === "fulfilled" &&
-        exactlyMatchesConfiguration(configurationResult.value, configurationRequest)
-      ) {
-        const evaluated = evaluateXcom2ProjectActivation(
-          configurationRequest,
-          configurationResult.value,
-          recognition,
+      let candidate: Awaited<ReturnType<Xcom2NativeActivationEvidencePort["begin"]>>;
+      try {
+        candidate = await invokeSafely(() =>
+          dependencies.nativeEvidence.begin(
+            Object.freeze({
+              workspaceId: scanRequest.workspaceId,
+              workspaceGeneration: scanRequest.workspaceGeneration,
+              scanId: scanRequest.scanId,
+              scanGeneration: scanRequest.scanGeneration,
+              configurationReadId,
+              limits: scanRequest.limits,
+            }),
+          ),
         );
-        if (
-          evaluated.kind === "accepted" &&
-          exactlyMatchesScan(evaluated.snapshot, scanRequest) &&
-          evaluated.snapshot.activationGeneration === configurationRequest.activationGeneration &&
-          evaluated.snapshot.configurationReadId === configurationRequest.configurationReadId &&
-          projectMatchesRecognition(evaluated.snapshot, recognition)
-        ) {
-          project = evaluated.snapshot;
-        }
-      } else if (configurationResult.status === "rejected") {
-        console.error("[Xcom2ModuleActivation] Configuration read failed", {
-          errorType: getErrorType(configurationResult.reason),
+      } catch (activationError) {
+        if (!isCurrent()) return;
+        currentActivationRef.current = null;
+        committedSnapshotRef.current = null;
+        committedProjectSnapshotRef.current = null;
+        setSnapshot(null);
+        setProjectSnapshot(null);
+        setError(ACTIVATION_ERROR);
+        setIsScanning(false);
+        void signalNativeRevocation({ kind: "activation-attempt-failed" });
+        console.error("[Xcom2ModuleActivation] Native activation evidence failed", {
+          errorType: getErrorType(activationError),
         });
+        return;
       }
       if (!isCurrent()) return;
 
-      committedSnapshotRef.current = recognition;
-      committedProjectSnapshotRef.current = project;
-      setSnapshot(recognition);
-      setProjectSnapshot(project);
-      setError(
-        scanResult.status === "rejected"
-          ? SCAN_ERROR
-          : configurationResult.status === "rejected"
-            ? CONFIGURATION_ERROR
-            : null,
+      const pendingDecision = beginXcom2NativeActivationEvidence(candidate);
+      if (pendingDecision.kind !== "pending") {
+        currentActivationRef.current = null;
+        committedSnapshotRef.current = null;
+        committedProjectSnapshotRef.current = null;
+        setSnapshot(null);
+        setProjectSnapshot(null);
+        setError(ACTIVATION_ERROR);
+        setIsScanning(false);
+        void signalNativeRevocation({ kind: "activation-attempt-failed" });
+        return;
+      }
+      const pending = pendingDecision.state;
+      if (
+        pending.workspaceId !== scanRequest.workspaceId ||
+        pending.workspaceGeneration !== scanRequest.workspaceGeneration ||
+        pending.scan.scanId !== scanRequest.scanId ||
+        pending.scan.scanGeneration !== scanRequest.scanGeneration ||
+        pending.scan.limits.maximumDepth !== scanRequest.limits.maximumDepth ||
+        pending.scan.limits.maximumEncounteredEntries !==
+          scanRequest.limits.maximumEncounteredEntries ||
+        pending.configuration.configurationReadId !== configurationReadId
+      ) {
+        currentActivationRef.current = null;
+        committedSnapshotRef.current = null;
+        committedProjectSnapshotRef.current = null;
+        setSnapshot(null);
+        setProjectSnapshot(null);
+        setError(null);
+        setIsScanning(false);
+        void signalNativeRevocation({ kind: "activation-attempt-failed" });
+        return;
+      }
+      nativeEvidenceStateRef.current = pending;
+
+      const recognition = evaluateXcom2ModuleActivation(pending.scan);
+      const configurationRequest = Object.freeze({
+        workspaceId: pending.configuration.workspaceId,
+        workspaceGeneration: pending.configuration.workspaceGeneration,
+        activationGeneration: pending.configuration.activationGeneration,
+        configurationReadId: pending.configuration.configurationReadId,
+      } satisfies Xcom2ModuleConfigurationReadRequest);
+      const evaluation = evaluateXcom2ProjectActivation(
+        configurationRequest,
+        pending.configuration,
+        recognition,
       );
+      if (!isCurrent()) return;
+
+      const project =
+        evaluation.kind === "accepted" &&
+        projectMatchesRecognition(evaluation.snapshot, recognition)
+          ? evaluation.snapshot
+          : null;
+      const selected = acknowledgeXcom2NativeActivationEvidence(
+        pending,
+        evaluation,
+        Object.freeze({
+          workspaceId: pending.workspaceId,
+          workspaceGeneration: pending.workspaceGeneration,
+          activationGeneration: pending.activationGeneration,
+          activationAttemptReceipt: pending.activationAttemptReceipt,
+        }),
+      );
+
+      if (selected.kind === "acknowledged") {
+        let nativeDecision;
+        try {
+          // This is the complete envelope: opaque receipt and selected opaque handles only.
+          nativeDecision = await invokeSafely(() =>
+            dependencies.nativeEvidence.acknowledge(selected.acknowledgment),
+          );
+        } catch (acknowledgmentError) {
+          if (!isCurrent()) return;
+          currentActivationRef.current = null;
+          committedSnapshotRef.current = null;
+          committedProjectSnapshotRef.current = null;
+          setSnapshot(null);
+          setProjectSnapshot(null);
+          setError(ACTIVATION_ERROR);
+          setIsScanning(false);
+          void signalNativeRevocation({ kind: "activation-attempt-failed" });
+          console.error("[Xcom2ModuleActivation] Native activation acknowledgment failed", {
+            errorType: getErrorType(acknowledgmentError),
+          });
+          return;
+        }
+        if (!isCurrent()) return;
+        if (
+          nativeDecision.kind !== "acknowledged" ||
+          !sameAcknowledgedState(selected.state, nativeDecision.state)
+        ) {
+          currentActivationRef.current = null;
+          committedSnapshotRef.current = null;
+          committedProjectSnapshotRef.current = null;
+          setSnapshot(null);
+          setProjectSnapshot(null);
+          setError(ACTIVATION_ERROR);
+          setIsScanning(false);
+          void signalNativeRevocation({ kind: "activation-attempt-failed" });
+          return;
+        }
+        nativeEvidenceStateRef.current = selected.state;
+        nativeAcceptedSnapshotRef.current = acceptedSnapshotFromState(nativeDecision.state);
+        setNativeAuthorityRevision((revision) => revision + 1);
+      } else {
+        void signalNativeRevocation({ kind: "activation-attempt-failed" });
+      }
+      if (!isCurrent()) return;
+
+      const canPublishActive = project?.state !== "active" || selected.kind === "acknowledged";
+      const publishedRecognition = canPublishActive ? recognition : null;
+      const publishedProject = canPublishActive ? project : null;
+      committedSnapshotRef.current = publishedRecognition;
+      committedProjectSnapshotRef.current = publishedProject;
+      setSnapshot(publishedRecognition);
+      setProjectSnapshot(publishedProject);
+      setError(null);
       currentActivationRef.current = null;
       setIsScanning(false);
     },
-    [dependencies.configuration, dependencies.scanner],
+    [dependencies.nativeEvidence, signalNativeRevocation],
   );
 
   const loadWorkspace = useCallback(
@@ -329,44 +485,58 @@ export function useXcom2ModuleActivationController(
         return Promise.resolve();
       }
 
-      // Reuse the switch authority shape without changing native workspace authorization.
-      const token = beginWorkspaceSwitch(workspaceGeneration);
-      workspaceIdRef.current = workspaceId;
+      const token = Object.freeze({
+        generation: workspaceGeneration,
+        previousWorkspaceId: workspaceId,
+      });
+      switchStateRef.current = {
+        token,
+        previousSnapshot: committedSnapshotRef.current,
+        previousProjectSnapshot: committedProjectSnapshotRef.current,
+        started: false,
+      };
+      clearPresentation();
+      void signalNativeRevocation({ kind: "workspace-refresh" });
       return runActivation(token, workspaceId);
     },
-    [beginWorkspaceSwitch, runActivation],
+    [clearPresentation, runActivation, signalNativeRevocation],
   );
 
-  const restoreWorkspace = useCallback((token: Xcom2ModuleActivationWorkspaceSwitchToken): void => {
-    const switchState = switchStateRef.current;
-    if (
-      !mountedRef.current ||
-      switchState?.token !== token ||
-      workspaceGenerationRef.current !== token.generation
-    ) {
-      return;
-    }
+  const restoreWorkspace = useCallback(
+    (token: Xcom2ModuleActivationWorkspaceSwitchToken): void => {
+      const switchState = switchStateRef.current;
+      if (
+        !mountedRef.current ||
+        switchState?.token !== token ||
+        workspaceGenerationRef.current !== token.generation
+      ) {
+        return;
+      }
 
-    currentActivationRef.current = null;
-    workspaceIdRef.current = token.previousWorkspaceId;
-    const restoredSnapshot =
-      token.previousWorkspaceId !== null &&
-      switchState.previousSnapshot?.workspaceId === token.previousWorkspaceId
-        ? switchState.previousSnapshot
-        : null;
-    const restoredProjectSnapshot =
-      restoredSnapshot &&
-      switchState.previousProjectSnapshot?.workspaceId === token.previousWorkspaceId &&
-      projectMatchesRecognition(switchState.previousProjectSnapshot, restoredSnapshot)
-        ? switchState.previousProjectSnapshot
-        : null;
-    committedSnapshotRef.current = restoredSnapshot;
-    committedProjectSnapshotRef.current = restoredProjectSnapshot;
-    setIsScanning(false);
-    setError(null);
-    setSnapshot(restoredSnapshot);
-    setProjectSnapshot(restoredProjectSnapshot);
-  }, []);
+      currentActivationRef.current = null;
+      void signalNativeRevocation({ kind: "workspace-activation-failed" });
+      void signalNativeRevocation({ kind: "cached-react-restoration" });
+      workspaceIdRef.current = token.previousWorkspaceId;
+      const restoredSnapshot =
+        token.previousWorkspaceId !== null &&
+        switchState.previousSnapshot?.workspaceId === token.previousWorkspaceId
+          ? switchState.previousSnapshot
+          : null;
+      const restoredProjectSnapshot =
+        restoredSnapshot &&
+        switchState.previousProjectSnapshot?.workspaceId === token.previousWorkspaceId &&
+        projectMatchesRecognition(switchState.previousProjectSnapshot, restoredSnapshot)
+          ? switchState.previousProjectSnapshot
+          : null;
+      committedSnapshotRef.current = restoredSnapshot;
+      committedProjectSnapshotRef.current = restoredProjectSnapshot;
+      setIsScanning(false);
+      setError(null);
+      setSnapshot(restoredSnapshot);
+      setProjectSnapshot(restoredProjectSnapshot);
+    },
+    [signalNativeRevocation],
+  );
 
   const settleFailedWorkspaceActivation = useCallback(
     (token: Xcom2ModuleActivationWorkspaceSwitchToken): void => {
@@ -384,18 +554,54 @@ export function useXcom2ModuleActivationController(
       setSnapshot(null);
       setProjectSnapshot(null);
       setIsScanning(false);
+      void signalNativeRevocation({ kind: "workspace-activation-failed" });
+    },
+    [signalNativeRevocation],
+  );
+
+  const settleFailedWorkspaceRefresh = useCallback(
+    (workspaceGeneration: number, workspaceId: string): void => {
+      if (
+        !mountedRef.current ||
+        workspaceGenerationRef.current !== workspaceGeneration ||
+        workspaceIdRef.current !== workspaceId
+      ) {
+        return;
+      }
+      currentActivationRef.current = null;
+      committedSnapshotRef.current = null;
+      committedProjectSnapshotRef.current = null;
+      setSnapshot(null);
+      setProjectSnapshot(null);
+      setIsScanning(false);
+      void signalNativeRevocation({ kind: "workspace-activation-failed" });
+    },
+    [signalNativeRevocation],
+  );
+
+  const authorizeBuildRecipeInspection = useCallback(
+    (
+      current: Readonly<Xcom2NativeInspectionCurrent>,
+    ): Readonly<Xcom2NativeInspectionAuthorizationDecision> => {
+      const state = nativeEvidenceStateRef.current;
+      const accepted = nativeAcceptedSnapshotRef.current;
+      if (!state || !accepted) {
+        return Object.freeze({ kind: "refused", code: "authority-unavailable" });
+      }
+      return authorizeXcom2NativeBuildRecipeInspection(state, current, accepted);
     },
     [],
   );
 
-  useLayoutEffect(
-    () => () => {
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
       currentActivationRef.current = null;
       switchStateRef.current = null;
-    },
-    [],
-  );
+      void signalNativeRevocation({ kind: "app-exit" });
+    };
+  }, [signalNativeRevocation]);
 
   const activeModules = useMemo(
     () => (snapshot ? selectActiveXcom2ModuleDecisions(snapshot) : NO_ACTIVE_MODULES),
@@ -416,6 +622,7 @@ export function useXcom2ModuleActivationController(
       refreshWorkspace,
       restoreWorkspace,
       settleFailedWorkspaceActivation,
+      settleFailedWorkspaceRefresh,
     }),
     [
       activateWorkspace,
@@ -424,6 +631,7 @@ export function useXcom2ModuleActivationController(
       refreshWorkspace,
       restoreWorkspace,
       settleFailedWorkspaceActivation,
+      settleFailedWorkspaceRefresh,
     ],
   );
 
@@ -435,6 +643,7 @@ export function useXcom2ModuleActivationController(
     isScanning,
     error,
     refreshWorkspace,
+    authorizeBuildRecipeInspection,
     workspaceCollaborator,
   };
 }

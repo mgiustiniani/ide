@@ -260,6 +260,10 @@ export function useWorkspaceController(
         return;
       }
       setError(getErrorMessage(refreshError));
+      collaborators.xcom2ModuleActivation.settleFailedWorkspaceRefresh(
+        workspaceGeneration,
+        activeWorkspace.id,
+      );
       console.error("[Workspace] Failed explicit workspace refresh", {
         errorType: getErrorType(refreshError),
       });

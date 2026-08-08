@@ -6,9 +6,11 @@ import {
   type Xcom2ModuleEvidenceObservation,
   type Xcom2ModuleScanRequest,
   type Xcom2ModuleScanSnapshot,
+  type Xcom2NativeActivationCandidate,
+  type Xcom2NativeActivationEvidenceHandle,
 } from "@ide/contracts";
 import type { Xcom2ModuleConfigurationPort, Xcom2ModuleScannerPort } from "@ide/web-core/ports";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useXcom2ModuleActivationController } from "./useXcom2ModuleActivationController";
 
@@ -84,10 +86,90 @@ function createHarness(
 ) {
   const scan = vi.fn(implementation);
   const read = vi.fn(configurationImplementation);
-  const controller = renderHook(() =>
-    useXcom2ModuleActivationController({ scanner: { scan }, configuration: { read } }),
+  let activationGeneration = 0;
+  let latestCandidate: Readonly<Xcom2NativeActivationCandidate> | null = null;
+  const begin = vi.fn(async (request: any): Promise<Readonly<Xcom2NativeActivationCandidate>> => {
+    activationGeneration += 1;
+    const configurationRequest = Object.freeze({
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      activationGeneration,
+      configurationReadId: request.configurationReadId,
+    });
+    const scanRequest = Object.freeze({
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      scanId: request.scanId,
+      scanGeneration: request.scanGeneration,
+      limits: request.limits,
+    });
+    const [scanned, configured] = await Promise.all([
+      scan(scanRequest),
+      read(configurationRequest),
+    ]);
+    const receipt = `activation-attempt:${activationGeneration}`;
+    const handleByRoot = new Map<string, string>();
+    for (const root of [
+      ...scanned.observations.map(({ moduleRoot }) => moduleRoot),
+      ...(configured.kind === "ready" ? configured.configuration.moduleRoots : []),
+    ]) {
+      if (!handleByRoot.has(root)) handleByRoot.set(root, `evidence:${root}`);
+    }
+    const handles = (roots: readonly string[]): readonly Xcom2NativeActivationEvidenceHandle[] =>
+      Object.freeze(
+        [...new Set(roots)].map((moduleRoot) =>
+          Object.freeze({ moduleRoot, evidenceHandle: handleByRoot.get(moduleRoot)! }),
+        ),
+      );
+    latestCandidate = Object.freeze({
+      scan: Object.freeze({
+        ...scanned,
+        activationGeneration,
+        activationAttemptReceipt: receipt,
+        evidenceHandles: handles(scanned.observations.map(({ moduleRoot }) => moduleRoot)),
+      }),
+      configuration: Object.freeze({
+        ...configured,
+        activationAttemptReceipt: receipt,
+        evidenceHandles: handles(
+          configured.kind === "ready" ? configured.configuration.moduleRoots : [],
+        ),
+      }),
+    });
+    return latestCandidate;
+  });
+  const acknowledge = vi.fn(async (acknowledgment: any) => {
+    if (!latestCandidate) throw new Error("No activation candidate");
+    const selectedByHandle = new Map(
+      [
+        ...latestCandidate.scan.evidenceHandles,
+        ...latestCandidate.configuration.evidenceHandles,
+      ].map((entry) => [entry.evidenceHandle, entry] as const),
+    );
+    const selectedModules = acknowledgment.evidenceHandles.map((evidenceHandle: string) =>
+      selectedByHandle.get(evidenceHandle)!,
+    );
+    const correlation = latestCandidate.scan;
+    const state = Object.freeze({
+      kind: "acknowledged" as const,
+      workspaceId: correlation.workspaceId,
+      workspaceGeneration: correlation.workspaceGeneration,
+      activationGeneration: correlation.activationGeneration,
+      activationAttemptReceipt: correlation.activationAttemptReceipt,
+      acknowledgment,
+      selectedModules: Object.freeze(selectedModules),
+    });
+    return Object.freeze({ kind: "acknowledged" as const, acknowledgment, state });
+  });
+  const revoke = vi.fn(async (event: any) =>
+    Object.freeze({
+      kind: "revoked" as const,
+      state: Object.freeze({ kind: "revoked" as const, code: event.kind }),
+    }),
   );
-  return { controller, scan, read };
+  const nativeEvidence = { begin, acknowledge, revoke };
+  const controller = renderHook(() => useXcom2ModuleActivationController({ nativeEvidence }));
+  return { controller, scan, read, begin, acknowledge, revoke };
 }
 
 async function activate(
@@ -230,6 +312,7 @@ describe("useXcom2ModuleActivationController", () => {
     act(() => {
       staleLoad = collaborator.loadWorkspace(staleToken, workspaceTwo.id);
     });
+    await waitFor(() => expect(harness.scan).toHaveBeenCalledTimes(2));
     const staleRequest = harness.scan.mock.calls[1]![0];
 
     await activate(harness, workspaceThree, 3);
@@ -285,6 +368,7 @@ describe("useXcom2ModuleActivationController", () => {
     act(() => {
       failedLoad = collaborator.loadWorkspace(failedToken, workspaceTwo.id);
     });
+    await waitFor(() => expect(harness.scan).toHaveBeenCalledTimes(2));
     const failedRequest = harness.scan.mock.calls[1]![0];
 
     act(() => collaborator.restoreWorkspace(failedToken));
@@ -427,7 +511,7 @@ describe("useXcom2ModuleActivationController", () => {
 
     await activate(harness, workspaceOne, 1);
 
-    expect(harness.controller.result.current.snapshot?.state).toBe("active");
+    expect(harness.controller.result.current.snapshot).toBeNull();
     expect(harness.controller.result.current.projectSnapshot).toBeNull();
     expect(harness.controller.result.current.activeProjectDecisions).toEqual([]);
   });
@@ -455,6 +539,7 @@ describe("useXcom2ModuleActivationController", () => {
     });
     expect(harness.controller.result.current.snapshot).toBeNull();
     expect(harness.controller.result.current.projectSnapshot).toBeNull();
+    await waitFor(() => expect(harness.scan).toHaveBeenCalledTimes(2));
     const staleScanRequest = harness.scan.mock.calls[1]![0];
     const staleReadRequest = harness.read.mock.calls[1]![0];
 
@@ -478,6 +563,108 @@ describe("useXcom2ModuleActivationController", () => {
     expect(harness.controller.result.current.activeProjectDecisions).toEqual([]);
   });
 
+  it("acknowledges only the opaque receipt and selected handles after trusted policy evaluation", async () => {
+    const harness = createHarness(
+      async (request) => scanSnapshot(request, activeEvidence),
+      async (request) => ({
+        ...request,
+        kind: "ready",
+        configuration: { version: 1, target: "wotc", moduleRoots: ["MyMod"] },
+      }),
+    );
+
+    await activate(harness, workspaceOne, 1);
+
+    expect(harness.begin).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: workspaceOne.id,
+      workspaceGeneration: 1,
+      scanId: "xcom2-module-scan:1",
+      scanGeneration: 1,
+      configurationReadId: "xcom2-configuration-read:1",
+      limits: XCOM2_MODULE_SCAN_LIMITS,
+    });
+    expect(harness.acknowledge).toHaveBeenCalledOnce();
+    const acknowledgment = harness.acknowledge.mock.calls[0]![0];
+    expect(Object.keys(acknowledgment)).toEqual(["activationAttemptReceipt", "evidenceHandles"]);
+    expect(acknowledgment).toEqual({
+      activationAttemptReceipt: "activation-attempt:1",
+      evidenceHandles: ["evidence:MyMod"],
+    });
+    expect(JSON.stringify(acknowledgment)).not.toMatch(/root|path|workspace|generation/iu);
+    expect(
+      harness.controller.result.current.authorizeBuildRecipeInspection({
+        workspaceId: workspaceOne.id,
+        generation: 1,
+        moduleRoot: "MyMod",
+      }),
+    ).toEqual({
+      kind: "authorized",
+      workspaceId: workspaceOne.id,
+      generation: 1,
+      activationGeneration: 1,
+      moduleRoot: "MyMod",
+    });
+  });
+
+  it("revokes native authority on switch start and cached restoration without restoring it", async () => {
+    const harness = createHarness(async (request) => scanSnapshot(request, activeEvidence));
+    await activate(harness, workspaceOne, 1);
+    const collaborator = harness.controller.result.current.workspaceCollaborator;
+    let token!: ReturnType<typeof collaborator.beginWorkspaceSwitch>;
+
+    act(() => {
+      token = collaborator.beginWorkspaceSwitch(2);
+    });
+    expect(
+      harness.controller.result.current.authorizeBuildRecipeInspection({
+        workspaceId: workspaceOne.id,
+        generation: 1,
+        moduleRoot: "MyMod",
+      }),
+    ).toEqual({ kind: "refused", code: "authority-unavailable" });
+
+    act(() => collaborator.restoreWorkspace(token));
+    expect(harness.controller.result.current.snapshot?.workspaceId).toBe(workspaceOne.id);
+    expect(
+      harness.controller.result.current.authorizeBuildRecipeInspection({
+        workspaceId: workspaceOne.id,
+        generation: 1,
+        moduleRoot: "MyMod",
+      }),
+    ).toEqual({ kind: "refused", code: "authority-unavailable" });
+    expect(harness.revoke.mock.calls.map(([event]) => event.kind)).toEqual(
+      expect.arrayContaining([
+        "workspace-switch-started",
+        "workspace-activation-started",
+        "newer-activation-generation",
+        "workspace-activation-failed",
+        "cached-react-restoration",
+      ]),
+    );
+  });
+
+  it("revokes synchronously when an enclosing explicit refresh fails", async () => {
+    const harness = createHarness(async (request) => scanSnapshot(request, activeEvidence));
+    await activate(harness, workspaceOne, 1);
+
+    act(() =>
+      harness.controller.result.current.workspaceCollaborator.settleFailedWorkspaceRefresh(
+        1,
+        workspaceOne.id,
+      ),
+    );
+
+    expect(harness.controller.result.current.snapshot).toBeNull();
+    expect(
+      harness.controller.result.current.authorizeBuildRecipeInspection({
+        workspaceId: workspaceOne.id,
+        generation: 1,
+        moduleRoot: "MyMod",
+      }),
+    ).toEqual({ kind: "refused", code: "authority-unavailable" });
+    expect(harness.revoke).toHaveBeenCalledWith({ kind: "workspace-activation-failed" });
+  });
+
   it("does not accept a late result after unmount", async () => {
     const pending = deferred<Readonly<Xcom2ModuleScanSnapshot>>();
     const harness = createHarness(() => pending.promise);
@@ -491,6 +678,7 @@ describe("useXcom2ModuleActivationController", () => {
     act(() => {
       load = collaborator.loadWorkspace(token, workspaceOne.id);
     });
+    await waitFor(() => expect(harness.scan).toHaveBeenCalledOnce());
     const request = harness.scan.mock.calls[0]![0];
 
     harness.controller.unmount();

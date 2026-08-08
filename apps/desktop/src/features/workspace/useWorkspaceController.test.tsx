@@ -119,6 +119,9 @@ function createHarness(
       settleFailedWorkspaceActivation: vi.fn((token) => {
         order.push(`xcom2-module.settle:${token.previousWorkspaceId}:${token.generation}`);
       }),
+      settleFailedWorkspaceRefresh: vi.fn((generation, workspaceId) => {
+        order.push(`xcom2-module.refresh-failed:${workspaceId}:${generation}`);
+      }),
     },
     xcom: {
       beginWorkspaceSwitch: vi.fn((generation) => {
