@@ -39,7 +39,9 @@ Cold start first establishes the native-authorized root, then promotes that auth
 | **RefactorKit Symbol Navigation Support** | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup within its separately approved source-built-provider boundary.                                                                                                |
 | **AI Agent Controller**                   | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
 | **XCOM Project Activation Controller**    | Evaluates one native-issued configuration/scan attempt, acknowledges only selected opaque handles, owns synchronous renderer and native revocation, and exposes token-free inspection authorization only for exact accepted roots.                          |
-| **XCOM Build Recipe Review Controller**   | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates metadata review, discard, and one-shot approval presentation; and owns no build consumer.                                                                          |
+| **XCOM Build Recipe Review Controller**   | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates accessible review, exact approval, and discard presentation. It does not call the consumption seam and owns no build consumer.                                     |
+| **XCOM Build Recipe Review Service**      | Owns volatile state and an async provider-neutral consumption decision seam. It revokes before awaiting fresh exact inspection; no production component calls it.                                                                                           |
+| **XCOM Build Recipe Review Policy**       | Fully validates closed metadata and digest custody, reconciles fresh facts, and authorizes an identical current recipe once while refusing changed, invalid, stale, revoked, consumed, or malformed requests.                                               |
 | **XCOM Setup Controller**                 | Keeps machine setup transaction authority correlated to workspace/generation identity. Only open Settings owns one monitor and one transaction adapter lifecycle; close invalidates requests, unsubscribes both, and clears their poll timers.              |
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
@@ -272,17 +274,32 @@ Trusted TypeScript evaluators
 Default Build Recipe Review
   ├─ authorization request: `{ workspaceId, generation, moduleRoot }`
   ├─ native inspector: accepted-root match + contained no-follow metadata reads
-  ├─ TypeScript policy: closed validation + RFC 8785 / SHA-256 digest custody
+  ├─ UI: escaped complete bounded MIT notice text, distinct from notice identity
+  │    └─ unsafe empty/hostile/path/control/oversize text refuses
+  ├─ review service → pure policy: closed review + RFC 8785 / SHA-256 custody
+  ├─ controller: review / approve / discard only; no consumption-seam call
   └─ volatile one-shot metadata approval; no execution consumer
+
+Provider-neutral consumption decision seam (no production caller)
+  ├─ consumeApproval(exact `{ workspaceId, generation, moduleRoot }`)
+  ├─ synchronously revoke authority before awaiting fresh inspection
+  ├─ keep authority unavailable throughout reinspection
+  ├─ fully review fresh metadata and reconcile the exact digest/current context
+  ├─ identical recipe → authorize once
+  └─ drift / invalid / error / concurrent / replay → refuse or remain revoked/consumed
 ```
 
 Rust, not cached renderer state, owns inspection authority. A begin call revokes prior authority, binds the current workspace, performs the configuration read and convention scan, and mints one opaque handle per retained root. Trusted TypeScript evaluates the safe facts with the established recognition and configuration policies. Its acknowledgment contains only the opaque attempt receipt and selected handles. Rust requires a complete scan, known strong or configured roots, the exact complete active set, current workspace binding, and unchanged module identities before accepting authority.
 
 Workspace refresh, workspace switch or activation start, activation failure, a newer activation generation, application exit, and cached React restoration revoke native authority. Cached recognition presentation may be restored after a failed switch, but restoration is explicitly a revocation event and cannot rebuild accepted native roots.
 
-Inspection preserves the request shape `{ workspaceId, generation, moduleRoot }`; neither the activation receipt nor an evidence handle becomes an inspection token. The native inspector matches that request to the current accepted workspace generation and exact active root, revalidates identities, and reads only bounded contained metadata. `.scripts/build.ps1` remains an untrusted regular file: the inspector returns its fixed relative path, byte size, and lowercase SHA-256, not script bytes or a command. It also returns bounded MIT X2ModBuildCommon notice metadata, unresolved prerequisites, and separate project-local Highlander source and Workshop runtime dependencies.
+Inspection preserves the request shape `{ workspaceId, generation, moduleRoot }`; neither the activation receipt nor an evidence handle becomes an inspection token. The native inspector matches that request to the current accepted workspace generation and exact active root, revalidates identities, and reads only bounded contained metadata. `.scripts/build.ps1` remains an untrusted regular file: the inspector returns its fixed relative path, byte size, and lowercase SHA-256, not script bytes or a command. It also returns the complete bounded MIT X2ModBuildCommon attribution notice, unresolved prerequisites, and separate project-local Highlander source and Workshop runtime dependencies.
 
-The TypeScript review policy validates a closed candidate, takes deterministic digest custody, and may retain one volatile one-shot approval for the exact reviewed metadata. Approval is metadata authority only. There is no process, shell, network, workspace-write, SDK, game, Steam-prefix, `pfx_copy`, deployment, cooking, launch, or execution relationship in this component model. Build, Deploy, Cook, and Launch remain separate actions; this surface reviews only Default Build metadata and authorizes none of the other actions.
+The controlled UI presents the notice text in an accessible **attribution notice** field, separately from **notice identity**. React renders it as escaped text and preserves bounded line breaks; it is not interpreted as markup. Empty, hostile command/script-like, machine-path-bearing, control-bearing, non-normalized, or oversized notice text fails the safe presentation check and renders only the fixed refusal.
+
+The TypeScript review service and pure policy validate a closed candidate, take deterministic digest custody, and may retain one volatile one-shot approval for the exact reviewed metadata. Provider-neutral asynchronous `consumeApproval(request)` is only a decision seam; the production controller and UI do not call it. On a request it synchronously transitions authority to revoked before awaiting fresh exact inspection, so concurrent use has no authority. It fully reviews the fresh candidate, reconciles the original exact digest with all current metadata, and authorizes the identical recipe once. A changed script, notice text/identity, provenance, license, workspace/module context, or generation; invalid metadata; inspection error; concurrent request; or replay refuses or leaves authority revoked/consumed.
+
+Refresh, discard, and context changes retain synchronous revocation. There is no recipe watcher or polling, so unseen filesystem mutation is detected only when the decision seam is requested and performs fresh inspection; authority stays unavailable during that wait. No production caller, executor, or build consumer exists. The UI exposes review, **Approve exact recipe**, and **Discard** only, with no Consume, Execute, Build, Deploy, Cook, or Launch control. There is no process, shell, network, workspace-write, SDK, game, Steam-prefix, `pfx_copy`, deployment, cooking, launch, or execution relationship in this component model.
 
 The fixed activation schema remains `{ "version": 1, "target": "wotc", "moduleRoots": [...] }`. Recipe inspection neither extends `.ide/xcom2.json` nor creates a build manifest. Machine Settings and SDK transactions remain independent. The browser adapters reject native activation and recipe inspection without filesystem, process, network, storage, timer, polling, or simulated-success work.
 
@@ -376,6 +393,6 @@ Future confirmation or external-root activation must not weaken current workspac
 
 Concrete WOTC SDK setup is CURRENT/AS-BUILT with a fixed 15-operation plan, exact external approval, durable baseline capture, and conflict-safe restore. Optional Steam/prefix/package/interactive provisioning remains FUTURE/TARGET and must not enter current Prepare or Apply without a separate design and authorization.
 
-XCOM configured and convention activation uses native-issued evidence handles, trusted TypeScript evaluation, and Rust-owned accepted-root authority. The matching activity can host metadata-only Default Build recipe review and one-shot approval, but has no execution consumer or other project action. Manual confirmation, external roots, operational Build/Deploy/Cook/Launch, and the activation-scoped Problems/Logs/language suite remain outside this boundary. No generic plugin runtime is claimed.
+XCOM configured and convention activation uses native-issued evidence handles, trusted TypeScript evaluation, and Rust-owned accepted-root authority. The matching activity can host metadata-only Default Build recipe review, escaped complete notice presentation, exact approval, and discard, but it exposes neither the async consumption decision seam nor any execution consumer or project action. Manual confirmation, external roots, operational Build/Deploy/Cook/Launch, and the activation-scoped Problems/Logs/language suite remain outside this boundary. No generic plugin runtime is claimed.
 
 Java activation, contextual tooling, definition/references, symbols/hierarchy, code actions, formatting, rename, general refactoring, and broader JDT LS expansion are instead frozen unscheduled inventory. The current guarded Java Problems tab is not activation, and no Java project detection or activation is claimed.
