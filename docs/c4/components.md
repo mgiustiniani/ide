@@ -1,6 +1,6 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 project activation combines read-only project configuration and convention recognition. Workspace Settings owns its atomic diagnostic presentation; machine Settings stays separate, and neither diagnostics nor recognition grants project tools. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 activation evaluates native-issued facts, acknowledges only opaque handles, and leaves accepted-root authority in Rust. The active-module surface can review and approve one metadata-only Default Build recipe; it has no execution consumer. Workspace Settings and machine Settings remain separate. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
@@ -27,7 +27,7 @@ workspace-switch attempts; shared by collaborators to reject stale work.
 Exhaustion fails closed rather than reusing an old generation.
 ```
 
-Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, and discover RefactorKit status/capabilities. For XCOM it keeps old activation revoked until authorization succeeds, then jointly starts the correlated configuration read and convention scan. Explicit full **Workspace Refresh** follows the same synchronous-revoke boundary without changing native workspace authorization: it clears the prior diagnostic and configured authority, exposes neutral checking, and accepts only the exact current joint result. While Settings is closed, its machine-runtime collaborator calls return without monitor snapshots or refreshes, transaction history or detail reads, polling, or subscriptions. Opening Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle; closing Settings invalidates their requests, unsubscribes both, and clears their poll timers. Passive Settings open refresh remains distinct from the explicit full Workspace Refresh control. A workspace switch restarts machine lifecycles only when Settings remains open. Workspace transitions also invalidate the composed RefactorKit diagnostic and Symbol Navigation support; lifecycle wiring does not expand either capability's approved scope. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
+Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, and discover RefactorKit status/capabilities. For XCOM it keeps old authority revoked until authorization succeeds, then begins one native evidence attempt. Rust reads the fixed configuration and convention metadata and returns safe facts bound to an opaque attempt receipt and opaque per-root handles. Trusted TypeScript evaluates those facts and acknowledges only the receipt and handles for the complete active set; it never sends roots, paths, configuration, hashes, or commands back as authority. Explicit full **Workspace Refresh** uses the same synchronous-revoke boundary. While Settings is closed, its machine-runtime collaborator calls return without monitor snapshots or refreshes, transaction history or detail reads, polling, or subscriptions. Opening Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle; closing Settings invalidates their requests, unsubscribes both, and clears their poll timers. Passive Settings open refresh remains distinct from the explicit full Workspace Refresh control. A workspace switch restarts machine lifecycles only when Settings remains open. Workspace transitions also invalidate the composed RefactorKit diagnostic and Symbol Navigation support; lifecycle wiring does not expand either capability's approved scope. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
 
 | Current C3 component                      | Stable structural responsibility                                                                                                                                                                                                                            |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -38,7 +38,8 @@ Cold start first establishes the native-authorized root, then promotes that auth
 | **RefactorKit Status Controller**         | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
 | **RefactorKit Symbol Navigation Support** | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup within its separately approved source-built-provider boundary.                                                                                                |
 | **AI Agent Controller**                   | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
-| **XCOM Project Activation Controller**    | Jointly owns one-shot configuration and convention reads, synchronous decision/diagnostic revocation, neutral checking, exact current configuration/scan correlation, explicit full-refresh orchestration, and stale-result suppression.                    |
+| **XCOM Project Activation Controller**    | Evaluates one native-issued configuration/scan attempt, acknowledges only selected opaque handles, owns synchronous renderer and native revocation, and exposes token-free inspection authorization only for exact accepted roots.                          |
+| **XCOM Build Recipe Review Controller**   | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates metadata review, discard, and one-shot approval presentation; and owns no build consumer.                                                                          |
 | **XCOM Setup Controller**                 | Keeps machine setup transaction authority correlated to workspace/generation identity. Only open Settings owns one monitor and one transaction adapter lifecycle; close invalidates requests, unsubscribes both, and clears their poll timers.              |
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
@@ -251,62 +252,39 @@ Desktop Settings / Java
 
 Provider-neutral lifecycle, document-sync, diagnostic, semantic, and cancellation contracts; the Tauri adapters; guarded Monaco providers; the current conditional Problems projection; and the managed Rust JDT LS bridge are current. RefactorKit scope also includes the separate managed Java import transaction, saved-snapshot TypeScript/JavaScript diagnostics, and separately approved semantic navigation. Legacy/support handlers and provider foundations do not expand those capability-specific boundaries. There is no Java project/module evidence evaluator, activation state, or full activation-scoped Java tooling suite.
 
-## Workspace-scoped XCOM 2 Project Activation and Diagnostic
+## Workspace-scoped XCOM 2 Activation Authority and Recipe Review
 
 ```text
-Workspace Controller
-  ├─ begin switch or explicit full Workspace Refresh
-  │       └─ XCOM Project Activation Controller synchronously clears
-  │          prior diagnostic, configured authority, and activity decisions
-  └─ authorize or retain the current workspace generation
-                       │ neutral checking; no watcher or polling
-          ┌────────────┴────────────┐
-          ▼                         ▼
-XCOM Configuration          XCOM Module Scanner
-Tauri Adapter               Tauri Adapter
-          │ strict invoke           │ strict invoke
-          ▼                         ▼
-Native Configuration        Native Evidence Scanner
-Reader                      └─ bounded exact-name metadata
-  ├─ fixed `.ide/xcom2.json`
-  ├─ exact `{version: 1, target: "wotc", moduleRoots: [...]}` schema
-  ├─ existing exact-case, regular non-symlink roots inside workspace
-  └─ no XCOM configuration or Option A input writes
-          │                         │
-          └────────────┬────────────┘
-                       ▼ exact current joint correlation only
-Pure Project Activation Evaluator
-  ├─ valid configuration → configured / explicit authority
-  ├─ invalid configuration → no configured authority
-  └─ strong independent Option A recognition can remain active
-          │                         │
-          │ safe code               │ active decisions only
-          ▼                         ▼
-Pure Configuration          Accessible `XCOM 2 Project` activity
-Diagnostic Mapper           └─ recognition only; no project authority
-  └─ exactly eight codes              │
-     → fixed complete copy             └─ mirrors the same complete warning
-          │                                only when recognition survives
-          ▼
-Shared Atomic Warning
-  └─ one role=alert under Settings > Workspace > Current workspace
-     title + project file label + summary + remediation + support identifier
-     no edit, open, write, process, tool, action, external-root, or mutation authority
+Workspace Controller ──switch / refresh──> XCOM Project Activation Controller
+  └─ synchronously clears presentation and starts native revocation
+
+Activation Controller ──begin──> Strict Native Evidence Tauri Adapter
+  └─ Native XCOM Activation Authority
+       ├─ binds the authorized workspace and module directory identities
+       ├─ reads fixed `.ide/xcom2.json` v1 and bounded convention metadata
+       └─ emits safe facts + opaque attempt receipt + opaque per-root handles
+
+Trusted TypeScript evaluators
+  ├─ apply the unchanged configured and Option A recognition policies
+  └─ acknowledge only the attempt receipt and exact selected handles
+       └─ Rust materializes exactly those active roots in volatile native state
+
+Default Build Recipe Review
+  ├─ authorization request: `{ workspaceId, generation, moduleRoot }`
+  ├─ native inspector: accepted-root match + contained no-follow metadata reads
+  ├─ TypeScript policy: closed validation + RFC 8785 / SHA-256 digest custody
+  └─ volatile one-shot metadata approval; no execution consumer
 ```
 
-The configuration path and workspace authority are native-owned; callers cannot select either. The project owner owns the file. V1 accepts only the three exact fields, a non-empty bounded list of unique normalized workspace-relative roots, target `wotc`, and version `1`. `.` is allowed; absolute, drive, URI, backslash, empty, dot-segment, parent-segment, control-bearing, missing, non-directory, case-mismatched, symlinked, and escaping roots fail atomically.
+Rust, not cached renderer state, owns inspection authority. A begin call revokes prior authority, binds the current workspace, performs the configuration read and convention scan, and mints one opaque handle per retained root. Trusted TypeScript evaluates the safe facts with the established recognition and configuration policies. Its acknowledgment contains only the opaque attempt receipt and selected handles. Rust requires a complete scan, known strong or configured roots, the exact complete active set, current workspace binding, and unchanged module identities before accepting authority.
 
-The strict adapter exposes exactly these typed codes: `configuration-unreadable`, `configuration-too-large`, `configuration-invalid-utf8`, `configuration-invalid-json`, `configuration-invalid-schema`, `configuration-unsupported-version`, `configuration-unsupported-target`, and `configuration-invalid-module-roots`. The pure mapper exhaustively selects fixed, non-interpolated title, `.ide/xcom2.json` label, summary, remediation, and matching support identifier copy. No configuration bytes, submitted module roots, absolute paths, parser/provider/native-command details, secrets, or raw causes enter the warning.
+Workspace refresh, workspace switch or activation start, activation failure, a newer activation generation, application exit, and cached React restoration revoke native authority. Cached recognition presentation may be restored after a failed switch, but restoration is explicitly a revocation event and cannot rebuild accepted native roots.
 
-The shared React warning is one `aria-atomic` accessible alert. It appears under **Settings > Workspace > Current workspace** after checking settles. The diagnostic itself creates no **XCOM 2 Project** activity. When invalid configuration removes configured authority but strong independent Option A recognition preserves an activity, the recognition panel reuses the shared component and mirrors the complete warning rather than a raw code.
+Inspection preserves the request shape `{ workspaceId, generation, moduleRoot }`; neither the activation receipt nor an evidence handle becomes an inspection token. The native inspector matches that request to the current accepted workspace generation and exact active root, revalidates identities, and reads only bounded contained metadata. `.scripts/build.ps1` remains an untrusted regular file: the inspector returns its fixed relative path, byte size, and lowercase SHA-256, not script bytes or a command. It also returns bounded MIT X2ModBuildCommon notice metadata, unresolved prerequisites, and separate project-local Highlander source and Workshop runtime dependencies.
 
-The dedicated convention scanner remains separate from the FileTree path. It accepts exact regular, non-symlink convention entries and never treats names containing `xcom` as evidence. The pure recognition evaluator counts distinct evidence kinds per inferred module root. The project evaluator combines that immutable recognition snapshot with configuration without converting diagnostic presentation into activation or tool authority.
+The TypeScript review policy validates a closed candidate, takes deterministic digest custody, and may retain one volatile one-shot approval for the exact reviewed metadata. Approval is metadata authority only. There is no process, shell, network, workspace-write, SDK, game, Steam-prefix, `pfx_copy`, deployment, cooking, launch, or execution relationship in this component model. Build, Deploy, Cook, and Launch remain separate actions; this surface reviews only Default Build metadata and authorizes none of the other actions.
 
-The controller accepts a candidate only while workspace identity, workspace generation, activation generation, configuration-read identity, scan identity, and scan generation all match current authority. Workspace switches and explicit full **Workspace Refresh** clear prior diagnostics and decisions synchronously before native work, then expose neutral checking. External edits remain invisible until full refresh; there is no configuration or evidence watcher, polling, or Git synchronization. Late or stale results restore nothing.
-
-The native XCOM reader and scanner never create, write, reformat, or delete `.ide/xcom2.json` or Option A evidence, and never add those inputs to `.gitignore`. Normal application-owned `.ide/workspace.json` marker and registry metadata updates belong to the separate Workspace Command responsibility and are outside this XCOM project-input no-write scope.
-
-Machine evidence, monitor polling, and transactions remain independently XCOM-machine-Settings-owned and are not recognition, configuration, or diagnostic evidence. The diagnostic grants no activity, Build, Problems, Logs, language support, action, process execution, external-root, write, mutation, tool, or bottom-contribution authority. Manual confirmation, external-root grants, content parsing, and contextual tooling remain outside this slice.
+The fixed activation schema remains `{ "version": 1, "target": "wotc", "moduleRoots": [...] }`. Recipe inspection neither extends `.ide/xcom2.json` nor creates a build manifest. Machine Settings and SDK transactions remain independent. The browser adapters reject native activation and recipe inspection without filesystem, process, network, storage, timer, polling, or simulated-success work.
 
 ## Global XCOM Machine Settings
 
@@ -379,15 +357,17 @@ Any reconsidered search integration requires a released strict typed bounded ver
 Current project-owned configuration and convention recognition are foundations, not promises of broader project tooling.
 
 ```text
-CURRENT recognition-only activation
+CURRENT activation authority and metadata review
   ├─ project-owned `.ide/xcom2.json` v1, read-only
   ├─ independent Option A convention recognition
+  ├─ native opaque evidence + accepted-root authority
   └─ accessible XCOM 2 Project activity
+       └─ Default Build recipe metadata review; no execution consumer
 
 FUTURE/TARGET, separately designed and authorized
   ├─ manual confirmation and its persistence
   ├─ external-root grants
-  └─ contextual Problems / Build / Tests / Logs / language / XCOM tools
+  └─ operational Build / Deploy / Cook / Launch / Problems / Logs / language tools
 ```
 
 Future confirmation or external-root activation must not weaken current workspace/configuration/scan correlation, project-contained path authority, deterministic evidence, or synchronous revocation. Machine setup remains independent in Settings and cannot satisfy project activation or future tool authorization.
@@ -396,6 +376,6 @@ Future confirmation or external-root activation must not weaken current workspac
 
 Concrete WOTC SDK setup is CURRENT/AS-BUILT with a fixed 15-operation plan, exact external approval, durable baseline capture, and conflict-safe restore. Optional Steam/prefix/package/interactive provisioning remains FUTURE/TARGET and must not enter current Prepare or Apply without a separate design and authorization.
 
-XCOM configured and convention activation is CURRENT/AS-BUILT through the fixed read-only configuration reader, dedicated scanner, strict adapters, pure evaluators, jointly correlated controller, and accessible activity. Activation contributes no bottom tool or project action. Manual confirmation, external roots, and the activation-scoped Build/Problems/Logs/language suite remain FUTURE/TARGET under the separate XCOM boundary. No generic plugin runtime is claimed.
+XCOM configured and convention activation uses native-issued evidence handles, trusted TypeScript evaluation, and Rust-owned accepted-root authority. The matching activity can host metadata-only Default Build recipe review and one-shot approval, but has no execution consumer or other project action. Manual confirmation, external roots, operational Build/Deploy/Cook/Launch, and the activation-scoped Problems/Logs/language suite remain outside this boundary. No generic plugin runtime is claimed.
 
 Java activation, contextual tooling, definition/references, symbols/hierarchy, code actions, formatting, rename, general refactoring, and broader JDT LS expansion are instead frozen unscheduled inventory. The current guarded Java Problems tab is not activation, and no Java project detection or activation is claimed.
