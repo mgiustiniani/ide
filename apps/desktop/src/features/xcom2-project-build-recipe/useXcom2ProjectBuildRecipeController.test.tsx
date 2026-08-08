@@ -156,7 +156,7 @@ describe("useXcom2ProjectBuildRecipeController", () => {
     expect(unavailable.port.inspect).not.toHaveBeenCalled();
   });
 
-  it("inspects only the current module and maps only safe, value-free review fields", async () => {
+  it("inspects only the current module and maps only safe, execution-free review fields", async () => {
     const test = harness();
 
     await act(() => availableContribution(test).onOpenReview());
@@ -175,14 +175,21 @@ describe("useXcom2ProjectBuildRecipeController", () => {
         provenance: "X2ModBuildCommon",
         license: "MIT",
         noticeIdentity: "x2modbuildcommon-mit-notice-v1",
+        noticeText: candidate().provenance.notice.text,
         action: "Default",
       },
     });
+    if (contribution.viewState.kind !== "review-ready") {
+      throw new Error("Expected review-ready presentation");
+    }
+    const review = contribution.viewState.review;
+    expect(review.noticeText).toBe(candidate().provenance.notice.text);
+    expect(review.noticeText).not.toBe(review.noticeIdentity);
     const serialized = JSON.stringify(contribution.viewState);
     expect(serialized).not.toMatch(
-      /Highlander\/XComGame|workshop:1134256495|separate-machine|pfx_copy|Derived from|command|scriptBytes":|success|sdkPath|gamePath|prefixPath/iu,
+      /Highlander\/XComGame|workshop:1134256495|separate-machine|pfx_copy|projects\/MyMod|command|executable|scriptBytes":|success|sdkPath|gamePath|prefixPath|[A-Za-z]:\\\\|\/(?:home|Users|opt|var|tmp)\//iu,
     );
-    expect((contribution.viewState as any).review.arguments).toEqual(
+    expect(review.arguments).toEqual(
       candidate().arguments.map(({ role, valueState }) => ({ role, valueState })),
     );
   });

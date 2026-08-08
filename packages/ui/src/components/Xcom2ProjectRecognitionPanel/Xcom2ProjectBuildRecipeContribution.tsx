@@ -19,13 +19,14 @@ export interface Xcom2ProjectBuildRecipePrerequisitePresentation {
   readonly state: "unresolved";
 }
 
-/** Safe, value-free review metadata supplied by the application view model. */
+/** Safe, execution-free review metadata supplied by the application view model. */
 export interface Xcom2ProjectBuildRecipeReviewPresentation {
   readonly scriptSha256: string;
   readonly scriptByteSize: number;
   readonly provenance: "X2ModBuildCommon";
   readonly license: "MIT";
   readonly noticeIdentity: string;
+  readonly noticeText: string;
   readonly action: "Default";
   readonly arguments: readonly Readonly<Xcom2ProjectBuildRecipeArgumentPresentation>[];
   readonly unresolvedPrerequisites: readonly Readonly<Xcom2ProjectBuildRecipePrerequisitePresentation>[];
@@ -128,6 +129,12 @@ function orderedValuesEqual<T>(actual: readonly T[], expected: readonly T[]): bo
   );
 }
 
+const NOTICE_UNSAFE_CONTROL_CHARACTER = /[\u0000-\u0009\u000b-\u001f\u007f]/u;
+const NOTICE_MACHINE_PATH =
+  /(?:[A-Za-z]:[\\/]|\\\\|file:\/\/|(?:^|[\s("'`])\/(?:[^\s/]+(?:\/|$)))/imu;
+const NOTICE_COMMAND_OR_SCRIPT_BYTES =
+  /(?:#!|<\/?script\b|\b(?:powershell|pwsh|cmd(?:\.exe)?|bash|zsh)\b|\.(?:ps1|cmd|bat|sh)\b|\$env:|(?:^|\n)\s*(?:param\s*\(|set-strictmode\b|invoke-[\w-]+\b|function\s+[\w-]+\s*\{)|&&|\|\|)/imu;
+
 function safeNoticeIdentity(value: string): boolean {
   if (value.length === 0 || value.length > XCOM2_PROJECT_BUILD_RECIPE_LIMITS.maximumIdentityBytes) {
     return false;
@@ -135,6 +142,18 @@ function safeNoticeIdentity(value: string): boolean {
   if (value !== value.trim() || /[\u0000-\u001f\u007f]/u.test(value)) return false;
   if (/(?:[A-Za-z]:[\\/]|\\\\|(?:^|\s)\/(?:[^/\s]+\/)+[^/\s]+)/u.test(value)) return false;
   return !/(?:https?:\/\/|file:\/\/|\b(?:powershell|pwsh|cmd\.exe|bash)\b)/iu.test(value);
+}
+
+function safeNoticeText(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value !== value.trim()) return false;
+  if (value !== value.normalize("NFC") || NOTICE_UNSAFE_CONTROL_CHARACTER.test(value)) return false;
+  if (
+    new TextEncoder().encode(value).byteLength >
+    XCOM2_PROJECT_BUILD_RECIPE_LIMITS.maximumNoticeBytes
+  ) {
+    return false;
+  }
+  return !NOTICE_MACHINE_PATH.test(value) && !NOTICE_COMMAND_OR_SCRIPT_BYTES.test(value);
 }
 
 function safeReview(review: Readonly<Xcom2ProjectBuildRecipeReviewPresentation>): boolean {
@@ -149,6 +168,7 @@ function safeReview(review: Readonly<Xcom2ProjectBuildRecipeReviewPresentation>)
     review.license === "MIT" &&
     review.action === "Default" &&
     safeNoticeIdentity(review.noticeIdentity) &&
+    safeNoticeText(review.noticeText) &&
     orderedValuesEqual(roles, XCOM2_PROJECT_BUILD_RECIPE_ARGUMENT_ROLES) &&
     review.arguments.every(({ valueState }) => SAFE_ARGUMENT_VALUE_STATES.includes(valueState)) &&
     orderedValuesEqual(prerequisiteRoles, XCOM2_PROJECT_BUILD_RECIPE_PREREQUISITE_ROLES) &&
@@ -262,6 +282,9 @@ function ExactReview({
         <ReviewField term="action">{review.action}</ReviewField>
         <ReviewField term="provenance">{review.provenance}, MIT-licensed</ReviewField>
         <ReviewField term="notice identity">{review.noticeIdentity}</ReviewField>
+        <ReviewField term="attribution notice">
+          <span className="whitespace-pre-wrap">{review.noticeText}</span>
+        </ReviewField>
       </dl>
 
       <ReviewTable

@@ -1,6 +1,10 @@
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { Xcom2ModuleActivationSnapshot, Xcom2ProjectActivationDecision } from "@ide/contracts";
+import {
+  XCOM2_PROJECT_BUILD_RECIPE_LIMITS,
+  type Xcom2ModuleActivationSnapshot,
+  type Xcom2ProjectActivationDecision,
+} from "@ide/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type {
   Xcom2ProjectBuildRecipeContributionPresentation,
@@ -43,7 +47,9 @@ const safeReview: Xcom2ProjectBuildRecipeReviewPresentation = {
   scriptByteSize: 103,
   provenance: "X2ModBuildCommon",
   license: "MIT",
-  noticeIdentity: "Applicable attribution: X2ModBuildCommon contributors.",
+  noticeIdentity: "x2modbuildcommon-mit-notice-v1",
+  noticeText:
+    "X2ModBuildCommon is MIT licensed.\nApplicable attribution: <X2ModBuildCommon contributors>.",
   action: "Default",
   arguments: [
     { role: "source-directory", valueState: "current-module" },
@@ -200,6 +206,15 @@ describe("XCOM 2 project build recipe activity contribution", () => {
       within(review).getByText("X2ModBuildCommon, MIT-licensed", { exact: true }),
     ).toBeDefined();
     expect(within(review).getByText(safeReview.noticeIdentity, { exact: true })).toBeDefined();
+    const noticeLabel = within(review).getByText("attribution notice", {
+      exact: true,
+      selector: "dt",
+    });
+    const renderedNotice = noticeLabel.nextElementSibling;
+    expect(renderedNotice?.tagName).toBe("DD");
+    expect(renderedNotice?.textContent).toBe(safeReview.noticeText);
+    expect(renderedNotice?.firstElementChild?.classList.contains("whitespace-pre-wrap")).toBe(true);
+    expect(renderedNotice?.querySelector("x2modbuildcommon")).toBeNull();
     expect(within(review).getByText("Execution blocked", { exact: true })).toBeDefined();
     expect(review.textContent).toContain("untrusted project input");
     expect(review.textContent).toContain("will not be executed");
@@ -249,6 +264,35 @@ describe("XCOM 2 project build recipe activity contribution", () => {
       "Build recipe review was refused because its safe metadata is invalid.",
     );
     expect(document.body.textContent).not.toContain(absoluteNotice);
+    expect(screen.queryByRole("button", { name: "Approve exact recipe" })).toBeNull();
+    expect(onApproveExactRecipe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["empty prose", ""],
+    ["hostile command or script bytes", "pwsh -File .scripts/build.ps1 -Sdk sdk-directory"],
+    ["an absolute machine path", "/home/person/private/X2ModBuildCommon.NOTICE.txt"],
+    ["oversized prose", "x".repeat(XCOM2_PROJECT_BUILD_RECIPE_LIMITS.maximumNoticeBytes + 1)],
+    ["a control character", "Applicable attribution:\u0000X2ModBuildCommon contributors."],
+  ])("refuses notice text containing %s without leaking it", (_case, unsafeNoticeText) => {
+    const onApproveExactRecipe = vi.fn();
+    renderPanel(
+      availableContribution(
+        {
+          kind: "review-ready",
+          review: { ...safeReview, noticeText: unsafeNoticeText },
+        },
+        { onApproveExactRecipe },
+      ),
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Build recipe review was refused because its safe metadata is invalid.",
+    );
+    if (unsafeNoticeText.length > 0) {
+      expect(document.body.textContent).not.toContain(unsafeNoticeText);
+    }
+    expect(screen.queryByRole("region", { name: "Default Build recipe" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Approve exact recipe" })).toBeNull();
     expect(onApproveExactRecipe).not.toHaveBeenCalled();
   });

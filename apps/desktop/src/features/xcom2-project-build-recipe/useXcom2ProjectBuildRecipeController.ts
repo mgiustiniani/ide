@@ -81,6 +81,7 @@ function safeReviewPresentation(
     provenance: "X2ModBuildCommon",
     license: "MIT",
     noticeIdentity: recipe.provenance.notice.identity,
+    noticeText: recipe.provenance.notice.text,
     action: "Default",
     arguments: Object.freeze(
       recipe.arguments.map(({ role, valueState }) => Object.freeze({ role, valueState })),
