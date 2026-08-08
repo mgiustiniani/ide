@@ -68,6 +68,41 @@ const DIAGNOSTICS_V2_METHOD = {
   },
 } as const;
 
+const CURRENT_IDE_METHODS = [
+  {
+    name: "refactor.apply",
+    stability: "beta-contract",
+    requiresProject: true,
+    writesWorkspace: true,
+  },
+  {
+    name: "refactor.discard",
+    stability: "beta-contract",
+    requiresProject: false,
+    writesWorkspace: false,
+  },
+  {
+    name: "patch.rollback",
+    stability: "beta-contract",
+    requiresProject: true,
+    writesWorkspace: true,
+  },
+  {
+    name: "java.importExternalClass",
+    stability: "experimental",
+    requiresProject: true,
+    writesWorkspace: false,
+    features: {
+      targetDirectory: true,
+      preview: true,
+      apply: true,
+      discard: true,
+      rollback: true,
+    },
+  },
+  DIAGNOSTICS_V2_METHOD,
+] as const;
+
 const DIAGNOSTICS_CAPABILITY = {
   operation: "diagnostics",
   stability: "experimental",
@@ -149,6 +184,7 @@ const CURRENT_IDE_CAPABILITIES = {
     rollback: true,
     stability: "experimental",
   },
+  methods: CURRENT_IDE_METHODS,
   languageKernel: {
     available: true,
     schema: {
@@ -640,8 +676,8 @@ export class RefactorKit070SnapshotDiagnosticsFixture {
     };
     assert.deepEqual(
       capabilities.methods,
-      [DIAGNOSTICS_V2_METHOD],
-      "The IDE did not retain the diagnostics.v2 method capability metadata",
+      CURRENT_IDE_METHODS,
+      "The IDE did not retain the exact provider method capability metadata",
     );
     assert.equal(capabilities.languageKernel?.available, true);
     if (!capabilities.languageKernel?.available) return;
