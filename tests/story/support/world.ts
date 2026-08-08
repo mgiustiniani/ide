@@ -12,6 +12,7 @@ import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activa
 import { NativeXcom2ModuleConfigurationActivationSession } from "./native-xcom2-module-configuration-activation.js";
 import { NativeXcom2ModuleConfigurationDiagnosticsSession } from "./native-xcom2-module-configuration-diagnostics.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
+import { RefactorKit070SnapshotDiagnosticsFixture } from "./refactorkit-070-snapshot-diagnostics-fixture.js";
 import { RefactorKit070SnapshotProtocolFixture } from "./refactorkit-070-snapshot-protocol-fixture.js";
 import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js";
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
@@ -48,6 +49,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeXcom2ModuleConfigurationDiagnosticsSession?: NativeXcom2ModuleConfigurationDiagnosticsSession;
   #nativeXcom2ModuleConfigurationDiagnosticsEvidenceAttached = false;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
+  #refactorKit070SnapshotDiagnosticsFixture?: RefactorKit070SnapshotDiagnosticsFixture;
   #refactorKit070SnapshotProtocolFixture?: RefactorKit070SnapshotProtocolFixture;
   #refactorKitJavaImportSession?: RefactorKitJavaImportStorySession;
   #standaloneWebApp?: StandaloneWebApp;
@@ -171,6 +173,39 @@ export class StoryWorld extends World<StoryWorldParameters> {
       throw new Error("The RefactorKit 0.6.2 Story fixture has not been created");
     }
     return this.#refactorKit062ProtocolFixture;
+  }
+
+  startRefactorKit070SnapshotDiagnosticsFixture(): void {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The RefactorKit diagnostics Story requires the explicit desktop/tauri target, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The RefactorKit diagnostics Story requires explicit deterministic tauri-harness evidence",
+      );
+    }
+    if (this.#refactorKit070SnapshotDiagnosticsFixture) {
+      throw new Error(
+        "The RefactorKit 0.7.0-SNAPSHOT diagnostics Story fixture has already been created",
+      );
+    }
+    this.#refactorKit070SnapshotDiagnosticsFixture = new RefactorKit070SnapshotDiagnosticsFixture();
+  }
+
+  refactorKit070SnapshotDiagnosticsFixture(): RefactorKit070SnapshotDiagnosticsFixture {
+    if (!this.#refactorKit070SnapshotDiagnosticsFixture) {
+      throw new Error(
+        "The RefactorKit 0.7.0-SNAPSHOT diagnostics Story fixture has not been created",
+      );
+    }
+    return this.#refactorKit070SnapshotDiagnosticsFixture;
   }
 
   startRefactorKit070SnapshotProtocolFixture(): void {
@@ -565,6 +600,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const nativeXcom2ModuleConfigurationDiagnosticsSession =
       this.#nativeXcom2ModuleConfigurationDiagnosticsSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
+    const refactorKit070SnapshotDiagnosticsFixture = this.#refactorKit070SnapshotDiagnosticsFixture;
     const refactorKit070SnapshotProtocolFixture = this.#refactorKit070SnapshotProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
@@ -580,6 +616,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeXcom2ModuleConfigurationDiagnosticsSession = undefined;
     this.#standaloneWebApp = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
+    this.#refactorKit070SnapshotDiagnosticsFixture = undefined;
     this.#refactorKit070SnapshotProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
     this.#xcom2MachineSettingsSession = undefined;
@@ -691,6 +728,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
       await app?.dispose();
       await desktopPanelLayoutHarness?.dispose();
       await refactorKitFixture?.dispose();
+      await refactorKit070SnapshotDiagnosticsFixture?.dispose();
       await refactorKit070SnapshotProtocolFixture?.dispose();
       await refactorKitJavaImportSession?.dispose();
       if (xcom2MachineSettingsSession) {
