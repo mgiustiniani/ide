@@ -1536,6 +1536,8 @@ vi.mock("@ide/ui", () => ({
     javaRefactorKitCapabilities,
     isJavaRefactorKitChecking,
     javaRefactorKitError,
+    languageToolingDiagnostics,
+    onRequestLanguageToolingDiagnostics,
     onRefreshStatus,
     onRefreshWorkspace,
     onSwitchWorkspace,
@@ -1647,6 +1649,8 @@ vi.mock("@ide/ui", () => ({
               javaLanguageServiceStatus?.capabilities?.documentSync ?? false,
             )}
             data-language-refreshing={String(isJavaLanguageServiceRefreshing)}
+            data-diagnostics-state={languageToolingDiagnostics?.state ?? ""}
+            data-diagnostics-count={String(languageToolingDiagnostics?.diagnosticCount ?? "")}
           >
             <div>
               {javaRefactorKitStatus?.version
@@ -1683,6 +1687,14 @@ vi.mock("@ide/ui", () => ({
             <button type="button" onClick={() => onRefreshJavaRefactorKit?.()}>
               Refresh RefactorKit
             </button>
+            <button type="button" onClick={() => onRequestLanguageToolingDiagnostics?.()}>
+              Request diagnostics
+            </button>
+            {languageToolingDiagnostics?.message ? (
+              <div data-testid="LanguageToolingDiagnosticsMessage">
+                {languageToolingDiagnostics.message}
+              </div>
+            ) : null}
           </div>
         ) : section === "xcom2" ? (
           <div
@@ -4348,6 +4360,25 @@ describe("App", () => {
     expect(Object.keys(testHarness.refactorKitAdapter)).not.toEqual(
       expect.arrayContaining(["javascriptRename", "typescriptRename", "runLanguageOperation"]),
     );
+  });
+
+  it("wires the existing Language Tooling diagnostics affordance to current desktop authority", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Java" }));
+    await screen.findByTestId("RefactorKitDiscovery");
+
+    const panel = screen.getByTestId("JavaIntelligencePanel");
+    expect(panel.dataset.diagnosticsState).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Request diagnostics" }));
+
+    await waitFor(() => expect(panel.dataset.diagnosticsState).toBe("refused"));
+    expect(screen.getByTestId("LanguageToolingDiagnosticsMessage").textContent).toBe(
+      "Compiler diagnostics require a current authorized TypeScript snapshot and qualified semantic session.",
+    );
+    expect(testHarness.refactorKitAdapter.diagnostics).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(/TypeScript.*diagnostic/iu)).toBeNull();
   });
 
   it("preserves RefactorKit availability when capability discovery refresh fails", async () => {

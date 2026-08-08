@@ -40,6 +40,10 @@ import {
   useRefactorKitImportController,
 } from "./features/refactorkit-import/useRefactorKitImportController";
 import { useRefactorKitStatusController } from "./features/refactorkit-status/useRefactorKitStatusController";
+import {
+  useRefactorKitDiagnosticsController,
+  type TypeScriptDiagnosticsEditorDocument,
+} from "./features/refactorkit-status/useRefactorKitDiagnosticsController";
 import { useRefactorKitSymbolNavigationController } from "./features/refactorkit-symbol-navigation/useRefactorKitSymbolNavigationController";
 import {
   useWorkspaceController,
@@ -174,6 +178,28 @@ function usePanelState() {
   return { layout };
 }
 
+function useTypeScriptDiagnosticsDocument(
+  filePath: string | null,
+  language: string,
+  content: string,
+): Readonly<TypeScriptDiagnosticsEditorDocument> | null {
+  const versionsRef = useRef(
+    new Map<string, { readonly content: string; readonly version: number }>(),
+  );
+  return useMemo(() => {
+    if (
+      !filePath ||
+      (language.toLowerCase() !== "typescript" && !/\.(?:cts|mts|tsx?)$/iu.test(filePath))
+    ) {
+      return null;
+    }
+    const previous = versionsRef.current.get(filePath);
+    const version = previous ? previous.version + (previous.content === content ? 0 : 1) : 1;
+    versionsRef.current.set(filePath, { content, version });
+    return Object.freeze({ path: filePath, version, content });
+  }, [content, filePath, language]);
+}
+
 // ── App Component ────────────────────────────────────────────────────────
 
 export interface AppProps {
@@ -279,6 +305,11 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     () => (activeFilePath ? { path: activeFilePath, text: activeContent } : null),
     [activeContent, activeFilePath],
   );
+  const typeScriptDiagnosticsDocument = useTypeScriptDiagnosticsDocument(
+    activeFilePath,
+    activeLanguage,
+    activeContent,
+  );
   const javaLanguage = useJavaLanguageController({
     languageSession: languageSessionAdapter,
     documentSync: documentSyncAdapter,
@@ -329,10 +360,10 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
   } = xcom2Setup;
 
   const {
-    activeDiagnostics,
-    activeDiagnosticDocument,
-    activeDiagnosticOwner,
-    problemItems,
+    activeDiagnostics: javaActiveDiagnostics,
+    activeDiagnosticDocument: javaActiveDiagnosticDocument,
+    activeDiagnosticOwner: javaActiveDiagnosticOwner,
+    problemItems: javaProblemItems,
     hasJavaContext,
     javaSemantics,
   } = javaLanguage;
@@ -383,6 +414,33 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     navigateToPoint: (filePath, point) =>
       documentNavigation.navigateToLocation(filePath, { kind: "point", point }),
   });
+  const refactorKitDiagnostics = useRefactorKitDiagnosticsController({
+    refactorKit: refactorKitAdapter,
+    status: refactorKitStatus.status,
+    capabilities: refactorKitStatus.capabilities,
+    isCheckingCapabilities: refactorKitStatus.isChecking,
+    workspaceInfo,
+    workspaceGeneration: workspace.generation,
+    acceptedSession: refactorKitSymbolNavigation.acceptedSession,
+    getWorkspaceContext: workspace.getContext,
+    getCurrentDocument: () => typeScriptDiagnosticsDocument,
+  });
+  const refactorKitDiagnosticsMatchActiveDocument =
+    refactorKitDiagnostics.activeDiagnosticDocument?.path === activeFilePath;
+  const activeDiagnostics = refactorKitDiagnosticsMatchActiveDocument
+    ? refactorKitDiagnostics.activeDiagnostics
+    : javaActiveDiagnostics;
+  const activeDiagnosticDocument = refactorKitDiagnosticsMatchActiveDocument
+    ? refactorKitDiagnostics.activeDiagnosticDocument
+    : javaActiveDiagnosticDocument;
+  const activeDiagnosticOwner = refactorKitDiagnosticsMatchActiveDocument
+    ? refactorKitDiagnostics.activeDiagnosticOwner
+    : javaActiveDiagnosticOwner;
+  const problemItems = useMemo(
+    () => [...javaProblemItems, ...refactorKitDiagnostics.problemItems],
+    [javaProblemItems, refactorKitDiagnostics.problemItems],
+  );
+
   const editorCommands = useEditorCommandController({
     activeFilePath: editorState.activeFilePath,
     activeContent,
@@ -512,7 +570,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
             id: "problems",
             label: "Problems",
             icon: <Icon type="circle-filled" size={10} />,
-            title: "Java problems in the current project",
+            title: "Problems in the current project",
             scope: "project" as const,
             isActive: shell.activeBottomTab === "problems",
             badge: {
@@ -742,7 +800,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
                 <ProblemsPanel
                   items={problemItems}
                   onNavigate={documentNavigation.navigateToProblem}
-                  emptyMessage="No Java problems detected in this project."
+                  emptyMessage="No problems detected in this project."
                 />
               ) : (
                 <AiAgentPanel
@@ -814,6 +872,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
         javaRefactorKitCapabilities={refactorKitStatus.capabilities}
         isJavaRefactorKitChecking={refactorKitStatus.isChecking}
         javaRefactorKitError={refactorKitStatus.error}
+        languageToolingDiagnostics={refactorKitDiagnostics.presentation}
         xcom2SetupSnapshot={xcom2SetupSnapshot}
         xcom2SetupPlan={xcom2SetupPlan}
         isXcom2SetupLoading={isXcom2SetupLoading}
@@ -833,6 +892,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
         onRestartJavaLanguageService={javaLanguage.restart}
         onRefreshJavaLanguageService={javaLanguage.refresh}
         onRefreshJavaRefactorKit={refactorKitStatus.refresh}
+        onRequestLanguageToolingDiagnostics={refactorKitDiagnostics.request}
         onRefreshXcom2Setup={handleRefreshXcom2Setup}
         onPlanXcom2Setup={handlePlanXcom2Setup}
         onPrepareXcom2Setup={handlePrepareXcom2Setup}

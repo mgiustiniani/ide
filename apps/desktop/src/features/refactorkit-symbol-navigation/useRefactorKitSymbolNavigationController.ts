@@ -83,6 +83,8 @@ export interface RefactorKitSymbolNavigationController {
   error: string | null;
   refusal: string | null;
   hasActiveSession: boolean;
+  /** Current normalized session authority; consumed only by desktop diagnostics orchestration. */
+  acceptedSession: Readonly<SavedSnapshotSemanticSessionStartResult> | null;
   setLanguage(language: TypeScriptJavaScriptLanguageId): void;
   setQuery(query: string): void;
   setToolchainPath(field: SemanticSearchToolchainPathField, value: string): void;
@@ -347,6 +349,8 @@ export function useRefactorKitSymbolNavigationController(
   const [error, setError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [acceptedSession, setAcceptedSession] =
+    useState<Readonly<SavedSnapshotSemanticSessionStartResult> | null>(null);
 
   const enqueue = useCallback((operation: SessionOperation): Promise<void> => {
     const queued = operationQueueRef.current.then(operation, operation);
@@ -392,6 +396,7 @@ export function useRefactorKitSymbolNavigationController(
     currentSearchRef.current = null;
     if (mountedRef.current) {
       setHasActiveSession(false);
+      setAcceptedSession(null);
       setResults([]);
     }
     if (session) await stopExactSession(session);
@@ -631,6 +636,7 @@ export function useRefactorKitSymbolNavigationController(
         return;
       }
       activeSessionRef.current = started;
+      setAcceptedSession(started);
       setHasActiveSession(true);
 
       const authorization = buildSearchAuthorization(
@@ -960,6 +966,7 @@ export function useRefactorKitSymbolNavigationController(
       error,
       refusal,
       hasActiveSession,
+      acceptedSession,
       setLanguage,
       setQuery,
       setToolchainPath,
@@ -971,6 +978,7 @@ export function useRefactorKitSymbolNavigationController(
       workspaceCollaborator,
     }),
     [
+      acceptedSession,
       approvedForSession,
       availability,
       availabilityReason,

@@ -364,6 +364,12 @@ describe("useRefactorKitSymbolNavigationController", () => {
     expect(startRequest.acceptedSemanticCompleteness).toEqual(["full-typescript"]);
     expect(startRequest).not.toHaveProperty("fallback");
     expect(startRequest).not.toHaveProperty("userApproved");
+    expect(harness.result.current.acceptedSession).toMatchObject({
+      sessionId: SESSION_ID,
+      semanticLease: SEMANTIC_LEASE,
+      providerProjectSnapshotIdentity: SNAPSHOT_IDENTITY,
+      startSnapshotHash: START_SNAPSHOT_HASH,
+    });
 
     const searchRequest = harness.mocks.searchSavedSnapshotSymbols.mock.calls[0]![0];
     expect(searchRequest).toMatchObject({
@@ -405,6 +411,7 @@ describe("useRefactorKitSymbolNavigationController", () => {
     await act(() => harness.result.current.stop());
 
     expect(harness.order).toEqual(["start", "search", "definition", "navigate", "stop"]);
+    expect(harness.result.current.acceptedSession).toBeNull();
     expect(harness.mocks.stopSavedSnapshotSemanticSession).toHaveBeenCalledWith({
       languageId: "typescript",
       workspaceId: WORKSPACE.id,
