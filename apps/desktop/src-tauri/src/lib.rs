@@ -14,6 +14,7 @@ pub fn run() {
         .manage(commands::refactorkit_daemon::SavedSnapshotSemanticState::default())
         .manage(commands::xcom2_setup_monitor::Xcom2SetupMonitorState::default())
         .manage(commands::xcom2_setup_transaction::Xcom2SetupTransactionState::default())
+        .manage(commands::xcom2_native_activation::Xcom2NativeActivationState::default())
         .manage(commands::xcom2_project_foundry::Xcom2ProjectFoundryState::default())
         .invoke_handler(tauri::generate_handler![
             commands::file_tree::list_directory,
@@ -60,6 +61,10 @@ pub fn run() {
             commands::workspace_registry::switch_workspace,
             commands::xcom2_module_configuration::read_xcom2_module_configuration,
             commands::xcom2_module_evidence::scan_xcom2_module_evidence,
+            commands::xcom2_native_activation::begin_xcom2_native_activation_evidence,
+            commands::xcom2_native_activation::acknowledge_xcom2_native_activation_evidence,
+            commands::xcom2_native_activation::revoke_xcom2_native_activation_evidence,
+            commands::xcom2_native_activation::inspect_xcom2_project_build_recipe,
             commands::xcom2_project_foundry::authorize_xcom2_project_foundry_source_repository,
             commands::xcom2_project_foundry::resolve_xcom2_project_foundry_source_object,
             commands::xcom2_project_foundry::render_xcom2_project_foundry_preview,
@@ -95,6 +100,9 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            app_handle
+                .state::<commands::xcom2_native_activation::Xcom2NativeActivationState>()
+                .revoke(commands::xcom2_native_activation::ActivationRevocationCode::AppExit);
             app_handle
                 .state::<commands::java_language::JavaLanguageServiceState>()
                 .shutdown_all();

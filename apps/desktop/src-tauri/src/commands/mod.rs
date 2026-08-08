@@ -9,6 +9,7 @@ pub mod terminal;
 pub mod workspace_registry;
 pub mod xcom2_module_configuration;
 pub mod xcom2_module_evidence;
+pub mod xcom2_native_activation;
 pub mod xcom2_project_foundry;
 pub mod xcom2_setup_monitor;
 pub mod xcom2_setup_transaction;

@@ -128,7 +128,9 @@ pub fn read_xcom2_module_configuration(
     Ok(read_configuration_at(&root, &request))
 }
 
-fn validate_request(request: &Xcom2ModuleConfigurationReadRequest) -> Result<(), String> {
+pub(crate) fn validate_request(
+    request: &Xcom2ModuleConfigurationReadRequest,
+) -> Result<(), String> {
     if !valid_correlation_id(&request.workspace_id)
         || !valid_correlation_id(&request.configuration_read_id)
     {
@@ -154,7 +156,7 @@ fn valid_generation(value: u64) -> bool {
     value > 0 && value <= JS_MAX_SAFE_INTEGER
 }
 
-fn read_configuration_at(
+pub(crate) fn read_configuration_at(
     root: &Path,
     request: &Xcom2ModuleConfigurationReadRequest,
 ) -> Xcom2ModuleConfigurationReadResult {

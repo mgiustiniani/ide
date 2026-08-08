@@ -58,10 +58,24 @@ impl Default for WorkspaceRegistry {
 }
 
 #[tauri::command]
-pub fn ensure_current_workspace() -> Result<WorkspaceInfo, String> {
-    let root = workspace_root()?;
-    let registry_path = workspace_registry_path()?;
-    ensure_current_workspace_at_with(root, &registry_path, set_workspace_root_override)
+pub fn ensure_current_workspace(
+    xcom2_activation: State<
+        '_,
+        crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
+    >,
+) -> Result<WorkspaceInfo, String> {
+    use crate::commands::xcom2_native_activation::ActivationRevocationCode;
+
+    xcom2_activation.revoke(ActivationRevocationCode::WorkspaceActivationStarted);
+    let result = (|| {
+        let root = workspace_root()?;
+        let registry_path = workspace_registry_path()?;
+        ensure_current_workspace_at_with(root, &registry_path, set_workspace_root_override)
+    })();
+    if result.is_err() {
+        xcom2_activation.revoke(ActivationRevocationCode::WorkspaceActivationFailed);
+    }
+    result
 }
 
 fn ensure_current_workspace_at_with<F>(
@@ -88,19 +102,37 @@ pub fn list_workspaces() -> Result<WorkspaceRegistry, String> {
 #[tauri::command]
 pub fn switch_workspace(
     workspace_id: String,
+    xcom2_activation: State<
+        '_,
+        crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
+    >,
     refactorkit: State<'_, crate::commands::refactorkit_daemon::RefactorKitDaemonState>,
     refactorkit_semantic: State<
         '_,
         crate::commands::refactorkit_daemon::SavedSnapshotSemanticState,
     >,
 ) -> Result<WorkspaceInfo, String> {
-    let registry_path = workspace_registry_path()?;
+    use crate::commands::xcom2_native_activation::ActivationRevocationCode;
+
+    // Native active-root authority is revoked before any switch validation or filesystem work.
+    xcom2_activation.revoke(ActivationRevocationCode::WorkspaceSwitchStarted);
+    let registry_path = match workspace_registry_path() {
+        Ok(path) => path,
+        Err(error) => {
+            xcom2_activation.revoke(ActivationRevocationCode::WorkspaceActivationFailed);
+            return Err(error);
+        }
+    };
     // Serialize with any in-flight managed RefactorKit request before changing the global
     // workspace root. Otherwise an apply could still target the previous root after the UI has
     // observed the new selection. Killing an idle session when validation later fails is safe.
     refactorkit.shutdown_all();
     refactorkit_semantic.shutdown_all();
-    switch_workspace_at(&workspace_id, &registry_path)
+    let result = switch_workspace_at(&workspace_id, &registry_path);
+    if result.is_err() {
+        xcom2_activation.revoke(ActivationRevocationCode::WorkspaceActivationFailed);
+    }
+    result
 }
 
 pub(crate) fn switch_workspace_at(

@@ -28,7 +28,7 @@ pub struct Xcom2ModuleScanLimits {
     pub maximum_encountered_entries: usize,
 }
 
-const REQUIRED_LIMITS: Xcom2ModuleScanLimits = Xcom2ModuleScanLimits {
+pub(crate) const REQUIRED_LIMITS: Xcom2ModuleScanLimits = Xcom2ModuleScanLimits {
     maximum_depth: MAXIMUM_DEPTH,
     maximum_encountered_entries: MAXIMUM_ENCOUNTERED_ENTRIES,
 };
@@ -171,7 +171,7 @@ pub fn scan_xcom2_module_evidence(
     scan_workspace_with_limits(&root, request, REQUIRED_LIMITS)
 }
 
-fn validate_request(request: &Xcom2ModuleScanRequest) -> Result<(), String> {
+pub(crate) fn validate_request(request: &Xcom2ModuleScanRequest) -> Result<(), String> {
     if !valid_correlation_id(&request.workspace_id) {
         return Err("Invalid XCOM 2 module scan workspace correlation ID".to_string());
     }
@@ -200,7 +200,7 @@ fn valid_correlation_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'-'))
 }
 
-fn scan_workspace_with_limits(
+pub(crate) fn scan_workspace_with_limits(
     root: &Path,
     request: Xcom2ModuleScanRequest,
     limits: Xcom2ModuleScanLimits,
