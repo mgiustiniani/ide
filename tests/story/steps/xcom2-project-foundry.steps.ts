@@ -353,6 +353,10 @@ When<StoryWorld>("the person enters exact ModId {string}", async function (modId
 });
 
 When<StoryWorld>("the person activates {string}", async function (name: string) {
+  if (this.hasXcom2ProjectBuildRecipeSession()) {
+    await this.xcom2ProjectBuildRecipeSession().activateApprove(name);
+    return;
+  }
   await session(this).activateDialogControl(name);
 });
 

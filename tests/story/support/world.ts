@@ -18,6 +18,7 @@ import { RefactorKitJavaImportStorySession } from "./refactorkit-java-import.js"
 import { SharedPanelLayoutHarness } from "./shared-panel-layout-harness.js";
 import { StandaloneWebApp } from "./standalone-web-app.js";
 import { Xcom2MachineSettingsHarness } from "./xcom2-machine-settings.js";
+import { Xcom2ProjectBuildRecipeHarness } from "./xcom2-project-build-recipe.js";
 import { Xcom2ProjectFoundryHarness } from "./xcom2-project-foundry.js";
 import {
   createTargetProfileSeam,
@@ -55,6 +56,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #standaloneWebApp?: StandaloneWebApp;
   #xcom2MachineSettingsSession?: Xcom2MachineSettingsHarness;
   #xcom2MachineSettingsEvidenceAttached = false;
+  #xcom2ProjectBuildRecipeSession?: Xcom2ProjectBuildRecipeHarness;
   #xcom2ProjectFoundrySession?: Xcom2ProjectFoundryHarness;
 
   constructor(options: IWorldOptions<StoryWorldParameters>) {
@@ -318,6 +320,41 @@ export class StoryWorld extends World<StoryWorldParameters> {
       throw new Error("The Project Foundry Story session has not been created");
     }
     return this.#xcom2ProjectFoundrySession;
+  }
+
+  async createXcom2ProjectBuildRecipeSession(): Promise<void> {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The XCOM 2 project build-recipe Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The XCOM 2 project build-recipe Story requires explicit non-native, non-E2E tauri-harness evidence",
+      );
+    }
+    if (this.#xcom2ProjectBuildRecipeSession) {
+      throw new Error("The XCOM 2 project build-recipe Story session has already been created");
+    }
+    const session = new Xcom2ProjectBuildRecipeHarness();
+    this.#xcom2ProjectBuildRecipeSession = session;
+    await session.start();
+  }
+
+  xcom2ProjectBuildRecipeSession(): Xcom2ProjectBuildRecipeHarness {
+    if (!this.#xcom2ProjectBuildRecipeSession) {
+      throw new Error("The XCOM 2 project build-recipe Story session has not been created");
+    }
+    return this.#xcom2ProjectBuildRecipeSession;
+  }
+
+  hasXcom2ProjectBuildRecipeSession(): boolean {
+    return this.#xcom2ProjectBuildRecipeSession !== undefined;
   }
 
   createNativeDesktopFileOpenSession(): NativeDesktopFileOpenSession {
@@ -604,6 +641,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const refactorKit070SnapshotProtocolFixture = this.#refactorKit070SnapshotProtocolFixture;
     const refactorKitJavaImportSession = this.#refactorKitJavaImportSession;
     const xcom2MachineSettingsSession = this.#xcom2MachineSettingsSession;
+    const xcom2ProjectBuildRecipeSession = this.#xcom2ProjectBuildRecipeSession;
     const xcom2ProjectFoundrySession = this.#xcom2ProjectFoundrySession;
     this.#applicationContentLayoutSession = undefined;
     this.#desktopPanelLayoutHarness = undefined;
@@ -620,6 +658,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#refactorKit070SnapshotProtocolFixture = undefined;
     this.#refactorKitJavaImportSession = undefined;
     this.#xcom2MachineSettingsSession = undefined;
+    this.#xcom2ProjectBuildRecipeSession = undefined;
     this.#xcom2ProjectFoundrySession = undefined;
     try {
       if (nativeApplicationContentLayoutSession) {
@@ -743,6 +782,13 @@ export class StoryWorld extends World<StoryWorldParameters> {
         } finally {
           await xcom2MachineSettingsSession.dispose();
         }
+      }
+      if (xcom2ProjectBuildRecipeSession) {
+        await xcom2ProjectBuildRecipeSession.dispose();
+        await this.attach(
+          JSON.stringify(xcom2ProjectBuildRecipeSession.evidence()),
+          "application/json",
+        );
       }
       if (xcom2ProjectFoundrySession) {
         try {
