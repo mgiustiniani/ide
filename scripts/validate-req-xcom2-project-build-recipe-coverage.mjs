@@ -12,6 +12,8 @@ const moduleWorkspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.
 const FRESHNESS_TOLERANCE_MS = 5_000;
 
 export const REQUIREMENT_ID = "REQ-XCOM2-PROJECT-BUILD-RECIPE-001";
+export const CANONICAL_METRIC_SYSTEM = "istanbul-lib-coverage@3.2.2";
+export const PROVIDER_NATIVE_METRIC_SYSTEM = "provider-native-v8";
 export const REPRODUCTION_COMMAND = "pnpm test:coverage:req-xcom2-project-build-recipe-001";
 export const VALIDATION_COMMAND =
   "node scripts/validate-req-xcom2-project-build-recipe-coverage.mjs";
@@ -274,7 +276,8 @@ async function validateContributor({
   metadataPath,
   sourceClass,
   expectedRawPath,
-  expectedSummaryPath,
+  expectedCanonicalSummaryPath,
+  expectedProviderNativeSummaryPath,
   run,
   repository,
   commands,
@@ -282,7 +285,7 @@ async function validateContributor({
 }) {
   const receiptFile = path.join(bundleRoot, metadataPath);
   const receipt = await readJson(receiptFile);
-  assert.equal(receipt.schemaVersion, 2);
+  assert.equal(receipt.schemaVersion, 3);
   assert.equal(receipt.requirementId, REQUIREMENT_ID);
   assert.equal(receipt.contributor, contributor);
   assertRepository(receipt.repository, repository, `${sourceClass} contributor`);
@@ -304,16 +307,31 @@ async function validateContributor({
     `${sourceClass} configuration hashes differ`,
   );
   assert.equal(receipt.rawCoverage.path, expectedRawPath);
+  assert.equal(receipt.rawCoverage.metricSystem, CANONICAL_METRIC_SYSTEM);
   assert.equal(
     receipt.rawCoverage.sha256,
     await hashFile(path.join(bundleRoot, expectedRawPath)),
     `${sourceClass} raw coverage hash differs`,
   );
-  assert.equal(receipt.coverageSummary.path, expectedSummaryPath);
+  assert.equal(receipt.canonicalSummary.path, expectedCanonicalSummaryPath);
+  assert.equal(receipt.canonicalSummary.metricSystem, CANONICAL_METRIC_SYSTEM);
   assert.equal(
-    receipt.coverageSummary.sha256,
-    await hashFile(path.join(bundleRoot, expectedSummaryPath)),
-    `${sourceClass} coverage summary hash differs`,
+    receipt.canonicalSummary.derivedFromRawCoverageSha256,
+    receipt.rawCoverage.sha256,
+    `${sourceClass} canonical summary raw input hash differs`,
+  );
+  assert.equal(
+    receipt.canonicalSummary.sha256,
+    await hashFile(path.join(bundleRoot, expectedCanonicalSummaryPath)),
+    `${sourceClass} canonical coverage summary hash differs`,
+  );
+  assert.equal(receipt.providerNativeSummary.path, expectedProviderNativeSummaryPath);
+  assert.equal(receipt.providerNativeSummary.metricSystem, PROVIDER_NATIVE_METRIC_SYSTEM);
+  assert.equal(receipt.providerNativeSummary.purpose, "informational-only");
+  assert.equal(
+    receipt.providerNativeSummary.sha256,
+    await hashFile(path.join(bundleRoot, expectedProviderNativeSummaryPath)),
+    `${sourceClass} informational provider-native summary hash differs`,
   );
   return { receipt, receiptFile };
 }
@@ -344,13 +362,24 @@ export async function validateCoverageBundle(
   await directory(path.join(bundleRoot, "raw/spec"), "Spec raw coverage directory");
   await assertExactEntries(
     path.join(bundleRoot, "raw/spec"),
-    ["contributor.json", "coverage-final.json", "coverage-summary.json"],
+    [
+      "contributor.json",
+      "coverage-final.json",
+      "coverage-summary.json",
+      "provider-native-summary.json",
+    ],
     "Spec raw coverage directory",
   );
   await directory(path.join(bundleRoot, "raw/story"), "Story raw coverage directory");
   await assertExactEntries(
     path.join(bundleRoot, "raw/story"),
-    ["contributor.json", "coverage-final.json", "coverage-summary.json", "v8"],
+    [
+      "contributor.json",
+      "coverage-final.json",
+      "coverage-summary.json",
+      "provider-native-summary.json",
+      "v8",
+    ],
     "Story raw coverage directory",
   );
   await directory(path.join(bundleRoot, "raw/story/v8"), "Story V8 coverage directory");
@@ -371,8 +400,8 @@ export async function validateCoverageBundle(
   const manifestFile = path.join(bundleRoot, "coverage-manifest.json");
   const manifest = await readJson(manifestFile);
   const runMetadata = await readJson(path.join(bundleRoot, "run-metadata.json"));
-  assert.equal(manifest.schemaVersion, 2);
-  assert.equal(runMetadata.schemaVersion, 2);
+  assert.equal(manifest.schemaVersion, 3);
+  assert.equal(runMetadata.schemaVersion, 3);
   assert.equal(manifest.requirementId, REQUIREMENT_ID);
   assert.equal(runMetadata.requirementId, REQUIREMENT_ID);
   assert.equal(manifest.reproductionCommand, REPRODUCTION_COMMAND);
@@ -436,7 +465,8 @@ export async function validateCoverageBundle(
     metadataPath: "raw/spec/contributor.json",
     sourceClass: "pure-spec",
     expectedRawPath: "raw/spec/coverage-final.json",
-    expectedSummaryPath: "raw/spec/coverage-summary.json",
+    expectedCanonicalSummaryPath: "raw/spec/coverage-summary.json",
+    expectedProviderNativeSummaryPath: "raw/spec/provider-native-summary.json",
     run: manifest.run,
     repository: currentRepository,
     commands,
@@ -448,7 +478,8 @@ export async function validateCoverageBundle(
     metadataPath: "raw/story/contributor.json",
     sourceClass: "desktop-tauri-harness-story",
     expectedRawPath: "raw/story/coverage-final.json",
-    expectedSummaryPath: "raw/story/coverage-summary.json",
+    expectedCanonicalSummaryPath: "raw/story/coverage-summary.json",
+    expectedProviderNativeSummaryPath: "raw/story/provider-native-summary.json",
     run: manifest.run,
     repository: currentRepository,
     commands,
@@ -480,6 +511,11 @@ export async function validateCoverageBundle(
   const storyMetrics = sourceMetrics(storyMap);
   assertMetrics(specMetrics, "pure-spec");
   assertMetrics(storyMetrics, "desktop-tauri-harness-story");
+  assert.equal(manifest.sourceClasses.pureSpec.metricSystem, CANONICAL_METRIC_SYSTEM);
+  assert.equal(
+    manifest.sourceClasses.desktopTauriHarnessStory.metricSystem,
+    CANONICAL_METRIC_SYSTEM,
+  );
   assert.deepEqual(manifest.sourceClasses.pureSpec.metrics, specMetrics);
   assert.deepEqual(manifest.sourceClasses.desktopTauriHarnessStory.metrics, storyMetrics);
   assertSummary(
@@ -494,8 +530,8 @@ export async function validateCoverageBundle(
   );
 
   const expectedMerged = libCoverage.createCoverageMap({});
-  expectedMerged.merge(specMap);
-  expectedMerged.merge(storyMap);
+  expectedMerged.merge(libCoverage.createCoverageMap(specRaw));
+  expectedMerged.merge(libCoverage.createCoverageMap(storyRaw));
   const mergedRawPath = path.join(bundleRoot, "merged/coverage-final.json");
   const mergedRaw = await readJson(mergedRawPath);
   assert.deepEqual(
@@ -507,6 +543,7 @@ export async function validateCoverageBundle(
   assertMetrics(mergedMetrics, "merged");
   assert.deepEqual(manifest.merged.metrics, mergedMetrics);
   assert.equal(manifest.merged.technicallyValid, true);
+  assert.equal(manifest.merged.metricSystem, CANONICAL_METRIC_SYSTEM);
   assert.deepEqual(manifest.merged.rawInputSha256, {
     spec: spec.receipt.rawCoverage.sha256,
     story: story.receipt.rawCoverage.sha256,
@@ -524,6 +561,12 @@ export async function validateCoverageBundle(
   assert.equal(manifest.limitations.rustCoverage, false);
   assert.equal(manifest.semanticDistinction.equivalentPurposes, false);
 
+  const observedRawInventory = await artifactInventory(bundleRoot, "raw");
+  assert.deepEqual(
+    manifest.rawArtifactInventory,
+    observedRawInventory,
+    "raw coverage artifact inventory differs; raw evidence is missing, mixed, stale, or edited",
+  );
   const observedInventory = await artifactInventory(bundleRoot);
   assert.deepEqual(
     manifest.artifactInventory,

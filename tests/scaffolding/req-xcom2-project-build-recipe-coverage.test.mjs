@@ -10,8 +10,10 @@ import test from "node:test";
 import libCoverage from "istanbul-lib-coverage";
 
 import {
+  CANONICAL_METRIC_SYSTEM,
   CONFIGURATION_FILES,
   MAX_BUNDLE_AGE_MS,
+  PROVIDER_NATIVE_METRIC_SYSTEM,
   REPRODUCTION_COMMAND,
   REQUIREMENT_ID,
   SPEC_ARGUMENTS,
@@ -96,6 +98,17 @@ function summary(metrics_) {
   };
 }
 
+function divergentProviderNativeSummary({ lines, branches, functions }) {
+  return {
+    total: {
+      lines: { total: lines, covered: lines - 1, skipped: 0, pct: 99 },
+      statements: { total: lines, covered: lines - 1, skipped: 0, pct: 99 },
+      branches: { total: branches, covered: branches - 1, skipped: 0, pct: 99 },
+      functions: { total: functions, covered: functions - 1, skipped: 0, pct: 99 },
+    },
+  };
+}
+
 async function writeJson(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -133,7 +146,7 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
   const run = { nonce: randomUUID(), startedAt: startedAt ?? new Date().toISOString() };
   const repositoryIdentity = { head: repository.head, tree: repository.tree };
   const runMetadata = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     requirementId: REQUIREMENT_ID,
     repository: repositoryIdentity,
     run,
@@ -159,8 +172,16 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
   await Promise.all([
     writeJson(path.join(bundleRoot, "raw/spec/coverage-final.json"), specRaw),
     writeJson(path.join(bundleRoot, "raw/spec/coverage-summary.json"), summary(specMetrics)),
+    writeJson(
+      path.join(bundleRoot, "raw/spec/provider-native-summary.json"),
+      divergentProviderNativeSummary({ lines: 1820, branches: 417, functions: 71 }),
+    ),
     writeJson(path.join(bundleRoot, "raw/story/coverage-final.json"), storyRaw),
     writeJson(path.join(bundleRoot, "raw/story/coverage-summary.json"), summary(storyMetrics)),
+    writeJson(
+      path.join(bundleRoot, "raw/story/provider-native-summary.json"),
+      divergentProviderNativeSummary({ lines: 43295, branches: 1792, functions: 1431 }),
+    ),
     writeJson(path.join(bundleRoot, "raw/story/v8/coverage-fixture.json"), { result: [] }),
     writeJson(path.join(bundleRoot, "merged/coverage-final.json"), mergedMap.toJSON()),
     writeJson(path.join(bundleRoot, "merged/coverage-summary.json"), summary(mergedMetrics)),
@@ -173,7 +194,7 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
     [contributor]: configuration[contributor],
   });
   const specReceipt = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     requirementId: REQUIREMENT_ID,
     contributor: "spec",
     repository: repositoryIdentity,
@@ -184,14 +205,25 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
     rawCoverage: {
       path: "raw/spec/coverage-final.json",
       sha256: await hashFile(path.join(bundleRoot, "raw/spec/coverage-final.json")),
+      metricSystem: CANONICAL_METRIC_SYSTEM,
     },
-    coverageSummary: {
+    canonicalSummary: {
       path: "raw/spec/coverage-summary.json",
       sha256: await hashFile(path.join(bundleRoot, "raw/spec/coverage-summary.json")),
+      metricSystem: CANONICAL_METRIC_SYSTEM,
+      derivedFromRawCoverageSha256: await hashFile(
+        path.join(bundleRoot, "raw/spec/coverage-final.json"),
+      ),
+    },
+    providerNativeSummary: {
+      path: "raw/spec/provider-native-summary.json",
+      sha256: await hashFile(path.join(bundleRoot, "raw/spec/provider-native-summary.json")),
+      metricSystem: PROVIDER_NATIVE_METRIC_SYSTEM,
+      purpose: "informational-only",
     },
   };
   const storyReceipt = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     requirementId: REQUIREMENT_ID,
     contributor: "story",
     repository: repositoryIdentity,
@@ -202,10 +234,21 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
     rawCoverage: {
       path: "raw/story/coverage-final.json",
       sha256: await hashFile(path.join(bundleRoot, "raw/story/coverage-final.json")),
+      metricSystem: CANONICAL_METRIC_SYSTEM,
     },
-    coverageSummary: {
+    canonicalSummary: {
       path: "raw/story/coverage-summary.json",
       sha256: await hashFile(path.join(bundleRoot, "raw/story/coverage-summary.json")),
+      metricSystem: CANONICAL_METRIC_SYSTEM,
+      derivedFromRawCoverageSha256: await hashFile(
+        path.join(bundleRoot, "raw/story/coverage-final.json"),
+      ),
+    },
+    providerNativeSummary: {
+      path: "raw/story/provider-native-summary.json",
+      sha256: await hashFile(path.join(bundleRoot, "raw/story/provider-native-summary.json")),
+      metricSystem: PROVIDER_NATIVE_METRIC_SYSTEM,
+      purpose: "informational-only",
     },
   };
   await Promise.all([
@@ -213,11 +256,14 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
     writeJson(path.join(bundleRoot, "raw/story/contributor.json"), storyReceipt),
   ]);
 
+  const rawArtifactInventory = await artifactInventory(bundleRoot, "raw");
+  const completeArtifactInventory = await artifactInventory(bundleRoot);
+  const completionTimestamp = completedAt ?? new Date().toISOString();
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     requirementId: REQUIREMENT_ID,
     repository: repositoryIdentity,
-    run: { ...run, completedAt: completedAt ?? new Date().toISOString() },
+    run: { ...run, completedAt: completionTimestamp },
     reproductionCommand: REPRODUCTION_COMMAND,
     trackedChangesPolicy: TRACKED_CHANGES_POLICY,
     commands: canonicalCommands,
@@ -239,11 +285,15 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
       },
     },
     sourceClasses: {
-      pureSpec: { metrics: specMetrics },
-      desktopTauriHarnessStory: { metrics: storyMetrics },
+      pureSpec: { metricSystem: CANONICAL_METRIC_SYSTEM, metrics: specMetrics },
+      desktopTauriHarnessStory: {
+        metricSystem: CANONICAL_METRIC_SYSTEM,
+        metrics: storyMetrics,
+      },
     },
     merged: {
       technicallyValid: true,
+      metricSystem: CANONICAL_METRIC_SYSTEM,
       metrics: mergedMetrics,
       rawInputSha256: {
         spec: specReceipt.rawCoverage.sha256,
@@ -254,7 +304,8 @@ async function fixtureBundle(root, { startedAt, completedAt } = {}) {
     },
     semanticDistinction: { equivalentPurposes: false },
     limitations: { rustCoverage: false },
-    artifactInventory: await artifactInventory(bundleRoot),
+    rawArtifactInventory,
+    artifactInventory: completeArtifactInventory,
   };
   await writeJson(path.join(bundleRoot, "coverage-manifest.json"), manifest);
   return { bundleRoot, manifest, root };
@@ -299,10 +350,15 @@ test("the canonical command is dynamic, bounded, and ignores only generated cove
   assert.match(ignore, /^coverage\/$/mu);
 });
 
-test("the standalone validator passes untracked output but refuses tracked or index changes", async () => {
+test("divergent provider-native counts remain informational while canonical raw inputs pass", async () => {
   await withFixture(async ({ bundleRoot, root }) => {
     const manifest = await validateCoverageBundle(bundleRoot, { workspaceRoot: root });
     assert.equal(manifest.requirementId, REQUIREMENT_ID);
+    assert.equal(manifest.sourceClasses.pureSpec.metrics.lines.total, 1);
+    const providerNative = JSON.parse(
+      await readFile(path.join(bundleRoot, "raw/spec/provider-native-summary.json"), "utf8"),
+    );
+    assert.equal(providerNative.total.lines.total, 1820);
 
     await writeFile(path.join(root, "cucumber.js"), "tracked edit\n", "utf8");
     await assert.rejects(
@@ -331,7 +387,7 @@ test("the standalone validator refuses stale or replayed bundle metadata", async
   );
 });
 
-test("the standalone validator refuses mixed Spec and Story run identities", async () => {
+test("the standalone validator refuses edited contributor metadata and mixed run identities", async () => {
   await withFixture(async ({ bundleRoot, root }) => {
     const storyReceiptPath = path.join(bundleRoot, "raw/story/contributor.json");
     const storyReceipt = JSON.parse(await readFile(storyReceiptPath, "utf8"));

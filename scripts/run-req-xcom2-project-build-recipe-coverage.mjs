@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import libCoverage from "istanbul-lib-coverage";
@@ -10,6 +10,8 @@ import reports from "istanbul-reports";
 
 import {
   BUNDLE_RELATIVE_PATH,
+  CANONICAL_METRIC_SYSTEM,
+  PROVIDER_NATIVE_METRIC_SYSTEM,
   REPRODUCTION_COMMAND,
   REQUIREMENT_ID,
   SPEC_ARGUMENTS,
@@ -103,6 +105,17 @@ function writeIstanbulReports(coverageMap) {
   }
 }
 
+async function canonicalizeContributorSummary(contributor) {
+  const contributorRoot = path.join(bundleRoot, `raw/${contributor}`);
+  const providerNativeSummary = path.join(contributorRoot, "provider-native-summary.json");
+  await rename(path.join(contributorRoot, "coverage-summary.json"), providerNativeSummary);
+
+  const coverageMap = await readCoverageMap(path.join(contributorRoot, "coverage-final.json"));
+  const context = libReport.createContext({ coverageMap, dir: contributorRoot });
+  reports.create("json-summary").execute(context);
+  return coverageMap;
+}
+
 function printMetrics(label, metrics) {
   const values = ["statements", "branches", "functions", "lines"]
     .map(
@@ -120,10 +133,12 @@ async function contributorReceipt({
   configuration,
   commandResult,
   rawCoveragePath,
-  coverageSummaryPath,
+  canonicalSummaryPath,
+  providerNativeSummaryPath,
 }) {
+  const rawCoverageSha256 = await hashFile(path.join(bundleRoot, rawCoveragePath));
   const receipt = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     requirementId: REQUIREMENT_ID,
     contributor,
     repository,
@@ -133,11 +148,20 @@ async function contributorReceipt({
     configurationHashes: contributorConfiguration(configuration, contributor),
     rawCoverage: {
       path: rawCoveragePath,
-      sha256: await hashFile(path.join(bundleRoot, rawCoveragePath)),
+      sha256: rawCoverageSha256,
+      metricSystem: CANONICAL_METRIC_SYSTEM,
     },
-    coverageSummary: {
-      path: coverageSummaryPath,
-      sha256: await hashFile(path.join(bundleRoot, coverageSummaryPath)),
+    canonicalSummary: {
+      path: canonicalSummaryPath,
+      sha256: await hashFile(path.join(bundleRoot, canonicalSummaryPath)),
+      metricSystem: CANONICAL_METRIC_SYSTEM,
+      derivedFromRawCoverageSha256: rawCoverageSha256,
+    },
+    providerNativeSummary: {
+      path: providerNativeSummaryPath,
+      sha256: await hashFile(path.join(bundleRoot, providerNativeSummaryPath)),
+      metricSystem: PROVIDER_NATIVE_METRIC_SYSTEM,
+      purpose: "informational-only",
     },
   };
   const metadataPath = `raw/${contributor}/contributor.json`;
@@ -162,7 +186,7 @@ assert.equal(
 const runIdentity = { nonce: randomUUID(), startedAt: new Date().toISOString() };
 const configuration = await configurationHashes(workspaceRoot);
 const runMetadata = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   requirementId: REQUIREMENT_ID,
   repository: { head: repository.head, tree: repository.tree },
   run: runIdentity,
@@ -178,6 +202,8 @@ await writeFile(
 );
 
 const specResult = await run(SPEC_ARGUMENTS);
+const specMapForSourceCheck = await canonicalizeContributorSummary("spec");
+assertSourceOnly(specMapForSourceCheck, "pure-spec");
 const specContributor = await contributorReceipt({
   contributor: "spec",
   repository: runMetadata.repository,
@@ -185,10 +211,13 @@ const specContributor = await contributorReceipt({
   configuration,
   commandResult: specResult,
   rawCoveragePath: "raw/spec/coverage-final.json",
-  coverageSummaryPath: "raw/spec/coverage-summary.json",
+  canonicalSummaryPath: "raw/spec/coverage-summary.json",
+  providerNativeSummaryPath: "raw/spec/provider-native-summary.json",
 });
 
 const storyResult = await run(STORY_ARGUMENTS, { IDE_STORY_TARGET: "desktop/tauri-harness" });
+const storyMapForSourceCheck = await canonicalizeContributorSummary("story");
+assertSourceOnly(storyMapForSourceCheck, "desktop-tauri-harness-story");
 const storyContributor = await contributorReceipt({
   contributor: "story",
   repository: runMetadata.repository,
@@ -196,15 +225,16 @@ const storyContributor = await contributorReceipt({
   configuration,
   commandResult: storyResult,
   rawCoveragePath: "raw/story/coverage-final.json",
-  coverageSummaryPath: "raw/story/coverage-summary.json",
+  canonicalSummaryPath: "raw/story/coverage-summary.json",
+  providerNativeSummaryPath: "raw/story/provider-native-summary.json",
 });
 
-const pureSpec = await readCoverageMap(path.join(specRawRoot, "coverage-final.json"));
-const desktopTauriHarnessStory = await readCoverageMap(
-  path.join(storyRawRoot, "coverage-final.json"),
+const pureSpecMetrics = sourceMetrics(
+  await readCoverageMap(path.join(specRawRoot, "coverage-final.json")),
 );
-assertSourceOnly(pureSpec, "pure-spec");
-assertSourceOnly(desktopTauriHarnessStory, "desktop-tauri-harness-story");
+const storyMetrics = sourceMetrics(
+  await readCoverageMap(path.join(storyRawRoot, "coverage-final.json")),
+);
 assert.notEqual(
   specContributor.receipt.rawCoverage.sha256,
   storyContributor.receipt.rawCoverage.sha256,
@@ -212,16 +242,16 @@ assert.notEqual(
 );
 
 const mergedCoverage = libCoverage.createCoverageMap({});
-mergedCoverage.merge(pureSpec);
-mergedCoverage.merge(desktopTauriHarnessStory);
+mergedCoverage.merge(await readCoverageMap(path.join(specRawRoot, "coverage-final.json")));
+mergedCoverage.merge(await readCoverageMap(path.join(storyRawRoot, "coverage-final.json")));
 writeIstanbulReports(mergedCoverage);
 
-const pureSpecMetrics = sourceMetrics(pureSpec);
-const storyMetrics = sourceMetrics(desktopTauriHarnessStory);
 const mergedMetrics = sourceMetrics(mergedCoverage);
+const rawArtifactInventory = await artifactInventory(bundleRoot, "raw");
+const completeArtifactInventory = await artifactInventory(bundleRoot);
 const completedAt = new Date().toISOString();
 const manifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   requirementId: REQUIREMENT_ID,
   repository: runMetadata.repository,
   run: { ...runIdentity, completedAt },
@@ -249,18 +279,21 @@ const manifest = {
     pureSpec: {
       purpose: "Focused pure TypeScript policy examples refining the requirement",
       rawDirectory: "raw/spec",
+      metricSystem: CANONICAL_METRIC_SYSTEM,
       metrics: pureSpecMetrics,
     },
     desktopTauriHarnessStory: {
       purpose:
         "Focused Cucumber Story through production desktop composition and the deterministic Tauri harness",
       rawDirectory: "raw/story",
+      metricSystem: CANONICAL_METRIC_SYSTEM,
       metrics: storyMetrics,
     },
   },
   merged: {
     technicallyValid: true,
     reportDirectory: "merged",
+    metricSystem: CANONICAL_METRIC_SYSTEM,
     mergeFormat: "Istanbul coverage maps remapped to JS/TS source paths",
     rawInputSha256: {
       spec: specContributor.receipt.rawCoverage.sha256,
@@ -282,7 +315,8 @@ const manifest = {
     statement:
       "This bundle covers executed JS/TS sources only. It is not Rust coverage, native GUI E2E evidence, or packaged-application evidence.",
   },
-  artifactInventory: await artifactInventory(bundleRoot),
+  rawArtifactInventory,
+  artifactInventory: completeArtifactInventory,
 };
 await writeFile(
   path.join(bundleRoot, "coverage-manifest.json"),
