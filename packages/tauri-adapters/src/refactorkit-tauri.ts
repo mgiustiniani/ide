@@ -4,6 +4,7 @@ import {
   normalizeSavedSnapshotSemanticSessionStartResult,
   normalizeSavedSnapshotSemanticSessionStopResult,
   normalizeSavedSnapshotSymbolSearchResult,
+  normalizeTypeScriptDiagnosticsResponse,
 } from "@ide/contracts";
 import type {
   ApplyRefactorKitPlanRequest,
@@ -39,6 +40,12 @@ import type {
   SavedSnapshotSymbolSearchResult,
   SavedSnapshotSymbolSearchResultCandidate,
   SavedSnapshotWorkspaceSymbol,
+  TypeScriptDiagnosticsCompilerAttestation,
+  TypeScriptDiagnosticsRequest,
+  TypeScriptDiagnosticsResponse,
+  TypeScriptDiagnosticsResponseNormalizationInput,
+  TypeScriptDiagnosticsResponseRejectionReason,
+  TypeScriptDiagnosticsResponseRuntime,
   TypeScriptJavaScriptLanguageId,
 } from "@ide/contracts";
 import type { RefactorKitPort } from "@ide/web-core/ports";
@@ -158,8 +165,91 @@ export class TauriRefactorKitSemanticSessionError extends TauriAdapterError {
   }
 }
 
+export class TauriRefactorKitDiagnosticsResponseError extends TauriAdapterError {
+  readonly code = "REFACTORKIT_TYPESCRIPT_DIAGNOSTICS_RESPONSE_REJECTED" as const;
+
+  constructor(
+    command: string,
+    public readonly reason: TypeScriptDiagnosticsResponseRejectionReason,
+  ) {
+    super(command, "The RefactorKit TypeScript diagnostics response was rejected.");
+    this.name = "TauriRefactorKitDiagnosticsResponseError";
+  }
+}
+
 function isRecord(value: unknown): value is RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTypeScriptDiagnosticsResponseRuntime(
+  value: unknown,
+): value is TypeScriptDiagnosticsResponseRuntime {
+  if (!isRecord(value) || !isRecord(value.limits)) return false;
+  const limits = value.limits;
+  return (
+    (value.executionMode === "in-process" || value.executionMode === "external-process") &&
+    typeof value.supportsTimeout === "boolean" &&
+    typeof value.supportsCancellation === "boolean" &&
+    typeof value.usesWorkspaceOverlay === "boolean" &&
+    typeof value.recordsProcessProvenance === "boolean" &&
+    typeof limits.requestTimeoutMillis === "number" &&
+    typeof limits.maxInputBytes === "number" &&
+    typeof limits.maxOutputBytes === "number" &&
+    typeof limits.maxProcesses === "number" &&
+    typeof limits.maxStderrBytes === "number" &&
+    typeof limits.compilerHeapMiB === "number" &&
+    typeof limits.maxDiagnostics === "number" &&
+    typeof limits.maxDiagnosticMessageChars === "number" &&
+    typeof limits.maxResponseBytes === "number"
+  );
+}
+
+function isTypeScriptDiagnosticsCompilerAttestation(
+  value: unknown,
+): value is TypeScriptDiagnosticsCompilerAttestation {
+  if (!isRecord(value) || !isRecord(value.process)) return false;
+  return (
+    typeof value.toolchainProvider === "string" &&
+    typeof value.nodeVersion === "string" &&
+    typeof value.typeScriptVersion === "string" &&
+    typeof value.compilerSha256 === "string" &&
+    typeof value.toolchainEvidenceSha256 === "string" &&
+    typeof value.process.executableSha256 === "string" &&
+    typeof value.process.argumentsSha256 === "string" &&
+    typeof value.process.processId === "number"
+  );
+}
+
+function diagnosticsResponseError(
+  command: string,
+  reason: TypeScriptDiagnosticsResponseRejectionReason,
+): TauriRefactorKitDiagnosticsResponseError {
+  return new TauriRefactorKitDiagnosticsResponseError(command, reason);
+}
+
+function diagnosticsNormalizationInput(
+  command: string,
+  request: Readonly<TypeScriptDiagnosticsRequest>,
+  candidate: unknown,
+): TypeScriptDiagnosticsResponseNormalizationInput {
+  return {
+    request,
+    candidate,
+    get advertisedRuntime(): Readonly<TypeScriptDiagnosticsResponseRuntime> {
+      const runtime = isRecord(candidate) ? candidate.runtime : undefined;
+      if (!isTypeScriptDiagnosticsResponseRuntime(runtime)) {
+        throw diagnosticsResponseError(command, "response-schema-invalid");
+      }
+      return runtime;
+    },
+    get acceptedCompilerAttestation(): Readonly<TypeScriptDiagnosticsCompilerAttestation> {
+      const attestation = isRecord(candidate) ? candidate.compilerAttestation : undefined;
+      if (!isTypeScriptDiagnosticsCompilerAttestation(attestation)) {
+        throw diagnosticsResponseError(command, "response-attestation-mismatch");
+      }
+      return attestation;
+    },
+  };
 }
 
 // Legacy command responses cannot contain preview source, so retain their cause for compatibility.
@@ -2061,8 +2151,16 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   async scan(): Promise<RefactorKitCommandResult> {
     return this.runAction("run_refactorkit_scan");
   }
-  async diagnostics(): Promise<RefactorKitCommandResult> {
-    return this.runAction("run_refactorkit_diagnostics");
+  async diagnostics(request: TypeScriptDiagnosticsRequest): Promise<TypeScriptDiagnosticsResponse> {
+    const command = "run_refactorkit_diagnostics";
+    const candidate = await invokeTauri<unknown>(command, { request });
+    const decision = normalizeTypeScriptDiagnosticsResponse(
+      diagnosticsNormalizationInput(command, request, candidate),
+    );
+    if (decision.kind === "rejected") {
+      throw diagnosticsResponseError(command, decision.reason);
+    }
+    return decision.response;
   }
   async symbols(): Promise<RefactorKitCommandResult> {
     return this.runAction("run_refactorkit_symbols");
