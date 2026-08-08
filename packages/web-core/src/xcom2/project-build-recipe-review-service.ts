@@ -35,7 +35,9 @@ export interface Xcom2ProjectBuildRecipeReviewService {
   ): Promise<Xcom2ProjectBuildRecipeReviewResult>;
   approve(): Xcom2ProjectBuildRecipeApprovalDecision;
   refresh(): void;
-  consumeApproval(): Xcom2ProjectBuildRecipeServiceConsumptionDecision;
+  consumeApproval(
+    request: Readonly<Xcom2ProjectBuildRecipeInspectionRequest>,
+  ): Promise<Xcom2ProjectBuildRecipeServiceConsumptionDecision>;
 }
 
 function immutableState(
@@ -57,23 +59,41 @@ function revokeForRefresh(
   }).state;
 }
 
-function consumptionRequest(
-  authority: Readonly<Xcom2ProjectBuildRecipeAuthorityState>,
-): Readonly<Xcom2ProjectBuildRecipeConsumptionRequest> | undefined {
-  if (authority.kind !== "approved") return undefined;
-
-  const recipe = authority.request.recipe;
+function exactInspectionRequest(
+  request: Readonly<Xcom2ProjectBuildRecipeInspectionRequest>,
+): Readonly<Xcom2ProjectBuildRecipeInspectionRequest> {
   return Object.freeze({
-    action: recipe.action,
-    recipeDigest: authority.request.recipeDigest,
+    workspaceId: request.workspaceId,
+    generation: request.generation,
+    moduleRoot: request.moduleRoot,
+  });
+}
+
+function consumptionRequest(
+  review: Extract<Xcom2ProjectBuildRecipeReviewResult, { kind: "ready" }>,
+  request: Readonly<Xcom2ProjectBuildRecipeInspectionRequest>,
+): Readonly<Xcom2ProjectBuildRecipeConsumptionRequest> {
+  return Object.freeze({
+    action: review.recipe.action,
+    recipeDigest: review.recipe.recipeDigest,
     current: Object.freeze({
-      workspaceId: recipe.workspace.id,
-      workspaceGeneration: recipe.workspace.generation,
-      moduleId: recipe.module.id,
-      moduleRoot: recipe.module.root,
-      activationGeneration: recipe.module.activationGeneration,
-      inspectionGeneration: recipe.inspectionGeneration,
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.generation,
+      moduleId: review.recipe.module.id,
+      moduleRoot: request.moduleRoot,
+      activationGeneration: review.recipe.module.activationGeneration,
+      inspectionGeneration: review.recipe.inspectionGeneration,
     }),
+  });
+}
+
+function revokedConsumptionDecision(
+  state: Readonly<Extract<Xcom2ProjectBuildRecipeAuthorityState, { kind: "revoked" }>>,
+): Xcom2ProjectBuildRecipeConsumptionDecision {
+  return Object.freeze({
+    kind: "refused",
+    code: "authority-revoked",
+    state,
   });
 }
 
@@ -97,13 +117,7 @@ export function createXcom2ProjectBuildRecipeReviewService(
       const authority = revokeForRefresh(state.authority);
       state = immutableState(undefined, authority);
 
-      const candidate = await port.inspect(
-        Object.freeze({
-          workspaceId: request.workspaceId,
-          generation: request.generation,
-          moduleRoot: request.moduleRoot,
-        }),
-      );
+      const candidate = await port.inspect(exactInspectionRequest(request));
       const review = reviewXcom2ProjectBuildRecipe(candidate);
 
       if (epoch === reviewEpoch) state = immutableState(review, authority);
@@ -121,7 +135,7 @@ export function createXcom2ProjectBuildRecipeReviewService(
       state = immutableState(undefined, revokeForRefresh(state.authority));
     },
 
-    consumeApproval() {
+    async consumeApproval(request) {
       const authority = state.authority;
       if (authority === undefined) {
         return Object.freeze({
@@ -130,12 +144,52 @@ export function createXcom2ProjectBuildRecipeReviewService(
           state: undefined,
         } as const);
       }
+      if (authority.kind !== "approved") {
+        return consumeXcom2ProjectBuildRecipeApproval(authority, undefined);
+      }
+
+      const revocation = reconcileXcom2ProjectBuildRecipeApproval(authority, {
+        kind: "workspace-refresh",
+      });
+      if (revocation.kind !== "revoked") {
+        const revokedState: Readonly<
+          Extract<Xcom2ProjectBuildRecipeAuthorityState, { kind: "revoked" }>
+        > = Object.freeze({
+          kind: "revoked",
+          authority: "volatile-one-shot",
+          consumed: false,
+        });
+        state = immutableState(state.review, revokedState);
+        return revokedConsumptionDecision(revokedState);
+      }
+
+      const pendingState = immutableState(state.review, revocation.state);
+      state = pendingState;
+
+      let freshReview: Xcom2ProjectBuildRecipeReviewResult;
+      try {
+        const candidate = await port.inspect(exactInspectionRequest(request));
+        freshReview = reviewXcom2ProjectBuildRecipe(candidate);
+      } catch {
+        return revokedConsumptionDecision(revocation.state);
+      }
+
+      if (state !== pendingState) return revokedConsumptionDecision(revocation.state);
+
+      const reconciliation = reconcileXcom2ProjectBuildRecipeApproval(authority, {
+        kind: "current-review",
+        review: freshReview,
+      });
+      if (reconciliation.kind !== "retained" || freshReview.kind !== "ready") {
+        state = immutableState(freshReview, revocation.state);
+        return revokedConsumptionDecision(revocation.state);
+      }
 
       const decision = consumeXcom2ProjectBuildRecipeApproval(
-        authority,
-        consumptionRequest(authority),
+        reconciliation.state,
+        consumptionRequest(freshReview, request),
       );
-      state = immutableState(state.review, decision.state);
+      state = immutableState(freshReview, decision.state);
       return decision;
     },
   };

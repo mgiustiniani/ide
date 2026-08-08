@@ -114,10 +114,7 @@ function assertDeepFrozen(value: unknown): void {
 function collectKeys(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(collectKeys);
   if (value === null || typeof value !== "object") return [];
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => [
-    key,
-    ...collectKeys(child),
-  ]);
+  return Object.entries(value).flatMap(([key, child]) => [key, ...collectKeys(child)]);
 }
 
 function collectStrings(value: unknown): string[] {
@@ -136,6 +133,123 @@ async function approvedService(result: Xcom2ProjectBuildRecipeCandidate = candid
   if (approval.kind !== "approved") throw new Error(`Unexpected refusal: ${approval.code}`);
   return { approval, port, service };
 }
+
+const revokedAuthority = {
+  kind: "revoked",
+  authority: "volatile-one-shot",
+  consumed: false,
+};
+
+interface FreshMismatchCase {
+  readonly label: string;
+  readonly mutate: (value: Xcom2ProjectBuildRecipeCandidate) => void;
+}
+
+type ReviewedChangeCase = [
+  label: string,
+  mutate: (value: Xcom2ProjectBuildRecipeCandidate) => void,
+  next: Xcom2ProjectBuildRecipeInspectionRequest,
+];
+
+const freshMismatchCases: readonly FreshMismatchCase[] = [
+  {
+    label: "script hash",
+    mutate: (value) => {
+      value.script.sha256 = "0".repeat(64);
+    },
+  },
+  {
+    label: "script byte size",
+    mutate: (value) => {
+      value.script.byteSize += 1;
+    },
+  },
+  {
+    label: "notice text and matching hash",
+    mutate: (value) => {
+      value.provenance.notice.text =
+        "Derived from X2ModBuildCommon build concepts. Copyright its contributors; licensed under MIT.";
+      value.provenance.notice.sha256 =
+        "e735bc9859bd5f9f86f34e40d277e2c6f5047bf8d1ce6630d601a3d1e9f49160";
+    },
+  },
+  {
+    label: "notice hash",
+    mutate: (value) => {
+      value.provenance.notice.sha256 = "0".repeat(64);
+    },
+  },
+  {
+    label: "notice identity",
+    mutate: (value) => {
+      value.provenance.notice.identity = "x2modbuildcommon-mit-notice-v2";
+    },
+  },
+  {
+    label: "provenance project",
+    mutate: (value) => {
+      Object.defineProperty(value.provenance, "project", {
+        value: "DifferentProject",
+        enumerable: true,
+      });
+    },
+  },
+  {
+    label: "provenance license",
+    mutate: (value) => {
+      Object.defineProperty(value.provenance, "license", {
+        value: "GPL-3.0-only",
+        enumerable: true,
+      });
+    },
+  },
+  {
+    label: "workspace identity",
+    mutate: (value) => {
+      value.workspace.id = "workspace:fixture-002";
+    },
+  },
+  {
+    label: "workspace generation",
+    mutate: (value) => {
+      value.workspace.generation += 1;
+    },
+  },
+  {
+    label: "module identity",
+    mutate: (value) => {
+      value.module.id = "xcom2-module:Other";
+    },
+  },
+  {
+    label: "module root",
+    mutate: (value) => {
+      value.module.root = "projects/Other";
+      value.arguments[0]!.value = "projects/Other";
+    },
+  },
+  {
+    label: "activation generation",
+    mutate: (value) => {
+      value.module.activationGeneration += 1;
+    },
+  },
+  {
+    label: "inspection generation",
+    mutate: (value) => {
+      value.inspectionGeneration += 1;
+    },
+  },
+  {
+    label: "invalid candidate",
+    mutate: (value) => {
+      Object.defineProperty(value, "executionBlocked", {
+        value: false,
+        enumerable: true,
+      });
+    },
+  },
+];
 
 /**
  * Focused web-core integration for REQ-XCOM2-PROJECT-BUILD-RECIPE-001.
@@ -190,14 +304,14 @@ describe("@REQ-XCOM2-PROJECT-BUILD-RECIPE-001 project build recipe review servic
     );
     const serviceSurface = [
       ...Object.keys(service),
-      ...Object.getOwnPropertyNames(Object.getPrototypeOf(service) as object),
+      ...Object.getOwnPropertyNames(Object.getPrototypeOf(service)),
     ];
     expect(serviceSurface).not.toEqual(
       expect.arrayContaining(["execute", "run", "build", "invoke"]),
     );
   });
 
-  it("approves the exact digest as volatile authority and consumes it once without executing", async () => {
+  it("freshly inspects the exact bounded request and authorizes an identical recipe exactly once", async () => {
     const { approval, port, service } = await approvedService();
 
     expect(approval.request.recipeDigest).toMatch(/^[a-f0-9]{64}$/u);
@@ -205,7 +319,16 @@ describe("@REQ-XCOM2-PROJECT-BUILD-RECIPE-001 project build recipe review servic
     expect(service.state.authority).toBe(approval.state);
     assertDeepFrozen(service.state);
 
-    const first = service.consumeApproval();
+    const decisionPromise = service.consumeApproval(current);
+
+    expect(decisionPromise).toBeInstanceOf(Promise);
+    const first = await decisionPromise;
+    expect(port.inspect).toHaveBeenCalledTimes(2);
+    expect(port.inspect).toHaveBeenLastCalledWith({
+      workspaceId: "workspace:fixture-001",
+      generation: 7,
+      moduleRoot: "projects/MyMod",
+    });
     expect(first).toEqual({
       kind: "authorized",
       action: "default",
@@ -213,15 +336,98 @@ describe("@REQ-XCOM2-PROJECT-BUILD-RECIPE-001 project build recipe review servic
       state: { kind: "consumed", authority: "volatile-one-shot", consumed: true },
     });
     expect(service.state.authority).toEqual(first.state);
-    expect(service.consumeApproval()).toEqual({
+
+    const replay = await service.consumeApproval(current);
+    expect(replay).toEqual({
       kind: "refused",
       code: "authority-consumed",
       state: first.state,
     });
-    expect(port.inspect).toHaveBeenCalledOnce();
+    expect(port.inspect).toHaveBeenCalledTimes(2);
     expect(collectKeys(first)).not.toEqual(
-      expect.arrayContaining(["command", "executable", "execute", "output", "success"]),
+      expect.arrayContaining(["command", "consumer", "executable", "execute", "output", "success"]),
     );
+  });
+
+  it("removes authority before awaiting fresh inspection and rejects concurrent consumption", async () => {
+    const { port, service } = await approvedService();
+    let resolveInspection: ((value: Xcom2ProjectBuildRecipeCandidate) => void) | undefined;
+    const inspection = new Promise<Xcom2ProjectBuildRecipeCandidate>((resolve) => {
+      resolveInspection = resolve;
+    });
+    vi.mocked(port.inspect).mockImplementationOnce(() => inspection);
+
+    const first = service.consumeApproval(current);
+
+    expect(first).toBeInstanceOf(Promise);
+    expect(service.state.authority).toEqual(revokedAuthority);
+    const concurrent = service.consumeApproval(current);
+    await expect(concurrent).resolves.toMatchObject({
+      kind: "refused",
+      state: revokedAuthority,
+    });
+    expect(port.inspect).toHaveBeenCalledTimes(2);
+
+    expect(resolveInspection).toBeTypeOf("function");
+    resolveInspection?.(candidate());
+    await expect(first).resolves.toMatchObject({ kind: "authorized" });
+    expect(port.inspect).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(freshMismatchCases)(
+    "refuses and remains revoked when fresh inspection has changed $label",
+    async ({ mutate }) => {
+      const { port, service } = await approvedService();
+      const changed = candidate();
+      mutate(changed);
+      vi.mocked(port.inspect).mockResolvedValueOnce(changed);
+
+      const decision = await service.consumeApproval(current);
+
+      expect(port.inspect).toHaveBeenCalledTimes(2);
+      expect(decision).toMatchObject({
+        kind: "refused",
+        state: revokedAuthority,
+      });
+      expect(service.state.authority).toEqual(revokedAuthority);
+      expect(collectKeys(decision)).not.toEqual(
+        expect.arrayContaining(["command", "consumer", "execute", "success"]),
+      );
+    },
+  );
+
+  it("forwards the caller request exactly instead of deriving inspection identity from approval", async () => {
+    const { port, service } = await approvedService();
+    const requested = Object.freeze({
+      workspaceId: "workspace:requested-fresh",
+      generation: 19,
+      moduleRoot: "projects/RequestedFresh",
+    });
+
+    const decision = await service.consumeApproval(requested);
+
+    expect(port.inspect).toHaveBeenCalledTimes(2);
+    expect(port.inspect).toHaveBeenLastCalledWith(requested);
+    expect(Object.keys(vi.mocked(port.inspect).mock.calls[1]![0]).sort()).toEqual([
+      "generation",
+      "moduleRoot",
+      "workspaceId",
+    ]);
+    expect(decision).toMatchObject({ kind: "refused", state: revokedAuthority });
+    expect(service.state.authority).toEqual(revokedAuthority);
+  });
+
+  it("refuses and remains revoked when fresh inspection throws without leaking the error", async () => {
+    const { port, service } = await approvedService();
+    const unavailable = new Error("secret native inspection detail");
+    vi.mocked(port.inspect).mockRejectedValueOnce(unavailable);
+
+    const decision = await service.consumeApproval(current);
+
+    expect(decision).toMatchObject({ kind: "refused", state: revokedAuthority });
+    expect(service.state.authority).toEqual(revokedAuthority);
+    expect(collectStrings(decision)).not.toContain(unavailable.message);
+    expect(port.inspect).toHaveBeenCalledTimes(2);
   });
 
   it("revokes approved authority synchronously on workspace refresh", async () => {
@@ -234,14 +440,14 @@ describe("@REQ-XCOM2-PROJECT-BUILD-RECIPE-001 project build recipe review servic
       authority: "volatile-one-shot",
       consumed: false,
     });
-    expect(service.consumeApproval()).toMatchObject({
+    expect(await service.consumeApproval(current)).toMatchObject({
       kind: "refused",
       code: "authority-revoked",
     });
     assertDeepFrozen(service.state);
   });
 
-  it.each([
+  it.each<ReviewedChangeCase>([
     [
       "workspace",
       (value: Xcom2ProjectBuildRecipeCandidate) => {
@@ -278,33 +484,30 @@ describe("@REQ-XCOM2-PROJECT-BUILD-RECIPE-001 project build recipe review servic
       },
       current,
     ],
-  ] as const)(
-    "revokes approved authority when the reviewed %s changes",
-    async (_label, mutate, next) => {
-      const { port, service } = await approvedService();
-      const changed = candidate();
-      mutate(changed);
-      vi.mocked(port.inspect).mockResolvedValueOnce(changed);
+  ])("revokes approved authority when the reviewed %s changes", async (_label, mutate, next) => {
+    const { port, service } = await approvedService();
+    const changed = candidate();
+    mutate(changed);
+    vi.mocked(port.inspect).mockResolvedValueOnce(changed);
 
-      const reviewing = service.review(next);
-      expect(service.state.authority).toEqual({
-        kind: "revoked",
-        authority: "volatile-one-shot",
-        consumed: false,
-      });
-      await reviewing;
+    const reviewing = service.review(next);
+    expect(service.state.authority).toEqual({
+      kind: "revoked",
+      authority: "volatile-one-shot",
+      consumed: false,
+    });
+    await reviewing;
 
-      expect(service.state.authority).toEqual({
-        kind: "revoked",
-        authority: "volatile-one-shot",
-        consumed: false,
-      });
-      expect(service.consumeApproval()).toMatchObject({
-        kind: "refused",
-        code: "authority-revoked",
-      });
-    },
-  );
+    expect(service.state.authority).toEqual({
+      kind: "revoked",
+      authority: "volatile-one-shot",
+      consumed: false,
+    });
+    expect(await service.consumeApproval(next)).toMatchObject({
+      kind: "refused",
+      code: "authority-revoked",
+    });
+  });
 
   it("does not retry, fall back, or publish simulated success when inspection is unavailable", async () => {
     const unavailable = new Error("inspection unavailable");
