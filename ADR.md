@@ -911,3 +911,66 @@ A separate supporting source-built diagnostics smoke observed the same clean det
 - Sampled workspace evidence does not completely prove the absence of transient between-checkpoint writes, metadata-only changes, or empty-directory changes.
 - Focused deterministic desktop/Tauri-harness evidence is not a native GUI/E2E provider run. Story and Spec results remain separate and cannot be combined into a coverage claim.
 - Both requirements remain `@implemented-not-e2e-validated`; this ADR records no stronger lifecycle status, aggregate rerun, final delivery receipt, or independent requirements-quality reviewer PASS.
+
+---
+
+## ADR 0012 — Native Activation-Evidence Authority for XCOM 2 Build-Recipe Inspection
+
+**Status:** Accepted planned architecture; implementation-informed at exact repository commit `0d7637b86273e96cc1b4da37c4378f9183ce6a81`. `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remains declared `@not-implemented` pending the independent technical gate. This ADR records the authority decision and bounded implementation evidence; it is not requirement completion, validation, or promotion evidence.
+
+### Context
+
+[ADR 0007](#adr-0007--machine-settings-and-evidence-activated-xcom-project-contributions) already governs XCOM 2 convention recognition and the activation-only project configuration. Its accepted recognition/configuration semantics and the exact project-owned, IDE-read-only `.ide/xcom2.json` v1 schema `{ "version": 1, "target": "wotc", "moduleRoots": [...] }` remain unchanged. This decision neither reopens that rationale nor turns recognition state into contextual tool authority by itself.
+
+Build-recipe inspection needs a stronger boundary than cached presentation state. The trusted TypeScript evaluator can combine the safe convention and configuration facts defined by ADR 0007, but native code owns the authorized workspace, current directory identities, and permission to inspect a module. Passing evaluated roots back as ordinary strings would let renderer state recreate native authority after refresh, workspace switch, failed activation, or cached React restoration. Conversely, exposing native receipts or evidence handles on the later inspection request would make those opaque values a renderer-managed inspection token and would broaden the existing request contract.
+
+The bounded recipe is review material for a possible future build. The contained `.scripts/build.ps1` is untrusted project input, and an exact approval is not permission to invoke it. The current slice must preserve a useful review without acquiring process, network, mutation, SDK, game, prefix, proprietary-content, or execution authority.
+
+### Decision
+
+Adopt **native activation-evidence authority with opaque acknowledgment and token-free inspection** for `REQ-XCOM2-PROJECT-BUILD-RECIPE-001`.
+
+#### Activation-evidence authority
+
+- A native begin operation binds the current authorized workspace and generation, performs the existing bounded convention scan and `.ide/xcom2.json` v1 read, and returns safe activation facts together with one opaque activation-attempt receipt and opaque per-root evidence handles. The receipt and handles identify only that volatile native attempt; neither grants authority independently.
+- Trusted TypeScript evaluates the safe facts through the unchanged ADR 0007 recognition/configuration policy. It may acknowledge only the native attempt receipt and the opaque handles selected for the evaluator's complete, current, active roots. The acknowledgment contains no workspace path, module root, configuration, source bytes, hash, digest, command, or executable.
+- Rust validates that the receipt is current, the scan is complete, every selected handle is known and strong or configured as required, and the selection is exactly the active set retained for the attempt. Rust then materializes its accepted authority as exactly those active module roots, revalidates the current workspace and module directory identities, and retains the root-to-handle association only in volatile native state. This materialization is an authority-state transition, not a filesystem creation or write.
+- Workspace refresh, workspace switch or activation start, activation failure, a newer activation generation, application exit, and cached React restoration synchronously revoke native authority. Revocation cannot create or restore authority. Cached recognition or recipe presentation may be restored for display only; it can never restore native inspection authority.
+- Build-recipe inspection keeps the existing exact request `{ workspaceId, generation, moduleRoot }`. It carries no activation-attempt receipt or evidence handle. Native code authorizes that request only by matching it to the current accepted native workspace generation and one of the exact accepted roots; stale workspaces, inactive roots, malformed requests, and absent or mismatched accepted authority fail closed.
+
+#### Recipe capability and content boundary
+
+- The native recipe capability is limited to contained, no-follow, metadata-only inspection. TypeScript may strictly review the closed metadata, take deterministic digest custody, and retain one volatile one-shot approval for the exact reviewed facts. There is no operational build consumer in this slice.
+- Native review and one-shot approval are available only as metadata authority. Execution remains unavailable. The slice has zero process, shell, network, workspace-write, project-write, SDK, game, Steam-managed-prefix, `pfx_copy`, proprietary-content, deployment, cooking, launch, and success-claim authority. Browser inspection, review, approval, and execution are unavailable and must not be simulated.
+- `.scripts/build.ps1` remains untrusted project input. Inspection may identify its fixed module-relative path, bounded byte size, and lowercase SHA-256, but may neither expose its bytes as a command nor invoke, rewrite, install, fetch, or otherwise trust it. Approval is inspection/review authority only and can authorize at most one future exact Default Build request after a separate execution decision; it authorizes no current execution.
+- `pfx_copy` remains an unresolved future prerequisite. The project-local Highlander source dependency remains distinct from its matching Workshop runtime dependency; no global SDK source overlay is inferred. Build, Deploy, Cook, and Launch remain separate actions. This decision covers one exact Default Build recipe and grants no Deploy, Cook, or Launch approval.
+- Provenance is limited to MIT-licensed X2ModBuildCommon (X2MBC) concepts and the applicable attribution notice. Acceptance fixtures must be synthetic and hand-authored. No `modxcom`, proprietary game or SDK material, GPL material, private material, generated source or assets, logs, or other copied source/asset content may be imported into the fixture or product under this decision.
+- Recipe inspection does not extend `.ide/xcom2.json`, add tool or machine fields to it, or require/create a build manifest. Machine-owned prerequisites remain unresolved and require separate authority and decisions.
+
+### Evidence
+
+The decision is informed by the following bounded repository evidence at `0d7637b86273e96cc1b4da37c4378f9183ce6a81`:
+
+- [`xcom2_native_activation/application.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/application.rs), [`state.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/state.rs), and [`filesystem.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation/filesystem.rs) retain opaque native attempts, validate exact acknowledgments, hold accepted roots in volatile state, perform lifecycle revocation, and inspect the fixed contained metadata without executing project input.
+- [`xcom2_native_activation.rs`](apps/desktop/src-tauri/src/commands/xcom2_native_activation.rs) exposes the four narrow begin, acknowledge, revoke, and inspect commands. [`xcom2-native-activation-evidence-tauri.ts`](packages/tauri-adapters/src/xcom2-native-activation-evidence-tauri.ts) and [`xcom2-project-build-recipe-inspection-tauri.ts`](packages/tauri-adapters/src/xcom2-project-build-recipe-inspection-tauri.ts) enforce the corresponding strict TypeScript/native envelopes.
+- [`xcom2-native-activation-evidence-policy.ts`](packages/contracts/src/domain/xcom2-native-activation-evidence-policy.ts) selects only evaluator-approved active handles and keeps the inspection request token-free. [`xcom2-project-build-recipe-policy.ts`](packages/contracts/src/domain/xcom2-project-build-recipe-policy.ts) validates and digests the closed metadata and constrains approval to volatile one-shot policy state with execution unavailable.
+- [`useXcom2ModuleActivationController.ts`](apps/desktop/src/features/xcom2-module-activation/useXcom2ModuleActivationController.ts) evaluates safe facts before sending the opaque acknowledgment and treats cached React restoration as revocation-only. [`useXcom2ProjectBuildRecipeController.ts`](apps/desktop/src/features/xcom2-project-build-recipe/useXcom2ProjectBuildRecipeController.ts) exposes metadata review/approval without a build consumer.
+- The canonical [`project-build-recipe.feature`](features/xcom2/project-build-recipe.feature) still declares `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` as `@not-implemented`. No passing independent technical gate, native GUI/E2E validation, packaged behavior, cross-platform behavior, execution, or requirement-status promotion is claimed here.
+
+### Consequences
+
+**Positive:**
+
+- Native workspace and root authority cannot be reconstructed from cached renderer state or a caller-supplied module root.
+- The opaque acknowledgment minimizes renderer-to-native authority data while preserving the trusted TypeScript evaluator and ADR 0007's established semantics.
+- A stable token-free inspection request remains usable behind strict native authorization without exposing receipts or handles as reusable inspection credentials.
+- Metadata review and exact one-shot approval can evolve independently from any future execution, machine-root, prefix, or build-action authority.
+- Browser unavailability and the explicit no-execution boundary prevent fake success or accidental web capability expansion.
+
+**Negative:**
+
+- The begin/evaluate/acknowledge/revoke protocol adds volatile state, correlation, and lifecycle complexity across Rust, Tauri adapters, and desktop composition.
+- Opaque handles still cross the renderer boundary during activation and therefore require strict redaction, bounded lifetime, exact validation, and no persistence or logging.
+- A refresh, switch, failed activation, cached restoration, identity change, incomplete scan, or metadata change can require a fresh begin/evaluation/acknowledgment and recipe review.
+- The current evidence is Linux- and implementation-bounded. The requirement remains `@not-implemented` until the independent technical gate passes and the planner performs any separately authorized status/documentation reconciliation.
+- This decision intentionally leaves execution, process isolation, machine prerequisite grants, `pfx_copy`, Build/Deploy/Cook/Launch consumers, proprietary compatibility, packaging, and cross-platform validation unresolved.
