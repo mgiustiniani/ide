@@ -3,7 +3,7 @@ Business Need: Trusted RefactorKit diagnostics for TypeScript workspaces
   A TypeScript developer needs exact diagnostics in the IDE experiences already used for code problems.
   This approved exception accepts a source-built RefactorKit 0.7.0-SNAPSHOT under bounded provenance and workspace-audit evidence; it does not claim a released provider.
 
-  @desktop @REQ-REFACTORKIT-TS-001 @functional-requirement @non-functional-requirement @not-implemented
+  @desktop @REQ-REFACTORKIT-TS-001 @functional-requirement @non-functional-requirement @implemented-not-e2e-validated
   Scenario: View trustworthy compiler diagnostics in the existing IDE problem surfaces
     Given a TypeScript developer has opened an authorized desktop workspace
     And the approved source-built RefactorKit 0.7.0-SNAPSHOT advertises diagnostics.v2 for TypeScript and JavaScript
