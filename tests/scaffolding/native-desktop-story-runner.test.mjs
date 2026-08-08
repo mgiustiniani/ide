@@ -1461,6 +1461,7 @@ test("implemented desktop discovery selects the exact harness and native require
       .sort(),
     [
       "@REQ-REFACTORKIT-JAVA-IMPORT-001",
+      "@REQ-REFACTORKIT-TS-001",
       "@REQ-REFACTORKIT-TS-002",
       "@REQ-XCOM2-MACHINE-SETTINGS-001",
       "@REQ-XCOM2-PROJECT-FOUNDRY-001",
@@ -1471,7 +1472,7 @@ test("implemented desktop discovery selects the exact harness and native require
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /7 scenarios \(7 skipped\)[\s\S]*283 steps \(283 skipped\)/,
+    /8 scenarios \(8 skipped\)[\s\S]*301 steps \(301 skipped\)/,
   );
 });
 
