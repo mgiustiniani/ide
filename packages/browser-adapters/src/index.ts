@@ -17,6 +17,7 @@ import type { FileTreePort, EditorPort, TerminalPort } from "@ide/web-core/ports
 import { BrowserClipboardAdapter } from "./clipboard-browser";
 import { BrowserLanguageSessionAdapter } from "./language-session-browser";
 import { BrowserRefactorKitAdapter } from "./refactorkit-browser";
+import { BrowserXcom2NativeActivationEvidenceAdapter } from "./xcom2-native-activation-evidence-browser";
 import { BrowserXcom2ProjectBuildRecipeInspectionAdapter } from "./xcom2-project-build-recipe-inspection-browser";
 import { BrowserXcom2SetupAdapter } from "./xcom2-setup-browser";
 import { BrowserXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-browser";
@@ -34,6 +35,10 @@ export {
   BrowserRefactorKitAdapter,
   BrowserRefactorKitUnavailableError,
 } from "./refactorkit-browser";
+export {
+  BrowserXcom2NativeActivationEvidenceAdapter,
+  BrowserXcom2NativeActivationEvidenceUnavailableError,
+} from "./xcom2-native-activation-evidence-browser";
 export {
   BrowserXcom2ProjectBuildRecipeInspectionAdapter,
   BrowserXcom2ProjectBuildRecipeInspectionUnavailableError,
@@ -699,6 +704,7 @@ export interface BrowserAdapters {
   clipboardAdapter: BrowserClipboardAdapter;
   languageSessionAdapter: BrowserLanguageSessionAdapter;
   refactorKitAdapter: BrowserRefactorKitAdapter;
+  xcom2NativeActivationEvidenceAdapter: BrowserXcom2NativeActivationEvidenceAdapter;
   xcom2ProjectBuildRecipeInspectionAdapter: BrowserXcom2ProjectBuildRecipeInspectionAdapter;
   xcom2SetupAdapter: BrowserXcom2SetupAdapter;
   xcom2SetupMonitorAdapter: BrowserXcom2SetupMonitorAdapter;
@@ -712,6 +718,7 @@ export function createBrowserAdapters(): BrowserAdapters {
     clipboardAdapter: new BrowserClipboardAdapter(),
     languageSessionAdapter: new BrowserLanguageSessionAdapter(),
     refactorKitAdapter: new BrowserRefactorKitAdapter(),
+    xcom2NativeActivationEvidenceAdapter: new BrowserXcom2NativeActivationEvidenceAdapter(),
     xcom2ProjectBuildRecipeInspectionAdapter: new BrowserXcom2ProjectBuildRecipeInspectionAdapter(),
     xcom2SetupAdapter: new BrowserXcom2SetupAdapter(),
     xcom2SetupMonitorAdapter: new BrowserXcom2SetupMonitorAdapter(),
