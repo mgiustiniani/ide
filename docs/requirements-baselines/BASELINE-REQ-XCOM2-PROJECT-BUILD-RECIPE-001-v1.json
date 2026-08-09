@@ -1,0 +1,110 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-XCOM2-PROJECT-BUILD-RECIPE-001-v1",
+  "receiptStatus": "late-durable-reconstruction",
+  "disclosure": "The planner failed to persist the required durable receipt before production delegation. This receipt reconstructs the bounded, user-confirmed decision package without substituting current Gherkin, tests, documentation, or implementation for the initial baseline.",
+  "approvalEvidence": {
+    "kind": "bounded-session-confirmation",
+    "repositoryAddressable": false,
+    "statement": "The user confirmed the fail-closed decision package for inspecting and approving one exact X2ModBuildCommon Default Build recipe without execution, writes, or changes to .ide/xcom2.json."
+  },
+  "initialRepository": {
+    "commit": "fb457190e704416b8b7cda5f97d97274ab7fd6e3",
+    "tree": "f15371f5caf30f60c3b7ff6e3ef3b1be1443c790",
+    "requirementsSource": {
+      "gitObject": "fb457190e704416b8b7cda5f97d97274ab7fd6e3:docs/XCOM2_MODDING_PLUGIN_REQUIREMENTS.md",
+      "blob": "5415e52a94c16efc10c11768deb5b37d53596306",
+      "sha256": "245613b0eeecc02d9174caeb8f0789925d24459aa009df932b9411636a5b5f47"
+    }
+  },
+  "initialIntent": "Inspect and let the user approve one exact, contained X2ModBuildCommon Default Build recipe for the currently authorized XCOM 2 module while treating project material as untrusted metadata and adding no execution capability.",
+  "requirement": {
+    "id": "REQ-XCOM2-PROJECT-BUILD-RECIPE-001",
+    "classification": "Story BDD",
+    "classificationReason": "The cross-layer security, accessibility, provenance, authority, and no-execution behavior has stakeholder-readable living-documentation value.",
+    "approvedScope": "Metadata-only native inspection, deterministic review, accessible exact-notice presentation, volatile exact-recipe approval, and fail-closed revocation policy.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "text": "Inspection is available only for the current native-authorized workspace generation and exact active module root."
+      },
+      {
+        "id": "AC-002",
+        "text": "The renderer sends only workspaceId, generation, and moduleRoot; opaque activation attempt and evidence handles remain native authority and are acknowledged only through the trusted TypeScript evaluator."
+      },
+      {
+        "id": "AC-003",
+        "text": "Native inspection uses bounded, contained, no-follow reads of regular conventional metadata, including the untrusted module-relative .scripts/build.ps1 and applicable MIT provenance notice."
+      },
+      {
+        "id": "AC-004",
+        "text": "The review presents exact relative script path, lowercase SHA-256, byte size, MIT provenance, complete applicable attribution notice, action default, structured argument roles and value states, ordered blockers, dependencies, and executionBlocked."
+      },
+      {
+        "id": "AC-005",
+        "text": "The accessible existing XCOM 2 panel exposes Default Build recipe review, exactly one Approve exact recipe control, and Discard; browser support refuses as unavailable."
+      },
+      {
+        "id": "AC-006",
+        "text": "RFC 8785 and SHA-256 bind every reviewed recipe fact, including the stable current inspection-authority generation; any changed bound fact requires a different digest and a new review."
+      },
+      {
+        "id": "AC-007",
+        "text": "Approval is volatile and one-shot. Refresh or authority-context changes revoke synchronously; any future use must remove authority before a fresh exact inspection and authorize only if the fully reviewed current recipe remains identical."
+      },
+      {
+        "id": "AC-008",
+        "text": "The slice exposes no production consumer capable of executing or consuming the approval as a build and reports no fake success."
+      },
+      {
+        "id": "AC-009",
+        "text": "Inspection, review, and approval perform zero process, shell, network, project write, SDK, game, Steam prefix, pfx_copy, deploy, cook, or launch activity."
+      },
+      {
+        "id": "AC-010",
+        "text": "The fixture is synthetic and hand-authored from MIT X2ModBuildCommon concepts with attribution; it copies no modxcom, GPL, private, proprietary, generated, source, asset, or log material."
+      },
+      {
+        "id": "AC-011",
+        "text": "Build, Deploy, Cook, and Launch remain separate actions; project-local Highlander source and matching Workshop runtime remain distinct unresolved dependencies."
+      },
+      {
+        "id": "AC-012",
+        "text": "Completion status is at most implemented-not-e2e-validated without native recipe-review GUI evidence."
+      }
+    ]
+  },
+  "qualityConstraints": [
+    "Use meaningful Story or Spec RED before each new production behavior.",
+    "Keep reusable UI, web-core, and standalone web free of Tauri imports.",
+    "Preserve exact closed contracts, explicit trust boundaries, deterministic evidence, and fail-closed refusal.",
+    "Use only sanitized, license-safe fixture content and disclose evidence exclusions.",
+    "Generated project artifacts and user-facing files are English."
+  ],
+  "exclusions": [
+    "Actual Build, Deploy, Cook, or Launch execution",
+    "Process, shell, network, project-write, SDK, game, Steam-prefix, or pfx_copy authority",
+    "Changes to the activation-only .ide/xcom2.json schema",
+    "Native recipe-review GUI or packaged-application validation",
+    "Windows, macOS, installer, signing, and proprietary-runtime compatibility",
+    "Rust coverage and manual accessibility certification",
+    "Redistribution of modxcom or copied GPL, private, proprietary, generated, source, asset, or log material"
+  ],
+  "approvedDecisions": [
+    "Treat contained .scripts/build.ps1 as untrusted metadata and never as a command.",
+    "Use conventional contained metadata; add no manifest and do not extend .ide/xcom2.json.",
+    "Keep pfx_copy future and machine-authorized.",
+    "Use project-local Highlander source for compilation and the matching Workshop dependency only as runtime metadata.",
+    "Keep Build, Deploy, Cook, and Launch separate.",
+    "Use MIT X2ModBuildCommon concepts and a synthetic fixture only.",
+    "Make approval volatile, one-shot, exact-digest-bound, and unavailable before fresh reconciliation at any future use."
+  ],
+  "approvedChanges": [],
+  "externalEvidenceConstraints": {
+    "referenceRoot": "/home/paperboy/workspace/modxcom",
+    "authority": "reference-only-not-redistributable",
+    "x2ModBuildCommonLicenseSha256": "ca79d283835f51d5cba05d5e50fd5609157fa8db8656cc8eb7b81a9dc1bc54e0",
+    "admittedContent": "concepts and bounded attribution only",
+    "prohibitedContent": "raw external source, assets, logs, generated outputs, private files, proprietary game or SDK bytes, and GPL material"
+  }
+}
