@@ -1,3 +1,9 @@
+import type {
+  PiWorkspaceAgentAttachment,
+  PiWorkspaceAgentProcessState,
+  PiWorkspaceAgentSessionSnapshot,
+  PiWorkspaceAgentSessionSummary,
+} from "@ide/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -22,7 +28,10 @@ import {
   TauriPiWorkspaceAgentAdapter,
 } from "./pi-workspace-agent-tauri";
 
-function session(workspaceId = "workspace-a", state = "running") {
+function session(
+  workspaceId = "workspace-a",
+  state: PiWorkspaceAgentProcessState = "running",
+): PiWorkspaceAgentSessionSnapshot {
   return {
     workspaceId,
     workspaceName: workspaceId === "workspace-a" ? "Workspace A" : "Workspace B",
@@ -37,11 +46,25 @@ function session(workspaceId = "workspace-a", state = "running") {
   };
 }
 
-function attachment(workspaceId = "workspace-a") {
-  const current = session(workspaceId);
+function sessionSummary(workspaceId = "workspace-b"): PiWorkspaceAgentSessionSummary {
+  return {
+    workspaceId,
+    workspaceName: workspaceId === "workspace-a" ? "Workspace A" : "Workspace B",
+    sessionId: `ide-${workspaceId}`,
+    processState: "running",
+    processGeneration: 1,
+    lastActivityAt: "2026-08-09T00:00:01.000Z",
+    attachedViewCount: 0,
+  };
+}
+
+function attachment(
+  workspaceId = "workspace-a",
+  sessions: PiWorkspaceAgentSessionSummary[] = [],
+): PiWorkspaceAgentAttachment {
   return {
     protocolVersion: 1,
-    session: current,
+    session: session(workspaceId),
     transcriptBase64: "G1szMW1QaVxu",
     transcriptSequence: 3,
     transcriptTruncated: false,
@@ -54,7 +77,7 @@ function attachment(workspaceId = "workspace-a") {
         viewId: "docked:view-1",
       },
     ],
-    sessions: [current, session("workspace-b")],
+    sessions,
   };
 }
 
@@ -147,6 +170,33 @@ describe("TauriPiWorkspaceAgentAdapter", () => {
       }),
     ).rejects.toThrow("unsupported protocolVersion");
   });
+
+  it("accepts exact seven-field rootless retained-session summaries", async () => {
+    const retainedSession = sessionSummary();
+    mocks.invoke.mockResolvedValueOnce(attachment("workspace-a", [retainedSession]));
+    const adapter = new TauriPiWorkspaceAgentAdapter();
+
+    const result = await adapter.snapshot("workspace-a");
+
+    expect(result.sessions).toStrictEqual([retainedSession]);
+  });
+
+  it.each([
+    { field: "rootPath", value: "/workspace/workspace-b" },
+    { field: "processId", value: 42 },
+    { field: "lastError", value: "native process failed" },
+  ])(
+    "rejects retained-session summaries containing forbidden full-snapshot field $field",
+    async ({ field, value }) => {
+      mocks.invoke.mockResolvedValueOnce({
+        ...attachment(),
+        sessions: [{ ...sessionSummary(), [field]: value }],
+      });
+      const adapter = new TauriPiWorkspaceAgentAdapter();
+
+      await expect(adapter.snapshot("workspace-a")).rejects.toThrow(field);
+    },
+  );
 
   it("keeps packages with no slash command in accessory resources", async () => {
     mocks.invoke.mockResolvedValueOnce({
