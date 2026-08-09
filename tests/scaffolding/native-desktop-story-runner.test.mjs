@@ -1352,9 +1352,12 @@ test("focused Pi workspace Agent route fresh-builds into an isolated lease and l
     });
     assert.equal(manifest.selectedScenarios.length, 1);
     assert.ok(manifest.selectedScenarios[0].tags.includes("@REQ-PI-WORKSPACE-AGENT-001"));
-    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-not-e2e-validated"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"));
     assert.ok(manifest.selectedScenarios[0].tags.includes("@native-gui"));
-    assert.equal(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"), false);
+    assert.equal(
+      manifest.selectedScenarios[0].tags.includes("@implemented-not-e2e-validated"),
+      false,
+    );
     assert.ok(Object.values(manifest.executables).every(path.isAbsolute));
 
     const cleanup = JSON.parse(
@@ -1521,7 +1524,7 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
 
 test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 7);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 8);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("piWorkspaceAgentNativeGui"), 1);
@@ -1548,9 +1551,9 @@ test("native runner profiles select promoted and focused native scenarios", () =
     /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
   );
   assert.ok(piWorkspaceAgentSelection.scenarios[0].tags.includes("@REQ-PI-WORKSPACE-AGENT-001"));
-  assert.ok(piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-not-e2e-validated"));
+  assert.ok(piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-and-validated"));
   assert.equal(
-    piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-and-validated"),
+    piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-not-e2e-validated"),
     false,
   );
 
@@ -1623,16 +1626,17 @@ test("implemented desktop discovery selects the exact harness and native require
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 7);
+  assert.equal(selection.scenarios.length, 8);
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /7 scenarios \(7 skipped\)[\s\S]*198 steps \(198 skipped\)/,
+    /8 scenarios \(8 skipped\)[\s\S]*233 steps \(233 skipped\)/,
   );
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
     [
       "@REQ-DESKTOP-FILE-OPEN-001",
       "@REQ-LAYOUT-DESKTOP-001",
+      "@REQ-PI-WORKSPACE-AGENT-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-002",
       "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
       "@REQ-XCOM2-MODULE-ACTIVATION-001",
@@ -1647,7 +1651,6 @@ test("implemented desktop discovery selects the exact harness and native require
       .flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-")))
       .sort(),
     [
-      "@REQ-PI-WORKSPACE-AGENT-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-001",
       "@REQ-REFACTORKIT-TS-001",
       "@REQ-REFACTORKIT-TS-002",
@@ -1661,7 +1664,7 @@ test("implemented desktop discovery selects the exact harness and native require
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /10 scenarios \(10 skipped\)[\s\S]*378 steps \(378 skipped\)/,
+    /9 scenarios \(9 skipped\)[\s\S]*343 steps \(343 skipped\)/,
   );
 });
 

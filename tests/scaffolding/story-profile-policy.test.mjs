@@ -562,21 +562,31 @@ test("focused XCOM module configuration diagnostics profile stays status-indepen
   );
 });
 
-test("focused Pi workspace Agent native profile is exact and status-independent before promotion", () => {
-  const selected = selectedScenarios("piWorkspaceAgentNativeGui");
+test("focused Pi workspace Agent profiles stay exact and status-independent after promotion", () => {
+  const nativeSelected = selectedScenarios("piWorkspaceAgentNativeGui");
+  const harnessSelected = selectedScenarios("piWorkspaceAgentTauriHarness");
 
-  assert.equal(selected.length, 1);
-  assert.deepEqual(requirementIds(selected[0]), ["@REQ-PI-WORKSPACE-AGENT-001"]);
-  assert.equal(selected[0].uri, "features/workspace/pi-native-agent.feature");
-  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
-  assert.ok(selected[0].tags.has("@desktop"));
-  assert.ok(selected[0].tags.has("@native-gui"));
-  assert.ok(selected[0].tags.has("@tauri-harness"));
-  assert.equal(selected[0].tags.has("@web"), false);
+  assert.equal(nativeSelected.length, 1);
+  assert.equal(harnessSelected.length, 1);
+  assert.deepEqual(requirementIds(nativeSelected[0]), ["@REQ-PI-WORKSPACE-AGENT-001"]);
+  assert.deepEqual(requirementIds(harnessSelected[0]), ["@REQ-PI-WORKSPACE-AGENT-001"]);
+  assert.equal(nativeSelected[0].uri, "features/workspace/pi-native-agent.feature");
+  assert.equal(harnessSelected[0].uri, nativeSelected[0].uri);
+  assert.ok(nativeSelected[0].tags.has("@implemented-and-validated"));
+  assert.equal(nativeSelected[0].tags.has("@implemented-not-e2e-validated"), false);
+  assert.ok(nativeSelected[0].tags.has("@desktop"));
+  assert.ok(nativeSelected[0].tags.has("@native-gui"));
+  assert.ok(nativeSelected[0].tags.has("@tauri-harness"));
+  assert.equal(nativeSelected[0].tags.has("@web"), false);
   assert.match(
     dryRunSummary("piWorkspaceAgentNativeGui"),
     /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
   );
+  assert.match(
+    dryRunSummary("piWorkspaceAgentTauriHarness"),
+    /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
+  );
+  assert.equal(cucumberProfiles.piWorkspaceAgentTauriHarness.tags, "@REQ-PI-WORKSPACE-AGENT-001");
   assert.equal(
     cucumberProfiles.piWorkspaceAgentNativeGui.tags,
     "@REQ-PI-WORKSPACE-AGENT-001 and @desktop and @native-gui and not @web",
@@ -705,6 +715,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   const currentNativeRequirements = [
     "@REQ-DESKTOP-FILE-OPEN-001",
     "@REQ-LAYOUT-DESKTOP-001",
+    "@REQ-PI-WORKSPACE-AGENT-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-002",
     "@REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001",
     "@REQ-XCOM2-MODULE-ACTIVATION-001",
@@ -714,7 +725,6 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
 
   assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
-    "@REQ-PI-WORKSPACE-AGENT-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
@@ -729,29 +739,30 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds), []);
   assert.equal(declared.length, 19);
-  assert.equal(validated.length, 9);
-  assert.equal(harnessOnly.length, 10);
+  assert.equal(validated.length, 10);
+  assert.equal(harnessOnly.length, 9);
   assert.equal(partial.length, 0);
   assert.equal(notImplemented.length, 0);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 10);
-  assert.equal(nativeGui.length, 7);
+  assert.equal(harness.length, 9);
+  assert.equal(nativeGui.length, 8);
+  assert.equal(web.length + harness.length + nativeGui.length, declared.length);
   assert.match(
     dryRunSummary("implementedWeb"),
     /2 scenarios \(2 skipped\)[\s\S]*16 steps \(16 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /10 scenarios \(10 skipped\)[\s\S]*378 steps \(378 skipped\)/,
+    /9 scenarios \(9 skipped\)[\s\S]*343 steps \(343 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /7 scenarios \(7 skipped\)[\s\S]*198 steps \(198 skipped\)/,
+    /8 scenarios \(8 skipped\)[\s\S]*233 steps \(233 skipped\)/,
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 10);
-  assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 9);
+  assert.equal(routing.expectedDesktopTauriWebdriver.length, 8);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
     currentNativeRequirements,
