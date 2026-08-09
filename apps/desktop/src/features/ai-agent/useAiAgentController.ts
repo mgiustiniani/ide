@@ -689,6 +689,11 @@ export interface UseAiAgentControllerDependencies {
    * so a second process never reads or owns the interactive Pi session.
    */
   projectSessionMessages?: boolean;
+  /**
+   * Legacy React/RPC run-trace projection. Native Pi TUI compositions disable it
+   * so recent activity cannot be projected from a second session authority.
+   */
+  projectRunTraceActivities?: boolean;
 }
 
 export interface AiAgentController {
@@ -915,6 +920,7 @@ export function useAiAgentController(
     async (mode: "replace" | "append" = "replace", workspaceKey?: string): Promise<void> => {
       const targetWorkspaceKey = workspaceKey ?? currentWorkspaceKeyRef.current;
       if (
+        dependencies.projectRunTraceActivities === false ||
         typeof dependencies.aiAgent.listAgentRuns !== "function" ||
         typeof dependencies.aiAgent.getAgentRunTrace !== "function"
       ) {
@@ -978,7 +984,7 @@ export function useAiAgentController(
         }
       }
     },
-    [dependencies.aiAgent, updateWorkspaceState],
+    [dependencies.aiAgent, dependencies.projectRunTraceActivities, updateWorkspaceState],
   );
 
   const activateWorkspaceState = useCallback(

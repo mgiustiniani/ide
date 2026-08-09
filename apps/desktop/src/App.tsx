@@ -265,6 +265,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     isWorkspaceLoading,
     deferWorkspaceActivation: true,
     projectSessionMessages: false,
+    projectRunTraceActivities: false,
   });
   const {
     settings: aiAgentSettings,
