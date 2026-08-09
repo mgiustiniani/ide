@@ -2,11 +2,16 @@ const STUBS = new Map([
   [
     "@xterm/xterm",
     `export class Terminal {
+      options = {};
       loadAddon() {}
       open() {}
       write() {}
+      reset() {}
       clear() {}
       dispose() {}
+      attachCustomKeyEventHandler() {}
+      onData() { return { dispose() {} }; }
+      onResize() { return { dispose() {} }; }
       onKey() { return { dispose() {} }; }
     }`,
   ],

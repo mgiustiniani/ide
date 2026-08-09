@@ -46,15 +46,16 @@ const LEGACY_RECOGNITION_LIMITATION =
   "Recognition only: no Build, Problems, Logs, language support, actions, or bottom contribution." as const;
 const RECIPE_REVIEW_RECOGNITION_LIMITATION =
   "Recognition remains read-only: recipe review provides no Build, Run, Deploy, Cook, Launch, Problems, Logs, language support, or bottom contribution." as const;
-const BASE_ACTIVITY_NAMES = Object.freeze(["Explorer", "Search", "Docs", "Settings"]);
+const BASE_ACTIVITY_NAMES = Object.freeze(["Files", "Search", "Agent", "Docs", "Settings"]);
 const CONFIGURED_ACTIVITY_NAMES = Object.freeze([
-  "Explorer",
+  "Files",
   "Search",
+  "Agent",
   ACTIVITY_NAME,
   "Docs",
   "Settings",
 ]);
-const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal", "AI Agent"]);
+const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal"]);
 const FIXED_TIMESTAMP = "2026-07-17T00:00:00Z";
 const EMPTY_SHA256 = createHash("sha256").update("").digest("hex");
 const DRIVER_START_TIMEOUT_MS = 10_000;
@@ -780,7 +781,7 @@ export class NativeXcom2ModuleConfigurationActivationSession {
         tabIndex: active?.tabIndex ?? -999,
       };
     });
-    assert.deepEqual(prepared, { label: "Explorer", focused: true, tabIndex: 0 });
+    assert.deepEqual(prepared, { label: "Files", focused: true, tabIndex: 0 });
     await this.browser().keys(["End"]);
     await this.browser().waitUntil(
       async () =>

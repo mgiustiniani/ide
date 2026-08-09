@@ -54,15 +54,16 @@ const DESCRIPTORS = [
 ] as const;
 const PROJECT_INPUT_PATHS = [CONFIGURATION_PATH, ...DESCRIPTORS] as const;
 const WORKSPACE_METADATA_PATH = ".ide/workspace.json" as const;
-const BASE_ACTIVITY_NAMES = Object.freeze(["Explorer", "Search", "Docs", "Settings"]);
+const BASE_ACTIVITY_NAMES = Object.freeze(["Files", "Search", "Agent", "Docs", "Settings"]);
 const ACTIVE_ACTIVITY_NAMES = Object.freeze([
-  "Explorer",
+  "Files",
   "Search",
+  "Agent",
   ACTIVITY_NAME,
   "Docs",
   "Settings",
 ]);
-const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal", "AI Agent"]);
+const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal"]);
 const DRIVER_START_TIMEOUT_MS = 10_000;
 const SESSION_START_TIMEOUT_MS = 20_000;
 const PROCESS_EXIT_TIMEOUT_MS = 5_000;

@@ -486,10 +486,16 @@ export class Xcom2ProjectBuildRecipeHarness {
     const surface = this.#requireSurface();
     const primary = surface.getByRole("navigation", { name: "Primary activity" });
     const search = within(primary).getByRole("tab", { name: "Search" });
-    search.focus();
-    fireEvent.keyDown(search, { key: "ArrowRight" });
-    await this.settle();
     const activity = within(primary).getByRole("tab", { name: "XCOM 2 Project" });
+    search.focus();
+    let current = search;
+    const activityTabs = within(primary).getAllByRole("tab");
+    for (let move = 0; move < activityTabs.length; move += 1) {
+      fireEvent.keyDown(current, { key: "ArrowRight" });
+      await this.settle();
+      if (activity.getAttribute("aria-selected") === "true") break;
+      current = within(primary).getByRole("tab", { selected: true });
+    }
     assert.equal(activity.getAttribute("aria-selected"), "true");
     const panel = surface.getByRole("tabpanel", { name: "XCOM 2 Project" });
     assert.ok(

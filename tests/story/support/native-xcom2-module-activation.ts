@@ -49,15 +49,16 @@ const WORKSPACE_ROLES = Object.freeze({
   [AMBIGUOUS_WORKSPACE]: "one-kind ambiguous XCOM evidence",
   [CREDIBLE_WORKSPACE]: "corroborated XCOM module evidence",
 });
-const BASE_ACTIVITY_NAMES = Object.freeze(["Explorer", "Search", "Docs", "Settings"]);
+const BASE_ACTIVITY_NAMES = Object.freeze(["Files", "Search", "Agent", "Docs", "Settings"]);
 const CREDIBLE_ACTIVITY_NAMES = Object.freeze([
-  "Explorer",
+  "Files",
   "Search",
+  "Agent",
   ACTIVITY_NAME,
   "Docs",
   "Settings",
 ]);
-const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal", "AI Agent"]);
+const BASE_BOTTOM_TOOL_NAMES = Object.freeze(["Terminal"]);
 const FIXTURE_SHA256 = createHash("sha256").update("").digest("hex");
 const FIXED_TIMESTAMP = "2026-07-16T00:00:00Z";
 const DRIVER_START_TIMEOUT_MS = 10_000;
@@ -717,7 +718,7 @@ export class NativeXcom2ModuleActivationSession {
         tabIndex: active?.tabIndex ?? -999,
       };
     });
-    assert.deepEqual(activeControlPrepared, { label: "Explorer", focused: true, tabIndex: 0 });
+    assert.deepEqual(activeControlPrepared, { label: "Files", focused: true, tabIndex: 0 });
     await this.browser().keys(["End"]);
     await this.browser().waitUntil(
       async () =>

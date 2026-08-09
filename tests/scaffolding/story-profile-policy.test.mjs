@@ -680,6 +680,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
 
   assert.deepEqual(web.flatMap(requirementIds).sort(), ["@REQ-LAYOUT-WEB-001", "@REQ-WEB-001"]);
   assert.deepEqual(harness.flatMap(requirementIds).sort(), [
+    "@REQ-PI-WORKSPACE-AGENT-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-001",
     "@REQ-REFACTORKIT-TS-001",
     "@REQ-REFACTORKIT-TS-002",
@@ -693,13 +694,13 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds), []);
-  assert.equal(declared.length, 18);
+  assert.equal(declared.length, 19);
   assert.equal(validated.length, 9);
-  assert.equal(harnessOnly.length, 9);
+  assert.equal(harnessOnly.length, 10);
   assert.equal(partial.length, 0);
   assert.equal(notImplemented.length, 0);
   assert.equal(web.length, 2);
-  assert.equal(harness.length, 9);
+  assert.equal(harness.length, 10);
   assert.equal(nativeGui.length, 7);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -707,7 +708,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /9 scenarios \(9 skipped\)[\s\S]*343 steps \(343 skipped\)/,
+    /10 scenarios \(10 skipped\)[\s\S]*378 steps \(378 skipped\)/,
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
@@ -715,7 +716,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
-  assert.equal(routing.expectedDesktopTauriHarness.length, 9);
+  assert.equal(routing.expectedDesktopTauriHarness.length, 10);
   assert.equal(routing.expectedDesktopTauriWebdriver.length, 7);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),

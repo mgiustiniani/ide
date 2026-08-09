@@ -146,8 +146,10 @@ pub struct PiWorkspaceAgentDetachedBinding {
     pub workspace_name: String,
 }
 
+type EventCallback = dyn Fn(&str, Value) + Send + Sync;
+
 #[derive(Clone)]
-struct EventEmitter(Arc<dyn Fn(&str, Value) + Send + Sync>);
+struct EventEmitter(Arc<EventCallback>);
 
 impl EventEmitter {
     fn from_app(app: AppHandle) -> Self {

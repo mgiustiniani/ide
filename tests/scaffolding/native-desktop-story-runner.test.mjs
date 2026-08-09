@@ -1460,6 +1460,7 @@ test("implemented desktop discovery selects the exact harness and native require
       .flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-")))
       .sort(),
     [
+      "@REQ-PI-WORKSPACE-AGENT-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-001",
       "@REQ-REFACTORKIT-TS-001",
       "@REQ-REFACTORKIT-TS-002",
@@ -1473,7 +1474,7 @@ test("implemented desktop discovery selects the exact harness and native require
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriHarness"),
-    /9 scenarios \(9 skipped\)[\s\S]*343 steps \(343 skipped\)/,
+    /10 scenarios \(10 skipped\)[\s\S]*378 steps \(378 skipped\)/,
   );
 });
 
