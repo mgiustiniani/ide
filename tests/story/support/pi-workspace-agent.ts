@@ -207,7 +207,10 @@ export class PiWorkspaceAgentStorySession {
   assertPiOwnsConversation(): void {
     const port = this.source("packages/web-core/src/ports/pi-workspace-agent-port.ts");
     assert.doesNotMatch(port, /sendPrompt|getMessages|toolCall|modelState|compact/u);
-    assert.match(port, /must[\s*]+never\s+grow\s+chat\/message\/tool\/model\/history\s+methods/iu);
+    assert.match(
+      port,
+      /must[\s*]+never\s+grow[\s*]+chat\/message\/tool\/model\/history\s+methods/iu,
+    );
   }
 
   interact(workspaceId: WorkspaceModel["id"], marker: string): void {
@@ -244,7 +247,10 @@ export class PiWorkspaceAgentStorySession {
     const process = this.process(workspaceId);
     assert.equal(process.sessionId, `ide-${workspaceId}`);
     const contract = this.source("packages/contracts/src/pi-workspace-agent.ts");
-    assert.match(contract, /Process\/session metadata only/iu);
+    assert.match(
+      contract,
+      /intentionally contain no Pi chat message, tool call, model, or history shape/iu,
+    );
     assert.doesNotMatch(contract, /interface\s+.*Message|messages:/u);
   }
 
