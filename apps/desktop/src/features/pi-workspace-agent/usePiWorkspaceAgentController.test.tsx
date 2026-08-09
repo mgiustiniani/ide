@@ -254,17 +254,19 @@ describe("usePiWorkspaceAgentController", () => {
       lastActivityAt: "2026-08-09T00:01:00.000Z",
       attachedViewCount: 2,
     });
-    expect.soft(Object.keys(retainedSession!).sort()).toEqual(
-      [
-        "workspaceId",
-        "workspaceName",
-        "sessionId",
-        "processState",
-        "processGeneration",
-        "lastActivityAt",
-        "attachedViewCount",
-      ].sort(),
-    );
+    expect
+      .soft(Object.keys(retainedSession!).sort())
+      .toEqual(
+        [
+          "workspaceId",
+          "workspaceName",
+          "sessionId",
+          "processState",
+          "processGeneration",
+          "lastActivityAt",
+          "attachedViewCount",
+        ].sort(),
+      );
     expect.soft(retainedSession).not.toHaveProperty("rootPath");
     expect.soft(retainedSession).not.toHaveProperty("processId");
     expect.soft(retainedSession).not.toHaveProperty("lastError");
