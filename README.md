@@ -174,7 +174,7 @@ packages/
 
 ### Prerequisites
 
-- **Node.js** >= 18
+- **Node.js** `^22.13.0 || ^24.0.0 || >=26.0.0`
 - **pnpm** >= 9 (corepack enabled)
 - **Rust** (for Tauri desktop development only)
 - System dependencies for Tauri (Linux: `webkit2gtk-4.1`, `libgtk-3`, etc.)
