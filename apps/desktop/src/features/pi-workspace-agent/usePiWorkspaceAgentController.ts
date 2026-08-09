@@ -4,6 +4,7 @@ import type {
   PiWorkspaceAgentDetachedBinding,
   PiWorkspaceAgentOutputEvent,
   PiWorkspaceAgentSessionSnapshot,
+  PiWorkspaceAgentSessionSummary,
   WorkspaceInfo,
 } from "@ide/contracts";
 import type { PiWorkspaceAgentPort } from "@ide/web-core/ports";
@@ -114,6 +115,29 @@ function initialSize(kind: "docked" | "detached"): { cols: number; rows: number 
   return kind === "detached" ? { cols: 120, rows: 40 } : { cols: 40, rows: 30 };
 }
 
+function projectSessionSummary(
+  session: PiWorkspaceAgentSessionSnapshot | PiWorkspaceAgentSessionSummary,
+): PiWorkspaceAgentSessionSummary {
+  return {
+    workspaceId: session.workspaceId,
+    workspaceName: session.workspaceName,
+    sessionId: session.sessionId,
+    processState: session.processState,
+    processGeneration: session.processGeneration,
+    lastActivityAt: session.lastActivityAt,
+    attachedViewCount: session.attachedViewCount,
+  };
+}
+
+function projectRetainedSessionSummaries(
+  attachment: PiWorkspaceAgentAttachment,
+): PiWorkspaceAgentAttachment {
+  return {
+    ...attachment,
+    sessions: attachment.sessions.map(projectSessionSummary),
+  };
+}
+
 /** Owns one renderer attachment while the backend retains process lifetime. */
 export function usePiWorkspaceAgentController({
   port,
@@ -124,6 +148,7 @@ export function usePiWorkspaceAgentController({
   const viewIdRef = useRef(createViewId(viewKind));
   const terminalSizeRef = useRef(initialSize(viewKind));
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const sessionGenerationRef = useRef(-1);
   const feedGenerationRef = useRef(-1);
   const feedSequenceRef = useRef(-1);
   const attachmentRequestRef = useRef(0);
@@ -140,15 +165,27 @@ export function usePiWorkspaceAgentController({
 
   const applyAttachment = useCallback(
     (next: PiWorkspaceAgentAttachment): void => {
-      if (currentWorkspaceIdRef.current !== next.session.workspaceId) return;
-      setAttachment(next);
-      feedGenerationRef.current = next.session.processGeneration;
-      feedSequenceRef.current = next.transcriptSequence;
+      const generation = next.session.processGeneration;
+      if (
+        currentWorkspaceIdRef.current !== next.session.workspaceId ||
+        generation < sessionGenerationRef.current ||
+        generation < feedGenerationRef.current ||
+        (generation === feedGenerationRef.current &&
+          next.transcriptSequence < feedSequenceRef.current)
+      ) {
+        return;
+      }
+
+      const projected = projectRetainedSessionSummaries(next);
+      sessionGenerationRef.current = generation;
+      feedGenerationRef.current = generation;
+      feedSequenceRef.current = projected.transcriptSequence;
+      setAttachment(projected);
       terminalFeed.reset({
-        workspaceId: next.session.workspaceId,
-        processGeneration: next.session.processGeneration,
-        sequence: next.transcriptSequence,
-        data: decodeBase64(next.transcriptBase64),
+        workspaceId: projected.session.workspaceId,
+        processGeneration: generation,
+        sequence: projected.transcriptSequence,
+        data: decodeBase64(projected.transcriptBase64),
       });
     },
     [terminalFeed],
@@ -202,6 +239,7 @@ export function usePiWorkspaceAgentController({
     let outputUnsubscribe: (() => void) | undefined;
     let statusUnsubscribe: (() => void) | undefined;
     const pendingOutput: PiWorkspaceAgentOutputEvent[] = [];
+    sessionGenerationRef.current = -1;
     feedGenerationRef.current = -1;
     feedSequenceRef.current = -1;
 
@@ -209,7 +247,13 @@ export function usePiWorkspaceAgentController({
       try {
         [outputUnsubscribe, statusUnsubscribe] = await Promise.all([
           port.subscribeOutput((event) => {
-            if (event.workspaceId !== workspace.id || disposed) return;
+            if (
+              disposed ||
+              currentWorkspaceIdRef.current !== workspace.id ||
+              event.workspaceId !== workspace.id
+            ) {
+              return;
+            }
             if (feedGenerationRef.current < 0) {
               pendingOutput.push(event);
               if (pendingOutput.length > 1000) pendingOutput.shift();
@@ -230,23 +274,41 @@ export function usePiWorkspaceAgentController({
             });
           }),
           port.subscribeStatus((event) => {
-            if (disposed || event.session.workspaceId !== workspace.id) return;
-            setAttachment((current) =>
-              current
-                ? {
-                    ...current,
-                    session: event.session,
-                    sessions: current.sessions.map((session) =>
-                      session.workspaceId === event.session.workspaceId ? event.session : session,
-                    ),
-                  }
-                : current,
-            );
+            const eventGeneration = event.session.processGeneration;
+            if (
+              disposed ||
+              currentWorkspaceIdRef.current !== workspace.id ||
+              event.session.workspaceId !== workspace.id ||
+              eventGeneration < sessionGenerationRef.current ||
+              eventGeneration < feedGenerationRef.current
+            ) {
+              return;
+            }
+
+            sessionGenerationRef.current = eventGeneration;
+            setAttachment((current) => {
+              if (
+                !current ||
+                current.session.workspaceId !== workspace.id ||
+                eventGeneration < current.session.processGeneration
+              ) {
+                return current;
+              }
+              return {
+                ...current,
+                session: event.session,
+                sessions: current.sessions.map((session) =>
+                  projectSessionSummary(
+                    session.workspaceId === event.session.workspaceId ? event.session : session,
+                  ),
+                ),
+              };
+            });
             void port
               .snapshot(workspace.id)
               .then((next) => {
                 if (!disposed && currentWorkspaceIdRef.current === workspace.id) {
-                  setAttachment(next);
+                  applyAttachment(next);
                 }
               })
               .catch(() => undefined);

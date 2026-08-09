@@ -14,6 +14,7 @@ import {
   type PiWorkspaceAgentResourceKind,
   type PiWorkspaceAgentResourceScope,
   type PiWorkspaceAgentSessionSnapshot,
+  type PiWorkspaceAgentSessionSummary,
   type PiWorkspaceAgentStatusEvent,
   type ResizePiWorkspaceAgentRequest,
 } from "@ide/contracts";
@@ -49,6 +50,16 @@ const PROCESS_STATES = new Set<PiWorkspaceAgentProcessState>([
 const RESOURCE_KINDS = new Set<PiWorkspaceAgentResourceKind>(["package", "command"]);
 const RESOURCE_SCOPES = new Set<PiWorkspaceAgentResourceScope>(["user", "project", "effective"]);
 const BASE64 = /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/u;
+const SESSION_SUMMARY_FIELD_NAMES = [
+  "workspaceId",
+  "workspaceName",
+  "sessionId",
+  "processState",
+  "processGeneration",
+  "lastActivityAt",
+  "attachedViewCount",
+] as const satisfies readonly (keyof PiWorkspaceAgentSessionSummary)[];
+const SESSION_SUMMARY_FIELDS: ReadonlySet<string> = new Set(SESSION_SUMMARY_FIELD_NAMES);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -152,6 +163,53 @@ function normalizeSession(
   };
 }
 
+function normalizeSessionSummary(
+  command: string,
+  response: unknown,
+  value: unknown,
+  field: string,
+): PiWorkspaceAgentSessionSummary {
+  const item = record(command, response, value);
+  const actualFields = Object.keys(item);
+  const unsupportedField = actualFields.find((candidate) => !SESSION_SUMMARY_FIELDS.has(candidate));
+  if (unsupportedField) {
+    throw invalid(command, `unsupported field ${field}.${unsupportedField}`, response);
+  }
+  const missingField = SESSION_SUMMARY_FIELD_NAMES.find(
+    (candidate) => !Object.prototype.hasOwnProperty.call(item, candidate),
+  );
+  if (missingField) {
+    throw invalid(command, `missing field ${field}.${missingField}`, response);
+  }
+  if (actualFields.length !== SESSION_SUMMARY_FIELD_NAMES.length) {
+    throw invalid(command, `invalid fields ${field}`, response);
+  }
+
+  const processState = text(command, response, item.processState, `${field}.processState`);
+  if (!PROCESS_STATES.has(processState as PiWorkspaceAgentProcessState)) {
+    throw invalid(command, `invalid ${field}.processState`, response);
+  }
+  return {
+    workspaceId: text(command, response, item.workspaceId, `${field}.workspaceId`),
+    workspaceName: text(command, response, item.workspaceName, `${field}.workspaceName`),
+    sessionId: text(command, response, item.sessionId, `${field}.sessionId`),
+    processState: processState as PiWorkspaceAgentProcessState,
+    processGeneration: integer(
+      command,
+      response,
+      item.processGeneration,
+      `${field}.processGeneration`,
+    ),
+    lastActivityAt: text(command, response, item.lastActivityAt, `${field}.lastActivityAt`),
+    attachedViewCount: integer(
+      command,
+      response,
+      item.attachedViewCount,
+      `${field}.attachedViewCount`,
+    ),
+  };
+}
+
 function normalizeActivity(
   command: string,
   response: unknown,
@@ -190,7 +248,7 @@ function normalizeAttachment(command: string, response: unknown): PiWorkspaceAge
       normalizeActivity(command, response, activity, index),
     ),
     sessions: array(command, response, item.sessions, "sessions").map((session, index) =>
-      normalizeSession(command, response, session, `sessions[${index}]`),
+      normalizeSessionSummary(command, response, session, `sessions[${index}]`),
     ),
   };
 }
