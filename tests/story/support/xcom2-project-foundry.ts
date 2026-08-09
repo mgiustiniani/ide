@@ -203,7 +203,9 @@ async function materializeCommittedTree(
   const stderr = extract.stderr?.toString() ?? "";
   if (extract.error) throw extract.error;
   if (extract.status !== 0) {
-    throw new Error(`tar extraction of pinned EMPT tree failed (${extract.status}): ${stderr.trim()}`);
+    throw new Error(
+      `tar extraction of pinned EMPT tree failed (${extract.status}): ${stderr.trim()}`,
+    );
   }
 }
 
@@ -533,10 +535,7 @@ export class Xcom2ProjectFoundryHarness {
       // Resolve the pinned commit by SHA only. `refs/heads/master` is allowed to advance
       // upstream, so the pin is never compared against a branch ref. The committed tree must
       // still resolve to the pinned SOURCE_TREE, and its objects must be present locally.
-      assert.equal(
-        gitRevParse(EXTERNAL_EMPT_ROOT, `${SOURCE_COMMIT}^{commit}`),
-        SOURCE_COMMIT,
-      );
+      assert.equal(gitRevParse(EXTERNAL_EMPT_ROOT, `${SOURCE_COMMIT}^{commit}`), SOURCE_COMMIT);
       assert.equal(gitRevParse(EXTERNAL_EMPT_ROOT, `${SOURCE_COMMIT}^{tree}`), SOURCE_TREE);
       // Materialize the exact committed blobs at the pin (never the uncommitted working tree).
       await materializeCommittedTree(EXTERNAL_EMPT_ROOT, SOURCE_COMMIT, sourceRoot);
