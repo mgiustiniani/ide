@@ -162,6 +162,15 @@ test("profiles keep default and focused routing while declaring exact aggregate 
     "@REQ-LAYOUT-DESKTOP-001 and @desktop and @native-gui and not @web",
   );
   assert.doesNotMatch(cucumberProfiles.desktopLayoutNativeGui.tags, /implemented|partial/);
+  assert.deepEqual(cucumberProfiles.piWorkspaceAgentNativeGui.worldParameters, nativeGuiEvidence);
+  assert.equal(
+    cucumberProfiles.piWorkspaceAgentNativeGui.tags,
+    "@REQ-PI-WORKSPACE-AGENT-001 and @desktop and @native-gui and not @web",
+  );
+  assert.doesNotMatch(
+    cucumberProfiles.piWorkspaceAgentNativeGui.tags,
+    /implemented|partial|not-implemented/,
+  );
 
   assert.deepEqual(cucumberProfiles.xcom2MachineSettingsTauriHarness.worldParameters, {
     target: { name: "desktop", driver: "tauri" },
@@ -553,6 +562,27 @@ test("focused XCOM module configuration diagnostics profile stays status-indepen
   );
 });
 
+test("focused Pi workspace Agent native profile is exact and status-independent before promotion", () => {
+  const selected = selectedScenarios("piWorkspaceAgentNativeGui");
+
+  assert.equal(selected.length, 1);
+  assert.deepEqual(requirementIds(selected[0]), ["@REQ-PI-WORKSPACE-AGENT-001"]);
+  assert.equal(selected[0].uri, "features/workspace/pi-native-agent.feature");
+  assert.ok(selected[0].tags.has("@implemented-not-e2e-validated"));
+  assert.ok(selected[0].tags.has("@desktop"));
+  assert.ok(selected[0].tags.has("@native-gui"));
+  assert.ok(selected[0].tags.has("@tauri-harness"));
+  assert.equal(selected[0].tags.has("@web"), false);
+  assert.match(
+    dryRunSummary("piWorkspaceAgentNativeGui"),
+    /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
+  );
+  assert.equal(
+    cucumberProfiles.piWorkspaceAgentNativeGui.tags,
+    "@REQ-PI-WORKSPACE-AGENT-001 and @desktop and @native-gui and not @web",
+  );
+});
+
 test("focused native package commands make no harness or package claim", async () => {
   const manifest = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8"));
   const commands = new Map([
@@ -563,6 +593,10 @@ test("focused native package commands make no harness or package claim", async (
     [
       "test:story:req-layout-desktop-001:native",
       "node scripts/run-native-desktop-story.mjs --profile desktopLayoutNativeGui",
+    ],
+    [
+      "test:story:req-pi-workspace-agent-001:native",
+      "node scripts/run-native-desktop-story.mjs --profile piWorkspaceAgentNativeGui",
     ],
     [
       "test:story:req-xcom2-machine-settings-missing-steam-001:native",

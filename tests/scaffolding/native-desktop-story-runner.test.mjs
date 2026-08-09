@@ -1207,6 +1207,176 @@ test("focused XCOM configuration diagnostics leaves fixtures to Story and record
   }
 });
 
+test("focused Pi workspace Agent route fresh-builds into an isolated lease and leaves launch to Story", async () => {
+  const artifactRoot = await mkdtemp(path.join(tmpdir(), "native-story-pi-workspace-agent-"));
+  const applicationPath = await executable(artifactRoot, "ide-desktop");
+  const calls = [];
+  try {
+    const application = {
+      path: applicationPath,
+      sha256: "9".repeat(64),
+      command: {
+        executable: "pnpm",
+        arguments: ["--filter", "@ide/desktop", "tauri", "build", "--no-bundle", "--ci"],
+      },
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    };
+    const prerequisites = {
+      IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH: process.execPath,
+      IDE_STORY_NATIVE_GUI_APPLICATION_PATH: applicationPath,
+    };
+    const untrustedEnvironment = {
+      PATH: process.env.PATH,
+      HOME: "/untrusted/home",
+      XDG_CONFIG_HOME: "/untrusted/xdg/config",
+      XDG_CACHE_HOME: "/untrusted/xdg/cache",
+      XDG_DATA_HOME: "/untrusted/xdg/data",
+      XDG_STATE_HOME: "/untrusted/xdg/state",
+      XDG_RUNTIME_DIR: "/untrusted/xdg/runtime",
+      IDE_HOME: "/untrusted/ide-home",
+      IDE_WORKSPACE_ROOT: "/untrusted/workspace",
+      TMPDIR: "/untrusted/tmp",
+      TEMP: "/untrusted/tmp",
+      TMP: "/untrusted/tmp",
+    };
+
+    const result = await runNativeDesktopStory("piWorkspaceAgentNativeGui", {
+      environment: untrustedEnvironment,
+      applicationPath,
+      buildApplication: async (options) => {
+        calls.push("fresh-release-no-bundle-build");
+        assert.equal(options.environment, untrustedEnvironment);
+        assert.equal(options.applicationPath, applicationPath);
+        assert.equal(options.timeoutMs, NATIVE_DESKTOP_BUILD_TIMEOUT_MS);
+        return application;
+      },
+      resolvePrerequisites: async (_environment, options) => {
+        calls.push("absolute-native-prerequisites");
+        assert.deepEqual(options, {
+          applicationPath,
+          requiresNativeJavaImport: false,
+        });
+        assert.ok(Object.values(prerequisites).every(path.isAbsolute));
+        return prerequisites;
+      },
+      createSandbox: async (options) => {
+        calls.push("empty-isolated-environment-lease");
+        return createNativeDesktopSandbox({ ...options, artifactRoot });
+      },
+      run: async (command, arguments_, options) => {
+        calls.push("Story-owned-launch-boundary");
+        assert.equal(command, prerequisites.IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH);
+        assert.ok(path.isAbsolute(command));
+        assert.deepEqual(arguments_.slice(-2), ["--profile", "piWorkspaceAgentNativeGui"]);
+        assert.equal(
+          arguments_.some((argument) => /tauri-harness|deterministic|package/iu.test(argument)),
+          false,
+        );
+        assert.equal(options.timeoutMs, NATIVE_DESKTOP_OUTER_TIMEOUT_MS);
+        assert.equal(options.environment.IDE_STORY_NATIVE_GUI_TARGET, "desktop/tauri-webdriver");
+        assert.ok(
+          Object.values(prerequisites).every(
+            (executablePath) => path.isAbsolute(executablePath) && executablePath.length > 1,
+          ),
+        );
+
+        const leaseRoot = options.environment.IDE_STORY_NATIVE_GUI_SCENARIO_ROOT;
+        const sandboxRoot = options.environment.IDE_STORY_NATIVE_GUI_SANDBOX_PATH;
+        assert.notEqual(leaseRoot, options.environment.IDE_WORKSPACE_ROOT);
+        for (const variable of [
+          "HOME",
+          "XDG_CONFIG_HOME",
+          "XDG_CACHE_HOME",
+          "XDG_DATA_HOME",
+          "XDG_STATE_HOME",
+          "XDG_RUNTIME_DIR",
+          "IDE_HOME",
+          "IDE_STORY_NATIVE_GUI_SCENARIO_ROOT",
+          "IDE_WORKSPACE_ROOT",
+          "TMPDIR",
+          "TEMP",
+          "TMP",
+        ]) {
+          assert.equal(
+            path.relative(sandboxRoot, options.environment[variable]).startsWith(".."),
+            false,
+            variable,
+          );
+        }
+        assert.deepEqual(await readdir(leaseRoot), []);
+        assert.deepEqual(await readdir(options.environment.IDE_WORKSPACE_ROOT), []);
+        assert.deepEqual(await readdir(options.environment.IDE_HOME), []);
+      },
+      cleanupSandboxProcesses: async (sandboxPath) => {
+        calls.push("bounded-timeout-process-cleanup");
+        return {
+          sandboxPath,
+          termTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+          killTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+          detectedProcessIds: [],
+          termSignaledProcessIds: [],
+          killSignaledProcessIds: [],
+          survivorProcessIds: [],
+        };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "fresh-release-no-bundle-build",
+      "absolute-native-prerequisites",
+      "empty-isolated-environment-lease",
+      "Story-owned-launch-boundary",
+      "bounded-timeout-process-cleanup",
+    ]);
+    assert.equal(result.skipped, false);
+    assert.deepEqual(await readdir(result.sandbox.paths.scenarioRoot), []);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(result.sandbox.paths.artifacts, "runtime-paths.json"), "utf8"),
+    );
+    assert.equal(manifest.target, "desktop/tauri-webdriver");
+    assert.equal(manifest.profile, "piWorkspaceAgentNativeGui");
+    assert.deepEqual(manifest.evidence, {
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: false,
+      artifactKind: "release-no-bundle",
+      applicationSha256: application.sha256,
+    });
+    assert.deepEqual(manifest.build, {
+      command: application.command,
+      timeoutMs: NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    });
+    assert.equal(manifest.selectedScenarios.length, 1);
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@REQ-PI-WORKSPACE-AGENT-001"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@implemented-not-e2e-validated"));
+    assert.ok(manifest.selectedScenarios[0].tags.includes("@native-gui"));
+    assert.equal(manifest.selectedScenarios[0].tags.includes("@implemented-and-validated"), false);
+    assert.ok(Object.values(manifest.executables).every(path.isAbsolute));
+
+    const cleanup = JSON.parse(
+      await readFile(
+        path.join(result.sandbox.paths.artifacts, "post-run-process-cleanup.json"),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(cleanup, {
+      sandboxPath: result.sandbox.root,
+      termTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+      killTimeoutMs: NATIVE_DESKTOP_SANDBOX_STOP_TIMEOUT_MS,
+      detectedProcessIds: [],
+      termSignaledProcessIds: [],
+      killSignaledProcessIds: [],
+      survivorProcessIds: [],
+    });
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});
+
 test("selected native profile propagates build failure and build timeout without launch", async () => {
   const failures = [
     new NativeDesktopStoryExecutionError("fake build failure"),
@@ -1354,6 +1524,7 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 7);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
+  assert.equal(selectedScenarioCount("piWorkspaceAgentNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2MachineSettingsMissingSteamNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleActivationNativeGui"), 1);
   assert.equal(selectedScenarioCount("xcom2ModuleConfigurationActivationNativeGui"), 1);
@@ -1362,10 +1533,26 @@ test("native runner profiles select promoted and focused native scenarios", () =
   assert.equal(profileSelectsScenarios("implementedDesktopTauriWebdriver"), true);
   assert.equal(profileSelectsScenarios("refactorKitJavaImportNativeGui"), true);
   assert.equal(profileSelectsScenarios("desktopLayoutNativeGui"), true);
+  assert.equal(profileSelectsScenarios("piWorkspaceAgentNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2MachineSettingsMissingSteamNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleActivationNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationActivationNativeGui"), true);
   assert.equal(profileSelectsScenarios("xcom2ModuleConfigurationDiagnosticsNativeGui"), true);
+
+  const piWorkspaceAgentSelection = discoverNativeDesktopSelection("piWorkspaceAgentNativeGui");
+  assert.equal(piWorkspaceAgentSelection.hasScenarios, true);
+  assert.equal(piWorkspaceAgentSelection.includesNativeJavaImport, false);
+  assert.equal(piWorkspaceAgentSelection.scenarios.length, 1);
+  assert.match(
+    dryRunSummary("piWorkspaceAgentNativeGui"),
+    /1 scenario \(1 skipped\)[\s\S]*35 steps \(35 skipped\)/,
+  );
+  assert.ok(piWorkspaceAgentSelection.scenarios[0].tags.includes("@REQ-PI-WORKSPACE-AGENT-001"));
+  assert.ok(piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-not-e2e-validated"));
+  assert.equal(
+    piWorkspaceAgentSelection.scenarios[0].tags.includes("@implemented-and-validated"),
+    false,
+  );
 
   const missingSteamSelection = discoverNativeDesktopSelection(
     "xcom2MachineSettingsMissingSteamNativeGui",

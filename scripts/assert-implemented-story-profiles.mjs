@@ -101,6 +101,7 @@ try {
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
+  const piWorkspaceAgentNativeGui = discover("piWorkspaceAgentNativeGui");
   const xcom2MachineSettingsMissingSteamNativeGui = discover(
     "xcom2MachineSettingsMissingSteamNativeGui",
   );
@@ -152,6 +153,7 @@ try {
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopLayoutNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters("piWorkspaceAgentNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters(
     "xcom2MachineSettingsMissingSteamNativeGui",
     desktopTauriWebdriverEvidence,
@@ -200,6 +202,12 @@ try {
     "desktopLayoutNativeGui",
     desktopLayoutNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-LAYOUT-DESKTOP-001")),
+    failures,
+  );
+  compareProfileSelection(
+    "piWorkspaceAgentNativeGui",
+    piWorkspaceAgentNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-PI-WORKSPACE-AGENT-001")),
     failures,
   );
   compareProfileSelection(
