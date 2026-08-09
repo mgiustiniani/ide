@@ -103,6 +103,14 @@ class FakePiWorkspaceAgentPort implements PiWorkspaceAgentPort {
     for (const listener of this.outputListeners) listener(event);
   }
 
+  emitStatus(session: PiWorkspaceAgentSessionSnapshot): void {
+    const event: PiWorkspaceAgentStatusEvent = {
+      protocolVersion: 1,
+      session,
+    };
+    for (const listener of this.statusListeners) listener(event);
+  }
+
   private ensureSession(
     workspaceId: string,
     workspaceName: string,
@@ -125,6 +133,20 @@ class FakePiWorkspaceAgentPort implements PiWorkspaceAgentPort {
     return session;
   }
 
+  private summary(
+    session: PiWorkspaceAgentSessionSnapshot,
+  ): PiWorkspaceAgentAttachment["sessions"][number] {
+    return {
+      workspaceId: session.workspaceId,
+      workspaceName: session.workspaceName,
+      sessionId: session.sessionId,
+      processState: session.processState,
+      processGeneration: session.processGeneration,
+      lastActivityAt: session.lastActivityAt,
+      attachedViewCount: session.attachedViewCount,
+    };
+  }
+
   private attachment(current: PiWorkspaceAgentSessionSnapshot): PiWorkspaceAgentAttachment {
     return {
       protocolVersion: 1,
@@ -133,7 +155,7 @@ class FakePiWorkspaceAgentPort implements PiWorkspaceAgentPort {
       transcriptSequence: 1,
       transcriptTruncated: false,
       activities: [],
-      sessions: [...this.sessions.values()].map((session) => ({ ...session })),
+      sessions: [...this.sessions.values()].map((session) => this.summary(session)),
     };
   }
 }
@@ -187,6 +209,71 @@ describe("usePiWorkspaceAgentController", () => {
       "workspace-b",
       "workspace-a",
     ]);
+  });
+
+  it("retains exactly seven rootless summary fields after a full status event", async () => {
+    const { result, unmount } = renderHook(() =>
+      usePiWorkspaceAgentController({ port, workspace: WORKSPACE_A, viewKind: "docked" }),
+    );
+    await waitFor(() => expect(result.current.session?.workspaceId).toBe("workspace-a"));
+    const attachmentBeforeStatus = result.current.attachment;
+    expect(attachmentBeforeStatus).not.toBeNull();
+
+    let resolveSnapshotRefresh!: (attachment: PiWorkspaceAgentAttachment) => void;
+    const snapshotRefresh = new Promise<PiWorkspaceAgentAttachment>((resolve) => {
+      resolveSnapshotRefresh = resolve;
+    });
+    port.snapshot.mockReturnValueOnce(snapshotRefresh);
+
+    const callerAuthorizedStatusSession: PiWorkspaceAgentSessionSnapshot = {
+      workspaceId: "workspace-a",
+      workspaceName: "Workspace A",
+      rootPath: "/workspace/a",
+      sessionId: "ide-workspace-a",
+      processState: "running",
+      processGeneration: 2,
+      processId: 303,
+      lastActivityAt: "2026-08-09T00:01:00.000Z",
+      attachedViewCount: 2,
+      lastError: "Previous process generation exited unexpectedly",
+    };
+    act(() => port.emitStatus(callerAuthorizedStatusSession));
+
+    expect(port.snapshot).toHaveBeenCalledExactlyOnceWith("workspace-a");
+    expect(result.current.session).toEqual(callerAuthorizedStatusSession);
+    const retainedSession = result.current.attachment?.sessions.find(
+      (session) => session.workspaceId === "workspace-a",
+    );
+    expect(retainedSession).toBeDefined();
+    expect.soft(retainedSession).toEqual({
+      workspaceId: "workspace-a",
+      workspaceName: "Workspace A",
+      sessionId: "ide-workspace-a",
+      processState: "running",
+      processGeneration: 2,
+      lastActivityAt: "2026-08-09T00:01:00.000Z",
+      attachedViewCount: 2,
+    });
+    expect.soft(Object.keys(retainedSession!).sort()).toEqual(
+      [
+        "workspaceId",
+        "workspaceName",
+        "sessionId",
+        "processState",
+        "processGeneration",
+        "lastActivityAt",
+        "attachedViewCount",
+      ].sort(),
+    );
+    expect.soft(retainedSession).not.toHaveProperty("rootPath");
+    expect.soft(retainedSession).not.toHaveProperty("processId");
+    expect.soft(retainedSession).not.toHaveProperty("lastError");
+
+    unmount();
+    await act(async () => {
+      resolveSnapshotRefresh(attachmentBeforeStatus!);
+      await snapshotRefresh;
+    });
   });
 
   it("forwards raw modified Enter bytes and requires the controller's explicit stop action", async () => {
