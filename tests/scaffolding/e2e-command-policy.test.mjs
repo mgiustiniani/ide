@@ -24,6 +24,12 @@ function e2eScripts(manifest) {
   return Object.entries(manifest.scripts ?? {}).filter(([name]) => /^test:e2e(?::|$)/.test(name));
 }
 
+test("the root Node engine contract preserves the active tooling intersection", async () => {
+  const root = await readManifest("package.json");
+
+  assert.equal(root.engines?.node, "^22.13.0 || ^24.0.0 || >=26.0.0");
+});
+
 test("E2E commands route only to implemented browser and native profiles", async () => {
   const root = await readManifest("package.json");
 
