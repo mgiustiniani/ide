@@ -8,6 +8,7 @@ import { TauriFileTreeAdapter } from "./file-tree-tauri";
 import { TauriEditorAdapter } from "./editor-tauri";
 import { TauriTerminalAdapter } from "./terminal-tauri";
 import { TauriAiAgentAdapter } from "./ai-agent-tauri";
+import { TauriPiWorkspaceAgentAdapter } from "./pi-workspace-agent-tauri";
 import { TauriWorkspaceAdapter } from "./workspace-tauri";
 import { TauriClipboardAdapter } from "./clipboard-tauri";
 import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
@@ -24,6 +25,11 @@ export { TauriFileTreeAdapter } from "./file-tree-tauri";
 export { TauriEditorAdapter } from "./editor-tauri";
 export { TauriTerminalAdapter } from "./terminal-tauri";
 export { TauriAiAgentAdapter } from "./ai-agent-tauri";
+export {
+  TauriPiWorkspaceAgentAdapter,
+  PI_WORKSPACE_AGENT_COMMANDS,
+  PI_WORKSPACE_AGENT_EVENTS,
+} from "./pi-workspace-agent-tauri";
 export { TauriWorkspaceAdapter } from "./workspace-tauri";
 export { TauriClipboardAdapter, TauriClipboardReadError } from "./clipboard-tauri";
 export {
@@ -82,6 +88,7 @@ export function createTauriAdapters(): {
   editorAdapter: TauriEditorAdapter;
   terminalAdapter: TauriTerminalAdapter;
   aiAgentAdapter: TauriAiAgentAdapter;
+  piWorkspaceAgentAdapter: TauriPiWorkspaceAgentAdapter;
   workspaceAdapter: TauriWorkspaceAdapter;
   clipboardAdapter: TauriClipboardAdapter;
   refactorKitAdapter: TauriRefactorKitAdapter;
@@ -101,6 +108,7 @@ export function createTauriAdapters(): {
     editorAdapter: new TauriEditorAdapter(),
     terminalAdapter: new TauriTerminalAdapter(),
     aiAgentAdapter: new TauriAiAgentAdapter(),
+    piWorkspaceAgentAdapter: new TauriPiWorkspaceAgentAdapter(),
     workspaceAdapter: new TauriWorkspaceAdapter(),
     clipboardAdapter: new TauriClipboardAdapter(),
     refactorKitAdapter: new TauriRefactorKitAdapter(),

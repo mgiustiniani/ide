@@ -3,6 +3,7 @@ pub mod clipboard;
 pub mod editor;
 pub mod file_tree;
 pub mod java_language;
+pub mod pi_workspace_agent;
 pub mod refactorkit;
 pub mod refactorkit_daemon;
 pub mod terminal;

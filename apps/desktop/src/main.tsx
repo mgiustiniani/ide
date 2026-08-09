@@ -10,6 +10,7 @@ import { createTauriXcom2ProjectFoundryRendererComposition } from "@ide/tauri-ad
 
 import "@ide/ui/styles/globals.css";
 import { App } from "./App";
+import { DetachedPiAgentApp } from "./DetachedPiAgentApp";
 
 const rootElement = document.getElementById("root");
 
@@ -19,10 +20,11 @@ if (!rootElement) {
   );
 }
 
-const projectFoundry = createTauriXcom2ProjectFoundryRendererComposition();
-
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <App projectFoundry={projectFoundry} />
-  </React.StrictMode>,
+const isDetachedPiAgent = new URLSearchParams(window.location.search).get("view") === "pi-agent";
+const application = isDetachedPiAgent ? (
+  <DetachedPiAgentApp />
+) : (
+  <App projectFoundry={createTauriXcom2ProjectFoundryRendererComposition()} />
 );
+
+ReactDOM.createRoot(rootElement).render(<React.StrictMode>{application}</React.StrictMode>);

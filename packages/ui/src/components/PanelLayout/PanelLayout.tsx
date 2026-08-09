@@ -57,6 +57,8 @@ function validActivityContributions(
 export interface PanelLayoutProps {
   /** Left sidebar content used by the default Explorer activity. */
   leftSidebar: ReactNode;
+  /** Product-facing label for the existing explorer authority. Defaults to Explorer. */
+  explorerActivityLabel?: string;
   /** Optional host-composed content for the generic Search activity. */
   searchActivityContent?: ReactNode;
   /** Immutable host-composed project activities, rendered in the supplied order. */
@@ -100,6 +102,7 @@ export interface PanelLayoutProps {
 
 export function PanelLayout({
   leftSidebar,
+  explorerActivityLabel = "Explorer",
   searchActivityContent,
   activityContributions = [],
   activeActivity = "explorer",
@@ -149,7 +152,12 @@ export function PanelLayout({
     isActive: selectedActivity === contribution.id,
   }));
   const activityTabs: ActivityRailTab[] = [
-    { id: "explorer", label: "Explorer", isActive: selectedActivity === "explorer" },
+    {
+      id: "explorer",
+      label: explorerActivityLabel,
+      title: explorerActivityLabel,
+      isActive: selectedActivity === "explorer",
+    },
     {
       id: "search",
       label: "Search",

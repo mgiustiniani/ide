@@ -11,6 +11,7 @@ import { NativeXcom2MachineSettingsMissingSteamSession } from "./native-xcom2-ma
 import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activation.js";
 import { NativeXcom2ModuleConfigurationActivationSession } from "./native-xcom2-module-configuration-activation.js";
 import { NativeXcom2ModuleConfigurationDiagnosticsSession } from "./native-xcom2-module-configuration-diagnostics.js";
+import { PiWorkspaceAgentStorySession } from "./pi-workspace-agent.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { RefactorKit070SnapshotDiagnosticsFixture } from "./refactorkit-070-snapshot-diagnostics-fixture.js";
 import { RefactorKit070SnapshotProtocolFixture } from "./refactorkit-070-snapshot-protocol-fixture.js";
@@ -49,6 +50,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeXcom2ModuleConfigurationActivationEvidenceAttached = false;
   #nativeXcom2ModuleConfigurationDiagnosticsSession?: NativeXcom2ModuleConfigurationDiagnosticsSession;
   #nativeXcom2ModuleConfigurationDiagnosticsEvidenceAttached = false;
+  #piWorkspaceAgentSession?: PiWorkspaceAgentStorySession;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKit070SnapshotDiagnosticsFixture?: RefactorKit070SnapshotDiagnosticsFixture;
   #refactorKit070SnapshotProtocolFixture?: RefactorKit070SnapshotProtocolFixture;
@@ -593,6 +595,37 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeXcom2ModuleConfigurationDiagnosticsEvidenceAttached = true;
   }
 
+  async createPiWorkspaceAgentSession(): Promise<void> {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+      throw new TypeError(
+        `The Pi workspace Agent Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (
+      this.targetEvidence?.kind !== "tauri-harness" ||
+      this.targetEvidence.nativeGui !== false ||
+      this.targetEvidence.e2e !== false ||
+      this.targetEvidence.packagedApplication !== false
+    ) {
+      throw new TypeError(
+        "The Pi workspace Agent Story requires explicit non-native, non-E2E tauri-harness evidence",
+      );
+    }
+    if (this.#piWorkspaceAgentSession) {
+      throw new Error("The Pi workspace Agent Story session has already been created");
+    }
+    const session = new PiWorkspaceAgentStorySession();
+    this.#piWorkspaceAgentSession = session;
+    await session.start();
+  }
+
+  piWorkspaceAgentSession(): PiWorkspaceAgentStorySession {
+    if (!this.#piWorkspaceAgentSession) {
+      throw new Error("The Pi workspace Agent Story session has not been created");
+    }
+    return this.#piWorkspaceAgentSession;
+  }
+
   createNativeRefactorKitJavaImportSession(): NativeRefactorKitJavaImportSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -636,6 +669,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
       this.#nativeXcom2ModuleConfigurationActivationSession;
     const nativeXcom2ModuleConfigurationDiagnosticsSession =
       this.#nativeXcom2ModuleConfigurationDiagnosticsSession;
+    const piWorkspaceAgentSession = this.#piWorkspaceAgentSession;
     const refactorKitFixture = this.#refactorKit062ProtocolFixture;
     const refactorKit070SnapshotDiagnosticsFixture = this.#refactorKit070SnapshotDiagnosticsFixture;
     const refactorKit070SnapshotProtocolFixture = this.#refactorKit070SnapshotProtocolFixture;
@@ -653,6 +687,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeXcom2ModuleConfigurationActivationSession = undefined;
     this.#nativeXcom2ModuleConfigurationDiagnosticsSession = undefined;
     this.#standaloneWebApp = undefined;
+    this.#piWorkspaceAgentSession = undefined;
     this.#refactorKit062ProtocolFixture = undefined;
     this.#refactorKit070SnapshotDiagnosticsFixture = undefined;
     this.#refactorKit070SnapshotProtocolFixture = undefined;
@@ -766,6 +801,13 @@ export class StoryWorld extends World<StoryWorldParameters> {
       }
       await app?.dispose();
       await desktopPanelLayoutHarness?.dispose();
+      if (piWorkspaceAgentSession) {
+        try {
+          await this.attach(JSON.stringify(piWorkspaceAgentSession.evidence()), "application/json");
+        } finally {
+          await piWorkspaceAgentSession.dispose();
+        }
+      }
       await refactorKitFixture?.dispose();
       await refactorKit070SnapshotDiagnosticsFixture?.dispose();
       await refactorKit070SnapshotProtocolFixture?.dispose();

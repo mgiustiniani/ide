@@ -35,6 +35,7 @@ import {
 import { useTerminalController } from "./features/terminal/useTerminalController";
 import { useJavaLanguageController } from "./features/java/useJavaLanguageController";
 import { useAiAgentController } from "./features/ai-agent/useAiAgentController";
+import { PiWorkspaceAgentActivity } from "./features/pi-workspace-agent/PiWorkspaceAgentActivity";
 import {
   REFACTOR_KIT_IMPORT_UNAVAILABLE,
   useRefactorKitImportController,
@@ -70,8 +71,6 @@ import { Editor } from "@ide/ui";
 import { DocumentPreviewPanel } from "@ide/ui";
 import { Terminal } from "@ide/ui";
 import { SettingsPanel } from "@ide/ui";
-import { AiAgentPanel } from "@ide/ui";
-import { AiAgentResponsePanel } from "@ide/ui";
 import { Icon } from "@ide/ui";
 import { ProblemsPanel } from "@ide/ui";
 import { ExternalJavaImportPreviewDialog } from "@ide/ui";
@@ -99,6 +98,7 @@ const {
   editorAdapter,
   terminalAdapter,
   aiAgentAdapter,
+  piWorkspaceAgentAdapter,
   workspaceAdapter,
   clipboardAdapter,
   refactorKitAdapter,
@@ -264,33 +264,17 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     workspaceInfo,
     isWorkspaceLoading,
     deferWorkspaceActivation: true,
+    projectSessionMessages: false,
   });
   const {
     settings: aiAgentSettings,
     status: aiAgentStatus,
-    commands: aiAgentCommands,
-    isCommandsLoading: isAiAgentCommandsLoading,
-    commandsError: aiAgentCommandsError,
-    messages: aiAgentMessages,
-    panelMessages: aiAgentPanelMessages,
-    latestResponse: aiAgentLatestResponse,
-    activities: aiAgentActivities,
-    isResponsePanelVisible: isAiAgentResponsePanelVisible,
-    isSending: isAiAgentSending,
-    sendError: aiAgentSendError,
-    isInitialLoading: aiAgentInitialLoading,
-    initialError: aiAgentInitialError,
-    panelError: aiAgentPanelError,
-    isEnabled: isAiAgentEnabled,
-    isAvailable: isAiAgentAvailable,
     workspaceCollaborator: aiAgentWorkspaceCollaborator,
     loadConfiguration: loadAiAgentConfiguration,
     loadCommands: loadAiAgentCommands,
     refreshStatus: handleRefreshAiAgentStatus,
     saveSettings: handleSaveAiAgentSettings,
     installPiAgent: handleInstallPiAgent,
-    sendPrompt: handleSendAiAgentPrompt,
-    closeResponsePanel: handleCloseAiAgentResponsePanel,
   } = aiAgent;
 
   const desktopEditorController = useDesktopEditorController({
@@ -559,6 +543,29 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     xcom2ProjectBuildRecipe.contribution,
   ]);
 
+  const openWorkspaceFileFromAgent = desktopEditorController.openFileProgrammatically;
+  const activityContributions = useMemo<readonly Readonly<PanelLayoutActivityContribution>[]>(
+    () =>
+      Object.freeze([
+        Object.freeze({
+          id: "pi-agent",
+          label: "Agent",
+          title: "Workspace Pi Agent",
+          content: (
+            <PiWorkspaceAgentActivity
+              port={piWorkspaceAgentAdapter}
+              workspace={workspaceInfo}
+              onOpenWorkspaceFile={async (node) => {
+                await openWorkspaceFileFromAgent(node, true);
+              }}
+            />
+          ),
+        } satisfies PanelLayoutActivityContribution),
+        ...xcom2ProjectActivityContributions,
+      ]),
+    [openWorkspaceFileFromAgent, workspaceInfo, xcom2ProjectActivityContributions],
+  );
+
   useLayoutEffect(() => {
     if (activeActivity === "xcom2-project" && xcom2ProjectActivityContributions.length === 0) {
       setActiveActivity("explorer");
@@ -574,14 +581,6 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
       title: "Integrated terminal",
       scope: "core",
       isActive: shell.activeBottomTab === "terminal",
-    },
-    {
-      id: "ai-agent",
-      label: "AI Agent",
-      icon: <Icon type="circle-filled" size={10} />,
-      title: "AI coding agent",
-      scope: "core",
-      isActive: shell.activeBottomTab === "ai-agent",
     },
     ...(shell.shouldShowProblems
       ? [
@@ -648,21 +647,13 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
               {workspaceHeaderLabel}
             </span>
           ) : null}
-          {aiAgentInitialLoading ? (
-            <span role="status">Loading Pi Agent…</span>
-          ) : aiAgentInitialError ? (
-            <span role="alert" className="text-red-300">
-              Pi Agent: {aiAgentInitialError}
-            </span>
-          ) : (
-            <span>Pi Agent: {aiAgentStatus?.availability ?? "not checked"}</span>
-          )}
         </div>
       </header>
       <div className="min-h-0 flex-1">
         <PanelLayout
           layout={panelState.layout}
-          activityContributions={xcom2ProjectActivityContributions}
+          explorerActivityLabel="Files"
+          activityContributions={activityContributions}
           activeActivity={activeActivity}
           onActivityChange={setActiveActivity}
           searchActivityContent={
@@ -697,7 +688,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
           onToggleBottomPanel={shell.toggleBottomPanel}
           leftSidebar={
             <LeftSidebar
-              title="Explorer"
+              title="Files"
               isVisible={panelState.layout.visibility.leftSidebar.visible}
               onToggle={shell.toggleLeftSidebar}
               workspaceContent={
@@ -787,19 +778,6 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
               </div>
             </div>
           }
-          rightSidebarAriaLabel="AI Agent response panel"
-          rightSidebarContent={
-            isAiAgentResponsePanelVisible ? (
-              <AiAgentResponsePanel
-                latestResponse={aiAgentLatestResponse}
-                messages={aiAgentMessages}
-                activities={aiAgentActivities}
-                isSending={isAiAgentSending}
-                error={aiAgentSendError}
-                onClose={handleCloseAiAgentResponsePanel}
-              />
-            ) : undefined
-          }
           bottomContent={
             <BottomPanel tabs={bottomTabs} onTabActivate={shell.activateBottomTab}>
               {shell.activeBottomTab === "terminal" ? (
@@ -815,25 +793,11 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
                   commandHistory={terminalState.commandHistory}
                   onClear={terminal.clear}
                 />
-              ) : shell.activeBottomTab === "problems" ? (
+              ) : (
                 <ProblemsPanel
                   items={problemItems}
                   onNavigate={documentNavigation.navigateToProblem}
                   emptyMessage="No problems detected in this project."
-                />
-              ) : (
-                <AiAgentPanel
-                  messages={aiAgentPanelMessages}
-                  isEnabled={isAiAgentEnabled}
-                  isAvailable={isAiAgentAvailable}
-                  isSending={isAiAgentSending}
-                  error={aiAgentPanelError}
-                  commands={aiAgentCommands}
-                  isLoadingCommands={isAiAgentCommandsLoading}
-                  commandsError={aiAgentCommandsError}
-                  onRefreshCommands={loadAiAgentCommands}
-                  onSendPrompt={handleSendAiAgentPrompt}
-                  onOpenSettings={handleOpenSettings}
                 />
               )}
             </BottomPanel>

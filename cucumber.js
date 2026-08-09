@@ -114,6 +114,12 @@ const xcom2ProjectBuildRecipeTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+const piWorkspaceAgentTauriHarness = {
+  ...common,
+  tags: "@REQ-PI-WORKSPACE-AGENT-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const xcom2ProjectFoundryApplyTauriHarness = {
   ...common,
   tags: "@REQ-XCOM2-PROJECT-FOUNDRY-002",
@@ -183,6 +189,7 @@ export {
   xcom2MachineSettingsTauriHarness,
   xcom2ProjectFoundryTauriHarness,
   xcom2ProjectBuildRecipeTauriHarness,
+  piWorkspaceAgentTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,
   xcom2ProjectFoundryDestinationConflictTauriHarness,
   xcom2ProjectFoundryVerifiedCleanupTauriHarness,

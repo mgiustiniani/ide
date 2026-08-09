@@ -393,7 +393,7 @@ export function SettingsPanel({
   const sectionTitle = activeTab?.label ?? "Settings";
   const sectionDescription =
     activeSection === "ai-agents"
-      ? "Configure the optional Pi Agent integration used by IDE AI features."
+      ? "Inspect the Pi runtime used by the native Agent screen and manage legacy RPC compatibility."
       : activeSection === "java"
         ? "Inspect language capability discovery and manage provider-specific language tooling. Eclipse JDT LS controls remain Java-specific."
         : activeSection === "xcom2"
@@ -602,18 +602,19 @@ export function SettingsPanel({
                   <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h4 className="text-base font-semibold text-[var(--text-primary)]">
-                        Pi Agent settings
+                        Pi Agent runtime
                       </h4>
                       <p className="mt-1 max-w-2xl text-sm text-[var(--text-secondary)]">
-                        Pi Agent is optional and configured through RPC only.
+                        The Agent screen embeds Pi's real interactive TUI through a workspace PTY.
+                        Legacy RPC settings do not own that conversation.
                       </p>
                     </div>
                     <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2">
                       <span className="text-sm font-medium text-[var(--text-primary)]">
-                        Enabled
+                        Legacy RPC
                       </span>
                       <input
-                        aria-label="Enable Pi Agent integration"
+                        aria-label="Enable legacy Pi Agent RPC compatibility"
                         checked={draft.enabled}
                         className="sr-only"
                         disabled={isBusy}
@@ -641,9 +642,11 @@ export function SettingsPanel({
 
                   <div className="grid gap-4">
                     <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-4">
-                      <h5 className="text-sm font-semibold text-sky-100">RPC integration</h5>
+                      <h5 className="text-sm font-semibold text-sky-100">Native Agent authority</h5>
                       <p className="mt-1 text-sm text-sky-100/80">
-                        Pi Agent uses RPC via pi --mode rpc
+                        Chat, history, tools, models, commands, extensions, trust, and compaction
+                        stay inside the interactive Pi TUI. RPC is retained only as a legacy
+                        compatibility setting.
                       </p>
                     </div>
                   </div>
@@ -673,7 +676,7 @@ export function SettingsPanel({
                     <dl className="grid gap-3">
                       <StatusRow label="Status" value={statusBadgeText} />
                       <StatusRow label="Version" value={currentStatus?.version ?? "Unknown"} />
-                      <StatusRow label="Active integration" value="RPC" />
+                      <StatusRow label="Agent presentation" value="Native Pi TUI / PTY" />
                       <StatusRow
                         label="Checked at"
                         value={formatDateTime(currentStatus?.checkedAt)}
@@ -724,8 +727,8 @@ export function SettingsPanel({
 
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-[var(--text-muted)]">
-                      Save sends only enabled, provider pi, preferredIntegration rpc, and
-                      fallbackIntegrations [].
+                      Save changes only the legacy RPC compatibility record. It does not replace or
+                      project the native Pi TUI session.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Button

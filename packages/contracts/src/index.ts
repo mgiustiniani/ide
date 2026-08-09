@@ -9,6 +9,7 @@ export * from "./terminal";
 export * from "./panel";
 export * from "./workspace";
 export * from "./ai-agent";
+export * from "./pi-workspace-agent";
 export * from "./document";
 export * from "./refactorkit";
 export * from "./domain/refactorkit-typescript-diagnostics";

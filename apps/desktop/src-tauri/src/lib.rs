@@ -10,6 +10,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::java_language::JavaLanguageServiceState::default())
+        .manage(commands::pi_workspace_agent::PiWorkspaceAgentState::default())
         .manage(commands::refactorkit_daemon::RefactorKitDaemonState::default())
         .manage(commands::refactorkit_daemon::SavedSnapshotSemanticState::default())
         .manage(commands::xcom2_setup_monitor::Xcom2SetupMonitorState::default())
@@ -27,6 +28,16 @@ pub fn run() {
             commands::editor::write_file,
             commands::terminal::execute_command,
             commands::terminal::resize_pty,
+            commands::pi_workspace_agent::attach_pi_workspace_agent,
+            commands::pi_workspace_agent::detach_pi_workspace_agent,
+            commands::pi_workspace_agent::write_pi_workspace_agent,
+            commands::pi_workspace_agent::resize_pi_workspace_agent,
+            commands::pi_workspace_agent::start_pi_workspace_agent,
+            commands::pi_workspace_agent::stop_pi_workspace_agent,
+            commands::pi_workspace_agent::get_pi_workspace_agent_snapshot,
+            commands::pi_workspace_agent::get_pi_workspace_agent_accessories,
+            commands::pi_workspace_agent::open_pi_workspace_agent_window,
+            commands::pi_workspace_agent::get_pi_workspace_agent_detached_binding,
             commands::refactorkit::get_refactorkit_status,
             commands::refactorkit_daemon::get_refactorkit_capabilities,
             commands::refactorkit_daemon::preview_refactorkit_external_java_import,
@@ -105,6 +116,9 @@ pub fn run() {
                 .revoke(commands::xcom2_native_activation::ActivationRevocationCode::AppExit);
             app_handle
                 .state::<commands::java_language::JavaLanguageServiceState>()
+                .shutdown_all();
+            app_handle
+                .state::<commands::pi_workspace_agent::PiWorkspaceAgentState>()
                 .shutdown_all();
             app_handle
                 .state::<commands::refactorkit_daemon::RefactorKitDaemonState>()

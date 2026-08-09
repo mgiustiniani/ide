@@ -156,7 +156,7 @@ const diagnosticPresentation = {
 } as const satisfies Xcom2ModuleConfigurationDiagnosticPresentation;
 
 describe("SettingsPanel", () => {
-  it("renders the simplified RPC-only Pi Agent settings and status", () => {
+  it("presents native Pi TUI authority separately from legacy RPC compatibility", () => {
     render(
       React.createElement(SettingsPanel, { aiAgentSettings: settings, aiAgentStatus: status }),
     );
@@ -169,11 +169,13 @@ describe("SettingsPanel", () => {
       false,
     );
     expect((screen.getByRole("tab", { name: /Editor/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Pi Agent settings")).toBeDefined();
-    expect(screen.getByText("Pi Agent uses RPC via pi --mode rpc")).toBeDefined();
+    expect(screen.getByText("Pi Agent runtime")).toBeDefined();
+    expect(screen.getByText("Native Agent authority")).toBeDefined();
+    expect(screen.getByText("Native Pi TUI / PTY")).toBeDefined();
+    expect(screen.getByText(/Chat, history, tools, models, commands, extensions/)).toBeDefined();
     expect(screen.getByText("1.2.3")).toBeDefined();
     expect(screen.getByText("RPC handshake failed")).toBeDefined();
-    expect(screen.getAllByText("RPC").length).toBeGreaterThan(0);
+    expect(screen.getByText("Legacy RPC")).toBeDefined();
     expect(screen.queryByLabelText("Preferred integration")).toBeNull();
     expect(screen.queryByLabelText("Pi Agent model")).toBeNull();
     expect(screen.queryByLabelText("Pi Agent CLI path")).toBeNull();
@@ -511,7 +513,7 @@ describe("SettingsPanel", () => {
     await waitFor(() => expect(screen.getByText("Workspace refreshed.")).toBeDefined());
   });
 
-  it("sends only the RPC-only Pi Agent settings payload through the save callback", async () => {
+  it("sends only the legacy RPC compatibility payload through the save callback", async () => {
     const onSaveAiAgentSettings = vi.fn().mockResolvedValue({
       ...settings,
       enabled: false,
@@ -527,7 +529,7 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByLabelText("Enable Pi Agent integration"));
+    fireEvent.click(screen.getByLabelText("Enable legacy Pi Agent RPC compatibility"));
     fireEvent.click(screen.getByRole("button", { name: /Save settings/i }));
 
     await waitFor(() => {

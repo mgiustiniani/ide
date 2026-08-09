@@ -15,8 +15,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 arc-swap = "1"
+base64 = "0.22"
 getrandom = "0.3"
 git2 = { version = "0.20.2", default-features = false, features = ["vendored-libgit2"] }
+portable-pty = "0.9"
 regex = "1"
 # Text-only clipboard access. arboard is MIT OR Apache-2.0 licensed; image support is disabled.
 arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }

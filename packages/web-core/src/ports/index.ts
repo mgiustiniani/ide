@@ -7,6 +7,7 @@ export type { EditorPort } from "./editor-port";
 export type { TerminalPort } from "./terminal-port";
 export type { WorkspacePort } from "./workspace-port";
 export type { AiAgentPort } from "./ai-agent-port";
+export type { PiWorkspaceAgentPort, PiWorkspaceAgentUnsubscribe } from "./pi-workspace-agent-port";
 export type { ClipboardPort } from "./clipboard-port";
 export type { RefactorKitPort } from "./refactorkit-port";
 export type { LanguageSessionPort } from "./language-session-port";

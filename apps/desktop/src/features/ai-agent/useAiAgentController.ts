@@ -684,6 +684,11 @@ export interface UseAiAgentControllerDependencies {
   isWorkspaceLoading: boolean;
   /** Desktop composition delegates workspace activation to useWorkspaceController. */
   deferWorkspaceActivation?: boolean;
+  /**
+   * Legacy React/RPC message projection. Native Pi TUI compositions disable it
+   * so a second process never reads or owns the interactive Pi session.
+   */
+  projectSessionMessages?: boolean;
 }
 
 export interface AiAgentController {
@@ -859,7 +864,12 @@ export function useAiAgentController(
   const loadSessionMessages = useCallback(
     async (workspaceKey?: string): Promise<boolean> => {
       const targetWorkspaceKey = workspaceKey ?? currentWorkspaceKeyRef.current;
-      if (typeof dependencies.aiAgent.getSessionMessages !== "function") return false;
+      if (
+        dependencies.projectSessionMessages === false ||
+        typeof dependencies.aiAgent.getSessionMessages !== "function"
+      ) {
+        return false;
+      }
 
       const requestId = sessionLoadRequestRef.current + 1;
       sessionLoadRequestRef.current = requestId;
@@ -898,7 +908,7 @@ export function useAiAgentController(
         return false;
       }
     },
-    [dependencies.aiAgent, updateWorkspaceState],
+    [dependencies.aiAgent, dependencies.projectSessionMessages, updateWorkspaceState],
   );
 
   const loadRecentTraceActivities = useCallback(

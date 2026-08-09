@@ -14,6 +14,7 @@ export * from "./components/Terminal";
 export * from "./components/SettingsPanel";
 export * from "./components/AiAgentPanel";
 export * from "./components/AiAgentResponsePanel";
+export * from "./components/PiWorkspaceAgentScreen";
 export * from "./components/DocumentPreviewPanel";
 export * from "./components/JavaIntelligencePanel";
 export * from "./components/RefactorKitLanguageLab";

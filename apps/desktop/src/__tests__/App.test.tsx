@@ -128,6 +128,9 @@ const testHarness = vi.hoisted(() => {
     ];
     harness.aiAgentCommandsError = null;
     harness.aiAgentSessionMessages = { messages: [] };
+    harness.piWorkspaceAgentSessions = new Map();
+    harness.piWorkspaceAgentOutputListeners = new Set();
+    harness.piWorkspaceAgentStatusListeners = new Set();
     harness.workspaceInfo = {
       id: "workspace-one",
       name: "Workspace One",
@@ -540,6 +543,103 @@ vi.mock("@ide/tauri-adapters", () => {
   };
   testHarness.aiAgentAdapter = aiAgentAdapter;
 
+  const piAttachment = (session: any) => ({
+    protocolVersion: 1,
+    session,
+    transcriptBase64: "",
+    transcriptSequence: 0,
+    transcriptTruncated: false,
+    activities: [
+      {
+        sequence: 1,
+        eventType: "attached",
+        timestamp: "2026-08-09T00:00:00.000Z",
+        detail: "Renderer attached without owning Pi",
+      },
+    ],
+    sessions: [...testHarness.piWorkspaceAgentSessions.values()],
+  });
+  const ensurePiSession = (workspaceId: string, workspaceName = workspaceId) => {
+    const existing = testHarness.piWorkspaceAgentSessions.get(workspaceId);
+    if (existing) return existing;
+    const workspace = testHarness.workspaceRegistry.workspaces.find(
+      (candidate: any) => candidate.id === workspaceId,
+    );
+    const session = {
+      workspaceId,
+      workspaceName,
+      rootPath: workspace?.rootPath ?? "",
+      sessionId: `ide-${workspaceId}`,
+      processState: "running",
+      processGeneration: 1,
+      processId: testHarness.piWorkspaceAgentSessions.size + 100,
+      startedAt: "2026-08-09T00:00:00.000Z",
+      lastActivityAt: "2026-08-09T00:00:00.000Z",
+      attachedViewCount: 1,
+    };
+    testHarness.piWorkspaceAgentSessions.set(workspaceId, session);
+    return session;
+  };
+  const piWorkspaceAgentAdapter = {
+    attach: vi.fn((request: any) =>
+      Promise.resolve(piAttachment(ensurePiSession(request.workspaceId, request.workspaceName))),
+    ),
+    detach: vi.fn().mockResolvedValue(undefined),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    start: vi.fn((workspaceId: string) => {
+      const session = ensurePiSession(workspaceId);
+      Object.assign(session, {
+        processState: "running",
+        processGeneration: session.processGeneration + 1,
+      });
+      return Promise.resolve(piAttachment(session));
+    }),
+    stop: vi.fn((workspaceId: string) => {
+      const session = ensurePiSession(workspaceId);
+      Object.assign(session, { processState: "stopped", processId: undefined });
+      return Promise.resolve(piAttachment(session));
+    }),
+    snapshot: vi.fn((workspaceId: string) =>
+      Promise.resolve(piAttachment(ensurePiSession(workspaceId))),
+    ),
+    accessories: vi.fn((workspaceId: string) =>
+      Promise.resolve({
+        protocolVersion: 1,
+        workspaceId,
+        changes: [{ path: "src/main.tsx", status: "modified" }],
+        resources: Array.from({ length: 7 }, (_, index) => ({
+          kind: "package",
+          name: `package-${index + 1}`,
+          scope: "user",
+        })),
+        warnings: [],
+      }),
+    ),
+    openDetached: vi.fn((workspaceId: string) => {
+      const session = ensurePiSession(workspaceId);
+      return Promise.resolve({
+        protocolVersion: 1,
+        workspaceId,
+        workspaceName: session.workspaceName,
+      });
+    }),
+    getDetachedBinding: vi.fn().mockResolvedValue({
+      protocolVersion: 1,
+      workspaceId: "workspace-one",
+      workspaceName: "Workspace One",
+    }),
+    subscribeOutput: vi.fn((listener: any) => {
+      testHarness.piWorkspaceAgentOutputListeners.add(listener);
+      return Promise.resolve(() => testHarness.piWorkspaceAgentOutputListeners.delete(listener));
+    }),
+    subscribeStatus: vi.fn((listener: any) => {
+      testHarness.piWorkspaceAgentStatusListeners.add(listener);
+      return Promise.resolve(() => testHarness.piWorkspaceAgentStatusListeners.delete(listener));
+    }),
+  };
+  testHarness.piWorkspaceAgentAdapter = piWorkspaceAgentAdapter;
+
   const workspaceAdapter = {
     ensureCurrentWorkspace: vi.fn(() => Promise.resolve(testHarness.workspaceInfo)),
     listWorkspaces: vi.fn(() => Promise.resolve(testHarness.workspaceRegistry)),
@@ -830,11 +930,13 @@ vi.mock("@ide/tauri-adapters", () => {
     TauriEditorAdapter: vi.fn().mockImplementation(() => editorAdapter),
     TauriTerminalAdapter: vi.fn().mockImplementation(() => terminalAdapter),
     TauriAiAgentAdapter: vi.fn().mockImplementation(() => aiAgentAdapter),
+    TauriPiWorkspaceAgentAdapter: vi.fn().mockImplementation(() => piWorkspaceAgentAdapter),
     createTauriAdapters: vi.fn(() => ({
       fileTreeAdapter,
       editorAdapter,
       terminalAdapter,
       aiAgentAdapter,
+      piWorkspaceAgentAdapter,
       workspaceAdapter,
       clipboardAdapter,
       refactorKitAdapter,
@@ -858,6 +960,7 @@ vi.mock("@ide/ui", () => ({
   Icon: ({ type }: any) => <span data-testid={`icon-${type}`} />,
   PanelLayout: ({
     leftSidebar,
+    explorerActivityLabel = "Explorer",
     searchActivityContent,
     activityContributions = [],
     activeActivity = "explorer",
@@ -887,7 +990,10 @@ vi.mock("@ide/ui", () => ({
     };
     testHarness.latestPanelLayoutProps = {
       activeActivity,
-      activityContributions,
+      activityContributions: Object.freeze(
+        activityContributions.filter((candidate: any) => candidate.id !== "pi-agent"),
+      ),
+      allActivityContributions: activityContributions,
       hasSearchActivityContent: searchActivityContent !== undefined,
       onActivityChange,
       onToggleLeftSidebar,
@@ -903,7 +1009,7 @@ vi.mock("@ide/ui", () => ({
             onClick={() => onActivityChange?.("explorer")}
             onKeyDown={(event) => selectAdjacentActivity(event, "explorer")}
           >
-            Explorer
+            {explorerActivityLabel}
           </button>
           <button
             type="button"
@@ -940,6 +1046,25 @@ vi.mock("@ide/ui", () => ({
       </div>
     );
   },
+  PiWorkspaceAgentScreen: (props: any) => (
+    <section
+      data-testid="PiWorkspaceAgentScreen"
+      data-workspace-id={props.workspaceId}
+      data-process-state={props.attachment?.session?.processState ?? "attaching"}
+      aria-label={`Pi Agent for ${props.workspaceName}`}
+    >
+      <span>Native Pi TUI</span>
+      <button type="button" onClick={() => void props.onDetach?.()}>
+        Detach
+      </button>
+      <button type="button" onClick={() => void props.onStop()}>
+        Stop Pi
+      </button>
+      <button type="button" onClick={() => void props.onRefreshAccessories()}>
+        Resources
+      </button>
+    </section>
+  ),
   SemanticSymbolSearchPanel: (props: any) => {
     testHarness.latestSemanticSymbolSearchProps = props;
     return (
@@ -2087,9 +2212,8 @@ describe("App", () => {
 
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: not-installed")).toBeDefined();
-    });
+    await screen.findByText("Workspace: Workspace One");
+    expect(screen.getByRole("tab", { name: "Agent" })).toBeDefined();
 
     // The PanelLayout should be present as the root container.
     expect(screen.getByTestId("PanelLayout")).toBeDefined();
@@ -2649,7 +2773,7 @@ describe("App", () => {
       onResultSelect: expect.any(Function),
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Explorer" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
     expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
     expect(screen.getByTestId("LeftSidebar")).toBeDefined();
     expect(screen.queryByTestId("SemanticSymbolSearchPanel")).toBeNull();
@@ -2756,7 +2880,7 @@ describe("App", () => {
       expect(testHarness.fileTreeStore.getState().rootNodes).toEqual(authorizedRoot);
       expect(testHarness.languageSessionAdapter.getStatus).toHaveBeenCalledOnce();
       expect(testHarness.aiAgentAdapter.listCommands).toHaveBeenCalledOnce();
-      expect(testHarness.aiAgentAdapter.getSessionMessages).toHaveBeenCalledOnce();
+      expect(testHarness.aiAgentAdapter.getSessionMessages).not.toHaveBeenCalled();
       expect(testHarness.refactorKitAdapter.getStatus).toHaveBeenCalledOnce();
       expect(testHarness.refactorKitAdapter.getCapabilities).toHaveBeenCalledOnce();
       expect(testHarness.xcom2SetupMonitorAdapter.getSnapshot).not.toHaveBeenCalled();
@@ -2773,7 +2897,6 @@ describe("App", () => {
       "file-tree.load",
       "java.load",
       "ai.commands",
-      "ai.session",
       "refactorkit.status",
       "refactorkit.capabilities",
     ]) {
@@ -3245,48 +3368,34 @@ describe("App", () => {
     expect(testHarness.aiAgentAdapter.getSettings).toHaveBeenCalledTimes(2);
   });
 
-  it("switches between Terminal and AI Agent bottom tabs", async () => {
+  it("switches between the existing Files authority and workspace-native Agent activity", async () => {
     const { App } = await import("../App");
 
     render(<App />);
+    await screen.findByText("Workspace: Workspace One");
 
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: not-installed")).toBeDefined();
-    });
-
-    expect(screen.getByRole("tab", { name: "Terminal" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expect(screen.getByRole("tab", { name: "AI Agent" }).getAttribute("aria-selected")).toBe(
-      "false",
-    );
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    const agentTab = screen.getByRole("tab", { name: "Agent" });
+    expect(filesTab.getAttribute("aria-selected")).toBe("true");
+    expect(agentTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByTestId("FileTree")).toBeDefined();
     expect(screen.getByTestId("Terminal")).toBeDefined();
-    const terminalTab = screen.getByRole("tab", { name: "Terminal" });
-    const aiAgentTab = screen.getByRole("tab", { name: "AI Agent" });
-    expect(terminalTab.dataset.scope).toBe("core");
-    expect(terminalTab.dataset.hasIcon).toBe("true");
-    expect(terminalTab.title).toBe("Integrated terminal");
-    expect(aiAgentTab.dataset.scope).toBe("core");
-    expect(aiAgentTab.dataset.hasIcon).toBe("true");
-    expect(aiAgentTab.title).toBe("AI coding agent");
+    expect(screen.queryByRole("tab", { name: "AI Agent" })).toBeNull();
 
-    fireEvent.click(aiAgentTab);
-
+    fireEvent.click(agentTab);
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "AI Agent" }).getAttribute("aria-selected")).toBe(
-        "true",
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
+        "workspace-one",
       );
-      expect(screen.getByTestId("AiAgentPanel")).toBeDefined();
+      expect(testHarness.piWorkspaceAgentAdapter.attach).toHaveBeenCalledOnce();
     });
-    expect(screen.queryByTestId("Terminal")).toBeNull();
+    expect(screen.getByText("Native Pi TUI")).toBeDefined();
+    expect(screen.getByTestId("Terminal")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
-
+    fireEvent.click(filesTab);
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Terminal" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
-      expect(screen.getByTestId("Terminal")).toBeDefined();
+      expect(screen.getByTestId("FileTree")).toBeDefined();
+      expect(testHarness.piWorkspaceAgentAdapter.detach).toHaveBeenCalledOnce();
     });
   });
 
@@ -3435,6 +3544,8 @@ describe("App", () => {
     const searchActivity = screen.getByRole("tab", { name: "Search" });
     searchActivity.focus();
     fireEvent.keyDown(searchActivity, { key: "ArrowRight" });
+    expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("pi-agent");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Agent" }), { key: "ArrowRight" });
 
     expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("xcom2-project");
     expect(xcomActivity.getAttribute("aria-selected")).toBe("true");
@@ -3497,7 +3608,7 @@ describe("App", () => {
       within(bottomTabList)
         .getAllByRole("tab")
         .map((tab) => tab.textContent),
-    ).toEqual(["Terminal", "AI Agent"]);
+    ).toEqual(["Terminal"]);
     for (const label of ["XCOM 2 Project", "Build", "Problems", "Logs", "Language"]) {
       expect(within(bottomTabList).queryByRole("tab", { name: label })).toBeNull();
     }
@@ -4315,43 +4426,21 @@ describe("App", () => {
     expect(screen.getByTestId("Xcom2SetupPanel").dataset.progressSequence).toBe("");
   });
 
-  it("restores Pi session messages into the workspace-scoped AI UI", async () => {
+  it("leaves Pi session messages and prompts exclusively inside the native TUI", async () => {
     testHarness.aiAgentSessionMessages = {
-      messages: [
-        { id: "restored-user", role: "user", content: "Review this workspace" },
-        { id: "restored-assistant", role: "assistant", content: "Restored Pi answer" },
-      ],
+      messages: [{ id: "must-not-project", role: "assistant", content: "private Pi history" }],
     };
     const { App } = await import("../App");
 
-    await act(async () => {
-      render(<App />);
-    });
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+    await waitFor(() => expect(testHarness.aiAgentAdapter.listCommands).toHaveBeenCalled());
 
-    await waitFor(() => {
-      expect(testHarness.aiAgentAdapter.getSessionMessages).toHaveBeenCalledTimes(1);
-      expect(testHarness.aiAgentAdapter.getSettings).toHaveBeenCalled();
-      expect(testHarness.aiAgentAdapter.getStatus).toHaveBeenCalled();
-      expect(testHarness.aiAgentAdapter.listCommands).toHaveBeenCalled();
-      expect(testHarness.refactorKitAdapter.getStatus).toHaveBeenCalled();
-      expect(screen.getByText("Pi Agent: not-installed")).toBeDefined();
-      expect(screen.getByTestId("AiAgentLatestResponse").textContent).toBe("Restored Pi answer");
-    });
-
-    fireEvent.click(screen.getByRole("tab", { name: "AI Agent" }));
-    await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "AI Agent" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
-      expect(screen.getByTestId("AiAgentMessages").textContent).toContain(
-        "user: Review this workspace",
-      );
-      expect(screen.getByTestId("AiAgentMessages").textContent).toContain(
-        "assistant: Restored Pi answer",
-      );
-      expect(screen.getByTestId("AiAgentPanel").dataset.loadingCommands).toBe("false");
-      expect(screen.getByTestId("AiAgentResponsePanel").dataset.messageCount).toBe("2");
-    });
+    expect(testHarness.aiAgentAdapter.getSessionMessages).not.toHaveBeenCalled();
+    expect(testHarness.aiAgentAdapter.sendPrompt).not.toHaveBeenCalled();
+    expect(screen.queryByText("private Pi history")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "AI Agent" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Agent" })).toBeDefined();
   });
 
   it("renders Files above Workspaces, omits the header selector, and switches by exact sidebar ID", async () => {
@@ -4763,198 +4852,65 @@ describe("App", () => {
     });
   });
 
-  it("sends an AI Agent prompt through the desktop adapter and renders the response", async () => {
-    testHarness.aiAgentSettings = {
-      enabled: true,
-      provider: "pi",
-      preferredIntegration: "rpc",
-      fallbackIntegrations: [],
-    };
-    testHarness.aiAgentStatus = {
-      provider: "pi",
-      enabled: true,
-      available: true,
-      availability: "available",
-      preferredIntegration: "rpc",
-      activeIntegration: "rpc",
-      fallbackIntegrations: [],
-      checkedAt: "2026-07-10T00:00:00.000Z",
-    };
-    testHarness.aiAgentPromptResponse = {
-      text: "A mocked assistant answer",
-      provider: "pi",
-      integration: "rpc",
-    };
+  it("keeps workspace A and B native Pi sessions distinct across A to B to A, detach, and stop", async () => {
     const { App } = await import("../App");
-
     render(<App />);
+    await screen.findByText("Workspace: Workspace One");
 
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: available")).toBeDefined();
-    });
+    fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
+        "workspace-one",
+      ),
+    );
+    const workspaceASession = testHarness.piWorkspaceAgentSessions.get("workspace-one");
+    const workspaceAProcessId = workspaceASession.processId;
+    expect(workspaceASession.sessionId).toBe("ide-workspace-one");
+    expect(screen.queryByTestId("RightSidebar")).toBeNull();
+    expect(testHarness.aiAgentAdapter.sendPrompt).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("tab", { name: "AI Agent" }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("AiAgentPanel").dataset.enabled).toBe("true");
-      expect(screen.getByTestId("AiAgentPanel").dataset.available).toBe("true");
-    });
-
-    fireEvent.change(screen.getByLabelText("Prompt"), {
-      target: { value: "Explain the active file" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    await waitFor(() => {
-      expect(testHarness.aiAgentAdapter.sendPrompt).toHaveBeenCalledWith("Explain the active file");
-      expect(screen.getAllByText("user: Explain the active file").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("assistant: A mocked assistant answer").length).toBeGreaterThan(0);
-    });
-  });
-
-  it("loads AI Agent commands, inserts a skill command, and sends it", async () => {
-    testHarness.aiAgentSettings = {
-      enabled: true,
-      provider: "pi",
-      preferredIntegration: "rpc",
-      fallbackIntegrations: [],
-    };
-    testHarness.aiAgentStatus = {
-      provider: "pi",
-      enabled: true,
-      available: true,
-      availability: "available",
-      preferredIntegration: "rpc",
-      activeIntegration: "rpc",
-      fallbackIntegrations: [],
-      checkedAt: "2026-07-10T00:00:00.000Z",
-    };
-    const { App } = await import("../App");
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: available")).toBeDefined();
-      expect(testHarness.aiAgentAdapter.listCommands).toHaveBeenCalled();
-    });
-
-    fireEvent.click(screen.getByRole("tab", { name: "AI Agent" }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("AiAgentPanel").dataset.commandCount).toBe("2");
-      expect(screen.getByRole("button", { name: "Use /skill:multi-agent" })).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Use /skill:multi-agent" }));
-    expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe(
-      "/skill:multi-agent ",
+    fireEvent.click(screen.getByRole("button", { name: "Detach" }));
+    await waitFor(() =>
+      expect(testHarness.piWorkspaceAgentAdapter.openDetached).toHaveBeenCalledWith(
+        "workspace-one",
+      ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    fireEvent.click(screen.getByRole("option", { name: /Workspace Two/ }));
+    await screen.findByText("Workspace: Workspace Two");
+    fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
+        "workspace-two",
+      ),
+    );
+    const workspaceBSession = testHarness.piWorkspaceAgentSessions.get("workspace-two");
+    expect(workspaceBSession.sessionId).toBe("ide-workspace-two");
+    expect(workspaceBSession.processId).not.toBe(workspaceAProcessId);
 
-    await waitFor(() => {
-      expect(testHarness.aiAgentAdapter.sendPrompt).toHaveBeenCalledWith("/skill:multi-agent");
-      expect(screen.getAllByText("user: /skill:multi-agent").length).toBeGreaterThan(0);
-    });
-  });
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    fireEvent.click(screen.getByRole("option", { name: /Workspace One/ }));
+    await screen.findByText("Workspace: Workspace One");
+    fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
+        "workspace-one",
+      ),
+    );
+    expect(testHarness.piWorkspaceAgentSessions.get("workspace-one")).toBe(workspaceASession);
+    expect(workspaceASession.processId).toBe(workspaceAProcessId);
 
-  it("opens the right AI Agent response panel while sending and renders plugin activity", async () => {
-    testHarness.aiAgentSettings = {
-      enabled: true,
-      provider: "pi",
-      preferredIntegration: "rpc",
-      fallbackIntegrations: [],
-    };
-    testHarness.aiAgentStatus = {
-      provider: "pi",
-      enabled: true,
-      available: true,
-      availability: "available",
-      preferredIntegration: "rpc",
-      activeIntegration: "rpc",
-      fallbackIntegrations: [],
-      checkedAt: "2026-07-10T00:00:00.000Z",
-    };
-
-    let resolvePrompt!: (value: any) => void;
-    const promptPromise = new Promise((resolve) => {
-      resolvePrompt = resolve;
-    });
-    testHarness.aiAgentAdapter.sendPrompt.mockImplementationOnce(() => promptPromise);
-    const { App } = await import("../App");
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: available")).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole("tab", { name: "AI Agent" }));
-    fireEvent.change(screen.getByLabelText("Prompt"), {
-      target: { value: "Run diagnostics" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("RightSidebar")).toBeDefined();
-      expect(screen.getByTestId("AiAgentResponsePanel").dataset.sending).toBe("true");
-      expect(screen.getByText("Waiting")).toBeDefined();
-    });
-
-    await act(async () => {
-      resolvePrompt({
-        text: "Diagnostics completed",
-        provider: "pi",
-        integration: "rpc",
-        metadata: {
-          events: [
-            null,
-            "ignored",
-            {
-              type: "tool_execution_start",
-              name: "bash",
-              status: "started",
-              preview: '{"command":"pnpm test"}',
-            },
-            { type: 42, name: "ignored" },
-          ],
-        },
-      });
-      await promptPromise;
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("AiAgentResponsePanel").dataset.sending).toBe("false");
-      expect(screen.getByTestId("AiAgentLatestResponse").textContent).toBe("Diagnostics completed");
-      expect(screen.getByTestId("AiAgentActivities").textContent).toContain("bash");
-      expect(screen.getByTestId("AiAgentActivities").textContent).toContain("tool_execution_start");
-      expect(screen.getByTestId("AiAgentActivities").textContent).toContain("pnpm test");
-      expect(screen.getByTestId("AiAgentResponsePanel").dataset.activityCount).toBe("1");
-    });
-  });
-
-  it("opens Settings from the disabled AI Agent panel", async () => {
-    const { App } = await import("../App");
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Pi Agent: not-installed")).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole("tab", { name: "AI Agent" }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("AiAgentPanel").dataset.enabled).toBe("false");
-      expect(screen.getByText("Pi Agent disabled")).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Settings" })).toBeDefined();
-      expect(screen.getByTestId("SettingsPanel").dataset.statusAvailability).toBe("not-installed");
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Resources" }));
+    await waitFor(() =>
+      expect(testHarness.piWorkspaceAgentAdapter.accessories).toHaveBeenCalledWith("workspace-one"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop Pi" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.processState).toBe("stopped"),
+    );
+    expect(workspaceBSession.processState).toBe("running");
+    expect(testHarness.aiAgentAdapter.getSessionMessages).not.toHaveBeenCalled();
   });
 
   it("creates at the workspace root through FileTreeViewModel without flushSync warnings", async () => {

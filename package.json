@@ -38,6 +38,7 @@
     "test:story:req-xcom2-project-foundry-003": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryDestinationConflictTauriHarness",
     "test:story:req-xcom2-project-foundry-004": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectFoundryVerifiedCleanupTauriHarness",
     "test:story:req-xcom2-project-build-recipe-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile xcom2ProjectBuildRecipeTauriHarness",
+    "test:story:req-pi-workspace-agent-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile piWorkspaceAgentTauriHarness",
     "test:coverage:req-xcom2-project-build-recipe-001": "node scripts/run-req-xcom2-project-build-recipe-coverage.mjs",
     "validate:coverage:req-xcom2-project-build-recipe-001": "node scripts/validate-req-xcom2-project-build-recipe-coverage.mjs",
     "test:story:req-desktop-file-open-001": "node scripts/run-native-desktop-story.mjs --profile desktopFileOpenNativeGui",

@@ -39,7 +39,7 @@ const AGENT_RUN_LIST_LIMIT_CAP: usize = 100;
 const AGENT_RUN_TRACE_EVENT_CAP: usize = 1000;
 const AGENT_RUN_TRACE_LINE_CAP: usize = 1024 * 1024;
 const AGENT_RUN_CHANGED_FILES_CAP: usize = 500;
-const PI_RPC_NO_SESSION_ARGS: &[&str] = &["--mode", "rpc", "--no-session"];
+const PI_RPC_NO_SESSION_ARGS: &[&str] = &["--mode", "rpc", "--no-session", "--no-approve"];
 const PI_RPC_PROMPT_ARGS_PREFIX: &[&str] = &["--mode", "rpc", "--session-id"];
 const PI_RPC_GET_COMMANDS_REQUEST: &[u8] = b"{\"type\":\"get_commands\"}\n";
 const PI_RPC_GET_MESSAGES_COMMAND: &str = "get_messages";
@@ -634,6 +634,14 @@ fn trim_jsonl_line(mut line: &[u8]) -> &[u8] {
     line
 }
 
+pub(crate) fn list_pi_agent_commands_at(workspace_root: PathBuf) -> Result<Value, String> {
+    list_pi_agent_commands_impl(
+        workspace_root,
+        || find_executable_in_path("pi"),
+        run_pi_rpc_get_commands_process,
+    )
+}
+
 fn list_pi_agent_commands_impl(
     workspace_root: PathBuf,
     find_pi: impl FnOnce() -> Option<PathBuf>,
@@ -1166,8 +1174,12 @@ fn pi_rpc_prompt_command_for_metadata(session_id: &str) -> Vec<String> {
         .collect()
 }
 
-fn pi_rpc_session_id_for_workspace_id(workspace_id: &str) -> String {
+pub(crate) fn pi_rpc_session_id_for_workspace_id(workspace_id: &str) -> String {
     format!("ide-{workspace_id}")
+}
+
+pub(crate) fn find_pi_executable() -> Result<PathBuf, String> {
+    find_executable_in_path("pi").ok_or_else(|| "pi CLI was not found on PATH".to_string())
 }
 
 fn new_rpc_request_id() -> String {
@@ -2677,6 +2689,7 @@ mod tests {
                 json!("--mode"),
                 json!("rpc"),
                 json!("--no-session"),
+                json!("--no-approve"),
             ]
         );
         assert!(metadata.get("sessionId").is_none());
