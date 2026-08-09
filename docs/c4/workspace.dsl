@@ -9,7 +9,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 browserAdapters = component "Browser Adapters" "Provides browser-safe ports; native XCOM activation and build-recipe inspection fail honestly without filesystem, process, network, or storage work." "TypeScript" "Current"
             }
 
-            desktopApp = container "Desktop App" "Tauri WebView IDE with workspace-native Pi, guarded Java, XCOM settings and activation, recipe review, and Project Foundry." "React, Vite, Tauri WebView" {
+            desktopApp = container "Desktop App" "Tauri WebView IDE with non-owning Pi renderers, current attachment guards, guarded Java, XCOM boundaries, and Project Foundry." "React, Vite, Tauri WebView" {
                 desktopUi = component "Desktop Composition Root and IDE UI State" "Composes the shell, feature controllers, and docked Agent activity while feature lifecycles remain behind ports." "React, Monaco, Zustand" "Current"
                 workspaceController = component "Workspace Controller" "Owns registry, authorized-root transitions, and monotonic WorkspaceGeneration; coordinates activation revocation/start and setup correlation." "TypeScript, React" "Current"
                 desktopEditorController = component "Desktop Editor Controller" "Coordinates guarded file open/create, tab lifecycle, authorized restore/reset, and readiness; rejects completions from stale workspace generations." "TypeScript, React" "Current"
@@ -20,11 +20,11 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 editorCommandController = component "Editor Command Controller" "Coordinates buffer changes, saves, tab activation/close, and Java document flush/save/close ordering." "TypeScript, React" "Current"
                 desktopShellController = component "Desktop Shell Controller" "Routes sidebar and bottom-panel resize/toggle requests to layout state, preserving dimensions; owns bottom-tab state and guarded Problems policy." "TypeScript, React" "Current"
                 aiAgentController = component "Pi Runtime Configuration Controller" "Owns Pi settings, status, installation, and read-only command discovery; conversation remains in the native Pi TUI." "TypeScript, React" "Current"
-                piWorkspaceAgentScreen = component "Workspace Pi Agent Screen" "Hosts the Pi terminal and bounded read-only Changes, IDE Activity, Resources, and process Sessions accessories." "React" "Current"
-                piWorkspaceAgentController = component "Pi Renderer Attachment Controller" "Attaches docked or detached views to one workspace session, rejects stale events, and delegates process authority through a port." "TypeScript, React" "Current"
-                piNativeTerminal = component "Raw Pi Terminal Renderer" "Forwards input, ANSI output, paste, modified Enter sequences, and resize without owning or parsing Pi interaction semantics." "React, xterm.js" "Current"
-                piDetachedRenderer = component "Workspace-pinned Detached Pi Renderer" "Hosts the shared Agent screen for its originating workspace; closing it releases only the renderer attachment." "React, Tauri WebView" "Current"
-                tauriPiWorkspaceAgentAdapter = component "Strict Pi Workspace Agent Tauri Adapter" "Validates PTY snapshots, output and status events, read-only accessories, and detached-window bindings." "TypeScript, Tauri API" "Current"
+                piWorkspaceAgentScreen = component "Workspace Pi Agent Screen" "Hosts raw Pi transport, caller-authorized session detail, rootless retained-session summaries, and bounded read-only accessories." "React" "Current"
+                piWorkspaceAgentController = component "Pi Renderer Attachment Controller" "Owns one renderer attachment, accepts current workspace/generation/sequence state, and gates resize on current attachment authority." "TypeScript, React" "Current"
+                piNativeTerminal = component "Raw Pi Terminal Renderer" "Forwards input, ANSI output, paste, modified Enter sequences, and geometry without owning or parsing Pi interaction semantics." "React, xterm.js" "Current"
+                piDetachedRenderer = component "Workspace-pinned Detached Pi Renderer" "Hosts the shared Agent screen for its immutable originating-workspace binding; closing it releases only its attachment." "React, Tauri WebView" "Current"
+                tauriPiWorkspaceAgentAdapter = component "Strict Pi Workspace Agent Tauri Adapter" "Validates caller snapshots, exact rootless retained-session summaries, and output/status events before renderer state changes." "TypeScript, Tauri API" "Current"
                 refactorKitStatusController = component "RefactorKit Status Controller" "Discovers provider-neutral diagnostic status and capabilities after authorization; normalizes independent outcomes and rejects stale generations." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Java Clipboard Import UI" "Directory-tree action plus preview, conditional acknowledgement, exact-plan Apply, and Cancel. It exposes no rollback action." "React" "Current"
                 refactorKitImportController = component "RefactorKit Import Controller" "Probes capability before clipboard access, guards selection and plan identity, discards invalid work, and opens backend-authoritative results." "TypeScript, React" "Current"
@@ -79,10 +79,14 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 externalProviderAdapters = component "Additional Provider Adapters" "Adapts bounded build, framework, remote, search, or semantic providers through strict typed machine-readable contracts; human stdout is not a protocol." "TypeScript" "Frozen"
             }
 
-            rustBackend = container "Rust Backend" "Owns workspace authority, per-workspace Pi PTYs, managed language services, RefactorKit, and bounded XCOM operations." "Rust, Tauri" {
+            rustBackend = container "Rust Backend" "Owns workspace and renderer authority, per-workspace Pi PTYs, managed language services, RefactorKit, and bounded XCOM operations." "Rust, Tauri" {
                 workspaceCommands = component "Workspace Registry and Command Handlers" "Owns canonical workspace bindings, registry metadata, the application marker, and bounded one-shot commands." "Rust" "Current"
-                piWorkspaceAgentFacade = component "Pi Workspace Agent Tauri Facade" "Exposes attachment, byte transport, resize, start, confirmed stop, snapshot, accessory, and detached-window commands and events." "Rust, Tauri" "Current"
-                piWorkspaceAgentRuntime = component "Per-workspace Pi PTY Runtime" "Owns one portable PTY process per workspace, deterministic session identity, renderer attachments, process state, and a bounded transport tail." "Rust, portable-pty" "Current"
+                piWorkspaceAgentFacade = component "Pi Workspace Agent Tauri Facade" "Derives authority from the actual WebView label and fixed view ID, rechecks registry or pin plus attachment, and targets events." "Rust, Tauri" "Current"
+                piWorkspaceAgentRuntime = component "Per-workspace Pi PTY Runtime" "Owns workspace roots, Pi processes, PTYs, generations, attachments, transport tails, current snapshots, and rootless retained summaries." "Rust, portable-pty" "Current" {
+                    properties {
+                        "Integration test seam" "Controlled integration tests may substitute the resolved Pi executable at this launch seam; production still integrates with Pi Interactive Runtime."
+                    }
+                }
                 piWorkspaceAgentAccessories = component "Pi Read-only Accessory Reader" "Discovers bounded Git changes and Pi package and command metadata without reading conversation history." "Rust, git2" "Current"
                 refactorKitHandlers = component "RefactorKit Status Handlers" "Bounded diagnostic status only; managed capability and import commands use the separate daemon facade." "Rust" "Current"
                 refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
@@ -117,7 +121,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         filesystem = softwareSystem "OS File System" "Stores authorized workspaces, service data, RefactorKit metadata, and bounded XCOM transaction state." "External"
         osClipboard = softwareSystem "OS Clipboard" "Provides text for an explicit directory-tree Java import only after the advertised API and exact required methods pass." "External"
         osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands outside the Pi runtime." "External"
-        piRuntime = softwareSystem "Pi Interactive Runtime" "Runs the native terminal UI and exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry." "External"
+        piRuntime = softwareSystem "Pi Interactive Runtime" "Runs the real native terminal UI and exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry." "External"
         jdk = softwareSystem "Full Java JDK" "External non-bundled JDK capability-probed through java and javac; licensing is determined by the user's chosen distribution." "External"
         jdtLs = softwareSystem "Eclipse JDT LS" "External non-bundled EPL-2.0 language server with checksum-verified installation of a pinned snapshot." "External"
         refactorKit = softwareSystem "RefactorKit Engine" "Discovers capability and owns Java-import preview, Apply, discard, rollback, and provider metadata. The import UI exposes no rollback action." "External"
@@ -129,7 +133,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
 
         developer -> desktopUi "Uses the editor and persistent shell controls"
         developer -> webUi "Uses the browser IDE"
-        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Uses typed native commands and events" "Tauri invoke/events"
+        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes commands from the current Tauri WebView" "Tauri invoke/events"
         webUi -> webBottomPanel "Hosts the core Terminal contribution"
         desktopUi -> workspaceController "Delegates authorization, switching, and explicit full Workspace Refresh"
         desktopUi -> desktopSidebar "Hosts File Explorer above Workspace Explorer"
@@ -142,7 +146,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         workspaceController -> refactorKitStatusController "Starts capability discovery after workspace authorization"
         workspaceController -> refactorKitSymbolNavigationSupport "Invalidates transient semantic sessions during workspace changes"
         workspaceController -> aiAgentController "Refreshes Pi runtime configuration and command metadata after authorization" "React state"
-        workspaceController -> piWorkspaceAgentController "Supplies the current authorized workspace for renderer attachment" "React state"
+        workspaceController -> piWorkspaceAgentController "Supplies the current authorized workspace for attachment" "React state"
         workspaceController -> xcomModuleActivationController "Revokes synchronously; starts native evidence after authorization or refresh"
         workspaceController -> xcomSetupController "Passes workspace correlation; closed Settings starts no XCOM work"
         desktopUi -> desktopEditorController "Composes guarded file, tab, restore, and readiness coordination"
@@ -170,8 +174,8 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         piWorkspaceAgentScreen -> piWorkspaceAgentController "Requests attachment, accessories, restart, detach, and confirmed stop" "React callbacks"
         piWorkspaceAgentScreen -> piNativeTerminal "Hosts the raw native Pi TUI renderer" "React composition"
         piWorkspaceAgentScreen -> desktopEditorController "Opens selected changed files through the existing editor authority" "Application call"
-        piNativeTerminal -> piWorkspaceAgentController "Forwards raw input and resize without interpreting Pi semantics" "Renderer callback"
-        piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Uses the workspace-scoped PTY and accessory port" "Typed port"
+        piNativeTerminal -> piWorkspaceAgentController "Forwards raw input and geometry under attachment authority" "Renderer callback"
+        piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Uses the guarded workspace PTY and accessory port" "Typed port"
         documentNavigationController -> desktopEditorController "Opens diagnostic targets before requesting an editor reveal"
         editorCommandController -> desktopEditorController "Coordinates tab activation/close and buffer persistence"
         editorCommandController -> javaLanguageController "Flushes and synchronizes Java documents around editor commands"
@@ -193,17 +197,17 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         tauriAdapters -> workspaceCommands "Invokes allowlisted commands" "Tauri invoke"
         workspaceCommands -> filesystem "Reads and writes authorized workspace paths"
         workspaceCommands -> osPrograms "Starts bounded one-shot commands" "Direct argv"
-        piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Delegates process, attachment, transport-tail, and session operations" "Rust call"
+        piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Delegates authorized commands, summaries, and targeted event routing" "Rust call"
         piWorkspaceAgentFacade -> piWorkspaceAgentAccessories "Requests bounded read-only accessory discovery" "Rust call"
-        piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the window pinned to its originating workspace" "Tauri window API"
-        piWorkspaceAgentRuntime -> workspaceCommands "Validates workspace identity against the canonical registry binding" "Rust call"
-        piWorkspaceAgentRuntime -> piRuntime "Starts fixed argv in the canonical root and exchanges raw terminal bytes" "Portable PTY"
+        piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the pinned window; targets it only while attached" "Tauri window API"
+        piWorkspaceAgentRuntime -> workspaceCommands "Rechecks the main view against the current canonical registry binding" "Rust call"
+        piWorkspaceAgentRuntime -> piRuntime "Starts fixed argv, exchanges bytes, and resizes the authorized workspace PTY" "Portable PTY"
         piWorkspaceAgentAccessories -> filesystem "Reads bounded Git status and package metadata" "Read-only access"
         piWorkspaceAgentAccessories -> piRuntime "Discovers package and command metadata without conversation access" "Bounded direct argv/RPC"
-        piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Publishes process snapshots and raw output events" "Rust callback"
-        piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Emits raw output and process status events" "Tauri events"
-        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers validated snapshots and events" "Typed events"
-        piWorkspaceAgentController -> piNativeTerminal "Feeds raw output and the bounded reattachment tail" "Renderer feed"
+        piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Provides workspace state and events for targeted delivery" "Rust callback"
+        piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Uses emit_to for authorized attached main or pi-agent views" "Tauri events"
+        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers validated current detail, rootless summaries, and events" "Typed events"
+        piWorkspaceAgentController -> piNativeTerminal "Feeds only accepted current workspace/generation/sequence bytes" "Renderer feed"
         languageLifecyclePanel -> refactorKitStatusController "Renders provider-neutral diagnostic status and capability discovery only"
         refactorKitStatusController -> tauriRefactorKitAdapter "Requests diagnostic status and capabilities"
         tauriAdapters -> refactorKitHandlers "Invokes bounded RefactorKit status handlers" "Tauri invoke"
@@ -327,6 +331,10 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
     }
 
     views {
+        properties {
+            "structurizr.metadata" "false"
+        }
+
         systemContext ide "IdeSystemContext" {
             title "IDE System Context"
             description "The IDE combines workspace-native Pi TUI access with guarded Java, bounded XCOM authority, SDK setup, and Project Foundry."
@@ -364,28 +372,28 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
 
         systemContext ide "PiWorkspaceAgentContext" {
             title "Workspace-native Pi Agent Context"
-            description "The IDE embeds Pi's interactive terminal UI while the Workspace Registry, File Explorer, editor, and Pi retain their separate authorities."
+            description "The IDE embeds the real Pi terminal UI while registry, file, editor, renderer, backend process, and Pi authorities remain separate."
             include developer ide filesystem piRuntime
             autoLayout lr
         }
 
         container ide "PiWorkspaceAgentContainers" {
             title "Workspace-native Pi Agent Containers"
-            description "The Desktop App supplies non-owning renderers; the Rust Backend owns workspace PTYs and attaches them to the external Pi runtime."
+            description "The Desktop App guards non-owning attachments; the Rust Backend derives caller authority and owns workspace PTYs connected to real Pi."
             include developer desktopApp rustBackend piRuntime
             autoLayout lr
         }
 
         component desktopApp "PiWorkspaceAgentDesktopComponents" {
             title "Workspace-native Pi Agent — Desktop Components"
-            description "Docked and detached renderers share raw terminal transport and read-only accessories while existing workspace and editor components retain authority."
+            description "The controller accepts current generation/sequence state, exact rootless summaries, and resize only for its current non-owning attachment."
             include developer desktopUi workspaceController desktopSidebar fileExplorerController desktopEditorController aiAgentController piWorkspaceAgentScreen piWorkspaceAgentController piNativeTerminal piDetachedRenderer tauriPiWorkspaceAgentAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "PiWorkspaceAgentRustComponents" {
             title "Workspace-native Pi Agent — Rust Components"
-            description "The backend validates workspace identity, owns portable PTY processes and transport tails, and discovers bounded read-only accessory metadata."
+            description "Native commands derive WebView identity, recheck registry or pin plus attachment, expose rootless summaries, and target authorized views."
             include desktopApp workspaceCommands piWorkspaceAgentFacade piWorkspaceAgentRuntime piWorkspaceAgentAccessories filesystem piRuntime
             exclude "desktopApp -> filesystem"
             exclude "desktopApp -> workspaceCommands"
@@ -393,53 +401,79 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         }
 
         dynamic desktopApp "PiWorkspaceReattachmentRuntime" {
-            title "Pi Workspace Switch and Reattachment"
-            description "The docked renderer follows the authorized workspace while each backend-owned Pi process and deterministic session remains isolated."
+            title "Pi Workspace Switch and Authorized Reattachment"
+            description "The main WebView derives docked authority from current registry state; reattachment returns current detail plus rootless retained summaries."
             developer -> desktopSidebar "Selects registered workspace A"
             desktopSidebar -> workspaceController "Requests the authorized workspace switch"
-            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace A"
-            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Attaches the docked renderer"
-            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the strict attach command"
-            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Creates or reuses workspace A state"
-            piWorkspaceAgentRuntime -> workspaceCommands "Validates the canonical registry binding"
-            piWorkspaceAgentRuntime -> piRuntime "Starts or reuses ide-{workspaceId} in the canonical root"
-            piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Returns process state and the bounded transport tail"
-            piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Emits raw output and status"
-            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers validated workspace A events"
-            piWorkspaceAgentController -> piNativeTerminal "Feeds workspace A terminal bytes"
+            workspaceController -> piWorkspaceAgentController "Publishes current workspace A"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Requests attach as docked:main"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes from the actual main WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Derives docked identity and requests workspace A attach"
+            piWorkspaceAgentRuntime -> workspaceCommands "Rechecks workspace A registry ID and canonical root"
+            piWorkspaceAgentRuntime -> piRuntime "Starts or reuses ide-{workspaceId} in workspace A"
+            piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Returns current detail, tail, and rootless session summaries"
+            piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Returns the closed attachment"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Validates current detail and exact retained summaries"
+            piWorkspaceAgentController -> piNativeTerminal "Feeds accepted A generation/sequence and arms resize"
             developer -> desktopSidebar "Switches from workspace A to workspace B"
-            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace B"
+            workspaceController -> piWorkspaceAgentController "Publishes current workspace B"
             piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Detaches A and attaches B"
-            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Changes renderer attachments without stopping A"
-            piWorkspaceAgentRuntime -> piRuntime "Starts or reuses the isolated workspace B session"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes both commands from the actual main WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Removes fixed A view and authorizes B against the registry"
+            piWorkspaceAgentRuntime -> piRuntime "Retains A and starts or reuses isolated workspace B"
             developer -> desktopSidebar "Returns to workspace A"
-            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace A again"
+            workspaceController -> piWorkspaceAgentController "Publishes current workspace A again"
             piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Detaches B and reattaches A"
-            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Reuses A's live process and bounded transport tail"
-            piWorkspaceAgentController -> piNativeTerminal "Feeds only workspace A terminal bytes"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes both commands from the actual main WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Rechecks registry authority and reuses workspace A"
+            piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Returns A state and tail without retained private details"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers rootless summaries and current A detail"
+            piWorkspaceAgentController -> piNativeTerminal "Feeds only accepted current A generation/sequence"
             autoLayout lr
         }
 
         dynamic desktopApp "PiDetachedAndStopRuntime" {
             title "Pi Detached View and Explicit Stop"
-            description "Opening or closing a renderer changes attachments only; a separately confirmed Stop Pi action terminates one workspace process."
+            description "The pi-agent WebView stays pinned and non-owning; close removes its fixed attachment, while confirmed Stop Pi uses current caller authority."
             developer -> piWorkspaceAgentScreen "Requests a larger Agent view"
             piWorkspaceAgentScreen -> piWorkspaceAgentController "Requests the detached renderer"
-            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Requests the pinned window"
-            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the detached-window command"
-            piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the origin-pinned renderer"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Requests the pinned window as docked:main"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes from the actual main WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Rechecks current main binding and attachment"
+            piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the origin-pinned pi-agent window"
             piDetachedRenderer -> piWorkspaceAgentScreen "Hosts the same workspace Agent screen"
+            piWorkspaceAgentScreen -> piWorkspaceAgentController "Requests detached:pi-agent attachment"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Attaches from the detached renderer"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes from the actual pi-agent WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Rechecks immutable pin and adds the fixed attachment"
             developer -> piDetachedRenderer "Closes the detached view"
             piDetachedRenderer -> piWorkspaceAgentScreen "Unmounts the shared screen"
             piWorkspaceAgentScreen -> piWorkspaceAgentController "Releases only the renderer attachment"
             piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Invokes detach without EOF or termination"
-            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Removes the view attachment and retains the process"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Removes detached:pi-agent and retains the process"
             developer -> piWorkspaceAgentScreen "Confirms Stop Pi for the named workspace"
             piWorkspaceAgentScreen -> piWorkspaceAgentController "Submits the separate confirmed stop"
             piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Invokes the confirmed workspace stop"
-            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the strict stop command"
-            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Terminates only the selected workspace process"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes from the actual attached WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Rechecks caller authority and stops only that workspace"
             piWorkspaceAgentRuntime -> piRuntime "Stops the selected process and retains session identity"
+            autoLayout lr
+        }
+
+        dynamic desktopApp "PiTargetedTransportRuntime" {
+            title "Pi Targeted Events and Resize Authority"
+            description "Output/status reaches authorized attached views only; stale state cannot advance the terminal feed or resize a workspace PTY."
+            piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Publishes one workspace/generation/sequence event"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Checks the current fixed attachment set"
+            piWorkspaceAgentRuntime -> workspaceCommands "Rechecks the main registry binding"
+            piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Uses emit_to for authorized main and pinned pi-agent views"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Validates the closed event payload"
+            piWorkspaceAgentController -> piNativeTerminal "Accepts current workspace/generation and increasing output sequence"
+            piNativeTerminal -> piWorkspaceAgentController "Reports newer terminal geometry"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Requests resize under current attachment authority"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes resize from the actual WebView"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Rechecks fixed attachment and current registry or pin"
+            piWorkspaceAgentRuntime -> piRuntime "Resizes only the authorized workspace PTY"
             autoLayout lr
         }
 

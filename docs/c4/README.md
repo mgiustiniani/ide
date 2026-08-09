@@ -8,13 +8,19 @@ structurizr validate -workspace docs/c4/workspace.dsl
 
 ## Workspace-native Pi Agent boundary
 
-The desktop **Agent** activity follows the existing Workspace Registry. **Files** continues to use the existing File Explorer and editor; the Agent surface introduces no parallel workspace, file, or document authority.
+The desktop **Agent** activity follows the existing Workspace Registry. **Files** continues to use the existing File Explorer and editor; the Agent surface introduces no parallel workspace, file, document, chat, or history authority.
 
-The Rust Backend owns one portable pseudoterminal process per workspace. It launches the fixed `pi` executable in the canonical registered root with deterministic session identity `ide-{workspaceId}` and exchanges raw terminal bytes with xterm. The backend retains a one-MiB tail only to restore terminal transport after renderer reattachment; that tail is not Pi conversation or session history.
+Every native Pi command derives its renderer identity from the actual Tauri WebView label: `main` maps only to `docked:main`, and `pi-agent` maps only to `detached:pi-agent`. A supplied view ID must match that fixed derivation. The main renderer is authorized against the current Workspace Registry ID and canonical root; the detached renderer is authorized against its immutable workspace pin. After attachment, commands that read or mutate session or process state require the derived attachment to remain present, with a final binding or pin recheck. Stale main detach is cleanup-only: it can remove its own derived attachment after a switch but gains no read, write, resize, start, stop, snapshot, or accessory authority.
 
-Docked and detached renderers are non-owning attachments to the same workspace process. The detached window remains pinned to its originating workspace. Closing, hiding, switching, or detaching a renderer removes only that attachment; only the separately confirmed **Stop Pi** operation terminates the selected workspace process during normal application operation.
+The Rust Backend owns one portable pseudoterminal process per workspace. It launches the fixed `pi` executable in the canonical registered root with deterministic session identity `ide-{workspaceId}` and exchanges raw terminal bytes with xterm. The backend retains a one-MiB tail only to restore terminal transport after renderer reattachment; that tail is not Pi conversation or session history. Docked and detached renderers remain non-owning attachments, and only the separately confirmed **Stop Pi** operation terminates the selected workspace process during normal application operation.
+
+Only the caller-authorized current `session` is returned as a full snapshot. The aggregate `sessions` collection is a closed rootless summary containing workspace identity and name, deterministic session identity, process state and generation, last-activity time, and attachment count. It excludes roots, process IDs, exit/start details, errors, activities, and terminal bytes. The strict adapter rejects extra summary fields, and status reconciliation projects current detail back into the same rootless shape.
+
+Raw output and status use targeted `emit_to` delivery only after the backend confirms that `main` or the pinned `pi-agent` view is both authorized and attached. The adapter validates each payload, and the renderer controller accepts only the current workspace, process generation, and increasing terminal sequence. Resize authority is armed only by the current attachment request and accepted generation; geometry revisions are replayed after attach or restart only while that authority is still current. Stale workspace, attachment, generation, sequence, or resize completions cannot advance renderer state or resize another workspace PTY.
 
 Pi exclusively owns chat, history, tools, models, commands, extensions, trust, compaction, and retry. **Changes**, IDE **Activity**, **Resources**, and process **Sessions** are bounded read-only accessories. The desktop shell does not compose the legacy RPC chat projection; bounded package and command discovery remains accessory metadata rather than an interaction authority.
+
+Controlled integration tests may substitute a deterministic executable named `pi` at the same resolved fixed-argv process-launch seam. That executable is test infrastructure, not the external **Pi Interactive Runtime**, a second provider relationship, or a substitute owner for Pi conversation semantics.
 
 ## XCOM 2 activation authority and recipe-review boundary
 
@@ -70,7 +76,7 @@ A future remote theme must not be added. If a theme becomes necessary, vendor th
 
 First-time acquisition of Structurizr CLI or a chosen execution image can require network access. Once Structurizr CLI 2026.06.28 is available locally, validation and export of this workspace require no network access: the DSL has no remote include or theme dependency. Image selection and supply-chain verification remain the responsibility of the execution environment because this repository invokes no image.
 
-Views use deterministic `autoLayout lr`; there is no curated `workspace.json` layout in this repository. Exports are derived review artifacts and should be generated outside the working tree unless a separate change explicitly adopts them.
+Views use deterministic `autoLayout lr`; there is no curated `workspace.json` layout in this repository. The view-set property `structurizr.metadata=false` keeps titles and descriptions but suppresses renderer-generated timestamps, making repeated transient PNG/SVG renders byte-stable. Exports are derived review artifacts and should be generated outside the working tree unless a separate change explicitly adopts them.
 
 For a direct offline export audit, write each derived format to a temporary directory and remove it after inspection:
 

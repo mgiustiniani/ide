@@ -1,6 +1,6 @@
 # Container Diagram (C2)
 
-> **CURRENT/AS-BUILT VIEW.** The Desktop App supplies non-owning docked and detached Pi renderers while the Rust Backend owns the workspace-scoped portable PTYs. The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts and acknowledges opaque handles while Rust owns accepted-root authority. The matching activity can review and approve one metadata-only Default Build recipe, but no container has a recipe execution consumer. Focused native evidence covers the exact accessible missing-Steam state through the normal Desktop App/Tauri/Rust path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The Desktop App supplies non-owning docked and detached Pi renderers with current generation/sequence guards, while the Rust Backend derives native caller authority and owns workspace-scoped portable PTYs. The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts and acknowledges opaque handles while Rust owns accepted-root authority. The matching activity can review and approve one metadata-only Default Build recipe, but no container has a recipe execution consumer. Focused native evidence covers the exact accessible missing-Steam state through the normal Desktop App/Tauri/Rust path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ```text
 Web App ──> Web Browser
@@ -19,6 +19,7 @@ Desktop App ──typed Tauri boundary──> Rust Backend
   │    ├─ independent collapse + registry/switch/refresh/error states
   │    └─ collapsed whole sidebar retains an Expand control in the activity rail
   ├─ Agent activity: native Pi TUI + read-only accessory views
+  │    ├─ current full session detail + rootless retained-session summaries
   │    └─ docked/detached xterm renderers attach without process ownership
   ├─ dynamic BottomPanel: core Terminal
   │    ├─ project Problems while ready Java context or projected items exist
@@ -38,13 +39,17 @@ Desktop App ──typed Tauri boundary──> Rust Backend
        └─ close: invalidate, unsubscribe, and clear both poll timers
 
 Desktop Agent screen ──strict typed Tauri boundary──> Rust Backend
+  ├─ actual `main` / `pi-agent` WebView label derives one fixed view ID
+  │    ├─ main → current Workspace Registry ID + canonical-root recheck
+  │    └─ detached → immutable pin; post-attach access → attachment recheck
   └─ one backend-owned portable PTY process per registered workspace
-     ├─ fixed `pi --session-id ide-{workspaceId}` in the canonical root
-     ├─ raw input, ANSI output, paste, modified Enter, and resize transport
-     ├─ one-MiB reattachment tail; not Pi chat or history
-     ├─ renderer close/switch/detach changes attachments only
-     └─ separately confirmed Stop Pi terminates one workspace process
-          └─ Pi owns chat/history/tools/models/commands/extensions/trust/retry
+       ├─ fixed `pi --session-id ide-{workspaceId}` in the canonical root
+       ├─ raw input, ANSI output, paste, modified Enter, and guarded resize
+       ├─ output/status use targeted `emit_to` for authorized attachments only
+       ├─ current detail + rootless summaries; one-MiB transport tail
+       ├─ renderer close/switch/detach changes attachments only
+       └─ separately confirmed Stop Pi terminates one workspace process
+            └─ Pi owns chat/history/tools/models/commands/extensions/trust/retry
 
 Rust Backend ──managed NDJSON──> compatible RefactorKit provider
   └─ provider-version-neutral API + exact import-method gate
@@ -98,11 +103,11 @@ Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
 
 ## Runtime Containers
 
-| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                         |
-| ---------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation, build-recipe inspection, and workspace Pi PTY access stay outside normal browser composition.                                                                                                                                                                                      |
-| **Desktop App**  | React + Vite in Tauri WebView | Hosts non-owning docked and workspace-pinned detached Pi renderers, delegates Files to the established explorer/editor, and renders bounded read-only accessories. It also applies trusted XCOM review policies and composes Project Foundry without taking native output authority.                                                   |
-| **Rust Backend** | Rust + Tauri commands         | Owns canonical workspace validation, one portable Pi PTY process per workspace, deterministic session identity, renderer attachments, raw byte transport, and the bounded reattachment tail. It separately owns XCOM accepted-root authority, contained inspection, transaction services, and native Project Foundry output authority. |
+| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation, build-recipe inspection, and workspace Pi PTY access stay outside normal browser composition.                                                                                                                                                                                                              |
+| **Desktop App**  | React + Vite in Tauri WebView | Hosts non-owning docked and workspace-pinned detached Pi renderers, validates closed attachment/event shapes, accepts only current generation/sequence state, and gates resize on current attachment authority. It also applies trusted XCOM review policies and composes Project Foundry without taking native output authority.                              |
+| **Rust Backend** | Rust + Tauri commands         | Derives Pi caller authority from actual WebView identity, rechecks registry or pin plus attachment, owns one portable PTY process per workspace, returns rootless retained summaries, and targets authorized events. It separately owns XCOM accepted-root authority, contained inspection, transaction services, and native Project Foundry output authority. |
 
 Pi, JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
@@ -118,11 +123,15 @@ Current atomic publication is Linux-only. The C2 model claims no native chooser 
 
 The Desktop App contributes **Agent** as a primary activity rather than a BottomPanel chat tab. Its shared screen contains the raw xterm renderer and bounded **Changes**, IDE **Activity**, **Resources**, and process **Sessions** accessories. Selecting a changed file still delegates to the established Desktop Editor Controller.
 
-The Rust Backend validates workspace identity against the canonical Workspace Registry binding before creating a session. It owns one portable PTY process per workspace, launches fixed Pi argv in that root, and retains deterministic `ide-{workspaceId}` identity across restarts. The one-MiB tail is in-memory terminal transport continuity for reattachment, not a mirror of Pi conversation or session history.
+The Rust Backend derives renderer authority from the invoking WebView rather than trusting a request claim. The actual `main` label maps only to `docked:main`; the actual `pi-agent` label maps only to `detached:pi-agent`. Main commands recheck the current Workspace Registry ID and canonical root. Detached commands recheck the immutable pinned workspace and, after attach, the fixed attachment. An unrelated label or mismatched view ID is denied. Stale main detach is deliberately limited to removing its own derived attachment after a workspace switch.
 
-Docked and detached WebViews are attachments only. The detached window is pinned to the workspace that opened it; subsequent detach requests focus that existing binding rather than retargeting it. Closing either renderer sends no EOF or process signal. Only a separately confirmed **Stop Pi** command terminates the selected workspace process during normal application operation.
+The backend owns one portable PTY process per workspace, launches fixed Pi argv in the canonical registered root, and retains deterministic `ide-{workspaceId}` identity across restarts. The one-MiB tail is in-memory terminal transport continuity for reattachment, not a mirror of Pi conversation or session history. The full session snapshot belongs only to the authorized caller; the retained process list crosses the container boundary as an exact rootless summary that excludes roots, process/error details, activities, and terminal data.
 
-The legacy RPC chat projection is not part of desktop shell composition. Bounded package and command discovery remains read-only accessory metadata. Pi alone owns chat, history, tool calls, commands, extensions, models, trust, compaction, retry, and session behavior.
+Output and status are delivered through targeted `emit_to` calls only for fixed views that remain both authorized and attached. The Desktop App validates the closed event and summary DTOs, then accepts terminal state only for the current workspace, process generation, and increasing sequence. Resize is enabled only after the current attachment succeeds, advances only through accepted generation/sequence state, and is invalidated by replacement or cleanup; late geometry and error completions are suppressed.
+
+Docked and detached WebViews remain non-owning attachments. The detached window stays pinned to the workspace that opened it; subsequent detach requests focus that binding rather than retargeting it. Closing either renderer sends no EOF or process signal. Only a separately confirmed **Stop Pi** command terminates the selected workspace process during normal application operation.
+
+The legacy RPC chat projection is not part of desktop shell composition. Bounded package and command discovery remains read-only accessory metadata. Pi alone owns chat, history, tool calls, commands, extensions, models, trust, compaction, retry, and session behavior. Controlled tests may substitute a deterministic `pi` executable only at the internal fixed-argv launch seam; the external container relationship continues to mean the real Pi runtime.
 
 ## Current Java Clipboard Paste Boundary
 
@@ -144,13 +153,13 @@ Rust opens the canonical workspace and scopes one NDJSON daemon to its generatio
 
 ## Internal Package Boundaries
 
-| Package                     | Role                                                                                                                                                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`@ide/contracts`**        | Defines closed Pi PTY transport and read-only accessory shapes without chat, message, tool, model, or history DTOs, alongside language, RefactorKit, XCOM, and Foundry contracts.                           |
-| **`@ide/web-core`**         | Defines the Pi workspace-agent port for attachment, raw bytes, process state, accessories, detached binding, and confirmed stop; it also owns the existing activation, recipe-review, and Foundry policies. |
-| **`@ide/browser-adapters`** | Keeps native Pi PTY, XCOM activation, and recipe inspection outside normal browser composition without fabricating native state or success.                                                                 |
-| **`@ide/tauri-adapters`**   | Strictly validates Pi snapshots/events/accessories and detached binding, plus native XCOM evidence, recipe inspection, and Foundry boundaries.                                                              |
-| **`@ide/ui`**               | Supplies the raw xterm Pi screen and read-only accessories, the controlled shell, XCOM presentation, and Foundry dialog. It contains no Pi chat parser, prompt model, or conversation history.              |
+| Package                     | Role                                                                                                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@ide/contracts`**        | Defines caller-authorized Pi session detail, exact rootless retained-session summaries, raw PTY events, and read-only accessories without chat, tool, model, or history DTOs. |
+| **`@ide/web-core`**         | Defines the non-owning Pi attachment port for raw bytes, resize, current detail, rootless summaries, accessories, detached binding, and confirmed stop.                       |
+| **`@ide/browser-adapters`** | Keeps native Pi PTY, XCOM activation, and recipe inspection outside normal browser composition without fabricating native state or success.                                   |
+| **`@ide/tauri-adapters`**   | Strictly validates Pi caller snapshots, exact rootless summaries, targeted events, accessories, and detached binding, plus the separate XCOM and Foundry boundaries.          |
+| **`@ide/ui`**               | Supplies the raw xterm Pi screen, current-authority generation/sequence and resize guards, read-only accessories, controlled shell, XCOM presentation, and Foundry dialog.    |
 
 ## Global Settings versus Project Contributions
 

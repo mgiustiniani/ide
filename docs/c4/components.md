@@ -1,10 +1,10 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The desktop Agent activity hosts non-owning xterm attachments to backend-owned workspace Pi pseudoterminals; Pi remains the conversation authority. The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 activation evaluates native-issued facts, acknowledges only opaque handles, and leaves accepted-root authority in Rust. The active-module surface can review and approve one metadata-only Default Build recipe; it has no execution consumer. Workspace Settings and machine Settings remain separate. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The desktop Agent activity hosts non-owning xterm attachments; native commands derive actual WebView authority over backend-owned workspace Pi pseudoterminals, while Pi remains the conversation authority. The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 activation evaluates native-issued facts, acknowledges only opaque handles, and leaves accepted-root authority in Rust. The active-module surface can review and approve one metadata-only Default Build recipe; it has no execution consumer. Workspace Settings and machine Settings remain separate. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; contributes the workspace-native Agent activity; wires capability and shell controllers; composes RefactorKit diagnostics and separately approved Symbol Navigation support behind capability-specific boundaries; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. `main.tsx` selects either the main shell or the workspace-pinned detached Agent renderer and supplies the strict Tauri Foundry composition to the main shell. Feature orchestration remains inside controllers rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; contributes the workspace-native Agent activity; wires capability and shell controllers; composes RefactorKit diagnostics and separately approved Symbol Navigation support behind capability-specific boundaries; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. `main.tsx` selects either the `main` shell or the workspace-pinned `pi-agent` renderer and supplies the strict Tauri Foundry composition to the main shell. Pi command authority is derived again from that actual WebView identity inside Rust; feature orchestration remains inside controllers rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities. It synchronously revokes XCOM project recognition before a root transition and starts recognition only after authorization. Open Settings independently owns the machine monitor and transaction runtime.
 
@@ -39,11 +39,11 @@ Cold start first establishes the native-authorized root, then promotes that auth
 | **RefactorKit Status Controller**           | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
 | **RefactorKit Symbol Navigation Support**   | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup within its separately approved source-built-provider boundary.                                                                                                |
 | **Pi Runtime Configuration Controller**     | Owns Pi settings, status, installation, and read-only command discovery. The main desktop shell does not compose its legacy RPC prompt, message, or trace projection.                                                                                       |
-| **Workspace Pi Agent Screen**               | Hosts the raw Pi terminal and bounded read-only Changes, IDE Activity, Resources, and process Sessions accessories; changed files open through the existing editor authority.                                                                               |
-| **Pi Renderer Attachment Controller**       | Owns one non-owning docked or detached view attachment, validates workspace/generation/sequence events, and delegates PTY input, resize, snapshots, accessories, restart, detach, and confirmed stop through its port.                                      |
-| **Raw Pi Terminal Renderer**                | Renders raw PTY bytes in xterm and forwards input, paste, modified Enter sequences, and resize without adding a prompt, command parser, or conversation state.                                                                                              |
-| **Workspace-pinned Detached Pi Renderer**   | Resolves its immutable originating-workspace binding and hosts the shared Agent screen. Closing it unmounts the renderer without process authority.                                                                                                         |
-| **Strict Pi Workspace Agent Tauri Adapter** | Validates closed snapshots, raw output and status events, accessories, and detached-window bindings before they enter renderer state.                                                                                                                       |
+| **Workspace Pi Agent Screen**               | Hosts raw Pi transport, caller-authorized current session detail, exact rootless retained-session summaries, and bounded read-only accessories; changed files use the existing editor.                                                                      |
+| **Pi Renderer Attachment Controller**       | Owns one non-owning view attachment, accepts current workspace/generation/sequence state, and gates resize on the current attachment request and accepted process generation.                                                                               |
+| **Raw Pi Terminal Renderer**                | Renders raw PTY bytes in xterm and forwards input, paste, modified Enter sequences, and geometry without adding a prompt, command parser, or conversation state.                                                                                            |
+| **Workspace-pinned Detached Pi Renderer**   | Resolves its immutable originating-workspace binding and hosts the shared Agent screen under the actual `pi-agent` WebView label. Closing it unmounts without process authority.                                                                            |
+| **Strict Pi Workspace Agent Tauri Adapter** | Validates caller snapshots, exact seven-field rootless summaries, targeted output/status events, accessories, and detached bindings before renderer state changes.                                                                                          |
 | **XCOM Project Activation Controller**      | Evaluates one native-issued configuration/scan attempt, acknowledges only selected opaque handles, owns synchronous renderer and native revocation, and exposes token-free inspection authorization only for exact accepted roots.                          |
 | **XCOM Build Recipe Review Controller**     | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates accessible review, exact approval, and discard presentation. It does not call the consumption seam and owns no build consumer.                                     |
 | **XCOM Build Recipe Review Service**        | Owns volatile state and an async provider-neutral consumption decision seam. It revokes before awaiting fresh exact inspection; no production component calls it.                                                                                           |
@@ -66,34 +66,51 @@ The Workspace Controller coordinates lifecycle ordering; normal feature interact
 ## Workspace-native Pi Agent Components and Runtime
 
 ```text
-Workspace Registry ──authorized identity/root──> Pi Renderer Attachment Controller
-                                                     │
-Workspace Pi Agent Screen                            ├─> Strict Pi Tauri Adapter
-  ├─ Raw Pi Terminal Renderer ──raw bytes/resize────┘          │
-  ├─ Changes ──open selected file──> Desktop Editor            ▼
-  ├─ IDE Activity                                    Pi Workspace Agent Tauri Facade
-  ├─ Resources                                                  │
-  └─ process Sessions                                           ├─> Per-workspace Pi PTY Runtime
-                                                                │     ├─ canonical registry validation
-Docked renderer ─┐                                              │     ├─ portable PTY + fixed Pi argv
-Detached renderer├─ attachment only                             │     ├─ deterministic ide-{workspaceId}
-                 └─ close/switch sends no EOF or stop           │     └─ bounded reattachment tail
-                                                                └─> Read-only Accessory Reader
-                                                                      ├─ Git changes
-                                                                      └─ Pi package/command metadata
+Workspace Registry ──current identity/root──> Workspace Controller
+                                                   │
+                                                   ▼
+Workspace Pi Agent Screen ──> Pi Renderer Attachment Controller
+  ├─ Raw Pi Terminal Renderer       │ current attachment request
+  ├─ caller-authorized session      │ + accepted generation/sequence
+  ├─ rootless retained summaries    ▼
+  └─ read-only accessories     Strict Pi Tauri Adapter
+                                      │ typed commands/events
+Docked WebView:   `main`              ▼
+  fixed view ID:  `docked:main`  Pi Workspace Agent Tauri Facade
+Detached WebView: `pi-agent`          ├─ derive identity from actual label
+  fixed view ID:  `detached:pi-agent` ├─ main: recheck registry ID + root
+                                      ├─ detached: pin; post-attach operations: attachment
+                                      └─> Per-workspace Pi PTY Runtime
+                                            ├─ workspace-owned process + PTY
+                                            ├─ generation + attachment set
+                                            ├─ bounded raw transport tail
+                                            ├─ full detail for current caller
+                                            └─ rootless retained summaries
+
+Per-workspace Pi PTY Runtime ──workspace/generation/sequence──> Tauri Facade
+  └─ facade `emit_to` only authorized attached WebViews
+       └─ adapter validation → controller stale suppression → xterm
 ```
 
-| Pi C3 component                     | Stable structural responsibility                                                                                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pi Workspace Agent Tauri Facade** | Exposes attach/detach, raw write, resize, start, confirmed stop, snapshots, accessories, output/status events, and the fixed detached-window binding.                               |
-| **Per-workspace Pi PTY Runtime**    | Owns one portable PTY process per workspace, deterministic `ide-{workspaceId}` identity, process generation/state, renderer attachment set, lifecycle activity, and transport tail. |
-| **Pi Read-only Accessory Reader**   | Reads bounded Git status plus installed Pi package and discoverable command metadata; it has no Pi conversation, history, tool, model, trust, compaction, or retry contract.        |
+| Pi C3 component                     | Stable structural responsibility                                                                                                                                                 |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pi Workspace Agent Tauri Facade** | Derives docked/detached identity from the actual WebView label and fixed view ID, rechecks registry or pin plus attachment, and targets output/status events.                    |
+| **Per-workspace Pi PTY Runtime**    | Owns canonical roots, one portable PTY process per workspace, deterministic identity, generations, attachments, transport tails, caller detail, and rootless retained summaries. |
+| **Pi Read-only Accessory Reader**   | Reads bounded Git status plus installed Pi package and discoverable command metadata; it has no Pi conversation, history, tool, model, trust, compaction, or retry contract.     |
+
+The native facade does not trust a renderer-supplied workspace or view claim. It derives `docked:main` only from the actual `main` WebView and `detached:pi-agent` only from the actual `pi-agent` WebView. Main access compares the requested workspace and the session root to a freshly resolved current Workspace Registry binding, then checks that binding again. Detached access checks its immutable pinned workspace and, for post-attach operations, the current derived attachment, then rechecks the pin. Unknown labels and mismatched view IDs fail closed. Stale main detach is a cleanup exception that can remove only `docked:main`; it cannot read or mutate session state.
 
 The Rust runtime launches the fixed Pi executable in the canonical registered workspace root. Docked and detached renderers consume the same raw transport but do not own process lifetime. The detached window remains pinned to the workspace that created it; another detach request focuses that binding rather than retargeting it.
 
-The backend one-MiB tail is a terminal transport cache used when a renderer reattaches. It is not parsed into messages and is not Pi chat or history. Pi exclusively owns chat, history, tools, models, commands, extensions, trust, compaction, retry, and session behavior. Accessory **Activity** records IDE process/attachment lifecycle only; **Sessions** reports process metadata only.
+The caller-authorized current session may include its canonical root and process/error detail. The aggregate retained-session list is instead an exact rootless summary: workspace ID/name, deterministic session ID, process state/generation, last activity, and attachment count. Rust produces this projection, the strict adapter rejects missing or extra fields, and controller status reconciliation preserves the projection instead of reintroducing a full snapshot.
 
-Renderer cleanup invokes detach and releases a view identifier without EOF or a termination signal. A separate confirmation in the Agent screen names the workspace before **Stop Pi** can terminate that process. Other workspace processes are independently keyed and remain outside that stop operation.
+The backend one-MiB tail is a terminal transport cache used when a renderer reattaches. It is not parsed into messages and is not Pi chat or history. Output and status events carry workspace and generation identity; output also carries a monotonic sequence. The facade holds the attachment check through targeted `emit_to`, so only an authorized attached `main` or pinned `pi-agent` WebView receives the event. The adapter validates it, and the controller suppresses mismatched workspace, older generation, and non-increasing sequence before xterm delivery.
+
+Terminal geometry first updates local renderer state. A native resize call is permitted only after the current attachment request succeeds and is bound to that workspace and accepted process generation. Accepted newer attachment or status state may advance the generation; replacement, failure, or cleanup clears authority. A geometry revision observed during attach or restart is replayed only through the still-current authority, and late failures from superseded resize calls do not create renderer error state. Rust independently rechecks the caller-derived attachment and current registry binding or detached pin before touching `MasterPty`.
+
+Renderer cleanup invokes detach and releases only its fixed view identifier without EOF or a termination signal. A separate confirmation in the Agent screen names the workspace before **Stop Pi** can terminate that process. Other workspace processes are independently keyed and remain outside that stop operation.
+
+The resolved fixed-argv process launcher is also the bounded integration-test seam: a controlled deterministic executable may stand in for `pi` without replacing the Desktop App, Tauri IPC, Rust authority, PTY, controller, or renderer. It is not modeled as the external real Pi provider and owns no production conversation semantics.
 
 ## Project Foundry Rendering, Refusal, and One-shot Apply
 
