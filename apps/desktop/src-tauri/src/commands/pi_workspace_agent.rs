@@ -1317,6 +1317,129 @@ mod tests {
         session
     }
 
+    fn invoke_snapshot_from(
+        window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+        workspace_id: &str,
+    ) -> Result<Value, Value> {
+        tauri::test::get_ipc_response(
+            window,
+            tauri::webview::InvokeRequest {
+                cmd: "get_pi_workspace_agent_snapshot".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: serde_json::json!({ "workspaceId": workspace_id }).into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|response| response.deserialize::<Value>().unwrap())
+    }
+
+    #[test]
+    fn tauri_renderers_cannot_claim_a_retained_session_by_workspace_id() {
+        let fixture = TestDirectory::new("renderer-authority");
+        let root_a = fixture.0.join("authorized-a");
+        let root_b = fixture.0.join("retained-b");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+
+        let app = tauri::test::mock_builder()
+            .manage(PiWorkspaceAgentState::default())
+            .invoke_handler(tauri::generate_handler![get_pi_workspace_agent_snapshot])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let unrelated = WebviewWindowBuilder::new(&app, "unrelated", Default::default())
+            .build()
+            .unwrap();
+
+        let state = app.state::<PiWorkspaceAgentState>();
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        let session_b = insert_test_session(&state, "workspace-b", &root_b);
+        {
+            let mut runtime = session_a.runtime.lock().unwrap();
+            runtime.attached_views.insert("docked:main".to_string());
+            runtime
+                .attached_views
+                .insert("detached:pi-agent".to_string());
+        }
+        {
+            let mut runtime = session_b.runtime.lock().unwrap();
+            append_transcript(&mut runtime, b"RETAINED-B-PRIVATE-OUTPUT");
+            runtime.transcript_sequence = 1;
+        }
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
+
+        // This models the valid A -> B -> A continuity state: both legitimate renderers may share
+        // A, while B remains alive without an attachment. Those allowed snapshots must keep working.
+        assert!(invoke_snapshot_from(&main, "workspace-a").is_ok());
+        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
+
+        let main_claim = invoke_snapshot_from(&main, "workspace-b");
+        let detached_claim = invoke_snapshot_from(&detached, "workspace-b");
+        let unrelated_claim = invoke_snapshot_from(&unrelated, "workspace-a");
+        let accepted_claims = [
+            ("main->workspace-b", main_claim.is_ok()),
+            ("pi-agent->workspace-b", detached_claim.is_ok()),
+            ("unrelated->workspace-a", unrelated_claim.is_ok()),
+        ]
+        .into_iter()
+        .filter_map(|(claim, accepted)| accepted.then_some(claim))
+        .collect::<Vec<_>>();
+        let main_exposed_private_output = main_claim.as_ref().ok().is_some_and(|response| {
+            response.get("transcriptBase64").and_then(Value::as_str)
+                == Some(
+                    BASE64_STANDARD
+                        .encode(b"RETAINED-B-PRIVATE-OUTPUT")
+                        .as_str(),
+                )
+        });
+
+        assert!(
+            accepted_claims.is_empty(),
+            "native snapshot authority accepted caller-supplied claims {accepted_claims:?}; \
+             main exposed retained B transcript: {main_exposed_private_output}"
+        );
+    }
+
+    #[test]
+    fn attachment_sessions_do_not_expose_another_retained_workspace_root() {
+        let fixture = TestDirectory::new("aggregate-root-authority");
+        let root_a = fixture.0.join("authorized-a");
+        let root_b = fixture.0.join("retained-b-private-root");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+
+        let state = PiWorkspaceAgentState::default();
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        insert_test_session(&state, "workspace-b", &root_b);
+        session_a
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .insert("docked:main".to_string());
+
+        let response = serde_json::to_value(state.attachment_snapshot(&session_a)).unwrap();
+        let private_root = root_b.to_string_lossy();
+        let leaks_private_root = response["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|session| session.get("rootPath").and_then(Value::as_str) == Some(&private_root));
+
+        assert!(
+            !leaks_private_root,
+            "workspace A attachment exposed retained workspace B root '{private_root}'"
+        );
+    }
+
     #[test]
     fn parses_all_packages_even_when_they_have_no_command() {
         let resources = parse_package_list(

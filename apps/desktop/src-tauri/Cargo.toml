@@ -29,5 +29,8 @@ sha2 = "0.10"
 tauri-plugin-dialog = "2"
 uuid = { version = "1", features = ["v5"] }
 
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
