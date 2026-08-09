@@ -33,6 +33,7 @@ const DRIVER_START_TIMEOUT_MS = 10_000;
 const SESSION_START_TIMEOUT_MS = 25_000;
 const UI_TIMEOUT_MS = 15_000;
 const PROCESS_EXIT_TIMEOUT_MS = 5_000;
+const ERROR_ALERT_OBSERVATION_MS = 750;
 const DIAGNOSTIC_LIMIT = 24 * 1024;
 const PROVIDER_EVENT_CAP_BYTES = 256 * 1024;
 const DESIRED_WIDTH = 1440;
@@ -286,6 +287,22 @@ interface WorkspaceFixture {
   readonly root: string;
   readonly fileName: typeof A_MARKER_FILE | typeof B_MARKER_FILE;
   readonly content: string;
+}
+
+type PiAgentErrorAlertCheckpoint =
+  | "stable-agent-attach-a"
+  | "raw-transport-a"
+  | "workspace-switch-b"
+  | "workspace-return-a"
+  | "detached-attach-a"
+  | "docked-reopen-a"
+  | "restart-a";
+
+interface PiAgentErrorAlertDomSnapshot {
+  readonly text: string;
+  readonly outerHtml: string;
+  readonly ariaLive: string | null;
+  readonly className: string;
 }
 
 interface NativePiEvidence {
@@ -670,6 +687,9 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     assert.equal(start.cwd, workspace.root);
     assert.equal(start.sessionId, `ide-${workspaceId}`);
     assert.equal(await processRunning(Number(start.pid)), true);
+    await this.#assertNoUnexpectedPiAgentErrorAlert(
+      workspaceId === "workspace-a" ? "stable-agent-attach-a" : "workspace-switch-b",
+    );
   }
 
   async assertRawTransport(): Promise<void> {
@@ -732,6 +752,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     this.#terminalDomTextExposed = terminalText.length > 0;
     if (terminalText.length > 0) assert.match(terminalText, /PI_STORY_(?:READY|ECHO)/u);
     await this.#capture("raw-transport-a");
+    await this.#assertNoUnexpectedPiAgentErrorAlert("raw-transport-a");
     this.#evidence.ui.rawTerminal = true;
     this.#evidence.rawTransport = {
       keyboard: true,
@@ -952,6 +973,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     await this.#clickActivity("Agent");
     await this.#waitForAgent("workspace-a", "Running");
     this.#activeWorkspaceId = "workspace-a";
+    await this.#assertNoUnexpectedPiAgentErrorAlert("workspace-return-a");
     await this.#capture("returned-workspace-a");
   }
 
@@ -1076,6 +1098,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
       [this.mainWindowHandle(), detached].sort(),
     );
     assert.equal(await this.processId("workspace-a"), this.#processIds.get("workspace-a")?.[0]);
+    await this.#assertNoUnexpectedPiAgentErrorAlert("detached-attach-a");
     this.#evidence.ui.detachedWindow = true;
     await this.#capture("detached-pinned-workspace-a");
   }
@@ -1097,6 +1120,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     await this.#clickActivity("Files");
     await this.#clickActivity("Agent");
     await this.#waitForAgent("workspace-a", "Running");
+    await this.#assertNoUnexpectedPiAgentErrorAlert("docked-reopen-a");
     await this.#capture("docked-reopened-after-detached-close");
   }
 
@@ -1175,6 +1199,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     const restartedPid = Number(starts.at(-1)?.pid);
     assert.notEqual(restartedPid, this.#processIds.get("workspace-a")?.[0]);
     this.#recordProcessId("workspace-a", restartedPid);
+    await this.#assertNoUnexpectedPiAgentErrorAlert("restart-a");
   }
 
   async assertRestoredDeterministicSession(): Promise<void> {
@@ -1757,6 +1782,86 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
       .replaceAll("\u00a0", " ")
       .replace(/\s+/gu, " ")
       .trim();
+  }
+
+  async #assertNoUnexpectedPiAgentErrorAlert(
+    checkpoint: PiAgentErrorAlertCheckpoint,
+  ): Promise<void> {
+    const workspaceId = this.#activeWorkspaceId;
+    await this.#agentScreen(workspaceId);
+    const deadline = Date.now() + ERROR_ALERT_OBSERVATION_MS;
+    let visibleAlerts: PiAgentErrorAlertDomSnapshot[] = [];
+    do {
+      visibleAlerts = (await this.browser().execute((expectedWorkspaceId) => {
+        const screen = Array.from(
+          document.querySelectorAll<HTMLElement>("section[data-workspace-id]"),
+        ).find((candidate) => candidate.dataset.workspaceId === expectedWorkspaceId);
+        if (!screen) return [];
+        return Array.from(screen.querySelectorAll<HTMLElement>('[role="alert"]'))
+          .filter(
+            (alert) => !alert.closest('[role="dialog"][aria-labelledby="pi-stop-confirm-title"]'),
+          )
+          .filter((alert) => {
+            const style = window.getComputedStyle(alert);
+            const bounds = alert.getBoundingClientRect();
+            return (
+              !alert.closest("[hidden]") &&
+              style.display !== "none" &&
+              style.visibility !== "hidden" &&
+              style.opacity !== "0" &&
+              bounds.width > 0 &&
+              bounds.height > 0
+            );
+          })
+          .map((alert) => ({
+            text: (alert.textContent ?? "").replaceAll("\u00a0", " ").replace(/\s+/gu, " ").trim(),
+            outerHtml: alert.outerHTML.slice(0, 16 * 1024),
+            ariaLive: alert.getAttribute("aria-live"),
+            className: alert.className,
+          }));
+      }, workspaceId)) as PiAgentErrorAlertDomSnapshot[];
+      if (visibleAlerts.length > 0) break;
+      await wait(50);
+    } while (Date.now() < deadline);
+    if (visibleAlerts.length === 0) return;
+
+    let screenshotPath: string | undefined;
+    let screenshotFailure: string | undefined;
+    try {
+      await this.#capture(`qg-003-unexpected-alert-${checkpoint}`);
+      screenshotPath = this.#evidence.screenshots.at(-1);
+    } catch (error) {
+      screenshotFailure = error instanceof Error ? error.message : String(error);
+    }
+    const domArtifactPath = path.join(
+      this.artifactDirectory(),
+      `qg-003-unexpected-alert-${checkpoint}.json`,
+    );
+    await writeFile(
+      domArtifactPath,
+      `${JSON.stringify(
+        {
+          requirement: REQUIREMENT,
+          qualityGate: "QG-003",
+          checkpoint,
+          workspaceId,
+          windowHandle: await this.browser().getWindowHandle(),
+          selector: 'section[data-workspace-id] [role="alert"]',
+          excludedStopConfirmation: '[role="dialog"][aria-labelledby="pi-stop-confirm-title"]',
+          visibleAlerts,
+          screenshotPath,
+          screenshotFailure,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    throw new Error(
+      `[QG-003] Unexpected Pi Agent error alert after ${checkpoint}: ${visibleAlerts
+        .map(({ text }) => JSON.stringify(text || "<empty alert>"))
+        .join(" | ")}; real WebView DOM artifact: ${domArtifactPath}`,
+    );
   }
 
   async #agentPanel(id: "changes" | "activity" | "resources" | "sessions") {
