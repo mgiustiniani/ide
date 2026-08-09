@@ -6,7 +6,7 @@ Business Need: Workspace-bound native Pi Agent continuity
   Changes, Activity, Resources, and Sessions are read-only accessory views; they never mirror Pi messages or act as chat, tool, model, trust, command, extension, compaction, or history authority.
   A docked or detached renderer is only an attachment. Closing either view must not stop Pi; termination requires the separate confirmed Stop Pi action.
 
-  @REQ-PI-WORKSPACE-AGENT-001 @desktop @tauri-harness @functional-requirement @non-functional-requirement @resilience @accessibility @implemented-not-e2e-validated
+  @REQ-PI-WORKSPACE-AGENT-001 @desktop @tauri-harness @native-gui @functional-requirement @non-functional-requirement @resilience @accessibility @implemented-not-e2e-validated
   Scenario: Keep two native Pi TUI sessions isolated while navigating, detaching, and restoring workspaces
     Given the existing IDE Workspace Registry contains distinct workspaces A and B
     And workspace A and workspace B each contain a distinct file visible through the existing File Explorer
