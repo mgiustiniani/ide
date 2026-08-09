@@ -115,6 +115,12 @@ function initialSize(kind: "docked" | "detached"): { cols: number; rows: number 
   return kind === "detached" ? { cols: 120, rows: 40 } : { cols: 40, rows: 30 };
 }
 
+interface PiResizeAuthority {
+  readonly attachmentRequestId: number;
+  readonly workspaceId: string;
+  readonly processGeneration: number;
+}
+
 function projectSessionSummary(
   session: PiWorkspaceAgentSessionSnapshot | PiWorkspaceAgentSessionSummary,
 ): PiWorkspaceAgentSessionSummary {
@@ -147,11 +153,13 @@ export function usePiWorkspaceAgentController({
   const terminalFeed = useMemo(() => new PiTerminalFeed(), []);
   const viewIdRef = useRef(createViewId(viewKind));
   const terminalSizeRef = useRef(initialSize(viewKind));
+  const terminalSizeRevisionRef = useRef(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const sessionGenerationRef = useRef(-1);
   const feedGenerationRef = useRef(-1);
   const feedSequenceRef = useRef(-1);
   const attachmentRequestRef = useRef(0);
+  const resizeAuthorityRef = useRef<PiResizeAuthority | null>(null);
   const accessoryRequestRef = useRef(0);
   const currentWorkspaceIdRef = useRef<string | null>(workspace?.id ?? null);
   currentWorkspaceIdRef.current = workspace?.id ?? null;
@@ -162,6 +170,46 @@ export function usePiWorkspaceAgentController({
   const [isAccessoryLoading, setIsAccessoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accessoryError, setAccessoryError] = useState<string | null>(null);
+
+  const advanceResizeAuthority = useCallback(
+    (workspaceId: string, processGeneration: number): void => {
+      const current = resizeAuthorityRef.current;
+      if (
+        current &&
+        current.workspaceId === workspaceId &&
+        current.attachmentRequestId === attachmentRequestRef.current &&
+        processGeneration > current.processGeneration
+      ) {
+        resizeAuthorityRef.current = { ...current, processGeneration };
+      }
+    },
+    [],
+  );
+
+  const requestResize = useCallback(
+    (authority: PiResizeAuthority, cols: number, rows: number): void => {
+      if (
+        resizeAuthorityRef.current !== authority ||
+        attachmentRequestRef.current !== authority.attachmentRequestId ||
+        currentWorkspaceIdRef.current !== authority.workspaceId
+      ) {
+        return;
+      }
+
+      void port
+        .resize({ workspaceId: authority.workspaceId, cols, rows })
+        .catch((resizeFailure) => {
+          if (
+            resizeAuthorityRef.current === authority &&
+            attachmentRequestRef.current === authority.attachmentRequestId &&
+            currentWorkspaceIdRef.current === authority.workspaceId
+          ) {
+            setError(errorMessage(resizeFailure));
+          }
+        });
+    },
+    [port],
+  );
 
   const applyAttachment = useCallback(
     (next: PiWorkspaceAgentAttachment): void => {
@@ -177,6 +225,7 @@ export function usePiWorkspaceAgentController({
       }
 
       const projected = projectRetainedSessionSummaries(next);
+      advanceResizeAuthority(projected.session.workspaceId, generation);
       sessionGenerationRef.current = generation;
       feedGenerationRef.current = generation;
       feedSequenceRef.current = projected.transcriptSequence;
@@ -188,7 +237,7 @@ export function usePiWorkspaceAgentController({
         data: decodeBase64(projected.transcriptBase64),
       });
     },
-    [terminalFeed],
+    [advanceResizeAuthority, terminalFeed],
   );
 
   const refreshAccessories = useCallback(async (): Promise<void> => {
@@ -226,6 +275,7 @@ export function usePiWorkspaceAgentController({
   useEffect(() => {
     const requestId = attachmentRequestRef.current + 1;
     attachmentRequestRef.current = requestId;
+    resizeAuthorityRef.current = null;
     accessoryRequestRef.current += 1;
     setAttachment(null);
     setAccessories(null);
@@ -285,6 +335,7 @@ export function usePiWorkspaceAgentController({
               return;
             }
 
+            advanceResizeAuthority(event.session.workspaceId, eventGeneration);
             sessionGenerationRef.current = eventGeneration;
             setAttachment((current) => {
               if (
@@ -317,6 +368,7 @@ export function usePiWorkspaceAgentController({
         if (disposed) return;
 
         const size = terminalSizeRef.current;
+        const sizeRevision = terminalSizeRevisionRef.current;
         const next = await port.attach({
           workspaceId: workspace.id,
           workspaceName: workspace.name,
@@ -331,6 +383,16 @@ export function usePiWorkspaceAgentController({
         }
 
         applyAttachment(next);
+        if (next.session.workspaceId === workspace.id) {
+          resizeAuthorityRef.current = {
+            attachmentRequestId: requestId,
+            workspaceId: workspace.id,
+            processGeneration: Math.max(
+              next.session.processGeneration,
+              sessionGenerationRef.current,
+            ),
+          };
+        }
         for (const event of pendingOutput
           .filter(
             (candidate) =>
@@ -346,9 +408,17 @@ export function usePiWorkspaceAgentController({
             data: decodeBase64(event.dataBase64),
           });
         }
+        if (terminalSizeRevisionRef.current !== sizeRevision) {
+          const authority = resizeAuthorityRef.current;
+          const latestSize = terminalSizeRef.current;
+          if (authority) requestResize(authority, latestSize.cols, latestSize.rows);
+        }
         setIsAttaching(false);
         void refreshAccessories();
       } catch (attachFailure) {
+        if (resizeAuthorityRef.current?.attachmentRequestId === requestId) {
+          resizeAuthorityRef.current = null;
+        }
         if (!disposed && attachmentRequestRef.current === requestId) {
           setError(errorMessage(attachFailure));
           setIsAttaching(false);
@@ -359,6 +429,9 @@ export function usePiWorkspaceAgentController({
     void setup();
     return () => {
       disposed = true;
+      if (resizeAuthorityRef.current?.attachmentRequestId === requestId) {
+        resizeAuthorityRef.current = null;
+      }
       outputUnsubscribe?.();
       statusUnsubscribe?.();
       if (attached) {
@@ -367,7 +440,15 @@ export function usePiWorkspaceAgentController({
           .catch(() => undefined);
       }
     };
-  }, [applyAttachment, port, refreshAccessories, terminalFeed, workspace]);
+  }, [
+    advanceResizeAuthority,
+    applyAttachment,
+    port,
+    refreshAccessories,
+    requestResize,
+    terminalFeed,
+    workspace,
+  ]);
 
   const write = useCallback(
     (data: string): void => {
@@ -387,27 +468,31 @@ export function usePiWorkspaceAgentController({
   const resize = useCallback(
     (cols: number, rows: number): void => {
       terminalSizeRef.current = { cols, rows };
-      if (!workspace) return;
-      void port.resize({ workspaceId: workspace.id, cols, rows }).catch((resizeFailure) => {
-        if (currentWorkspaceIdRef.current === workspace.id) {
-          setError(errorMessage(resizeFailure));
-        }
-      });
+      terminalSizeRevisionRef.current += 1;
+      const authority = resizeAuthorityRef.current;
+      if (!workspace || !authority || authority.workspaceId !== workspace.id) return;
+      requestResize(authority, cols, rows);
     },
-    [port, workspace],
+    [requestResize, workspace],
   );
 
   const start = useCallback(async (): Promise<void> => {
     if (!workspace) return;
     setError(null);
     const size = terminalSizeRef.current;
+    const sizeRevision = terminalSizeRevisionRef.current;
     try {
       applyAttachment(await port.start(workspace.id, size.cols, size.rows));
+      if (terminalSizeRevisionRef.current !== sizeRevision) {
+        const authority = resizeAuthorityRef.current;
+        const latestSize = terminalSizeRef.current;
+        if (authority) requestResize(authority, latestSize.cols, latestSize.rows);
+      }
       void refreshAccessories();
     } catch (startFailure) {
       setError(errorMessage(startFailure));
     }
-  }, [applyAttachment, port, refreshAccessories, workspace]);
+  }, [applyAttachment, port, refreshAccessories, requestResize, workspace]);
 
   const stop = useCallback(async (): Promise<void> => {
     if (!workspace) return;
