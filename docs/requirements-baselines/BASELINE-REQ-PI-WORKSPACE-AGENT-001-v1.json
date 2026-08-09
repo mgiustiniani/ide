@@ -1,0 +1,91 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-PI-WORKSPACE-AGENT-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "approvalEvidence": {
+    "kind": "bounded-session-confirmation",
+    "repositoryAddressable": false,
+    "statement": "The user explicitly said to proceed after confirming one complete Cursor-like workspace Agent experience that embeds the real interactive Pi chat rather than recreating it."
+  },
+  "initialRepository": {
+    "commit": "4d091fc9fb25a2a9a352e3d65c4e24cbfe6aa7db",
+    "tree": "94cb2b10ef6a1b665bdea94a19d1c9e10c557ffa"
+  },
+  "requirement": {
+    "id": "REQ-PI-WORKSPACE-AGENT-001",
+    "classification": "Story BDD",
+    "initialIntent": "Provide one completed Cursor-like Agent screen that follows the IDE's existing active workspace while keeping the chat, tools, commands, extensions, trust, models, and session behavior native to interactive Pi.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "text": "The existing IDE Workspace Registry remains authoritative; no parallel workspace system is introduced."
+      },
+      {
+        "id": "AC-002",
+        "text": "The Files activity reuses the existing workspace file explorer and opens files in the existing main editor."
+      },
+      {
+        "id": "AC-003",
+        "text": "The Agent activity embeds the real interactive Pi TUI through a persistent PTY whose working directory is the exact active workspace root."
+      },
+      {
+        "id": "AC-004",
+        "text": "The IDE does not mirror or own Pi chat messages, tool calls, commands, extension dialogs, model state, trust, compaction, retry, or session history."
+      },
+      {
+        "id": "AC-005",
+        "text": "Switching workspace attaches the Agent screen to that workspace's Pi PTY/session; returning restores the original live PTY without cross-workspace input or output leakage."
+      },
+      {
+        "id": "AC-006",
+        "text": "Pi processes may continue while their workspace is not visible and expose an honest running or exited status."
+      },
+      {
+        "id": "AC-007",
+        "text": "The same Agent screen contains accessory Changes, Activity, Resources, and Sessions views; structured metadata is accessory and never substitutes for Pi chat."
+      },
+      {
+        "id": "AC-008",
+        "text": "The Agent screen can detach into one larger workspace-pinned window and attach to the same PTY/session."
+      },
+      {
+        "id": "AC-009",
+        "text": "Closing or hiding either Agent view detaches only the renderer and never writes EOF, sends a termination signal, or stops Pi."
+      },
+      {
+        "id": "AC-010",
+        "text": "Only a separate explicit confirmed Stop Pi action terminates the workspace's live Pi process."
+      },
+      {
+        "id": "AC-011",
+        "text": "The embedded terminal forwards raw Pi input, ANSI output, resize, paste, and modified Enter key sequences without a synthetic shell prompt or command parser."
+      },
+      {
+        "id": "AC-012",
+        "text": "Installed Pi packages and discoverable commands are visible as read-only accessory metadata, including packages that register no slash command."
+      },
+      {
+        "id": "AC-013",
+        "text": "The completed acceptance proves workspace A to B to A continuity, detached-window closure without process termination, explicit stop, file navigation, and absence of cross-workspace leakage."
+      }
+    ]
+  },
+  "qualityConstraints": [
+    "Deliver one completed vertical milestone rather than presenting intermediate technical slices as user features.",
+    "Use focused tests during implementation and one integrated end-to-end acceptance at completion.",
+    "Do not fix unrelated repository findings without explicit user authorization.",
+    "Keep reusable UI free of direct Tauri imports; native process and window authority remain behind ports and adapters.",
+    "Use fixed executable selection and argument construction; never pass project data through a shell command string.",
+    "Generated artifacts and user-facing product text are English."
+  ],
+  "exclusions": [
+    "Reimplementing Pi chat or Pi's agent runtime in React, Rust, RPC, or an SDK sidecar",
+    "Creating a second workspace registry or duplicating file explorer/editor authority",
+    "Using RPC as the chat, message-history, tool, or extension-UI authority",
+    "Installing, removing, updating, or enabling Pi packages",
+    "A package marketplace",
+    "Terminating Pi when a panel, tab, detached window, or workspace view is closed",
+    "Unrelated dependency, documentation, formatting, or repository-wide cleanup"
+  ],
+  "approvedChanges": []
+}
