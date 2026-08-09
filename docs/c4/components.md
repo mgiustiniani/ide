@@ -1,10 +1,10 @@
 # Component Diagrams (C3) — Current and Target Boundaries
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 activation evaluates native-issued facts, acknowledges only opaque handles, and leaves accepted-root authority in Rust. The active-module surface can review and approve one metadata-only Default Build recipe; it has no execution consumer. Workspace Settings and machine Settings remain separate. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The desktop Agent activity hosts non-owning xterm attachments to backend-owned workspace Pi pseudoterminals; Pi remains the conversation authority. The editor is Monaco-only with locally bundled Java syntax highlighting. Guarded Java semantics cross provider-neutral components without Java module activation. **Paste Java Class from Clipboard** and saved-snapshot TypeScript/JavaScript diagnostics remain separate managed RefactorKit flows. Desktop XCOM 2 activation evaluates native-issued facts, acknowledges only opaque handles, and leaves accepted-root authority in Rust. The active-module surface can review and approve one metadata-only Default Build recipe; it has no execution consumer. Workspace Settings and machine Settings remain separate. Focused native evidence covers the exact accessible missing-Steam state through the real App/Tauri/Rust monitor path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ## Desktop Composition and Controller Boundaries
 
-`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; wires capability and shell controllers; composes RefactorKit diagnostics and separately approved Symbol Navigation support behind capability-specific boundaries; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. `main.tsx` supplies the strict Tauri Foundry composition with selection, rendering, one-shot Apply, and revocation ports. Feature orchestration remains inside the controllers rather than in `App.tsx`.
+`App.tsx` is a composition-only root. It creates stores, view models, and typed adapters; contributes the workspace-native Agent activity; wires capability and shell controllers; composes RefactorKit diagnostics and separately approved Symbol Navigation support behind capability-specific boundaries; accepts the injected Project Foundry composition; derives presentation props; and renders the shell. `main.tsx` selects either the main shell or the workspace-pinned detached Agent renderer and supplies the strict Tauri Foundry composition to the main shell. Feature orchestration remains inside controllers rather than in `App.tsx`.
 
 The **Workspace Controller** owns the authorized active-root transition and coordinates workspace-scoped collaborators; it does not absorb their bounded-context responsibilities. It synchronously revokes XCOM project recognition before a root transition and starts recognition only after authorization. Open Settings independently owns the machine monitor and transaction runtime.
 
@@ -16,7 +16,8 @@ Workspace Port ──ensure authorized current root──> Workspace Controller
                                                      ├─> RefactorKit Import Controller
                                                      ├─> RefactorKit Status Controller
                                                      ├─> RefactorKit Symbol Navigation Support
-                                                     ├─> AI Agent Controller
+                                                     ├─> Pi Runtime Configuration Controller
+                                                     ├─> Pi Renderer Attachment Controller
                                                      ├─> XCOM Project Activation Controller
                                                      │    (synchronous revoke + correlated reads)
                                                      └─> XCOM Setup Controller
@@ -27,22 +28,27 @@ workspace-switch attempts; shared by collaborators to reject stale work.
 Exhaustion fails closed rather than reusing an old generation.
 ```
 
-Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, activate workspace-keyed AI state and commands, and discover RefactorKit status/capabilities. For XCOM it keeps old authority revoked until authorization succeeds, then begins one native evidence attempt. Rust reads the fixed configuration and convention metadata and returns safe facts bound to an opaque attempt receipt and opaque per-root handles. Trusted TypeScript evaluates those facts and acknowledges only the receipt and handles for the complete active set; it never sends roots, paths, configuration, hashes, or commands back as authority. Explicit full **Workspace Refresh** uses the same synchronous-revoke boundary. While Settings is closed, its machine-runtime collaborator calls return without monitor snapshots or refreshes, transaction history or detail reads, polling, or subscriptions. Opening Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle; closing Settings invalidates their requests, unsubscribes both, and clears their poll timers. Passive Settings open refresh remains distinct from the explicit full Workspace Refresh control. A workspace switch restarts machine lifecycles only when Settings remains open. Workspace transitions also invalidate the composed RefactorKit diagnostic and Symbol Navigation support; lifecycle wiring does not expand either capability's approved scope. Global AI configuration and workspace-independent terminal setup are not represented as workspace-authorized reads.
+Cold start first establishes the native-authorized root, then promotes that authorization evidence into registry state. Only after that gate does the Workspace Controller publish the current generation to collaborators, restore editor state, load the file tree, attach/load Java, refresh Pi runtime configuration and command metadata, attach the docked Pi renderer, and discover RefactorKit status/capabilities. Pi attachment is validated again by the backend against the canonical registry binding; existing workspace sessions remain backend-owned when their renderer is not visible. For XCOM the controller keeps old authority revoked until authorization succeeds, then begins one native evidence attempt. Rust reads the fixed configuration and convention metadata and returns safe facts bound to an opaque attempt receipt and opaque per-root handles. Trusted TypeScript evaluates those facts and acknowledges only the receipt and handles for the complete active set; it never sends roots, paths, configuration, hashes, or commands back as authority. Explicit full **Workspace Refresh** uses the same synchronous-revoke boundary. While Settings is closed, its machine-runtime collaborator calls return without monitor snapshots or refreshes, transaction history or detail reads, polling, or subscriptions. Opening Settings creates exactly one monitor-adapter lifecycle and one transaction-adapter lifecycle; closing Settings invalidates their requests, unsubscribes both, and clears their poll timers. Passive Settings open refresh remains distinct from the explicit full Workspace Refresh control. A workspace switch restarts machine lifecycles only when Settings remains open. Workspace transitions also invalidate the composed RefactorKit diagnostic and Symbol Navigation support; lifecycle wiring does not expand either capability's approved scope. Global Pi configuration and the workspace-independent terminal remain separate from the workspace Pi process.
 
-| Current C3 component                      | Stable structural responsibility                                                                                                                                                                                                                            |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace Controller**                  | Owns registry metadata, authorized active-root transitions, loading/switching state, and the shared generation boundary. It coordinates recognition revocation/start and setup correlation; XCOM feature controllers own behavior and adapter lifetimes.    |
-| **Desktop Editor Controller**             | Coordinates guarded open/create, tab lifecycle, deferred session restore, workspace reset, and safe presentation state. Only a tab with its matching loaded buffer becomes a ready active document.                                                         |
-| **Java Language Controller**              | Owns workspace-scoped language lifecycle, versioned Java document sync, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, guarded semantics, cancellation, and stale identity checks through provider-neutral ports. |
-| **RefactorKit Import Controller**         | Owns the separate capability-gated clipboard import transaction: selection/workspace freshness, preview, exact displayed-plan approval, invalidation/discard, result refresh, and backend-authoritative result opening.                                     |
-| **RefactorKit Status Controller**         | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
-| **RefactorKit Symbol Navigation Support** | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup within its separately approved source-built-provider boundary.                                                                                                |
-| **AI Agent Controller**                   | Owns configuration/status plus workspace-keyed commands, session messages, activities, prompt state, and stale-request suppression. Only an explicit trimmed panel prompt crosses its port.                                                                 |
-| **XCOM Project Activation Controller**    | Evaluates one native-issued configuration/scan attempt, acknowledges only selected opaque handles, owns synchronous renderer and native revocation, and exposes token-free inspection authorization only for exact accepted roots.                          |
-| **XCOM Build Recipe Review Controller**   | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates accessible review, exact approval, and discard presentation. It does not call the consumption seam and owns no build consumer.                                     |
-| **XCOM Build Recipe Review Service**      | Owns volatile state and an async provider-neutral consumption decision seam. It revokes before awaiting fresh exact inspection; no production component calls it.                                                                                           |
-| **XCOM Build Recipe Review Policy**       | Validates closed metadata, binds the accepted authority's stable inspection generation and fresh facts into the digest, and authorizes identical reviewed facts once. Changed facts, stale authority, invalid input, or replay fail closed.                 |
-| **XCOM Setup Controller**                 | Keeps machine setup transaction authority correlated to workspace/generation identity. Only open Settings owns one monitor and one transaction adapter lifecycle; close invalidates requests, unsubscribes both, and clears their poll timers.              |
+| Current C3 component                        | Stable structural responsibility                                                                                                                                                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace Controller**                    | Owns registry metadata, authorized active-root transitions, loading/switching state, and the shared generation boundary. It coordinates recognition revocation/start and setup correlation; XCOM feature controllers own behavior and adapter lifetimes.    |
+| **Desktop Editor Controller**               | Coordinates guarded open/create, tab lifecycle, deferred session restore, workspace reset, and safe presentation state. Only a tab with its matching loaded buffer becomes a ready active document.                                                         |
+| **Java Language Controller**                | Owns workspace-scoped language lifecycle, versioned Java document sync, provider-neutral diagnostic events, active-editor diagnostics, `ProblemItem` projection, guarded semantics, cancellation, and stale identity checks through provider-neutral ports. |
+| **RefactorKit Import Controller**           | Owns the separate capability-gated clipboard import transaction: selection/workspace freshness, preview, exact displayed-plan approval, invalidation/discard, result refresh, and backend-authoritative result opening.                                     |
+| **RefactorKit Status Controller**           | Performs provider-neutral, diagnostic-only status and capability discovery. Independent outcomes are normalized and stale generations are dropped; this component has no preview, apply, rollback, or mutation authority.                                   |
+| **RefactorKit Symbol Navigation Support**   | Composed TypeScript/JavaScript saved-snapshot search/definition support and workspace cleanup within its separately approved source-built-provider boundary.                                                                                                |
+| **Pi Runtime Configuration Controller**     | Owns Pi settings, status, installation, and read-only command discovery. The main desktop shell does not compose its legacy RPC prompt, message, or trace projection.                                                                                       |
+| **Workspace Pi Agent Screen**               | Hosts the raw Pi terminal and bounded read-only Changes, IDE Activity, Resources, and process Sessions accessories; changed files open through the existing editor authority.                                                                               |
+| **Pi Renderer Attachment Controller**       | Owns one non-owning docked or detached view attachment, validates workspace/generation/sequence events, and delegates PTY input, resize, snapshots, accessories, restart, detach, and confirmed stop through its port.                                      |
+| **Raw Pi Terminal Renderer**                | Renders raw PTY bytes in xterm and forwards input, paste, modified Enter sequences, and resize without adding a prompt, command parser, or conversation state.                                                                                              |
+| **Workspace-pinned Detached Pi Renderer**   | Resolves its immutable originating-workspace binding and hosts the shared Agent screen. Closing it unmounts the renderer without process authority.                                                                                                         |
+| **Strict Pi Workspace Agent Tauri Adapter** | Validates closed snapshots, raw output and status events, accessories, and detached-window bindings before they enter renderer state.                                                                                                                       |
+| **XCOM Project Activation Controller**      | Evaluates one native-issued configuration/scan attempt, acknowledges only selected opaque handles, owns synchronous renderer and native revocation, and exposes token-free inspection authorization only for exact accepted roots.                          |
+| **XCOM Build Recipe Review Controller**     | Requests inspection with only `workspaceId`, `generation`, and `moduleRoot`; coordinates accessible review, exact approval, and discard presentation. It does not call the consumption seam and owns no build consumer.                                     |
+| **XCOM Build Recipe Review Service**        | Owns volatile state and an async provider-neutral consumption decision seam. It revokes before awaiting fresh exact inspection; no production component calls it.                                                                                           |
+| **XCOM Build Recipe Review Policy**         | Validates closed metadata, binds the accepted authority's stable inspection generation and fresh facts into the digest, and authorizes identical reviewed facts once. Changed facts, stale authority, invalid input, or replay fail closed.                 |
+| **XCOM Setup Controller**                   | Keeps machine setup transaction authority correlated to workspace/generation identity. Only open Settings owns one monitor and one transaction adapter lifecycle; close invalidates requests, unsubscribes both, and clears their poll timers.              |
 
 The six additional extracted controllers keep shell, document, and editor coordination out of the composition root:
 
@@ -56,6 +62,38 @@ The six additional extracted controllers keep shell, document, and editor coordi
 | **Desktop Shell Controller**       | Routes left-sidebar and bottom-panel resize/visibility requests to layout state without resetting dimensions; owns active bottom-tab state, AI command loading on activation, and guarded Problems visibility/severity policy. |
 
 The Workspace Controller coordinates lifecycle ordering; normal feature interactions remain direct at the most specific C3 boundary. In particular, editor readiness feeds the Java Language Controller, the RefactorKit Import Controller opens only a backend-reported result through the Desktop Editor Controller, and the extracted command/navigation controllers reuse those boundaries rather than bypassing them.
+
+## Workspace-native Pi Agent Components and Runtime
+
+```text
+Workspace Registry ──authorized identity/root──> Pi Renderer Attachment Controller
+                                                     │
+Workspace Pi Agent Screen                            ├─> Strict Pi Tauri Adapter
+  ├─ Raw Pi Terminal Renderer ──raw bytes/resize────┘          │
+  ├─ Changes ──open selected file──> Desktop Editor            ▼
+  ├─ IDE Activity                                    Pi Workspace Agent Tauri Facade
+  ├─ Resources                                                  │
+  └─ process Sessions                                           ├─> Per-workspace Pi PTY Runtime
+                                                                │     ├─ canonical registry validation
+Docked renderer ─┐                                              │     ├─ portable PTY + fixed Pi argv
+Detached renderer├─ attachment only                             │     ├─ deterministic ide-{workspaceId}
+                 └─ close/switch sends no EOF or stop           │     └─ bounded reattachment tail
+                                                                └─> Read-only Accessory Reader
+                                                                      ├─ Git changes
+                                                                      └─ Pi package/command metadata
+```
+
+| Pi C3 component                     | Stable structural responsibility                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pi Workspace Agent Tauri Facade** | Exposes attach/detach, raw write, resize, start, confirmed stop, snapshots, accessories, output/status events, and the fixed detached-window binding.                               |
+| **Per-workspace Pi PTY Runtime**    | Owns one portable PTY process per workspace, deterministic `ide-{workspaceId}` identity, process generation/state, renderer attachment set, lifecycle activity, and transport tail. |
+| **Pi Read-only Accessory Reader**   | Reads bounded Git status plus installed Pi package and discoverable command metadata; it has no Pi conversation, history, tool, model, trust, compaction, or retry contract.        |
+
+The Rust runtime launches the fixed Pi executable in the canonical registered workspace root. Docked and detached renderers consume the same raw transport but do not own process lifetime. The detached window remains pinned to the workspace that created it; another detach request focuses that binding rather than retargeting it.
+
+The backend one-MiB tail is a terminal transport cache used when a renderer reattaches. It is not parsed into messages and is not Pi chat or history. Pi exclusively owns chat, history, tools, models, commands, extensions, trust, compaction, retry, and session behavior. Accessory **Activity** records IDE process/attachment lifecycle only; **Sessions** reports process metadata only.
+
+Renderer cleanup invokes detach and releases a view identifier without EOF or a termination signal. A separate confirmation in the Agent screen names the workspace before **Stop Pi** can terminate that process. Other workspace processes are independently keyed and remain outside that stop operation.
 
 ## Project Foundry Rendering, Refusal, and One-shot Apply
 
@@ -161,7 +199,7 @@ RefactorKit Import Controller
   9. invoke refactor.discard on cancel or selection/workspace invalidation
 ```
 
-The UI does not copy raw Java, infer a target package, construct a patch, or write project content. Clipboard source is transient, routed only to RefactorKit preview, never logged, and has no Pi/AI Agent relationship. Preview/no-write is scoped to the imported target and other project content before Apply; it is not a byte-identical hidden-metadata guarantee because provider `project.open` may create `.refactorkit/workspace.lock`.
+The UI does not copy raw Java, infer a target package, construct a patch, or write project content. Clipboard source is transient, routed only to RefactorKit preview, never logged, and has no workspace Pi Agent relationship. Preview/no-write is scoped to the imported target and other project content before Apply; it is not a byte-identical hidden-metadata guarantee because provider `project.open` may create `.refactorkit/workspace.lock`.
 
 Rollback is implemented only behind provider-neutral contracts, Tauri adapters, Rust commands, and provider transaction authority. The current Java import surface exposes no rollback action.
 
@@ -188,9 +226,13 @@ The facades only expose inbound commands and re-export bounded types. Process ow
 
 ```text
 Host application ──contributes tab descriptors──> BottomPanel
-  desktop: Terminal [core], AI Agent [core]
+  desktop: Terminal [core]
            Problems [project, while ready Java context or projected items exist]
   web:     Terminal [core]
+
+Primary activity rail
+  desktop: Files [existing explorer/editor authority]
+           Agent [workspace-native Pi screen]
 
 descriptor: id + label + icon? + title? + core/project scope
             + badge/count? + disabled? + active state
@@ -198,7 +240,7 @@ keyboard:  ArrowLeft/ArrowRight/Home/End across enabled tabs
 ARIA:      tablist → tabs → tabpanel
 ```
 
-The BottomPanel is an accessible dynamic contribution host, not a hard-coded Java/XCOM technology panel. The Desktop Shell Controller supplies the project-scoped Problems descriptor when the Java controller reports a ready Java context or retains projected problem items; it removes the descriptor when neither guard remains. `App.tsx` only composes and renders that policy. This guarded diagnostic visibility is not evidence-based module activation. Generic web startup performs no hidden Java/XCOM polling.
+The BottomPanel is an accessible dynamic contribution host, not a hard-coded Java/XCOM technology panel. The Desktop Shell Controller supplies the project-scoped Problems descriptor when the Java controller reports a ready Java context or retains projected problem items; it removes the descriptor when neither guard remains. The workspace-native Pi screen is a primary Agent activity rather than a BottomPanel chat surface. `App.tsx` only composes and renders these policies. This guarded diagnostic visibility is not evidence-based module activation. Generic web startup performs no hidden Java/XCOM polling.
 
 ## Monaco-only Editor and Current Java IntelliSense
 

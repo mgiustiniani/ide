@@ -6,6 +6,16 @@
 structurizr validate -workspace docs/c4/workspace.dsl
 ```
 
+## Workspace-native Pi Agent boundary
+
+The desktop **Agent** activity follows the existing Workspace Registry. **Files** continues to use the existing File Explorer and editor; the Agent surface introduces no parallel workspace, file, or document authority.
+
+The Rust Backend owns one portable pseudoterminal process per workspace. It launches the fixed `pi` executable in the canonical registered root with deterministic session identity `ide-{workspaceId}` and exchanges raw terminal bytes with xterm. The backend retains a one-MiB tail only to restore terminal transport after renderer reattachment; that tail is not Pi conversation or session history.
+
+Docked and detached renderers are non-owning attachments to the same workspace process. The detached window remains pinned to its originating workspace. Closing, hiding, switching, or detaching a renderer removes only that attachment; only the separately confirmed **Stop Pi** operation terminates the selected workspace process during normal application operation.
+
+Pi exclusively owns chat, history, tools, models, commands, extensions, trust, compaction, and retry. **Changes**, IDE **Activity**, **Resources**, and process **Sessions** are bounded read-only accessories. The desktop shell does not compose the legacy RPC chat projection; bounded package and command discovery remains accessory metadata rather than an interaction authority.
+
 ## XCOM 2 activation authority and recipe-review boundary
 
 The desktop architecture keeps the established project-owned, IDE-read-only `.ide/xcom2.json` v1 contract and Option A recognition semantics. Native begin performs both bounded reads, binds the authorized workspace and module identities, and returns safe facts with one opaque activation-attempt receipt and opaque per-root evidence handles. Each attempt that reaches generation reservation receives one positive JavaScript-safe `inspectionGeneration`; acceptance carries that value into the exact inspection authority. A failure after reservation consumes its value, a later accepted authority receives a later generation, and exhaustion fails closed without wrapping or accepting authority. Trusted TypeScript applies the unchanged evaluators and acknowledges only the receipt and exact handles selected for the complete active-root set. Rust materializes exactly those accepted roots with the reserved inspection generation in volatile native state.

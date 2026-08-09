@@ -1,6 +1,6 @@
 # Container Diagram (C2)
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts and acknowledges opaque handles while Rust owns accepted-root authority. The matching activity can review and approve one metadata-only Default Build recipe, but no container has a recipe execution consumer. Focused native evidence covers the exact accessible missing-Steam state through the normal Desktop App/Tauri/Rust path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
+> **CURRENT/AS-BUILT VIEW.** The Desktop App supplies non-owning docked and detached Pi renderers while the Rust Backend owns the workspace-scoped portable PTYs. The editor is Monaco-only with a locally bundled Java language contribution. Guarded Java semantics cross typed application/Tauri/Rust boundaries without Java module activation. **Paste Java Class from Clipboard** remains a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts and acknowledges opaque handles while Rust owns accepted-root authority. The matching activity can review and approve one metadata-only Default Build recipe, but no container has a recipe execution consumer. Focused native evidence covers the exact accessible missing-Steam state through the normal Desktop App/Tauri/Rust path from isolated empty directories; the broader machine Settings lifecycle evidence remains harness-only.
 
 ```text
 Web App ──> Web Browser
@@ -15,10 +15,12 @@ Desktop App ──typed Tauri boundary──> Rust Backend
   ├─ Monaco-only editor + locally bundled Java syntax highlighting
   │    └─ exact synchronized Java model: completion / hover / signature help
   │       optimistic version → serialized didChange flush → guarded request
-  ├─ Left Sidebar: File Explorer above Workspace Explorer
+  ├─ Files activity: File Explorer above Workspace Explorer
   │    ├─ independent collapse + registry/switch/refresh/error states
   │    └─ collapsed whole sidebar retains an Expand control in the activity rail
-  ├─ dynamic BottomPanel: core Terminal + AI Agent
+  ├─ Agent activity: native Pi TUI + read-only accessory views
+  │    └─ docked/detached xterm renderers attach without process ownership
+  ├─ dynamic BottomPanel: core Terminal
   │    ├─ project Problems while ready Java context or projected items exist
   │    └─ status bar retains the bottom-panel visibility toggle
   ├─ dynamic activity rail: `XCOM 2 Project` after configured or recognized activation
@@ -34,6 +36,15 @@ Desktop App ──typed Tauri boundary──> Rust Backend
        ├─ separate dry run + Prepare/Apply/Restore/Prepare Again
        ├─ open only: one monitor + one transaction adapter lifecycle
        └─ close: invalidate, unsubscribe, and clear both poll timers
+
+Desktop Agent screen ──strict typed Tauri boundary──> Rust Backend
+  └─ one backend-owned portable PTY process per registered workspace
+     ├─ fixed `pi --session-id ide-{workspaceId}` in the canonical root
+     ├─ raw input, ANSI output, paste, modified Enter, and resize transport
+     ├─ one-MiB reattachment tail; not Pi chat or history
+     ├─ renderer close/switch/detach changes attachments only
+     └─ separately confirmed Stop Pi terminates one workspace process
+          └─ Pi owns chat/history/tools/models/commands/extensions/trust/retry
 
 Rust Backend ──managed NDJSON──> compatible RefactorKit provider
   └─ provider-version-neutral API + exact import-method gate
@@ -87,13 +98,13 @@ Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
 
 ## Runtime Containers
 
-| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation and build-recipe inspection reject honestly; browser composition performs no filesystem, process, network, storage, polling, approval, or simulated execution work.                                                                                                                                                                                                                                             |
-| **Desktop App**  | React + Vite in Tauri WebView | Applies trusted activation policies, renders bounded notice text separately from identity, and owns closed review, digest custody, approval, and an uncalled async decision seam that revokes before exact reinspection. It has no recipe execution consumer. Project Foundry remains separate.                                                                                                                                                                    |
-| **Rust Backend** | Rust + Tauri commands         | Owns volatile accepted-root authority, one reserved positive JavaScript-safe inspection generation per native attempt, synchronous revocation, and contained metadata inspection. The exact token-free request matches an accepted root; repeated unchanged reads preserve candidate facts, changed inputs preserve authority generation but change bound facts, and exhaustion or stale post-read authority fails closed. It never executes `.scripts/build.ps1`. |
+| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation, build-recipe inspection, and workspace Pi PTY access stay outside normal browser composition.                                                                                                                                                                                      |
+| **Desktop App**  | React + Vite in Tauri WebView | Hosts non-owning docked and workspace-pinned detached Pi renderers, delegates Files to the established explorer/editor, and renders bounded read-only accessories. It also applies trusted XCOM review policies and composes Project Foundry without taking native output authority.                                                   |
+| **Rust Backend** | Rust + Tauri commands         | Owns canonical workspace validation, one portable Pi PTY process per workspace, deterministic session identity, renderer attachments, raw byte transport, and the bounded reattachment tail. It separately owns XCOM accepted-root authority, contained inspection, transaction services, and native Project Foundry output authority. |
 
-JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
+Pi, JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
 The decision seam is provider-neutral policy, not a caller, executor, or consumer. It makes authority unavailable synchronously before awaiting fresh inspection and refuses any changed bound fact, invalid/error, concurrent, or replay case. There is no watcher or polling: unseen filesystem drift is detected only when this requested decision reinspects. Refresh and context changes still revoke synchronously.
 
@@ -102,6 +113,16 @@ For `destination-present`, the Desktop App renders the fixed atomic conflict pre
 Every pre-commit failure requires `cleanupStatus` with the closed values `verified-complete` and `not-verified`. The Rust Backend emits the positive value only after a stage-write failure when the operation-owned stage identity and tracked topology are revalidated, tracked entries are removed, the journal identity is revalidated and removed, stage, journal, and destination are observed absent without following links, and the same revalidated selected parent is synchronized. Any unmet condition emits `not-verified`; unverified state is preserved, malformed or invalid results fail closed, and no verified-cleanup wording is authorized. A reused consumed request has no authority.
 
 Current atomic publication is Linux-only. The C2 model claims no native chooser or WebKit/native E2E behavior, other fault point or conflict/failure/cleanup/recovery matrices, Windows support, or package, build, deploy, launch, auto-open, and product-publication capability. Local filesystem publication remains separate from XCOM module extraction and license/notice approval. Foundry remains separate from Workspace Settings, XCOM machine Settings, activation, and SDK setup.
+
+## Workspace-native Pi Runtime Boundary
+
+The Desktop App contributes **Agent** as a primary activity rather than a BottomPanel chat tab. Its shared screen contains the raw xterm renderer and bounded **Changes**, IDE **Activity**, **Resources**, and process **Sessions** accessories. Selecting a changed file still delegates to the established Desktop Editor Controller.
+
+The Rust Backend validates workspace identity against the canonical Workspace Registry binding before creating a session. It owns one portable PTY process per workspace, launches fixed Pi argv in that root, and retains deterministic `ide-{workspaceId}` identity across restarts. The one-MiB tail is in-memory terminal transport continuity for reattachment, not a mirror of Pi conversation or session history.
+
+Docked and detached WebViews are attachments only. The detached window is pinned to the workspace that opened it; subsequent detach requests focus that existing binding rather than retargeting it. Closing either renderer sends no EOF or process signal. Only a separately confirmed **Stop Pi** command terminates the selected workspace process during normal application operation.
+
+The legacy RPC chat projection is not part of desktop shell composition. Bounded package and command discovery remains read-only accessory metadata. Pi alone owns chat, history, tool calls, commands, extensions, models, trust, compaction, retry, and session behavior.
 
 ## Current Java Clipboard Paste Boundary
 
@@ -119,17 +140,17 @@ selected directory + explicit tree action
   → refresh/open from backend results; discard on cancel/invalidation
 ```
 
-Rust opens the canonical workspace and scopes one NDJSON daemon to its generation. Preview/no-write means no imported target or other project-content write before Apply; provider `project.open` may create `.refactorkit/workspace.lock`, so this is not a complete hidden-metadata byte-tree guarantee. Malformed output, timeout, workspace switch, and app exit terminate the daemon. Selection/workspace invalidation and cancellation invoke `refactor.discard`. Rollback exists behind contracts, adapters, Rust, and provider authority, but the current import UI exposes no rollback action. There is no package inference, target-package fallback, direct file-tree mutation, editor paste interception, raw Java copy, source logging, or Pi/AI Agent disclosure.
+Rust opens the canonical workspace and scopes one NDJSON daemon to its generation. Preview/no-write means no imported target or other project-content write before Apply; provider `project.open` may create `.refactorkit/workspace.lock`, so this is not a complete hidden-metadata byte-tree guarantee. Malformed output, timeout, workspace switch, and app exit terminate the daemon. Selection/workspace invalidation and cancellation invoke `refactor.discard`. Rollback exists behind contracts, adapters, Rust, and provider authority, but the current import UI exposes no rollback action. There is no package inference, target-package fallback, direct file-tree mutation, editor paste interception, raw Java copy, source logging, or workspace Pi Agent disclosure.
 
 ## Internal Package Boundaries
 
-| Package                     | Role                                                                                                                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`@ide/contracts`**        | Defines provider-neutral language, RefactorKit, XCOM setup, opaque activation-evidence, token-free inspection, build-recipe, and Foundry contracts. Recipe policy validates closed metadata and creates one-shot metadata authority without execution.       |
-| **`@ide/web-core`**         | Defines activation policies, recipe review-service state, and Foundry custody. The review service owns digest custody, synchronous revocation, and an async fresh-reinspection consumption decision seam; no production caller or build consumer is exposed. |
-| **`@ide/browser-adapters`** | Rejects native activation and recipe inspection without fabricating metadata or success and performs no filesystem, process, network, storage, timer, or polling work.                                                                                       |
-| **`@ide/tauri-adapters`**   | Strictly validates native evidence begin/acknowledge/revoke and token-free recipe inspection envelopes. Foundry grants and Apply results remain separate contracts.                                                                                          |
-| **`@ide/ui`**               | Supplies the controlled shell, atomic configuration alert, XCOM activity with safe recipe review, and Foundry dialog. Recipe presentation renders complete escaped notice text separately from identity and exposes review, approval, and discard only.      |
+| Package                     | Role                                                                                                                                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@ide/contracts`**        | Defines closed Pi PTY transport and read-only accessory shapes without chat, message, tool, model, or history DTOs, alongside language, RefactorKit, XCOM, and Foundry contracts.                           |
+| **`@ide/web-core`**         | Defines the Pi workspace-agent port for attachment, raw bytes, process state, accessories, detached binding, and confirmed stop; it also owns the existing activation, recipe-review, and Foundry policies. |
+| **`@ide/browser-adapters`** | Keeps native Pi PTY, XCOM activation, and recipe inspection outside normal browser composition without fabricating native state or success.                                                                 |
+| **`@ide/tauri-adapters`**   | Strictly validates Pi snapshots/events/accessories and detached binding, plus native XCOM evidence, recipe inspection, and Foundry boundaries.                                                              |
+| **`@ide/ui`**               | Supplies the raw xterm Pi screen and read-only accessories, the controlled shell, XCOM presentation, and Foundry dialog. It contains no Pi chat parser, prompt model, or conversation history.              |
 
 ## Global Settings versus Project Contributions
 
@@ -145,6 +166,7 @@ Rust opens the canonical workspace and scopes one NDJSON daemon to its generatio
 | **XCOM optional provisioning** | No Protontricks, Steam shortcut, compatibility-prefix, package-manager, or interactive action is executable.                                                                                                                                                                            | Separately design and authorize any such capability; never include it implicitly in SDK Apply.                                                                                             |
 | **XCOM project activation**    | Native begin returns safe configuration/scan facts with opaque attempt and root handles. Trusted TypeScript acknowledges only the exact active handles; Rust retains accepted roots and revokes them synchronously. `.ide/xcom2.json` v1 remains unchanged.                             | Manual confirmation, external roots, content parsing, operational Build, Problems, Logs, language support, actions, and bottom contributions remain separate.                              |
 | **XCOM build recipe review**   | For one accepted root, the Desktop App renders complete bounded notice text separately from identity and supports review, exact approval, and discard. Its uncalled async decision seam revokes before fresh exact inspection and authorizes unchanged metadata once.                   | Browser review and approval, production consumption callers, process/network/write authority, machine prerequisites, and Consume/Execute/Build/Deploy/Cook/Launch controls are absent.     |
+| **Workspace-native Pi Agent**  | The Agent activity attaches xterm to one backend-owned PTY per registered workspace. Docked and pinned detached views do not own lifetime; accessory metadata is read-only, and only confirmed Stop Pi terminates a workspace process.                                                  | Pi conversation, history, tools, models, commands, extensions, trust, compaction, and retry remain Pi-owned rather than projected into IDE state.                                          |
 
 Transaction rollback storage is IDE-owned local state. Each backup is limited to 16 MiB; retention is bounded to 64 removable transactions and 256 events. Export payloads omit paths and content.
 

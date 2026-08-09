@@ -15,7 +15,7 @@ The managed RefactorKit Java clipboard-import transaction and saved-snapshot Typ
 | Interactive semantics           | Exact synchronized Java model                                   | Completion, hover, signature help, and cancellation through provider-neutral contracts and guarded Monaco providers.                                                                                                                                                       |
 | RefactorKit IDE capabilities    | Desktop Settings, editor diagnostics, and directory-tree import | Status/capability discovery, the managed Java external-class import transaction, and provider-backed saved-snapshot TypeScript/JavaScript diagnostics. Source-built provider authority is capability-specific.                                                             |
 
-The desktop BottomPanel contains core Terminal and AI Agent plus the conditional project-scoped Problems contribution; web contains only Terminal. Java diagnostics and semantics are not a global Java technology tab or a Settings project-action surface.
+The desktop BottomPanel contains core Terminal plus the conditional project-scoped Problems contribution; web contains only Terminal. The workspace-native Pi screen is a separate primary Agent activity. Java diagnostics and semantics are not a global Java technology tab or a Settings project-action surface.
 
 ## Current C3 Flow
 

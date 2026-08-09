@@ -1,6 +1,6 @@
 # System Context Diagram (C1)
 
-> **CURRENT/AS-BUILT VIEW.** The editor is Monaco-only and bundles its Java language contribution locally. Guarded Java semantics do not imply Java module activation. **Paste Java Class from Clipboard** is a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts while Rust retains accepted-root authority. The matching activity can inspect and approve metadata for one Default Build recipe without executing project input; browser support is unavailable. Machine Settings remains independent. Focused native evidence covers the exact accessible missing-Steam monitor presentation from isolated empty directories; the broader machine Settings lifecycle remains harness-only. See the [frozen Java inventory](target-java-intelligence.md) and mixed-boundary [XCOM 2](target-xcom2-setup.md) views.
+> **CURRENT/AS-BUILT VIEW.** The desktop Agent activity attaches xterm to a backend-owned workspace Pi pseudoterminal while the Workspace Registry, File Explorer, editor, and Pi retain their separate authorities. The editor is Monaco-only and bundles its Java language contribution locally. Guarded Java semantics do not imply Java module activation. **Paste Java Class from Clipboard** is a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts while Rust retains accepted-root authority. The matching activity can inspect and approve metadata for one Default Build recipe without executing project input; browser support is unavailable. Machine Settings remains independent. Focused native evidence covers the exact accessible missing-Steam monitor presentation from isolated empty directories; the broader machine Settings lifecycle remains harness-only. See the [frozen Java inventory](target-java-intelligence.md) and mixed-boundary [XCOM 2](target-xcom2-setup.md) views.
 
 ```text
 Developer ──uses──> IDE Application
@@ -11,8 +11,11 @@ Developer ──uses──> IDE Application
                             │    └─ capability gate → preview/acknowledgement/apply/discard
                             ├─ Monaco-only editor + local Java syntax highlighting
                             │    └─ synchronized Java model → completion / hover / signature help
-                            ├─ left sidebar: File Explorer + Workspace Explorer
-                            ├─ core Terminal + AI Agent bottom tools
+                            ├─ Files activity: existing File Explorer + Workspace Explorer
+                            ├─ Agent activity: raw native Pi TUI in a workspace-owned PTY
+                            │    ├─ docked/detached renderers are non-owning attachments
+                            │    └─ Changes/Activity/Resources/Sessions are read-only accessories
+                            ├─ core Terminal bottom tool
                             ├─ project Problems while ready Java context or projected items exist
                             ├─ XCOM 2 Project activity after accepted native activation
                             │    ├─ cached presentation cannot restore native root authority
@@ -42,7 +45,18 @@ Developer ──uses──> IDE Application
 | **Local Steam Installation Metadata**   | Desktop-only, bounded read-only evidence for monitor and setup. Prepare validates vanilla AppID `602410` and journals build, manifest, and SDK root fingerprint without exporting paths or proprietary content.                                                                                                                                                                                                        |
 | **Installed WOTC Game and Vanilla SDK** | External installation audited by the concrete setup flow. Only the 15 reviewed reversible operations are eligible, including one allowlisted CookedPCConsole symlink to the installed game.                                                                                                                                                                                                                            |
 | **External SDK Write Approval**         | Grants Apply only for an exact reviewed digest and one transaction. It does not authorize optional provisioning or future transactions.                                                                                                                                                                                                                                                                                |
-| **OS Programs**                         | Receive bounded one-shot direct-argv execution; no shell or persistent PTY is implied.                                                                                                                                                                                                                                                                                                                                 |
+| **Pi Interactive Runtime**              | Runs the interactive terminal UI in a backend-owned portable PTY rooted at the registered workspace. Pi exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry. The deterministic `ide-{workspaceId}` identity is supplied through fixed argv.                                                                                                                       |
+| **OS Programs**                         | Receive bounded one-shot direct-argv execution outside the separately modeled persistent Pi PTY runtime.                                                                                                                                                                                                                                                                                                               |
+
+## Workspace-native Pi Agent Boundary
+
+The existing Workspace Registry selects the canonical workspace root. The desktop **Files** activity continues to delegate file opening to the existing editor. The **Agent** activity adds no parallel workspace, file, editor, chat, or history model.
+
+The Rust Backend owns one portable PTY process per workspace and launches the fixed `pi` executable in the canonical root with session identity `ide-{workspaceId}`. Its one-MiB terminal tail exists only for byte-transport continuity when a renderer reattaches; Pi remains the sole history and conversation authority.
+
+Docked and detached xterm renderers attach without owning process lifetime. The detached window remains pinned to its originating workspace. Workspace switching and renderer closure detach without EOF or termination; only a separately confirmed **Stop Pi** request kills the selected workspace process during normal application operation.
+
+**Changes**, IDE **Activity**, package/command **Resources**, and process **Sessions** are bounded read-only accessories. The desktop shell does not render the legacy RPC chat surface. Package and command discovery may use bounded Pi metadata calls, but never substitutes for the interactive TUI or reads its conversation.
 
 ## Project Foundry Rendering, Refusal, and Creation Boundary
 
@@ -81,12 +95,12 @@ No production component calls that seam. The production UI exposes review, **App
 - Preview/no-write means no imported target or other project-content write before Apply. It is not a byte-identical hidden-workspace-metadata guarantee: provider `project.open` may create `.refactorkit/workspace.lock`.
 - Cancellation and selection/workspace invalidation invoke `refactor.discard`. Malformed output, timeout, workspace switch, or app exit kills the daemon rather than continuing with uncertain state.
 - Tree refresh/open uses only backend-authoritative changed/primary paths.
-- The IDE never infers a package, constructs or writes a fallback patch, or forces an incomplete provider. Clipboard source is transient, is never logged, and has no path to Pi/AI Agent.
+- The IDE never infers a package, constructs or writes a fallback patch, or forces an incomplete provider. Clipboard source is transient, is never logged, and has no path to workspace Pi Agent.
 
 ## Corrected Current Boundary
 
 - **Desktop left sidebar:** **File Explorer** appears above **Workspace Explorer** as independently collapsible sections. Workspace Explorer lists registered workspaces and exposes switching, refresh, loading, and errors; the duplicate header select is removed.
-- **Desktop BottomPanel:** a dynamic accessible tool-window host with icon, title, `core`/`project` scope, badge/count, disabled state, and Arrow/Home/End keyboard behavior. The desktop app contributes core **Terminal** and **AI Agent**, plus project-scoped **Problems** while a ready Java context or projected problem items exist. This visibility guard is not module activation.
+- **Desktop activities and BottomPanel:** **Files** retains the existing File Explorer and Workspace Explorer; **Agent** hosts the workspace-native Pi screen. The dynamic BottomPanel contributes core **Terminal** plus project-scoped **Problems** while a ready Java context or projected problem items exist. This visibility guard is not module activation.
 - **Web BottomPanel:** the same host contract, currently with core **Terminal** only.
 - **No global technology tabs:** neither Java nor XCOM is a global BottomPanel technology tab; current Problems is a guarded diagnostic projection rather than a Java technology tab.
 - **Global Java Settings:** owns JDK/JDT LS lifecycle/status and RefactorKit availability/version/path/capability discovery. Interactive completion, hover, and signature help live in the exact synchronized Monaco Java model rather than Settings. Settings does not expose Java workspace scan, definition/references, symbols, results, navigation, or refactoring.

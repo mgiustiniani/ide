@@ -1,16 +1,16 @@
-workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activation authority, metadata-only recipe review, Project Foundry, and optional boundaries" {
+workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access, guarded Java semantics, XCOM authority, and Project Foundry" {
     model {
-        developer = person "Developer" "Browses, edits, and analyzes source code."
+        developer = person "Developer" "Browses, edits, analyzes source code, and uses Pi in an authorized workspace."
 
-        ide = softwareSystem "IDE Application" "Web-first IDE available as a browser SPA and a Tauri desktop application." {
+        ide = softwareSystem "IDE Application" "Web-first IDE available as a browser SPA and a Tauri desktop application with workspace-native Pi access." {
             webApp = container "Web App" "Browser IDE variant with honest native capability limits. It starts no XCOM machine polling or project activation reads." "React, Vite" {
                 webUi = component "IDE-native UI and State" "Provides the browser file tree, editor, terminal, panels, stores, and explicit native capability limitations without global Java or XCOM tabs." "React, Monaco, Zustand" "Current"
                 webBottomPanel = component "Web Bottom Tool-window Host" "Hosts core Terminal in an accessible dynamic browser panel with contribution metadata and keyboard navigation; starts no Java/XCOM polling." "React" "Current"
                 browserAdapters = component "Browser Adapters" "Provides browser-safe ports; native XCOM activation and build-recipe inspection fail honestly without filesystem, process, network, or storage work." "TypeScript" "Current"
             }
 
-            desktopApp = container "Desktop App" "Tauri WebView IDE with guarded Java, XCOM settings, accepted-root activation, metadata-only recipe review, and Project Foundry." "React, Vite, Tauri WebView" {
-                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes controllers and the injected Project Foundry adapter, derives props, and renders the shell without owning feature orchestration." "React, Monaco, Zustand" "Current"
+            desktopApp = container "Desktop App" "Tauri WebView IDE with workspace-native Pi, guarded Java, XCOM settings and activation, recipe review, and Project Foundry." "React, Vite, Tauri WebView" {
+                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes the shell, feature controllers, and docked Agent activity while feature lifecycles remain behind ports." "React, Monaco, Zustand" "Current"
                 workspaceController = component "Workspace Controller" "Owns registry, authorized-root transitions, and monotonic WorkspaceGeneration; coordinates activation revocation/start and setup correlation." "TypeScript, React" "Current"
                 desktopEditorController = component "Desktop Editor Controller" "Coordinates guarded file open/create, tab lifecycle, authorized restore/reset, and readiness; rejects completions from stale workspace generations." "TypeScript, React" "Current"
                 settingsController = component "Settings Controller" "Owns Settings visibility and section refresh coordination. It delegates machine monitor and transaction lifecycles to XCOM Setup while open." "TypeScript, React" "Current"
@@ -19,17 +19,22 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
                 documentNavigationController = component "Document Navigation Controller" "Owns document-preview visibility and diagnostic navigation; opens through the Desktop Editor Controller before bounded reveal requests." "TypeScript, React" "Current"
                 editorCommandController = component "Editor Command Controller" "Coordinates buffer changes, saves, tab activation/close, and Java document flush/save/close ordering." "TypeScript, React" "Current"
                 desktopShellController = component "Desktop Shell Controller" "Routes sidebar and bottom-panel resize/toggle requests to layout state, preserving dimensions; owns bottom-tab state and guarded Problems policy." "TypeScript, React" "Current"
-                aiAgentController = component "AI Agent Controller" "Owns configuration, workspace-keyed commands, sessions, activity and explicit prompts; saves isolated UI state and suppresses stale requests." "TypeScript, React" "Current"
+                aiAgentController = component "Pi Runtime Configuration Controller" "Owns Pi settings, status, installation, and read-only command discovery; conversation remains in the native Pi TUI." "TypeScript, React" "Current"
+                piWorkspaceAgentScreen = component "Workspace Pi Agent Screen" "Hosts the Pi terminal and bounded read-only Changes, IDE Activity, Resources, and process Sessions accessories." "React" "Current"
+                piWorkspaceAgentController = component "Pi Renderer Attachment Controller" "Attaches docked or detached views to one workspace session, rejects stale events, and delegates process authority through a port." "TypeScript, React" "Current"
+                piNativeTerminal = component "Raw Pi Terminal Renderer" "Forwards input, ANSI output, paste, modified Enter sequences, and resize without owning or parsing Pi interaction semantics." "React, xterm.js" "Current"
+                piDetachedRenderer = component "Workspace-pinned Detached Pi Renderer" "Hosts the shared Agent screen for its originating workspace; closing it releases only the renderer attachment." "React, Tauri WebView" "Current"
+                tauriPiWorkspaceAgentAdapter = component "Strict Pi Workspace Agent Tauri Adapter" "Validates PTY snapshots, output and status events, read-only accessories, and detached-window bindings." "TypeScript, Tauri API" "Current"
                 refactorKitStatusController = component "RefactorKit Status Controller" "Discovers provider-neutral diagnostic status and capabilities after authorization; normalizes independent outcomes and rejects stale generations." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Java Clipboard Import UI" "Directory-tree action plus preview, conditional acknowledgement, exact-plan Apply, and Cancel. It exposes no rollback action." "React" "Current"
                 refactorKitImportController = component "RefactorKit Import Controller" "Probes capability before clipboard access, guards selection and plan identity, discards invalid work, and opens backend-authoritative results." "TypeScript, React" "Current"
                 refactorKitSymbolNavigationSupport = component "RefactorKit Symbol Navigation Support" "Provides saved-snapshot TypeScript and JavaScript search and definition support behind a workspace-write policy boundary." "TypeScript, React" "Frozen"
                 tauriRefactorKitAdapter = component "RefactorKit and Clipboard Tauri Adapters" "Provides typed capability, preview, exact-plan Apply, discard, backend rollback, and clipboard ports." "TypeScript, Tauri API" "Current"
                 desktopSidebar = component "Desktop Left Sidebar Accordion" "Shows File Explorer above Workspace Explorer as independent sections; lists registered workspaces with switch, refresh, loading, and error states." "React" "Current"
-                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "Hosts core Terminal and AI Agent plus guarded project Problems; exposes accessible contribution metadata and keyboard behavior." "React" "Current"
+                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "Hosts the core Terminal and guarded project Problems with accessible contribution metadata and keyboard behavior." "React" "Current"
                 languageContracts = component "Provider-neutral Language Contracts" "Defines normalized lifecycle, document sync, diagnostics, semantics, cancellation, capabilities, results, and events behind provider-neutral types." "TypeScript" "Current"
                 languageLifecyclePanel = component "Global Java Tooling Settings" "Manages global JDK/JDT LS lifecycle and RefactorKit discovery without project scan, navigation, refactoring, or activation actions." "React" "Current"
-                tauriAdapters = component "Tauri Adapters" "Typed desktop adapters for workspace, editor, terminal, AI, Java, RefactorKit, and XCOM native boundaries." "TypeScript, Tauri API" "Current"
+                tauriAdapters = component "Tauri Adapters" "Typed desktop adapters for workspace, editor, terminal, Pi configuration, Java, RefactorKit, and XCOM boundaries." "TypeScript, Tauri API" "Current"
                 tauriLanguageAdapter = component "Tauri Language Session and Document Adapter" "Implements language session and document sync ports with identity validation, bounded event polling, and versioned document notifications." "TypeScript, Tauri API" "Current"
                 tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "Implements completion, hover, signature-help, and cancellation calls; rejects malformed, mismatched, or stale native payloads." "TypeScript, Tauri API" "Current"
                 javaLanguageController = component "Java Language Controller" "Owns Java sessions, versioned document sync, diagnostics, Problems projection, semantics, and cancellation with comprehensive identity guards." "TypeScript, React" "Current"
@@ -74,8 +79,11 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
                 externalProviderAdapters = component "Additional Provider Adapters" "Adapts bounded build, framework, remote, search, or semantic providers through strict typed machine-readable contracts; human stdout is not a protocol." "TypeScript" "Frozen"
             }
 
-            rustBackend = container "Rust Backend" "Native workspace and XCOM root authority, managed language services, RefactorKit, XCOM transactions, and metadata-only recipe inspection." "Rust, Tauri" {
-                workspaceCommands = component "Workspace and Command Handlers" "Provides authorized operations, application-owned .ide/workspace.json marker and registry metadata, and bounded one-shot commands." "Rust" "Current"
+            rustBackend = container "Rust Backend" "Owns workspace authority, per-workspace Pi PTYs, managed language services, RefactorKit, and bounded XCOM operations." "Rust, Tauri" {
+                workspaceCommands = component "Workspace Registry and Command Handlers" "Owns canonical workspace bindings, registry metadata, the application marker, and bounded one-shot commands." "Rust" "Current"
+                piWorkspaceAgentFacade = component "Pi Workspace Agent Tauri Facade" "Exposes attachment, byte transport, resize, start, confirmed stop, snapshot, accessory, and detached-window commands and events." "Rust, Tauri" "Current"
+                piWorkspaceAgentRuntime = component "Per-workspace Pi PTY Runtime" "Owns one portable PTY process per workspace, deterministic session identity, renderer attachments, process state, and a bounded transport tail." "Rust, portable-pty" "Current"
+                piWorkspaceAgentAccessories = component "Pi Read-only Accessory Reader" "Discovers bounded Git changes and Pi package and command metadata without reading conversation history." "Rust, git2" "Current"
                 refactorKitHandlers = component "RefactorKit Status Handlers" "Bounded diagnostic status only; managed capability and import commands use the separate daemon facade." "Rust" "Current"
                 refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
                 refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "Requires the advertised API and exact Java-import methods; retains other provider metadata as evidence and fails closed on incomplete methods." "Rust" "Current"
@@ -108,7 +116,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         browser = softwareSystem "Web Browser" "Runs the web SPA and provides localStorage." "External"
         filesystem = softwareSystem "OS File System" "Stores authorized workspaces, service data, RefactorKit metadata, and bounded XCOM transaction state." "External"
         osClipboard = softwareSystem "OS Clipboard" "Provides text for an explicit directory-tree Java import only after the advertised API and exact required methods pass." "External"
-        osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands." "External"
+        osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands outside the Pi runtime." "External"
+        piRuntime = softwareSystem "Pi Interactive Runtime" "Runs the native terminal UI and exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry." "External"
         jdk = softwareSystem "Full Java JDK" "External non-bundled JDK capability-probed through java and javac; licensing is determined by the user's chosen distribution." "External"
         jdtLs = softwareSystem "Eclipse JDT LS" "External non-bundled EPL-2.0 language server with checksum-verified installation of a pinned snapshot." "External"
         refactorKit = softwareSystem "RefactorKit Engine" "Discovers capability and owns Java-import preview, Apply, discard, rollback, and provider metadata. The import UI exposes no rollback action." "External"
@@ -118,8 +127,9 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         xcomProvisioningServices = softwareSystem "Optional Steam and Prefix Provisioning" "Separately authorized Steam, compatibility-prefix, package-manager, and interactive setup services." "External,Target"
         externalProviders = softwareSystem "Additional Provider Runtimes" "Separately approved build, framework, remote, search, or semantic provider runtimes behind bounded protocols." "External,Frozen"
 
-        developer -> webUi "Uses the browser IDE"
         developer -> desktopUi "Uses the editor and persistent shell controls"
+        developer -> webUi "Uses the browser IDE"
+        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Uses typed native commands and events" "Tauri invoke/events"
         webUi -> webBottomPanel "Hosts the core Terminal contribution"
         desktopUi -> workspaceController "Delegates authorization, switching, and explicit full Workspace Refresh"
         desktopUi -> desktopSidebar "Hosts File Explorer above Workspace Explorer"
@@ -131,7 +141,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         workspaceController -> refactorKitImportController "Invalidates selections and import plans before workspace transitions"
         workspaceController -> refactorKitStatusController "Starts capability discovery after workspace authorization"
         workspaceController -> refactorKitSymbolNavigationSupport "Invalidates transient semantic sessions during workspace changes"
-        workspaceController -> aiAgentController "Switches workspace-keyed UI state and loads commands after authorization"
+        workspaceController -> aiAgentController "Refreshes Pi runtime configuration and command metadata after authorization" "React state"
+        workspaceController -> piWorkspaceAgentController "Supplies the current authorized workspace for renderer attachment" "React state"
         workspaceController -> xcomModuleActivationController "Revokes synchronously; starts native evidence after authorization or refresh"
         workspaceController -> xcomSetupController "Passes workspace correlation; closed Settings starts no XCOM work"
         desktopUi -> desktopEditorController "Composes guarded file, tab, restore, and readiness coordination"
@@ -141,6 +152,8 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         desktopUi -> documentNavigationController "Composes preview visibility and diagnostic navigation"
         desktopUi -> editorCommandController "Composes edit, save, activation, and close ordering"
         desktopUi -> desktopShellController "Routes panel resize/visibility requests and bottom-tool policy"
+        desktopUi -> piWorkspaceAgentScreen "Contributes the docked workspace Agent activity" "React composition"
+        desktopUi -> piWorkspaceAgentController "Composes the docked renderer attachment lifecycle" "React composition"
         desktopUi -> refactorKitSymbolNavigationSupport "Wires saved-snapshot search behind the workspace-write policy"
         desktopUi -> xcomModuleActivationController "Composes workspace-scoped project activation"
         desktopUi -> xcomProjectRecognitionPanel "Contributes the activity only for active project decisions"
@@ -148,9 +161,17 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         desktopUi -> xcomFoundryDialog "Renders the global New XCOM 2 Project dialog"
         desktopEditorController -> tauriAdapters "Uses injected editor and file-tree ports within the authorized workspace"
         desktopEditorController -> javaLanguageController "Supplies a ready document and workspace-safe lifecycle signals"
-        desktopShellController -> desktopBottomPanel "Hosts core tools and guarded project Problems"
-        desktopShellController -> aiAgentController "Loads commands when the AI Agent bottom tab is activated"
+        desktopShellController -> desktopBottomPanel "Hosts the core Terminal and guarded project Problems"
+        desktopSidebar -> fileExplorerController "Hosts the existing file-tree interactions" "React composition"
         fileExplorerController -> desktopEditorController "Creates files through the guarded editor boundary"
+        developer -> piWorkspaceAgentScreen "Uses Pi and inspects read-only workspace accessories" "Desktop UI"
+        developer -> piDetachedRenderer "Uses or closes the larger workspace-pinned Agent view" "Desktop UI"
+        piDetachedRenderer -> piWorkspaceAgentScreen "Hosts the shared Agent screen for its pinned workspace" "React composition"
+        piWorkspaceAgentScreen -> piWorkspaceAgentController "Requests attachment, accessories, restart, detach, and confirmed stop" "React callbacks"
+        piWorkspaceAgentScreen -> piNativeTerminal "Hosts the raw native Pi TUI renderer" "React composition"
+        piWorkspaceAgentScreen -> desktopEditorController "Opens selected changed files through the existing editor authority" "Application call"
+        piNativeTerminal -> piWorkspaceAgentController "Forwards raw input and resize without interpreting Pi semantics" "Renderer callback"
+        piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Uses the workspace-scoped PTY and accessory port" "Typed port"
         documentNavigationController -> desktopEditorController "Opens diagnostic targets before requesting an editor reveal"
         editorCommandController -> desktopEditorController "Coordinates tab activation/close and buffer persistence"
         editorCommandController -> javaLanguageController "Flushes and synchronizes Java documents around editor commands"
@@ -158,8 +179,7 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         settingsController -> languageLifecyclePanel "Opens Settings and requests independently owned tooling refreshes"
         settingsController -> xcomSetupController "Open owns one monitor and transaction lifecycle; close cancels both"
         javaLanguageController -> desktopShellController "Supplies projected problems and ready-context state"
-        desktopBottomPanel -> aiAgentController "Renders workspace-keyed AI state and explicit prompts"
-        aiAgentController -> tauriAdapters "Uses the injected AI Agent port and suppresses stale workspace-scoped results"
+        aiAgentController -> tauriAdapters "Uses Pi runtime settings, status, installation, and command-discovery ports" "Typed ports"
         developer -> javaClipboardPasteSurface "Reviews, acknowledges when required, applies, or cancels an import plan"
         javaClipboardPasteSurface -> refactorKitImportController "Starts preview, exact-plan Apply, and cancellation"
         refactorKitImportController -> tauriRefactorKitAdapter "Probes capability before clipboard access, then previews, applies, or discards"
@@ -173,6 +193,17 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
         tauriAdapters -> workspaceCommands "Invokes allowlisted commands" "Tauri invoke"
         workspaceCommands -> filesystem "Reads and writes authorized workspace paths"
         workspaceCommands -> osPrograms "Starts bounded one-shot commands" "Direct argv"
+        piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Delegates process, attachment, transport-tail, and session operations" "Rust call"
+        piWorkspaceAgentFacade -> piWorkspaceAgentAccessories "Requests bounded read-only accessory discovery" "Rust call"
+        piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the window pinned to its originating workspace" "Tauri window API"
+        piWorkspaceAgentRuntime -> workspaceCommands "Validates workspace identity against the canonical registry binding" "Rust call"
+        piWorkspaceAgentRuntime -> piRuntime "Starts fixed argv in the canonical root and exchanges raw terminal bytes" "Portable PTY"
+        piWorkspaceAgentAccessories -> filesystem "Reads bounded Git status and package metadata" "Read-only access"
+        piWorkspaceAgentAccessories -> piRuntime "Discovers package and command metadata without conversation access" "Bounded direct argv/RPC"
+        piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Publishes process snapshots and raw output events" "Rust callback"
+        piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Emits raw output and process status events" "Tauri events"
+        tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers validated snapshots and events" "Typed events"
+        piWorkspaceAgentController -> piNativeTerminal "Feeds raw output and the bounded reattachment tail" "Renderer feed"
         languageLifecyclePanel -> refactorKitStatusController "Renders provider-neutral diagnostic status and capability discovery only"
         refactorKitStatusController -> tauriRefactorKitAdapter "Requests diagnostic status and capabilities"
         tauriAdapters -> refactorKitHandlers "Invokes bounded RefactorKit status handlers" "Tauri invoke"
@@ -298,15 +329,15 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
     views {
         systemContext ide "IdeSystemContext" {
             title "IDE System Context"
-            description "Desktop combines guarded Java, XCOM accepted-root authority, metadata-only recipe review, SDK setup, and Project Foundry over bounded systems."
-            include developer ide browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            description "The IDE combines workspace-native Pi TUI access with guarded Java, bounded XCOM authority, SDK setup, and Project Foundry."
+            include developer ide browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
             autoLayout lr
         }
 
         container ide "IdeContainers" {
             title "IDE Containers"
-            description "Desktop and Rust host guarded Java, XCOM activation authority, metadata-only recipe review, SDK setup, and digest-bound Foundry publication."
-            include developer webApp desktopApp rustBackend browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            description "Desktop and Rust host the Pi attachment boundary, guarded Java, bounded XCOM operations, and digest-bound Foundry publication."
+            include developer webApp desktopApp rustBackend browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
             autoLayout lr
         }
 
@@ -319,15 +350,96 @@ workspace "IDE Architecture" "Monaco editing, guarded Java semantics, XCOM activ
 
         component desktopApp "DesktopAppComponents" {
             title "Desktop App Components"
-            description "Composition wires guarded controllers, XCOM settings and activation, and digest-bound Project Foundry preview and creation."
-            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController aiAgentController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomNativeActivationEvidenceAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomBuildRecipeController xcomBuildRecipeReviewService xcomBuildRecipeReviewPolicy tauriXcomBuildRecipeInspectionAdapter xcomBuildRecipeContribution xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
+            description "Composition wires the workspace-native Pi screen, guarded controllers, XCOM boundaries, and digest-bound Project Foundry creation."
+            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController aiAgentController piWorkspaceAgentScreen piWorkspaceAgentController piNativeTerminal piDetachedRenderer tauriPiWorkspaceAgentAdapter javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomNativeActivationEvidenceAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomBuildRecipeController xcomBuildRecipeReviewService xcomBuildRecipeReviewPolicy tauriXcomBuildRecipeInspectionAdapter xcomBuildRecipeContribution xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "RustBackendComponents" {
             title "Rust Backend Components"
-            description "Native services include guarded Java, RefactorKit and XCOM transactions, activation inputs, authoritative rendering, and atomic Foundry publication."
-            include desktopApp workspaceCommands refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner xcomNativeActivationAuthority xcomBuildRecipeInspector tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem steamMetadata xcomToolchain xcomApproval osPrograms jdk jdtLs refactorKit
+            description "Native services own workspace Pi sessions alongside guarded Java, RefactorKit, bounded XCOM operations, and Foundry publication."
+            include desktopApp workspaceCommands piWorkspaceAgentFacade piWorkspaceAgentRuntime piWorkspaceAgentAccessories refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner xcomNativeActivationAuthority xcomBuildRecipeInspector tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
+            autoLayout lr
+        }
+
+        systemContext ide "PiWorkspaceAgentContext" {
+            title "Workspace-native Pi Agent Context"
+            description "The IDE embeds Pi's interactive terminal UI while the Workspace Registry, File Explorer, editor, and Pi retain their separate authorities."
+            include developer ide filesystem piRuntime
+            autoLayout lr
+        }
+
+        container ide "PiWorkspaceAgentContainers" {
+            title "Workspace-native Pi Agent Containers"
+            description "The Desktop App supplies non-owning renderers; the Rust Backend owns workspace PTYs and attaches them to the external Pi runtime."
+            include developer desktopApp rustBackend piRuntime
+            autoLayout lr
+        }
+
+        component desktopApp "PiWorkspaceAgentDesktopComponents" {
+            title "Workspace-native Pi Agent — Desktop Components"
+            description "Docked and detached renderers share raw terminal transport and read-only accessories while existing workspace and editor components retain authority."
+            include developer desktopUi workspaceController desktopSidebar fileExplorerController desktopEditorController aiAgentController piWorkspaceAgentScreen piWorkspaceAgentController piNativeTerminal piDetachedRenderer tauriPiWorkspaceAgentAdapter rustBackend
+            autoLayout lr
+        }
+
+        component rustBackend "PiWorkspaceAgentRustComponents" {
+            title "Workspace-native Pi Agent — Rust Components"
+            description "The backend validates workspace identity, owns portable PTY processes and transport tails, and discovers bounded read-only accessory metadata."
+            include desktopApp workspaceCommands piWorkspaceAgentFacade piWorkspaceAgentRuntime piWorkspaceAgentAccessories filesystem piRuntime
+            exclude "desktopApp -> filesystem"
+            exclude "desktopApp -> workspaceCommands"
+            autoLayout lr
+        }
+
+        dynamic desktopApp "PiWorkspaceReattachmentRuntime" {
+            title "Pi Workspace Switch and Reattachment"
+            description "The docked renderer follows the authorized workspace while each backend-owned Pi process and deterministic session remains isolated."
+            developer -> desktopSidebar "Selects registered workspace A"
+            desktopSidebar -> workspaceController "Requests the authorized workspace switch"
+            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace A"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Attaches the docked renderer"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the strict attach command"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Creates or reuses workspace A state"
+            piWorkspaceAgentRuntime -> workspaceCommands "Validates the canonical registry binding"
+            piWorkspaceAgentRuntime -> piRuntime "Starts or reuses ide-{workspaceId} in the canonical root"
+            piWorkspaceAgentRuntime -> piWorkspaceAgentFacade "Returns process state and the bounded transport tail"
+            piWorkspaceAgentFacade -> tauriPiWorkspaceAgentAdapter "Emits raw output and status"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentController "Delivers validated workspace A events"
+            piWorkspaceAgentController -> piNativeTerminal "Feeds workspace A terminal bytes"
+            developer -> desktopSidebar "Switches from workspace A to workspace B"
+            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace B"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Detaches A and attaches B"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Changes renderer attachments without stopping A"
+            piWorkspaceAgentRuntime -> piRuntime "Starts or reuses the isolated workspace B session"
+            developer -> desktopSidebar "Returns to workspace A"
+            workspaceController -> piWorkspaceAgentController "Supplies authorized workspace A again"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Detaches B and reattaches A"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Reuses A's live process and bounded transport tail"
+            piWorkspaceAgentController -> piNativeTerminal "Feeds only workspace A terminal bytes"
+            autoLayout lr
+        }
+
+        dynamic desktopApp "PiDetachedAndStopRuntime" {
+            title "Pi Detached View and Explicit Stop"
+            description "Opening or closing a renderer changes attachments only; a separately confirmed Stop Pi action terminates one workspace process."
+            developer -> piWorkspaceAgentScreen "Requests a larger Agent view"
+            piWorkspaceAgentScreen -> piWorkspaceAgentController "Requests the detached renderer"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Requests the pinned window"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the detached-window command"
+            piWorkspaceAgentFacade -> piDetachedRenderer "Opens or focuses the origin-pinned renderer"
+            piDetachedRenderer -> piWorkspaceAgentScreen "Hosts the same workspace Agent screen"
+            developer -> piDetachedRenderer "Closes the detached view"
+            piDetachedRenderer -> piWorkspaceAgentScreen "Unmounts the shared screen"
+            piWorkspaceAgentScreen -> piWorkspaceAgentController "Releases only the renderer attachment"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Invokes detach without EOF or termination"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Removes the view attachment and retains the process"
+            developer -> piWorkspaceAgentScreen "Confirms Stop Pi for the named workspace"
+            piWorkspaceAgentScreen -> piWorkspaceAgentController "Submits the separate confirmed stop"
+            piWorkspaceAgentController -> tauriPiWorkspaceAgentAdapter "Invokes the confirmed workspace stop"
+            tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes the strict stop command"
+            piWorkspaceAgentFacade -> piWorkspaceAgentRuntime "Terminates only the selected workspace process"
+            piWorkspaceAgentRuntime -> piRuntime "Stops the selected process and retains session identity"
             autoLayout lr
         }
 
