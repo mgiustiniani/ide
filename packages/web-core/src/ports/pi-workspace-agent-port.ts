@@ -14,8 +14,10 @@ export type PiWorkspaceAgentUnsubscribe = () => void;
 /**
  * Native boundary for one backend-owned interactive Pi PTY per IDE workspace.
  *
- * This port transports raw terminal bytes and accessory metadata only. It must
- * never grow chat/message/tool/model/history methods; those remain native Pi TUI
+ * This port transports raw terminal bytes and accessory metadata only. A returned
+ * attachment exposes caller-authorized details on `session`, while `sessions`
+ * contains rootless retained-session summaries. It must never grow
+ * chat/message/tool/model/history methods; those remain native Pi TUI
  * responsibilities inside the PTY.
  */
 export interface PiWorkspaceAgentPort {

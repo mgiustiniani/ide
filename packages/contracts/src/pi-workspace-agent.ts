@@ -24,6 +24,16 @@ export interface PiWorkspaceAgentSessionSnapshot {
   lastError?: string;
 }
 
+export interface PiWorkspaceAgentSessionSummary {
+  workspaceId: string;
+  workspaceName: string;
+  sessionId: string;
+  processState: PiWorkspaceAgentProcessState;
+  processGeneration: number;
+  lastActivityAt: string;
+  attachedViewCount: number;
+}
+
 export interface PiWorkspaceAgentActivity {
   sequence: number;
   eventType: string;
@@ -40,8 +50,8 @@ export interface PiWorkspaceAgentAttachment {
   transcriptSequence: number;
   transcriptTruncated: boolean;
   activities: PiWorkspaceAgentActivity[];
-  /** Process/session metadata only; Pi conversation history is deliberately absent. */
-  sessions: PiWorkspaceAgentSessionSnapshot[];
+  /** Rootless retained-session summaries; caller-authorized details remain on `session`. */
+  sessions: PiWorkspaceAgentSessionSummary[];
 }
 
 export interface PiWorkspaceAgentOutputEvent {
