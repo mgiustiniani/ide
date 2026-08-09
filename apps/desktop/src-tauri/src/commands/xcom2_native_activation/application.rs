@@ -73,23 +73,29 @@ pub(super) fn begin_with_registry(
         return Err("workspace-identity-mismatch".to_string());
     }
 
-    let (activation_generation, receipt) = {
+    let receipt = mint_opaque("xcom2-attempt")?;
+    let (activation_generation, inspection_generation) = {
         let mut inner = state
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        inner.next_activation_generation = inner
+        let activation_generation = inner
             .next_activation_generation
             .checked_add(1)
             .filter(|generation| *generation <= JS_MAX_SAFE_INTEGER)
             .ok_or_else(|| "activation-generation-exhausted".to_string())?;
-        let generation = inner.next_activation_generation;
-        let receipt = mint_opaque("xcom2-attempt")?;
+        let inspection_generation = inner
+            .next_inspection_generation
+            .checked_add(1)
+            .filter(|generation| *generation <= JS_MAX_SAFE_INTEGER)
+            .ok_or_else(|| "inspection-generation-exhausted".to_string())?;
+        inner.next_activation_generation = activation_generation;
+        inner.next_inspection_generation = inspection_generation;
         inner.authority = Authority::Preparing {
-            activation_generation: generation,
+            activation_generation,
             activation_attempt_receipt: receipt.clone(),
         };
-        (generation, receipt)
+        (activation_generation, inspection_generation)
     };
 
     let attempt = build_candidate(&binding, &request, activation_generation, receipt.clone());
@@ -123,6 +129,7 @@ pub(super) fn begin_with_registry(
         workspace_id: request.workspace_id,
         workspace_generation: request.workspace_generation,
         activation_generation,
+        inspection_generation,
         activation_attempt_receipt: receipt,
         binding,
         registry_binding,
@@ -343,6 +350,7 @@ pub(super) fn acknowledge(
         workspace_id: pending.workspace_id.clone(),
         workspace_generation: pending.workspace_generation,
         activation_generation: pending.activation_generation,
+        inspection_generation: pending.inspection_generation,
         activation_attempt_receipt: pending.activation_attempt_receipt.clone(),
         binding: pending.binding.clone(),
         registry_binding: pending.registry_binding.clone(),
@@ -416,8 +424,8 @@ pub(super) fn inspect(
         return Err("request-invalid".to_string());
     }
 
-    let (accepted, module, inspection_generation) = {
-        let mut inner = state
+    let (accepted, module) = {
+        let inner = state
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -439,12 +447,7 @@ pub(super) fn inspect(
         if module.source_hash.len() != 64 || (!module.configured && !module.strong) {
             return Err("accepted-snapshot-invalid".to_string());
         }
-        inner.next_inspection_generation = inner
-            .next_inspection_generation
-            .checked_add(1)
-            .filter(|generation| *generation <= JS_MAX_SAFE_INTEGER)
-            .ok_or_else(|| "inspection-generation-exhausted".to_string())?;
-        (accepted, module, inner.next_inspection_generation)
+        (accepted, module)
     };
 
     if !current_workspace_binding_is_current(&accepted.registry_binding) {
@@ -455,10 +458,26 @@ pub(super) fn inspect(
         &module.module_root,
         &module.module_identity,
     )?;
+    if !current_workspace_binding_is_current(&accepted.registry_binding) {
+        return Err("stale-workspace".to_string());
+    }
+    let inner = state
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !matches!(
+        &inner.authority,
+        Authority::Accepted(current)
+            if current.activation_generation == accepted.activation_generation
+                && current.inspection_generation == accepted.inspection_generation
+                && current.activation_attempt_receipt == accepted.activation_attempt_receipt
+    ) {
+        return Err("authority-stale".to_string());
+    }
     Ok(candidate_from_facts(
         &accepted,
         &module.module_root,
-        inspection_generation,
+        accepted.inspection_generation,
         facts,
     ))
 }

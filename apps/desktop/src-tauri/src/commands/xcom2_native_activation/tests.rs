@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::state::Authority;
@@ -147,6 +148,18 @@ fn acknowledge_fixture(
             evidence_handles: handles,
         },
     )
+}
+
+fn inspection_request(fixture: &Fixture) -> BuildRecipeInspectionRequest {
+    BuildRecipeInspectionRequest {
+        workspace_id: fixture.workspace_id.clone(),
+        generation: 7,
+        module_root: "Mods/RecipeFixture".to_string(),
+    }
+}
+
+fn inspect_fixture(fixture: &Fixture, state: &Xcom2NativeActivationState) -> BuildRecipeCandidate {
+    application::inspect(state, inspection_request(fixture)).expect("inspect recipe")
 }
 
 #[test]
@@ -528,6 +541,171 @@ fn scenario_like_fixture_inspection_is_metadata_only_read_only_and_never_runs_ca
             "leaked forbidden value: {forbidden}"
         );
     }
+}
+
+#[test]
+fn repeated_unchanged_inspections_reuse_identical_digest_bound_authority_facts() {
+    let fixture = Fixture::new("stable-inspection-generation");
+    let state = Xcom2NativeActivationState::default();
+    let activation = begin_fixture(&fixture, &state);
+    assert!(matches!(
+        acknowledge_fixture(&activation, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+
+    let first = inspect_fixture(&fixture, &state);
+    let second = inspect_fixture(&fixture, &state);
+
+    assert!(first.inspection_generation > 0);
+    assert_eq!(second, first);
+}
+
+#[test]
+fn changed_script_and_notice_facts_change_candidate_without_changing_authority_generation() {
+    let fixture = Fixture::new("changed-inspection-facts");
+    let state = Xcom2NativeActivationState::default();
+    let activation = begin_fixture(&fixture, &state);
+    assert!(matches!(
+        acknowledge_fixture(&activation, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+    let module = fixture.root.join("Mods/RecipeFixture");
+
+    let original = inspect_fixture(&fixture, &state);
+    fs::write(
+        module.join(".scripts/build.ps1"),
+        b"# changed inert build recipe\n",
+    )
+    .expect("change script facts");
+    let script_changed = inspect_fixture(&fixture, &state);
+    assert_eq!(
+        script_changed.inspection_generation,
+        original.inspection_generation
+    );
+    assert_ne!(script_changed.script.sha256, original.script.sha256);
+    assert_ne!(script_changed, original);
+
+    fs::write(
+        module.join(".scripts/X2ModBuildCommon.NOTICE.txt"),
+        b"Changed X2ModBuildCommon contributors attribution; licensed under MIT.\n",
+    )
+    .expect("change notice facts");
+    let notice_changed = inspect_fixture(&fixture, &state);
+    assert_eq!(
+        notice_changed.inspection_generation,
+        original.inspection_generation
+    );
+    assert_ne!(
+        notice_changed.provenance.notice.sha256,
+        script_changed.provenance.notice.sha256
+    );
+    assert_ne!(notice_changed, script_changed);
+}
+
+#[test]
+fn newly_accepted_authority_receives_a_later_stable_inspection_generation() {
+    let fixture = Fixture::new("new-inspection-authority");
+    let state = Xcom2NativeActivationState::default();
+    let first_activation = begin_fixture(&fixture, &state);
+    assert!(matches!(
+        acknowledge_fixture(&first_activation, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+    let first = inspect_fixture(&fixture, &state);
+
+    assert!(matches!(
+        application::transition(&state, ActivationLifecycleEvent::WorkspaceRefresh),
+        ActivationLifecycleDecision::Revoked { .. }
+    ));
+
+    let overflow_modules = fixture.root.join("Mods/Overflow");
+    for index in 0..65 {
+        let module = overflow_modules.join(format!("Module{index}"));
+        fs::create_dir_all(&module).expect("create overflow module");
+        fs::write(module.join(format!("Module{index}.x2proj")), b"descriptor")
+            .expect("write overflow descriptor");
+    }
+    assert_eq!(
+        application::begin_with_registry(
+            &state,
+            &fixture.root,
+            &fixture.registry_path,
+            fixture.request(),
+        ),
+        Err("candidate-invalid".to_string())
+    );
+    fs::remove_dir_all(overflow_modules).expect("remove overflow modules");
+
+    let second_activation = begin_fixture(&fixture, &state);
+    assert!(matches!(
+        acknowledge_fixture(&second_activation, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+    let second = inspect_fixture(&fixture, &state);
+    let repeated = inspect_fixture(&fixture, &state);
+
+    assert_eq!(
+        second.inspection_generation,
+        first.inspection_generation + 2,
+        "the failed attempt must consume its reserved authority generation"
+    );
+    assert_eq!(repeated.inspection_generation, second.inspection_generation);
+}
+
+#[test]
+fn concurrent_inspections_cannot_diverge_authority_generation() {
+    let fixture = Fixture::new("concurrent-inspection-generation");
+    let state = Arc::new(Xcom2NativeActivationState::default());
+    let activation = begin_fixture(&fixture, &state);
+    assert!(matches!(
+        acknowledge_fixture(&activation, &state),
+        AcknowledgmentDecision::Acknowledged { .. }
+    ));
+    let worker_count = 8;
+    let barrier = Arc::new(Barrier::new(worker_count));
+    let mut workers = Vec::new();
+    for _ in 0..worker_count {
+        let state = Arc::clone(&state);
+        let barrier = Arc::clone(&barrier);
+        let request = inspection_request(&fixture);
+        workers.push(std::thread::spawn(move || {
+            barrier.wait();
+            application::inspect(&state, request).expect("concurrent inspection")
+        }));
+    }
+    let candidates = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("inspection worker"))
+        .collect::<Vec<_>>();
+
+    assert!(candidates[0].inspection_generation > 0);
+    assert!(candidates.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn exhausted_inspection_generation_refuses_new_authority_without_wrapping() {
+    let fixture = Fixture::new("inspection-generation-exhausted");
+    let state = Xcom2NativeActivationState::default();
+    {
+        let mut inner = state.inner.lock().expect("state lock");
+        inner.next_inspection_generation = policy::JS_MAX_SAFE_INTEGER;
+    }
+
+    assert_eq!(
+        application::begin_with_registry(
+            &state,
+            &fixture.root,
+            &fixture.registry_path,
+            fixture.request(),
+        ),
+        Err("inspection-generation-exhausted".to_string())
+    );
+    let inner = state.inner.lock().expect("state lock");
+    assert_eq!(
+        inner.next_inspection_generation,
+        policy::JS_MAX_SAFE_INTEGER
+    );
+    assert!(matches!(inner.authority, Authority::Revoked(_)));
 }
 
 #[cfg(unix)]
