@@ -1004,3 +1004,81 @@ The decision was initially informed by the following bounded repository evidence
 - A refresh, switch, failed activation, cached restoration, identity change, incomplete scan, or accepted-authority change can require a fresh begin/evaluation/acknowledgment. Metadata changes under the same authority preserve its generation but require a fresh digest and recipe review.
 - The current evidence remains platform- and implementation-bounded. The promoted requirement is only `@implemented-not-e2e-validated` and remains harness-only; native GUI evidence covers activation regressions rather than recipe review, the exact-commit technical gate does not supply native GUI/E2E recipe-review evidence, and no final requirements-quality-reviewer PASS is claimed.
 - This decision intentionally leaves execution, process isolation, machine prerequisite grants, `pfx_copy`, Build/Deploy/Cook/Launch consumers, proprietary compatibility, packaging, and cross-platform validation unresolved.
+
+---
+
+## ADR 0013 — Workspace-Scoped Native Pi TUI Through Backend-Owned PTYs
+
+**Status:** Accepted. The pre-production [`BASELINE-REQ-PI-WORKSPACE-AGENT-001-v1.json`](docs/requirements-baselines/BASELINE-REQ-PI-WORKSPACE-AGENT-001-v1.json) records user confirmation to proceed with the bounded interactive-TUI experience and its workspace, authority, attachment, and termination constraints. [`REQ-PI-WORKSPACE-AGENT-001`](features/workspace/pi-native-agent.feature) remains `@implemented-not-e2e-validated`; this ADR records the decision rather than a final delivery or reviewer verdict.
+
+### Context
+
+The desktop IDE already had an authoritative Workspace Registry, File Explorer, editor, and a legacy one-shot Pi RPC panel. That panel launched separate `pi --mode rpc` processes and projected their messages into React, so it could not provide Pi's actual interactive terminal experience. Recreating the conversation through React, RPC, or an SDK sidecar would make the IDE a competing authority for Pi messages, history, tools, commands, extensions, models, trust, compaction, retry, and session behavior.
+
+The required experience needs the interactive Pi TUI, process continuity while a view is hidden, isolation across registered workspaces, and one larger detached presentation. Renderer ownership would couple the child process to component/window lifetime and make view closure or reload a termination/EOF risk. One global process tied to a mutable current directory would risk sending input or context to the wrong workspace.
+
+### Decision
+
+Adopt a **workspace-indexed, backend-owned portable PTY manager with non-owning renderer attachments**.
+
+#### Authority and process lifetime
+
+- The existing Workspace Registry remains the sole workspace authority. The first attachment for a previously unseen workspace validates the requested workspace ID against the current native registry binding and obtains the canonical root from that binding; the renderer never supplies a root with launch authority.
+- Native state retains one `WorkspaceSession` per validated workspace ID. Each session owns its canonical root, deterministic `ide-{workspaceId}` Pi session ID, process generation, at most one live child and its PTY handles, a bounded raw-output replay tail, an attachment set, and bounded lifecycle activity.
+- Native code launches only the fixed `pi` executable resolved from process `PATH`, directly and without a shell. Its working directory is the validated canonical root, and the interactive process receives the fixed arguments `--session-id ide-{workspaceId}`. `TERM=xterm-256color` and `COLORTERM=truecolor` describe the PTY; project data never becomes a command string.
+- Workspace switching detaches the old renderer and attaches the new workspace session. It does not write EOF, close the PTY writer, signal, kill, or replace an already-running old workspace process. Returning to a workspace reuses that live process and its bounded raw-output replay tail.
+- Attachments are presentation state only. The renderer controller uses stable attachment IDs `docked:main` and `detached:pi-agent`; the native detached window has the fixed label `pi-agent`. A live detached window remains pinned to its originating workspace, and a later detach request focuses that binding instead of retargeting it.
+- **Stop Pi** is a separate, workspace-named confirmation. Rust independently requires `confirmed: true`; during normal application operation, only that command terminates the selected workspace process. Panel, activity, workspace-view, and detached-window closure remain detach-only. Process-wide application shutdown is a separate cleanup boundary and terminates retained children.
+
+#### Interactive Pi transport and authority
+
+- `PiNativeTerminal` uses xterm's `onData` stream rather than a line buffer, synthetic prompt, or command parser. The controller UTF-8-encodes each xterm input string once, and the adapter base64-encodes those bytes only for the JSON bridge before Rust writes them to the PTY.
+- PTY output remains raw bytes. Rust base64-encodes each bridge event, the adapter restores bytes, and xterm receives `Uint8Array`; React does not parse UTF-8 fragments, ANSI sequences, messages, or tool events.
+- Resize travels from xterm through the adapter to `MasterPty::resize`, and paste remains ordinary xterm input. Because xterm does not consistently encode modified Return keys, the component forwards Pi's documented Kitty CSI-u sequences `ESC [ 13 ; 2 u` for Shift+Enter and `ESC [ 13 ; 3 u` for Alt+Enter.
+- The Pi workspace-agent port defines no message, prompt, tool-call, model-state, extension-dialog, trust, retry, compaction, or conversation-history contract. The desktop shell no longer composes the legacy RPC prompt/session-message projection or its former bottom chat/response surfaces.
+- Pi exclusively owns chat, history, tools, models, commands, extensions, trust, compaction, retry, and session behavior. The deterministic session ID gives Pi the stable identity through which it may manage its own session; the IDE does not create a parallel history or recovery mechanism.
+- The backend retains at most one MiB (1,048,576 bytes) of raw PTY output per workspace session for renderer reattachment. Although implementation fields use the term `transcript`, this tail is unparsed transport replay, never Pi chat, conversation history, or durable session state.
+
+#### Composite accessory surface
+
+- The existing Explorer activity is product-labelled **Files** and continues to render the existing File Explorer and editor authority. Changed-file navigation calls the existing programmatic editor-open coordinator instead of creating another file or document model.
+- The **Agent** activity contains the interactive Pi terminal plus **Changes**, **Activity**, **Resources**, and **Sessions** on one screen. These are bounded read-only accessories and never substitute for Pi chat.
+- **Changes** is capped Git worktree status scoped to the validated workspace. **Activity** is capped IDE process/attachment lifecycle evidence only. **Sessions** exposes workspace/process/session snapshots without messages or conversation content.
+- **Resources** runs fixed, non-shell, time/output/entry-bounded discovery. `pi list --no-approve` keeps installed packages visible even when they register no slash command. A separate `pi --mode rpc --no-session --no-approve` process supplies read-only command metadata; it neither reads nor contributes to the interactive session.
+
+### Alternatives considered
+
+- **Keep the legacy RPC/React chat projection or introduce an SDK sidecar.** Rejected because it would recreate Pi interaction state in the IDE, compete with Pi's authority, and still not embed the actual interactive TUI.
+- **Let each renderer own its PTY child.** Rejected because docked/detached view lifetime would become process lifetime, contrary to detach-only closure and background workspace continuity.
+- **Use one global Pi process that follows the active root.** Rejected because workspace switches would retarget one input/output channel and undermine A/B isolation and return-to-workspace continuity.
+- **Create Agent-specific workspace, file, or editor models.** Rejected because the accepted baseline requires reuse of the Workspace Registry, File Explorer, and existing editor authorities.
+
+### Decision evidence
+
+The evidence below is historical and revision-bound; it supports this architecture without upgrading the requirement status.
+
+- The baseline receipt has SHA-256 `86a8ce1f93155a468f8f55ac033d6df26245c765de8bf838f2d0aaa81e3bebd4` and was committed at `d3c8a120fb9f70fe43e570fca678fe64c33d9113` before Story RED `99d1fc5a247fa59b32ec5cc812912dc124ced766` and production checkpoint `0065f14a0ba0e758fc23732290d6386331fe0700`.
+- At `0065f14`, [`pi_workspace_agent.rs`](apps/desktop/src-tauri/src/commands/pi_workspace_agent.rs) uses `portable-pty`; its focused test runs real PTYs around a deterministic fake Pi executable, isolates workspaces A and B, proves detach without termination, requires confirmed workspace-only stop, retains B when A stops, restarts A with the same session ID, and enforces the one-MiB tail.
+- [`usePiWorkspaceAgentController.test.tsx`](apps/desktop/src/features/pi-workspace-agent/usePiWorkspaceAgentController.test.tsx), [`PiNativeTerminal.test.tsx`](packages/ui/src/components/PiWorkspaceAgentScreen/PiNativeTerminal.test.tsx), [`PiWorkspaceAgentScreen.test.tsx`](packages/ui/src/components/PiWorkspaceAgentScreen/PiWorkspaceAgentScreen.test.tsx), and [`pi-workspace-agent-tauri.test.ts`](packages/tauri-adapters/src/pi-workspace-agent-tauri.test.ts) provide complementary controller, raw xterm, accessory, stop-confirmation, and strict bridge evidence.
+- [`App.test.tsx`](apps/desktop/src/__tests__/App.test.tsx) exercises the existing Workspace Explorer A → B → A composition, distinct deterministic sessions/processes, return to the original A process, detach, resources, A-only stop with B retained, the existing Files authority, and absence of the old RPC chat surface.
+- The focused deterministic Story passed 1 scenario/35 runner step executions at `0065f14` with explicit non-native `desktop/tauri-harness` metadata. Its support first requires the focused renderer/controller/adapter tests and the real portable-PTY Rust lifecycle test to pass; the Pi executable used by the native lifecycle test is deterministic, not a real provider/tool run.
+- Aggregate compatibility commit `0612f316bcc02e815d7800a4887bfb482cab48cf` changed the PTY runtime only by extracting its event-callback type alias while reconciling Story routing; it did not change this decision.
+- Integrated architecture and risk `R-PI-AGENT-01` are maintained in [`ARC42.md`](ARC42.md), and requirement traceability is maintained in [`appendix-requirements.adoc`](docs/arc42/appendix-requirements.adoc). Delegated C4 commit `9b00a5c0a7d4087d8374ceac761a2b182fd5a9f1` models the same boundary in [`docs/c4/README.md`](docs/c4/README.md), [`system-context.md`](docs/c4/system-context.md), [`containers.md`](docs/c4/containers.md), [`components.md`](docs/c4/components.md), and [`workspace.dsl`](docs/c4/workspace.dsl).
+
+### Consequences
+
+**Positive:**
+
+- Pi remains the conversation and interaction authority while the IDE supplies raw terminal presentation and bounded accessory context.
+- Workspace processes can run concurrently without input/output crossover, survive renderer closure, and reattach under deterministic Pi session identity.
+- Docked and detached presentations share one backend process rather than forking interaction state.
+- Existing workspace, File Explorer, and editor authorities remain reusable and independently testable.
+
+**Negative and limits:**
+
+- The native manager, event correlation, PTY byte bridge, and attachment lifecycle add cross-language concurrency and cleanup complexity.
+- The one-MiB replay tail may start inside an ANSI or UTF-8 sequence after truncation. It can reconstruct only bounded terminal transport; Pi, not this cache, owns conversation and history semantics.
+- One fixed detached Agent window is supported. While it exists, it remains pinned rather than silently following or multiplying with later workspace switches.
+- Full application shutdown kills retained children. The stable session ID does not establish live-process continuity, crash recovery, or Pi-owned history recovery across application/operating-system failure.
+- Evidence is limited to deterministic Rust PTY, TypeScript component/controller/adapter, desktop composition, and non-native Tauri-harness checks. It does not establish a native-WebView Pi Agent GUI run, a packaged application, real Pi provider/model/tool execution, Windows/macOS PTY behavior, cross-platform support, or manual accessibility/IME behavior.
+- Legacy RPC contracts remain for compatibility, Settings status, and bounded command metadata, but the desktop shell no longer exposes them as chat authority. Removing those contracts is a separate compatibility decision.
