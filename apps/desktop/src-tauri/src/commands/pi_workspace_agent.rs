@@ -12,7 +12,9 @@ use git2::{Repository, Status, StatusOptions};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, Runtime, State, Webview, WebviewUrl, WebviewWindowBuilder,
+};
 
 use crate::app_config::{now_rfc3339, workspace_registry_path};
 use crate::workspace::workspace_root;
@@ -24,7 +26,12 @@ use super::workspace_registry::current_workspace_binding_at;
 
 pub const PI_WORKSPACE_AGENT_OUTPUT_EVENT: &str = "pi-workspace-agent-output";
 pub const PI_WORKSPACE_AGENT_STATUS_EVENT: &str = "pi-workspace-agent-status";
+const MAIN_WINDOW_LABEL: &str = "main";
 const DETACHED_WINDOW_LABEL: &str = "pi-agent";
+const DOCKED_VIEW_ID: &str = "docked:main";
+const DETACHED_VIEW_ID: &str = "detached:pi-agent";
+const AUTHORIZATION_ERROR: &str =
+    "Pi Agent command is not authorized for this renderer and workspace";
 const PROTOCOL_VERSION: u8 = 1;
 const TRANSCRIPT_CAP_BYTES: usize = 1024 * 1024;
 const ACTIVITY_CAP: usize = 200;
@@ -69,6 +76,18 @@ pub struct PiWorkspaceAgentSessionSnapshot {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct PiWorkspaceAgentSessionSummary {
+    pub workspace_id: String,
+    pub workspace_name: String,
+    pub session_id: String,
+    pub process_state: PiProcessState,
+    pub process_generation: u64,
+    pub last_activity_at: String,
+    pub attached_view_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PiWorkspaceAgentActivity {
     pub sequence: u64,
     pub event_type: String,
@@ -87,7 +106,7 @@ pub struct PiWorkspaceAgentAttachment {
     pub transcript_sequence: u64,
     pub transcript_truncated: bool,
     pub activities: Vec<PiWorkspaceAgentActivity>,
-    pub sessions: Vec<PiWorkspaceAgentSessionSnapshot>,
+    pub sessions: Vec<PiWorkspaceAgentSessionSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -146,29 +165,77 @@ pub struct PiWorkspaceAgentDetachedBinding {
     pub workspace_name: String,
 }
 
-type EventCallback = dyn Fn(&str, Value) + Send + Sync;
+type EventCallback = dyn Fn(&str, &str, Value) + Send + Sync;
 
 #[derive(Clone)]
 struct EventEmitter(Arc<EventCallback>);
 
 impl EventEmitter {
-    fn from_app(app: AppHandle) -> Self {
-        Self(Arc::new(move |event, payload| {
-            let _ = app.emit(event, payload);
+    fn from_app<R: Runtime>(app: AppHandle<R>) -> Self {
+        Self(Arc::new(move |target, event, payload| {
+            let _ = app.emit_to(target, event, payload);
         }))
     }
 
     #[cfg(test)]
-    fn new(callback: impl Fn(&str, Value) + Send + Sync + 'static) -> Self {
+    fn new(callback: impl Fn(&str, &str, Value) + Send + Sync + 'static) -> Self {
         Self(Arc::new(callback))
     }
 
-    fn emit<T: Serialize>(&self, event: &str, payload: &T) {
+    fn emit_to<T: Serialize>(&self, target: &str, event: &str, payload: &T) {
         if let Ok(value) = serde_json::to_value(payload) {
-            (self.0)(event, value);
+            (self.0)(target, event, value);
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RendererIdentity {
+    DockedMain,
+    DetachedPiAgent,
+}
+
+impl RendererIdentity {
+    fn from_window_label(label: &str) -> Result<Self, String> {
+        match label {
+            MAIN_WINDOW_LABEL => Ok(Self::DockedMain),
+            DETACHED_WINDOW_LABEL => Ok(Self::DetachedPiAgent),
+            _ => Err(AUTHORIZATION_ERROR.to_string()),
+        }
+    }
+
+    fn window_label(self) -> &'static str {
+        match self {
+            Self::DockedMain => MAIN_WINDOW_LABEL,
+            Self::DetachedPiAgent => DETACHED_WINDOW_LABEL,
+        }
+    }
+
+    fn view_id(self) -> &'static str {
+        match self {
+            Self::DockedMain => DOCKED_VIEW_ID,
+            Self::DetachedPiAgent => DETACHED_VIEW_ID,
+        }
+    }
+
+    fn verify_claimed_view_id(self, claimed_view_id: &str) -> Result<(), String> {
+        if claimed_view_id == self.view_id() {
+            Ok(())
+        } else {
+            Err(AUTHORIZATION_ERROR.to_string())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PiCurrentWorkspaceBinding {
+    workspace_id: String,
+    workspace_name: String,
+    canonical_root: PathBuf,
+}
+
+type CurrentWorkspaceBindingResolver =
+    dyn Fn() -> Result<PiCurrentWorkspaceBinding, String> + Send + Sync;
 
 struct SessionRuntime {
     process_state: PiProcessState,
@@ -250,12 +317,55 @@ impl WorkspaceSession {
             last_error: runtime.last_error.clone(),
         }
     }
+
+    fn summary(&self) -> PiWorkspaceAgentSessionSummary {
+        let runtime = self
+            .runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        PiWorkspaceAgentSessionSummary {
+            workspace_id: self.workspace_id.clone(),
+            workspace_name: self.workspace_name.clone(),
+            session_id: self.session_id.clone(),
+            process_state: runtime.process_state,
+            process_generation: runtime.process_generation,
+            last_activity_at: runtime.last_activity_at.clone(),
+            attached_view_count: runtime.attached_views.len(),
+        }
+    }
 }
 
-#[derive(Default)]
+fn resolve_current_workspace_binding() -> Result<PiCurrentWorkspaceBinding, String> {
+    let root = workspace_root()?;
+    let registry_path = workspace_registry_path()?;
+    let binding = current_workspace_binding_at(&root, &registry_path)?;
+    let workspace_name = binding
+        .canonical_root
+        .file_name()
+        .map(|name| non_empty_workspace_name(&name.to_string_lossy(), &binding.workspace_id))
+        .unwrap_or_else(|| binding.workspace_id.clone());
+    Ok(PiCurrentWorkspaceBinding {
+        workspace_id: binding.workspace_id,
+        workspace_name,
+        canonical_root: binding.canonical_root,
+    })
+}
+
+#[derive(Clone)]
 pub struct PiWorkspaceAgentState {
-    sessions: Mutex<BTreeMap<String, Arc<WorkspaceSession>>>,
-    detached_workspace_id: Mutex<Option<String>>,
+    sessions: Arc<Mutex<BTreeMap<String, Arc<WorkspaceSession>>>>,
+    detached_workspace_id: Arc<Mutex<Option<String>>>,
+    current_workspace_binding: Arc<CurrentWorkspaceBindingResolver>,
+}
+
+impl Default for PiWorkspaceAgentState {
+    fn default() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(BTreeMap::new())),
+            detached_workspace_id: Arc::new(Mutex::new(None)),
+            current_workspace_binding: Arc::new(resolve_current_workspace_binding),
+        }
+    }
 }
 
 impl PiWorkspaceAgentState {
@@ -268,21 +378,146 @@ impl PiWorkspaceAgentState {
             .ok_or_else(|| format!("Pi has not been attached to workspace '{workspace_id}'"))
     }
 
-    fn sessions_snapshot(&self) -> Vec<PiWorkspaceAgentSessionSnapshot> {
+    fn sessions_summary(&self) -> Vec<PiWorkspaceAgentSessionSummary> {
         self.sessions
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .values()
-            .map(|session| session.snapshot())
+            .map(|session| session.summary())
             .collect()
     }
 
-    fn ensure_current_session(
+    fn current_binding(&self) -> Result<PiCurrentWorkspaceBinding, String> {
+        (self.current_workspace_binding)()
+    }
+
+    fn main_binding_for_workspace(
         &self,
         workspace_id: &str,
-        workspace_name: &str,
+    ) -> Result<PiCurrentWorkspaceBinding, String> {
+        validate_workspace_id(workspace_id)?;
+        let binding = self.current_binding()?;
+        if binding.workspace_id != workspace_id {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
+        Ok(binding)
+    }
+
+    fn detached_workspace(&self) -> Option<String> {
+        self.detached_workspace_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn session_has_attachment(session: &WorkspaceSession, renderer: RendererIdentity) -> bool {
+        session
+            .runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .attached_views
+            .contains(renderer.view_id())
+    }
+
+    fn authorize_session(
+        &self,
+        renderer: RendererIdentity,
+        workspace_id: &str,
+        require_attachment: bool,
     ) -> Result<Arc<WorkspaceSession>, String> {
         validate_workspace_id(workspace_id)?;
+        match renderer {
+            RendererIdentity::DockedMain => {
+                let binding = self.main_binding_for_workspace(workspace_id)?;
+                let session = self.session(workspace_id)?;
+                if session.root != binding.canonical_root
+                    || (require_attachment && !Self::session_has_attachment(&session, renderer))
+                    || self.current_binding()? != binding
+                {
+                    return Err(AUTHORIZATION_ERROR.to_string());
+                }
+                Ok(session)
+            }
+            RendererIdentity::DetachedPiAgent => {
+                let pinned_workspace = self.detached_workspace();
+                if pinned_workspace.as_deref() != Some(workspace_id) {
+                    return Err(AUTHORIZATION_ERROR.to_string());
+                }
+                let session = self.session(workspace_id)?;
+                if (require_attachment && !Self::session_has_attachment(&session, renderer))
+                    || self.detached_workspace() != pinned_workspace
+                {
+                    return Err(AUTHORIZATION_ERROR.to_string());
+                }
+                Ok(session)
+            }
+        }
+    }
+
+    fn renderer_workspace_is_authorized(
+        &self,
+        renderer: RendererIdentity,
+        session: &WorkspaceSession,
+    ) -> bool {
+        match renderer {
+            RendererIdentity::DockedMain => self.current_binding().is_ok_and(|binding| {
+                binding.workspace_id == session.workspace_id
+                    && binding.canonical_root == session.root
+            }),
+            RendererIdentity::DetachedPiAgent => {
+                self.detached_workspace().as_deref() == Some(session.workspace_id.as_str())
+            }
+        }
+    }
+
+    fn emit_to_authorized_renderers<T: Serialize>(
+        &self,
+        session: &WorkspaceSession,
+        emitter: &EventEmitter,
+        event: &str,
+        payload: &T,
+    ) {
+        for renderer in [
+            RendererIdentity::DockedMain,
+            RendererIdentity::DetachedPiAgent,
+        ] {
+            let runtime = session
+                .runtime
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if runtime.attached_views.contains(renderer.view_id())
+                && self.renderer_workspace_is_authorized(renderer, session)
+            {
+                // Keep the attachment lock through native targeted emission so detach cannot
+                // complete between the final attachment check and delivery.
+                emitter.emit_to(renderer.window_label(), event, payload);
+            }
+        }
+    }
+
+    fn emit_status(&self, session: &WorkspaceSession, emitter: &EventEmitter) {
+        self.emit_to_authorized_renderers(
+            session,
+            emitter,
+            PI_WORKSPACE_AGENT_STATUS_EVENT,
+            &PiWorkspaceAgentStatusEvent {
+                protocol_version: PROTOCOL_VERSION,
+                session: session.snapshot(),
+            },
+        );
+    }
+
+    fn emit_output(
+        &self,
+        session: &WorkspaceSession,
+        emitter: &EventEmitter,
+        event: &PiWorkspaceAgentOutputEvent,
+    ) {
+        self.emit_to_authorized_renderers(session, emitter, PI_WORKSPACE_AGENT_OUTPUT_EVENT, event);
+    }
+
+    fn ensure_main_session(&self, workspace_id: &str) -> Result<Arc<WorkspaceSession>, String> {
+        let binding = self.main_binding_for_workspace(workspace_id)?;
         if let Some(existing) = self
             .sessions
             .lock()
@@ -290,46 +525,49 @@ impl PiWorkspaceAgentState {
             .get(workspace_id)
             .cloned()
         {
+            if existing.root != binding.canonical_root || self.current_binding()? != binding {
+                return Err(AUTHORIZATION_ERROR.to_string());
+            }
             return Ok(existing);
-        }
-
-        let root = workspace_root()?;
-        let registry_path = workspace_registry_path()?;
-        let binding = current_workspace_binding_at(&root, &registry_path)?;
-        if binding.workspace_id != workspace_id {
-            return Err(format!(
-                "Pi attachment workspace '{}' does not match the current authorized workspace",
-                workspace_id
-            ));
         }
 
         let session = Arc::new(WorkspaceSession::new(
             workspace_id.to_string(),
-            non_empty_workspace_name(workspace_name, workspace_id),
-            binding.canonical_root,
+            binding.workspace_name.clone(),
+            binding.canonical_root.clone(),
         ));
-        let mut sessions = self
+        if self.current_binding()? != binding {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
+        let inserted = self
             .sessions
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        Ok(sessions
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .entry(workspace_id.to_string())
             .or_insert_with(|| session.clone())
-            .clone())
+            .clone();
+        if inserted.root != binding.canonical_root || self.current_binding()? != binding {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
+        Ok(inserted)
     }
 
     fn attach(
         &self,
+        renderer: RendererIdentity,
         workspace_id: &str,
-        workspace_name: &str,
-        view_id: &str,
+        _workspace_name: &str,
         cols: u16,
         rows: u16,
         emitter: EventEmitter,
     ) -> Result<PiWorkspaceAgentAttachment, String> {
-        validate_view_id(view_id)?;
         validate_size(cols, rows)?;
-        let session = self.ensure_current_session(workspace_id, workspace_name)?;
+        let session = match renderer {
+            RendererIdentity::DockedMain => self.ensure_main_session(workspace_id)?,
+            RendererIdentity::DetachedPiAgent => {
+                self.authorize_session(renderer, workspace_id, false)?
+            }
+        };
 
         let should_start = {
             let runtime = session
@@ -353,15 +591,21 @@ impl PiWorkspaceAgentState {
                     .resize(pty_size(cols, rows))
                     .map_err(|error| format!("Cannot resize Pi pseudoterminal: {error}"))?;
             }
-            runtime.attached_views.insert(view_id.to_string());
+            runtime
+                .attached_views
+                .insert(renderer.view_id().to_string());
             push_activity(
                 &mut runtime,
                 "attached",
-                format!("Renderer view '{view_id}' attached without owning the Pi process"),
-                Some(view_id.to_string()),
+                format!(
+                    "Renderer view '{}' attached without owning the Pi process",
+                    renderer.view_id()
+                ),
+                Some(renderer.view_id().to_string()),
             );
         }
-        emit_status(&session, &emitter);
+        self.emit_status(&session, &emitter);
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         Ok(self.attachment_snapshot(&session))
     }
 
@@ -379,13 +623,6 @@ impl PiWorkspaceAgentState {
                 runtime.activities.iter().cloned().collect(),
             )
         };
-        let mut sessions = self.sessions_snapshot();
-        if let Some(position) = sessions
-            .iter()
-            .position(|candidate| candidate.workspace_id == current_snapshot.workspace_id)
-        {
-            sessions[position] = current_snapshot.clone();
-        }
         PiWorkspaceAgentAttachment {
             protocol_version: PROTOCOL_VERSION,
             session: current_snapshot,
@@ -393,21 +630,23 @@ impl PiWorkspaceAgentState {
             transcript_sequence,
             transcript_truncated,
             activities,
-            sessions,
+            sessions: self.sessions_summary(),
         }
     }
 
     fn start(
         &self,
+        renderer: RendererIdentity,
         workspace_id: &str,
         cols: u16,
         rows: u16,
         emitter: EventEmitter,
     ) -> Result<PiWorkspaceAgentAttachment, String> {
         validate_size(cols, rows)?;
-        let session = self.session(workspace_id)?;
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         let program = find_pi_executable()?;
         self.start_session_with_program(&session, &program, cols, rows, emitter)?;
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         Ok(self.attachment_snapshot(&session))
     }
 
@@ -449,7 +688,7 @@ impl PiWorkspaceAgentState {
             );
             runtime.process_generation
         };
-        emit_status(session, &emitter);
+        self.emit_status(session, &emitter);
 
         let spawn_result = (|| {
             let pair = native_pty_system()
@@ -490,7 +729,7 @@ impl PiWorkspaceAgentState {
                     push_activity(&mut runtime, "failed", error.clone(), None);
                 }
                 drop(runtime);
-                emit_status(session, &emitter);
+                self.emit_status(session, &emitter);
                 return Err(error);
             }
         };
@@ -520,20 +759,30 @@ impl PiWorkspaceAgentState {
                 None,
             );
         }
-        emit_status(session, &emitter);
-        spawn_reader(session.clone(), generation, reader, emitter);
+        self.emit_status(session, &emitter);
+        spawn_reader(self.clone(), session.clone(), generation, reader, emitter);
         Ok(())
     }
 
-    fn write(&self, workspace_id: &str, data: &[u8]) -> Result<(), String> {
+    fn write(
+        &self,
+        renderer: RendererIdentity,
+        workspace_id: &str,
+        data: &[u8],
+    ) -> Result<(), String> {
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         if data.is_empty() {
             return Ok(());
         }
-        let session = self.session(workspace_id)?;
         let mut runtime = session
             .runtime
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !runtime.attached_views.contains(renderer.view_id())
+            || !self.renderer_workspace_is_authorized(renderer, &session)
+        {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
         if runtime.process_state != PiProcessState::Running {
             return Err(format!("Pi is not running for workspace '{workspace_id}'"));
         }
@@ -547,13 +796,24 @@ impl PiWorkspaceAgentState {
             .map_err(|error| format!("Cannot write Pi pseudoterminal input: {error}"))
     }
 
-    fn resize(&self, workspace_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+    fn resize(
+        &self,
+        renderer: RendererIdentity,
+        workspace_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
         validate_size(cols, rows)?;
-        let session = self.session(workspace_id)?;
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         let runtime = session
             .runtime
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !runtime.attached_views.contains(renderer.view_id())
+            || !self.renderer_workspace_is_authorized(renderer, &session)
+        {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
         let Some(master) = runtime.master.as_ref() else {
             return Ok(());
         };
@@ -564,46 +824,65 @@ impl PiWorkspaceAgentState {
 
     fn detach(
         &self,
+        renderer: RendererIdentity,
         workspace_id: &str,
-        view_id: &str,
         emitter: EventEmitter,
     ) -> Result<(), String> {
-        validate_view_id(view_id)?;
-        let session = self.session(workspace_id)?;
-        {
+        validate_workspace_id(workspace_id)?;
+        let session = match renderer {
+            // Main cleanup deliberately does not require the current registry binding: after a
+            // switch it must still be able to remove only its stale, native-derived attachment.
+            RendererIdentity::DockedMain => self.session(workspace_id)?,
+            RendererIdentity::DetachedPiAgent => {
+                self.authorize_session(renderer, workspace_id, false)?
+            }
+        };
+        let removed = {
             let mut runtime = session
                 .runtime
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            runtime.attached_views.remove(view_id);
-            push_activity(
-                &mut runtime,
-                "detached",
-                format!(
-                    "Renderer view '{view_id}' detached; no EOF or termination signal was sent"
-                ),
-                Some(view_id.to_string()),
-            );
+            let removed = runtime.attached_views.remove(renderer.view_id());
+            if removed {
+                push_activity(
+                    &mut runtime,
+                    "detached",
+                    format!(
+                        "Renderer view '{}' detached; no EOF or termination signal was sent",
+                        renderer.view_id()
+                    ),
+                    Some(renderer.view_id().to_string()),
+                );
+            }
+            removed
+        };
+        if removed {
+            self.emit_status(&session, &emitter);
         }
-        emit_status(&session, &emitter);
         Ok(())
     }
 
     fn stop(
         &self,
+        renderer: RendererIdentity,
         workspace_id: &str,
         confirmed: bool,
         emitter: EventEmitter,
     ) -> Result<PiWorkspaceAgentAttachment, String> {
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         if !confirmed {
             return Err("Stopping Pi requires explicit confirmation".to_string());
         }
-        let session = self.session(workspace_id)?;
         {
             let mut runtime = session
                 .runtime
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !runtime.attached_views.contains(renderer.view_id())
+                || !self.renderer_workspace_is_authorized(renderer, &session)
+            {
+                return Err(AUTHORIZATION_ERROR.to_string());
+            }
             if matches!(
                 runtime.process_state,
                 PiProcessState::Running | PiProcessState::Starting
@@ -636,8 +915,31 @@ impl PiWorkspaceAgentState {
                 None,
             );
         }
-        emit_status(&session, &emitter);
+        self.emit_status(&session, &emitter);
+        let session = self.authorize_session(renderer, workspace_id, true)?;
         Ok(self.attachment_snapshot(&session))
+    }
+
+    fn snapshot(
+        &self,
+        renderer: RendererIdentity,
+        workspace_id: &str,
+    ) -> Result<PiWorkspaceAgentAttachment, String> {
+        let session = self.authorize_session(renderer, workspace_id, true)?;
+        let snapshot = self.attachment_snapshot(&session);
+        self.authorize_session(renderer, workspace_id, true)?;
+        Ok(snapshot)
+    }
+
+    fn accessories(
+        &self,
+        renderer: RendererIdentity,
+        workspace_id: &str,
+    ) -> Result<PiWorkspaceAgentAccessories, String> {
+        let session = self.authorize_session(renderer, workspace_id, true)?;
+        let accessories = discover_accessories(&session);
+        self.authorize_session(renderer, workspace_id, true)?;
+        Ok(accessories)
     }
 
     pub(crate) fn shutdown_all(&self) {
@@ -664,6 +966,7 @@ impl PiWorkspaceAgentState {
 }
 
 fn spawn_reader(
+    state: PiWorkspaceAgentState,
     session: Arc<WorkspaceSession>,
     generation: u64,
     mut reader: Box<dyn Read + Send>,
@@ -694,7 +997,7 @@ fn spawn_reader(
                             data_base64: BASE64_STANDARD.encode(&buffer[..length]),
                         }
                     };
-                    emitter.emit(PI_WORKSPACE_AGENT_OUTPUT_EVENT, &event);
+                    state.emit_output(&session, &emitter, &event);
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -728,7 +1031,7 @@ fn spawn_reader(
                 None,
             );
         }
-        emit_status(&session, &emitter);
+        state.emit_status(&session, &emitter);
     });
 }
 
@@ -774,16 +1077,6 @@ fn push_activity(
     }
 }
 
-fn emit_status(session: &WorkspaceSession, emitter: &EventEmitter) {
-    emitter.emit(
-        PI_WORKSPACE_AGENT_STATUS_EVENT,
-        &PiWorkspaceAgentStatusEvent {
-            protocol_version: PROTOCOL_VERSION,
-            session: session.snapshot(),
-        },
-    );
-}
-
 fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize {
         rows,
@@ -816,18 +1109,6 @@ fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_view_id(view_id: &str) -> Result<(), String> {
-    if view_id.is_empty()
-        || view_id.len() > 128
-        || !view_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
-    {
-        return Err("Invalid Pi Agent renderer view id".to_string());
-    }
-    Ok(())
-}
-
 fn non_empty_workspace_name(workspace_name: &str, workspace_id: &str) -> String {
     let sanitized: String = workspace_name
         .trim()
@@ -843,123 +1124,159 @@ fn non_empty_workspace_name(workspace_name: &str, workspace_id: &str) -> String 
 }
 
 #[tauri::command]
-pub fn attach_pi_workspace_agent(
+pub fn attach_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     workspace_name: String,
     view_id: String,
     cols: Option<u16>,
     rows: Option<u16>,
     state: State<'_, PiWorkspaceAgentState>,
-    app: AppHandle,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentAttachment, String> {
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    renderer.verify_claimed_view_id(&view_id)?;
     state.attach(
+        renderer,
         &workspace_id,
         &workspace_name,
-        &view_id,
         cols.unwrap_or(DEFAULT_COLS),
         rows.unwrap_or(DEFAULT_ROWS),
-        EventEmitter::from_app(app),
+        EventEmitter::from_app(webview.app_handle().clone()),
     )
 }
 
 #[tauri::command]
-pub fn detach_pi_workspace_agent(
+pub fn detach_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     view_id: String,
     state: State<'_, PiWorkspaceAgentState>,
-    app: AppHandle,
+    webview: Webview<R>,
 ) -> Result<(), String> {
-    state.detach(&workspace_id, &view_id, EventEmitter::from_app(app))
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    renderer.verify_claimed_view_id(&view_id)?;
+    state.detach(
+        renderer,
+        &workspace_id,
+        EventEmitter::from_app(webview.app_handle().clone()),
+    )
 }
 
 #[tauri::command]
-pub fn write_pi_workspace_agent(
+pub fn write_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     data_base64: String,
     state: State<'_, PiWorkspaceAgentState>,
+    webview: Webview<R>,
 ) -> Result<(), String> {
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    state.authorize_session(renderer, &workspace_id, true)?;
     let data = BASE64_STANDARD
         .decode(data_base64)
         .map_err(|_| "Pi terminal input is not valid base64".to_string())?;
-    state.write(&workspace_id, &data)
+    state.write(renderer, &workspace_id, &data)
 }
 
 #[tauri::command]
-pub fn resize_pi_workspace_agent(
+pub fn resize_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     cols: u16,
     rows: u16,
     state: State<'_, PiWorkspaceAgentState>,
+    webview: Webview<R>,
 ) -> Result<(), String> {
-    state.resize(&workspace_id, cols, rows)
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    state.resize(renderer, &workspace_id, cols, rows)
 }
 
 #[tauri::command]
-pub fn start_pi_workspace_agent(
+pub fn start_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     cols: Option<u16>,
     rows: Option<u16>,
     state: State<'_, PiWorkspaceAgentState>,
-    app: AppHandle,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentAttachment, String> {
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
     state.start(
+        renderer,
         &workspace_id,
         cols.unwrap_or(DEFAULT_COLS),
         rows.unwrap_or(DEFAULT_ROWS),
-        EventEmitter::from_app(app),
+        EventEmitter::from_app(webview.app_handle().clone()),
     )
 }
 
 #[tauri::command]
-pub fn stop_pi_workspace_agent(
+pub fn stop_pi_workspace_agent<R: Runtime>(
     workspace_id: String,
     confirmed: bool,
     state: State<'_, PiWorkspaceAgentState>,
-    app: AppHandle,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentAttachment, String> {
-    state.stop(&workspace_id, confirmed, EventEmitter::from_app(app))
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    state.stop(
+        renderer,
+        &workspace_id,
+        confirmed,
+        EventEmitter::from_app(webview.app_handle().clone()),
+    )
 }
 
 #[tauri::command]
-pub fn get_pi_workspace_agent_snapshot(
+pub fn get_pi_workspace_agent_snapshot<R: Runtime>(
     workspace_id: String,
     state: State<'_, PiWorkspaceAgentState>,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentAttachment, String> {
-    let session = state.session(&workspace_id)?;
-    Ok(state.attachment_snapshot(&session))
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    state.snapshot(renderer, &workspace_id)
 }
 
 #[tauri::command]
-pub fn get_pi_workspace_agent_accessories(
+pub fn get_pi_workspace_agent_accessories<R: Runtime>(
     workspace_id: String,
     state: State<'_, PiWorkspaceAgentState>,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentAccessories, String> {
-    let session = state.session(&workspace_id)?;
-    Ok(discover_accessories(&session))
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    state.accessories(renderer, &workspace_id)
 }
 
 #[tauri::command]
-pub fn open_pi_workspace_agent_window(
+pub fn open_pi_workspace_agent_window<R: Runtime>(
     workspace_id: String,
     state: State<'_, PiWorkspaceAgentState>,
-    app: AppHandle,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentDetachedBinding, String> {
-    let requested = state.session(&workspace_id)?;
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    if renderer != RendererIdentity::DockedMain {
+        return Err(AUTHORIZATION_ERROR.to_string());
+    }
+    let requested = state.authorize_session(renderer, &workspace_id, true)?;
+    let app = webview.app_handle().clone();
     if let Some(window) = app.get_webview_window(DETACHED_WINDOW_LABEL) {
         window
             .show()
             .and_then(|_| window.set_focus())
             .map_err(|error| format!("Cannot focus detached Pi Agent window: {error}"))?;
-        let pinned_id = state
-            .detached_workspace_id
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-            .unwrap_or_else(|| requested.workspace_id.clone());
+        let pinned_id = {
+            let mut pinned = state
+                .detached_workspace_id
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            pinned
+                .get_or_insert_with(|| requested.workspace_id.clone())
+                .clone()
+        };
         let pinned = state.session(&pinned_id)?;
+        if state.detached_workspace().as_deref() != Some(pinned_id.as_str()) {
+            return Err(AUTHORIZATION_ERROR.to_string());
+        }
+        state.authorize_session(renderer, &workspace_id, true)?;
         return Ok(detached_binding(&pinned));
     }
 
+    state.authorize_session(renderer, &workspace_id, true)?;
     *state
         .detached_workspace_id
         .lock()
@@ -976,20 +1293,26 @@ pub fn open_pi_workspace_agent_window(
     .resizable(true)
     .build()
     .map_err(|error| format!("Cannot open detached Pi Agent window: {error}"))?;
+    state.authorize_session(renderer, &workspace_id, true)?;
     Ok(detached_binding(&requested))
 }
 
 #[tauri::command]
-pub fn get_pi_workspace_agent_detached_binding(
+pub fn get_pi_workspace_agent_detached_binding<R: Runtime>(
     state: State<'_, PiWorkspaceAgentState>,
+    webview: Webview<R>,
 ) -> Result<PiWorkspaceAgentDetachedBinding, String> {
+    let renderer = RendererIdentity::from_window_label(webview.label())?;
+    if renderer != RendererIdentity::DetachedPiAgent {
+        return Err(AUTHORIZATION_ERROR.to_string());
+    }
     let workspace_id = state
-        .detached_workspace_id
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+        .detached_workspace()
         .ok_or_else(|| "Detached Pi Agent window has no pinned workspace".to_string())?;
-    let session = state.session(&workspace_id)?;
+    let session = state.authorize_session(renderer, &workspace_id, false)?;
+    if state.detached_workspace().as_deref() != Some(workspace_id.as_str()) {
+        return Err(AUTHORIZATION_ERROR.to_string());
+    }
     Ok(detached_binding(&session))
 }
 
@@ -1265,6 +1588,7 @@ mod tests {
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
+    use tauri::Listener;
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -1299,6 +1623,40 @@ mod tests {
         panic!("condition was not met before timeout");
     }
 
+    type MutableBinding = Arc<Mutex<PiCurrentWorkspaceBinding>>;
+
+    fn test_state(workspace_id: &str, root: &Path) -> (PiWorkspaceAgentState, MutableBinding) {
+        let binding = Arc::new(Mutex::new(PiCurrentWorkspaceBinding {
+            workspace_id: workspace_id.to_string(),
+            workspace_name: workspace_id.to_string(),
+            canonical_root: root.to_path_buf(),
+        }));
+        let current = binding.clone();
+        (
+            PiWorkspaceAgentState {
+                sessions: Arc::new(Mutex::new(BTreeMap::new())),
+                detached_workspace_id: Arc::new(Mutex::new(None)),
+                current_workspace_binding: Arc::new(move || {
+                    Ok(current
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .clone())
+                }),
+            },
+            binding,
+        )
+    }
+
+    fn set_current(binding: &MutableBinding, workspace_id: &str, root: &Path) {
+        *binding
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = PiCurrentWorkspaceBinding {
+            workspace_id: workspace_id.to_string(),
+            canonical_root: root.to_path_buf(),
+            workspace_name: workspace_id.to_string(),
+        };
+    }
+
     fn insert_test_session(
         state: &PiWorkspaceAgentState,
         workspace_id: &str,
@@ -1317,23 +1675,78 @@ mod tests {
         session
     }
 
-    fn invoke_snapshot_from(
+    fn mark_running(session: &WorkspaceSession) {
+        let mut runtime = session.runtime.lock().unwrap();
+        runtime.process_state = PiProcessState::Running;
+        runtime.process_generation = 1;
+    }
+
+    fn authority_app(state: PiWorkspaceAgentState) -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(state)
+            .invoke_handler(tauri::generate_handler![
+                attach_pi_workspace_agent,
+                detach_pi_workspace_agent,
+                write_pi_workspace_agent,
+                resize_pi_workspace_agent,
+                start_pi_workspace_agent,
+                stop_pi_workspace_agent,
+                get_pi_workspace_agent_snapshot,
+                get_pi_workspace_agent_accessories,
+                open_pi_workspace_agent_window,
+                get_pi_workspace_agent_detached_binding,
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+    }
+
+    fn invoke_from(
         window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
-        workspace_id: &str,
+        command: &str,
+        body: Value,
     ) -> Result<Value, Value> {
         tauri::test::get_ipc_response(
             window,
             tauri::webview::InvokeRequest {
-                cmd: "get_pi_workspace_agent_snapshot".into(),
+                cmd: command.into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
                 url: "tauri://localhost".parse().unwrap(),
-                body: serde_json::json!({ "workspaceId": workspace_id }).into(),
+                body: body.into(),
                 headers: Default::default(),
                 invoke_key: tauri::test::INVOKE_KEY.to_string(),
             },
         )
         .map(|response| response.deserialize::<Value>().unwrap())
+    }
+
+    fn invoke_snapshot_from(
+        window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+        workspace_id: &str,
+    ) -> Result<Value, Value> {
+        invoke_from(
+            window,
+            "get_pi_workspace_agent_snapshot",
+            serde_json::json!({ "workspaceId": workspace_id }),
+        )
+    }
+
+    fn assert_denied(result: Result<Value, Value>) {
+        let error = result.expect_err("command unexpectedly succeeded");
+        assert_eq!(error.as_str(), Some(AUTHORIZATION_ERROR), "{error}");
+    }
+
+    struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]
@@ -1344,12 +1757,9 @@ mod tests {
         fs::create_dir_all(&root_a).unwrap();
         fs::create_dir_all(&root_b).unwrap();
 
-        let app = tauri::test::mock_builder()
-            .manage(PiWorkspaceAgentState::default())
-            .invoke_handler(tauri::generate_handler![get_pi_workspace_agent_snapshot])
-            .build(tauri::test::mock_context(tauri::test::noop_assets()))
-            .unwrap();
-        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
+        let (state, _binding) = test_state("workspace-a", &root_a);
+        let app = authority_app(state.clone());
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
             .build()
             .unwrap();
         let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
@@ -1359,85 +1769,542 @@ mod tests {
             .build()
             .unwrap();
 
-        let state = app.state::<PiWorkspaceAgentState>();
         let session_a = insert_test_session(&state, "workspace-a", &root_a);
         let session_b = insert_test_session(&state, "workspace-b", &root_b);
+        mark_running(&session_a);
+        mark_running(&session_b);
         {
             let mut runtime = session_a.runtime.lock().unwrap();
-            runtime.attached_views.insert("docked:main".to_string());
-            runtime
-                .attached_views
-                .insert("detached:pi-agent".to_string());
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
+            append_transcript(&mut runtime, b"AUTHORIZED-A-OUTPUT");
+            runtime.transcript_sequence = 1;
         }
         {
             let mut runtime = session_b.runtime.lock().unwrap();
+            // Even matching retained attachment strings cannot override the current binding/pin.
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
             append_transcript(&mut runtime, b"RETAINED-B-PRIVATE-OUTPUT");
             runtime.transcript_sequence = 1;
         }
         *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
 
-        // This models the valid A -> B -> A continuity state: both legitimate renderers may share
-        // A, while B remains alive without an attachment. Those allowed snapshots must keep working.
-        assert!(invoke_snapshot_from(&main, "workspace-a").is_ok());
-        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
-
-        let main_claim = invoke_snapshot_from(&main, "workspace-b");
-        let detached_claim = invoke_snapshot_from(&detached, "workspace-b");
-        let unrelated_claim = invoke_snapshot_from(&unrelated, "workspace-a");
-        let accepted_claims = [
-            ("main->workspace-b", main_claim.is_ok()),
-            ("pi-agent->workspace-b", detached_claim.is_ok()),
-            ("unrelated->workspace-a", unrelated_claim.is_ok()),
-        ]
-        .into_iter()
-        .filter_map(|(claim, accepted)| accepted.then_some(claim))
-        .collect::<Vec<_>>();
-        let main_exposed_private_output = main_claim.as_ref().ok().is_some_and(|response| {
-            response.get("transcriptBase64").and_then(Value::as_str)
-                == Some(
-                    BASE64_STANDARD
-                        .encode(b"RETAINED-B-PRIVATE-OUTPUT")
-                        .as_str(),
-                )
-        });
-
-        assert!(
-            accepted_claims.is_empty(),
-            "native snapshot authority accepted caller-supplied claims {accepted_claims:?}; \
-             main exposed retained B transcript: {main_exposed_private_output}"
+        let main_a = invoke_snapshot_from(&main, "workspace-a").unwrap();
+        let detached_a = invoke_snapshot_from(&detached, "workspace-a").unwrap();
+        assert_eq!(
+            main_a["transcriptBase64"],
+            BASE64_STANDARD.encode(b"AUTHORIZED-A-OUTPUT")
         );
+        assert_eq!(detached_a["session"]["workspaceId"], "workspace-a");
+
+        assert_denied(invoke_snapshot_from(&main, "workspace-b"));
+        assert_denied(invoke_snapshot_from(&detached, "workspace-b"));
+        assert_denied(invoke_snapshot_from(&unrelated, "workspace-a"));
+
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-b".to_string());
+        assert!(invoke_snapshot_from(&detached, "workspace-b").is_ok());
+        assert_denied(invoke_snapshot_from(&detached, "workspace-a"));
     }
 
     #[test]
-    fn attachment_sessions_do_not_expose_another_retained_workspace_root() {
+    fn attachment_sessions_are_rootless_conversation_free_summaries() {
         let fixture = TestDirectory::new("aggregate-root-authority");
         let root_a = fixture.0.join("authorized-a");
         let root_b = fixture.0.join("retained-b-private-root");
         fs::create_dir_all(&root_a).unwrap();
         fs::create_dir_all(&root_b).unwrap();
 
-        let state = PiWorkspaceAgentState::default();
+        let (state, _binding) = test_state("workspace-a", &root_a);
         let session_a = insert_test_session(&state, "workspace-a", &root_a);
-        insert_test_session(&state, "workspace-b", &root_b);
+        let session_b = insert_test_session(&state, "workspace-b", &root_b);
+        mark_running(&session_a);
+        mark_running(&session_b);
         session_a
             .runtime
             .lock()
             .unwrap()
             .attached_views
-            .insert("docked:main".to_string());
+            .insert(DOCKED_VIEW_ID.to_string());
+        {
+            let mut runtime = session_b.runtime.lock().unwrap();
+            append_transcript(&mut runtime, b"RETAINED-B-PRIVATE-OUTPUT");
+            runtime.last_error = Some(format!("failed under {}", root_b.display()));
+            push_activity(
+                &mut runtime,
+                "private",
+                format!("activity under {}", root_b.display()),
+                Some(DETACHED_VIEW_ID.to_string()),
+            );
+        }
 
         let response = serde_json::to_value(state.attachment_snapshot(&session_a)).unwrap();
-        let private_root = root_b.to_string_lossy();
-        let leaks_private_root = response["sessions"]
+        assert_eq!(
+            response["session"]["rootPath"],
+            root_a.to_string_lossy().as_ref()
+        );
+        let retained = response["sessions"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|session| session.get("rootPath").and_then(Value::as_str) == Some(&private_root));
-
-        assert!(
-            !leaks_private_root,
-            "workspace A attachment exposed retained workspace B root '{private_root}'"
+            .find(|session| session["workspaceId"] == "workspace-b")
+            .unwrap();
+        let keys = retained
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            keys,
+            BTreeSet::from([
+                "attachedViewCount",
+                "lastActivityAt",
+                "processGeneration",
+                "processState",
+                "sessionId",
+                "workspaceId",
+                "workspaceName",
+            ])
         );
+        let serialized = serde_json::to_string(retained).unwrap();
+        assert!(!serialized.contains(root_b.to_string_lossy().as_ref()));
+        assert!(!serialized.contains("RETAINED-B-PRIVATE-OUTPUT"));
+        assert!(!serialized.contains("lastError"));
+        assert!(!serialized.contains("activity"));
+    }
+
+    #[test]
+    fn sensitive_commands_deny_cross_workspace_and_unrelated_renderers() {
+        let fixture = TestDirectory::new("command-authority");
+        let root_a = fixture.0.join("authorized-a");
+        let root_b = fixture.0.join("retained-b");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+        let (state, _binding) = test_state("workspace-a", &root_a);
+        let app = authority_app(state.clone());
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let unrelated = WebviewWindowBuilder::new(&app, "unrelated", Default::default())
+            .build()
+            .unwrap();
+
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        let session_b = insert_test_session(&state, "workspace-b", &root_b);
+        mark_running(&session_a);
+        mark_running(&session_b);
+        {
+            let mut runtime = session_a.runtime.lock().unwrap();
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
+            append_transcript(&mut runtime, b"A-AUTHORIZED-TRANSCRIPT");
+        }
+        let recorded_input = Arc::new(Mutex::new(Vec::new()));
+        {
+            let mut runtime = session_b.runtime.lock().unwrap();
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
+            runtime.writer = Some(Box::new(RecordingWriter(recorded_input.clone())));
+            append_transcript(&mut runtime, b"B-PRIVATE-TRANSCRIPT");
+            runtime.last_error = Some(format!("private failure at {}", root_b.display()));
+        }
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
+        let generation_b = session_b.snapshot().process_generation;
+
+        assert_denied(invoke_snapshot_from(&main, "workspace-b"));
+        assert_denied(invoke_from(
+            &main,
+            "get_pi_workspace_agent_accessories",
+            serde_json::json!({ "workspaceId": "workspace-b" }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "write_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-b",
+                "dataBase64": BASE64_STANDARD.encode(b"FORBIDDEN-INPUT")
+            }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "resize_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-b", "cols": 90, "rows": 30 }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "start_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-b", "cols": 90, "rows": 30 }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "stop_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-b", "confirmed": true }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "open_pi_workspace_agent_window",
+            serde_json::json!({ "workspaceId": "workspace-b" }),
+        ));
+        assert_denied(invoke_from(
+            &detached,
+            "write_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-b",
+                "dataBase64": BASE64_STANDARD.encode(b"FORBIDDEN-DETACHED-INPUT")
+            }),
+        ));
+        assert_denied(invoke_from(
+            &detached,
+            "stop_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-b", "confirmed": true }),
+        ));
+        assert_denied(invoke_from(
+            &unrelated,
+            "get_pi_workspace_agent_accessories",
+            serde_json::json!({ "workspaceId": "workspace-a" }),
+        ));
+        assert_denied(invoke_from(
+            &detached,
+            "open_pi_workspace_agent_window",
+            serde_json::json!({ "workspaceId": "workspace-a" }),
+        ));
+        assert_denied(invoke_from(
+            &main,
+            "get_pi_workspace_agent_detached_binding",
+            serde_json::json!({}),
+        ));
+        assert_denied(invoke_from(
+            &unrelated,
+            "get_pi_workspace_agent_detached_binding",
+            serde_json::json!({}),
+        ));
+        assert_eq!(
+            invoke_from(
+                &detached,
+                "get_pi_workspace_agent_detached_binding",
+                serde_json::json!({}),
+            )
+            .unwrap()["workspaceId"],
+            "workspace-a"
+        );
+        assert_eq!(
+            invoke_from(
+                &main,
+                "open_pi_workspace_agent_window",
+                serde_json::json!({ "workspaceId": "workspace-a" }),
+            )
+            .unwrap()["workspaceId"],
+            "workspace-a"
+        );
+
+        assert!(recorded_input.lock().unwrap().is_empty());
+        assert_eq!(session_b.snapshot().process_state, PiProcessState::Running);
+        assert_eq!(session_b.snapshot().process_generation, generation_b);
+        let authorized = invoke_snapshot_from(&main, "workspace-a").unwrap();
+        assert_eq!(
+            authorized["session"]["rootPath"],
+            root_a.to_string_lossy().as_ref()
+        );
+        assert_eq!(
+            authorized["transcriptBase64"],
+            BASE64_STANDARD.encode(b"A-AUTHORIZED-TRANSCRIPT")
+        );
+    }
+
+    #[test]
+    fn forged_view_ids_are_denied_and_stale_detach_removes_only_the_derived_attachment() {
+        let fixture = TestDirectory::new("view-authority");
+        let root_a = fixture.0.join("a");
+        let root_b = fixture.0.join("b");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+        let (state, binding) = test_state("workspace-a", &root_a);
+        let app = authority_app(state.clone());
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let unrelated = WebviewWindowBuilder::new(&app, "unrelated", Default::default())
+            .build()
+            .unwrap();
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        mark_running(&session_a);
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
+
+        assert_denied(invoke_from(
+            &main,
+            "attach_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "workspaceName": "Workspace A",
+                "viewId": DETACHED_VIEW_ID,
+                "cols": 80,
+                "rows": 24
+            }),
+        ));
+        assert_denied(invoke_from(
+            &detached,
+            "attach_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "workspaceName": "Workspace A",
+                "viewId": DOCKED_VIEW_ID,
+                "cols": 80,
+                "rows": 24
+            }),
+        ));
+        assert_denied(invoke_from(
+            &unrelated,
+            "attach_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "workspaceName": "Workspace A",
+                "viewId": DOCKED_VIEW_ID,
+                "cols": 80,
+                "rows": 24
+            }),
+        ));
+        assert!(session_a.runtime.lock().unwrap().attached_views.is_empty());
+
+        {
+            let mut runtime = session_a.runtime.lock().unwrap();
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
+        }
+        set_current(&binding, "workspace-b", &root_b);
+        assert_denied(invoke_from(
+            &main,
+            "detach_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "viewId": DETACHED_VIEW_ID
+            }),
+        ));
+        assert!(session_a
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .contains(DOCKED_VIEW_ID));
+
+        assert!(invoke_from(
+            &main,
+            "detach_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-a", "viewId": DOCKED_VIEW_ID }),
+        )
+        .is_ok());
+        {
+            let runtime = session_a.runtime.lock().unwrap();
+            assert!(!runtime.attached_views.contains(DOCKED_VIEW_ID));
+            assert!(runtime.attached_views.contains(DETACHED_VIEW_ID));
+        }
+        assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
+        assert_denied(invoke_snapshot_from(&main, "workspace-a"));
+        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
+
+        assert!(invoke_from(
+            &detached,
+            "detach_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-a", "viewId": DETACHED_VIEW_ID }),
+        )
+        .is_ok());
+        assert!(session_a.runtime.lock().unwrap().attached_views.is_empty());
+        assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
+        assert_denied(invoke_snapshot_from(&detached, "workspace-a"));
+        assert_denied(invoke_from(
+            &detached,
+            "write_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "dataBase64": BASE64_STANDARD.encode(b"DETACH-GRANTS-NO-INPUT")
+            }),
+        ));
+        assert_denied(invoke_from(
+            &detached,
+            "stop_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-a", "confirmed": true }),
+        ));
+    }
+
+    #[test]
+    fn docked_and_detached_a_b_a_lifecycle_preserves_hidden_running_sessions() {
+        let fixture = TestDirectory::new("mock-lifecycle");
+        let root_a = fixture.0.join("a");
+        let root_b = fixture.0.join("b");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+        let (state, binding) = test_state("workspace-a", &root_a);
+        let app = authority_app(state.clone());
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        let session_b = insert_test_session(&state, "workspace-b", &root_b);
+        mark_running(&session_a);
+        mark_running(&session_b);
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
+
+        let attach = |window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+                      workspace_id: &str,
+                      view_id: &str| {
+            invoke_from(
+                window,
+                "attach_pi_workspace_agent",
+                serde_json::json!({
+                    "workspaceId": workspace_id,
+                    "workspaceName": workspace_id,
+                    "viewId": view_id,
+                    "cols": 80,
+                    "rows": 24
+                }),
+            )
+        };
+        assert!(attach(&main, "workspace-a", DOCKED_VIEW_ID).is_ok());
+        assert!(attach(&detached, "workspace-a", DETACHED_VIEW_ID).is_ok());
+        assert!(invoke_snapshot_from(&main, "workspace-a").is_ok());
+        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
+
+        set_current(&binding, "workspace-b", &root_b);
+        assert_denied(invoke_snapshot_from(&main, "workspace-a"));
+        assert_denied(invoke_from(
+            &main,
+            "write_pi_workspace_agent",
+            serde_json::json!({
+                "workspaceId": "workspace-a",
+                "dataBase64": BASE64_STANDARD.encode(b"DENIED-AFTER-SWITCH")
+            }),
+        ));
+        assert!(invoke_from(
+            &main,
+            "detach_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-a", "viewId": DOCKED_VIEW_ID }),
+        )
+        .is_ok());
+        assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
+        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
+
+        let attached_b = attach(&main, "workspace-b", DOCKED_VIEW_ID).unwrap();
+        assert_eq!(attached_b["session"]["workspaceId"], "workspace-b");
+        assert_eq!(attached_b["sessions"].as_array().unwrap().len(), 2);
+        assert!(invoke_snapshot_from(&main, "workspace-b").is_ok());
+
+        set_current(&binding, "workspace-a", &root_a);
+        assert!(invoke_from(
+            &main,
+            "detach_pi_workspace_agent",
+            serde_json::json!({ "workspaceId": "workspace-b", "viewId": DOCKED_VIEW_ID }),
+        )
+        .is_ok());
+        assert_eq!(session_b.snapshot().process_state, PiProcessState::Running);
+        assert!(attach(&main, "workspace-a", DOCKED_VIEW_ID).is_ok());
+        assert!(invoke_snapshot_from(&main, "workspace-a").is_ok());
+        assert!(invoke_snapshot_from(&detached, "workspace-a").is_ok());
+        assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
+        assert_eq!(session_b.snapshot().process_state, PiProcessState::Running);
+    }
+
+    #[test]
+    fn output_and_root_bearing_status_are_targeted_without_broadcast() {
+        let fixture = TestDirectory::new("targeted-events");
+        let root_a = fixture.0.join("a-private-root");
+        let root_b = fixture.0.join("b-private-root");
+        fs::create_dir_all(&root_a).unwrap();
+        fs::create_dir_all(&root_b).unwrap();
+        let (state, binding) = test_state("workspace-a", &root_a);
+        let app = authority_app(state.clone());
+        let main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let detached = WebviewWindowBuilder::new(&app, DETACHED_WINDOW_LABEL, Default::default())
+            .build()
+            .unwrap();
+        let unrelated = WebviewWindowBuilder::new(&app, "unrelated", Default::default())
+            .build()
+            .unwrap();
+        let session_a = insert_test_session(&state, "workspace-a", &root_a);
+        mark_running(&session_a);
+        {
+            let mut runtime = session_a.runtime.lock().unwrap();
+            runtime.attached_views.insert(DOCKED_VIEW_ID.to_string());
+            runtime.attached_views.insert(DETACHED_VIEW_ID.to_string());
+        }
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-a".to_string());
+
+        let received = Arc::new(Mutex::new(Vec::<String>::new()));
+        for (label, window) in [
+            (MAIN_WINDOW_LABEL, &main),
+            (DETACHED_WINDOW_LABEL, &detached),
+            ("unrelated", &unrelated),
+        ] {
+            for event in [
+                PI_WORKSPACE_AGENT_OUTPUT_EVENT,
+                PI_WORKSPACE_AGENT_STATUS_EVENT,
+            ] {
+                let received = received.clone();
+                window.listen(event, move |_| {
+                    received.lock().unwrap().push(format!("{label}:{event}"));
+                });
+            }
+        }
+        for event in [
+            PI_WORKSPACE_AGENT_OUTPUT_EVENT,
+            PI_WORKSPACE_AGENT_STATUS_EVENT,
+        ] {
+            let received = received.clone();
+            app.listen(event, move |_| {
+                received.lock().unwrap().push(format!("app:{event}"));
+            });
+        }
+
+        let emitter = EventEmitter::from_app(app.handle().clone());
+        let output = PiWorkspaceAgentOutputEvent {
+            protocol_version: PROTOCOL_VERSION,
+            workspace_id: "workspace-a".to_string(),
+            process_generation: 1,
+            sequence: 1,
+            data_base64: BASE64_STANDARD.encode(b"PRIVATE-OUTPUT"),
+        };
+        state.emit_output(&session_a, &emitter, &output);
+        state.emit_status(&session_a, &emitter);
+        let first = received.lock().unwrap().clone();
+        assert_eq!(
+            first.iter().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                format!("{MAIN_WINDOW_LABEL}:{PI_WORKSPACE_AGENT_OUTPUT_EVENT}"),
+                format!("{MAIN_WINDOW_LABEL}:{PI_WORKSPACE_AGENT_STATUS_EVENT}"),
+                format!("{DETACHED_WINDOW_LABEL}:{PI_WORKSPACE_AGENT_OUTPUT_EVENT}"),
+                format!("{DETACHED_WINDOW_LABEL}:{PI_WORKSPACE_AGENT_STATUS_EVENT}"),
+            ])
+        );
+        assert!(!first.iter().any(|entry| entry.starts_with("unrelated:")));
+        assert!(!first.iter().any(|entry| entry.starts_with("app:")));
+
+        set_current(&binding, "workspace-b", &root_b);
+        state.emit_output(&session_a, &emitter, &output);
+        assert_eq!(received.lock().unwrap().len(), first.len() + 1);
+        assert_eq!(
+            received.lock().unwrap().last().map(String::as_str),
+            Some("pi-agent:pi-workspace-agent-output")
+        );
+
+        session_a
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .remove(DETACHED_VIEW_ID);
+        let before = received.lock().unwrap().len();
+        state.emit_status(&session_a, &emitter);
+        assert_eq!(received.lock().unwrap().len(), before);
     }
 
     #[test]
@@ -1473,13 +2340,16 @@ mod tests {
         permissions.set_mode(0o700);
         fs::set_permissions(&helper, permissions).unwrap();
 
-        let state = PiWorkspaceAgentState::default();
+        let (state, _binding) = test_state("workspace-a", &root_a);
         let session_a = insert_test_session(&state, "workspace-a", &root_a);
         let session_b = insert_test_session(&state, "workspace-b", &root_b);
-        let events = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+        let events = Arc::new(Mutex::new(Vec::<(String, String, Value)>::new()));
         let captured = events.clone();
-        let emitter = EventEmitter::new(move |name, payload| {
-            captured.lock().unwrap().push((name.to_string(), payload));
+        let emitter = EventEmitter::new(move |target, name, payload| {
+            captured
+                .lock()
+                .unwrap()
+                .push((target.to_string(), name.to_string(), payload));
         });
 
         state
@@ -1488,12 +2358,34 @@ mod tests {
         state
             .start_session_with_program(&session_b, &helper, 80, 24, emitter.clone())
             .unwrap();
-        state.write("workspace-a", b"A-only\r").unwrap();
-        state.write("workspace-b", b"B-only\r").unwrap();
+        session_a
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .insert(DOCKED_VIEW_ID.to_string());
+        session_b
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .insert(DETACHED_VIEW_ID.to_string());
+        *state.detached_workspace_id.lock().unwrap() = Some("workspace-b".to_string());
+
+        state
+            .write(RendererIdentity::DockedMain, "workspace-a", b"A-only\r")
+            .unwrap();
+        state
+            .write(
+                RendererIdentity::DetachedPiAgent,
+                "workspace-b",
+                b"B-only\r",
+            )
+            .unwrap();
         wait_until(|| {
             let events = events.lock().unwrap();
             let mut observed = String::new();
-            for (name, payload) in events.iter() {
+            for (_, name, payload) in events.iter() {
                 if name != PI_WORKSPACE_AGENT_OUTPUT_EVENT {
                     continue;
                 }
@@ -1506,14 +2398,32 @@ mod tests {
             observed.contains("A-only") && observed.contains("B-only")
         });
 
-        {
-            let mut runtime = session_a.runtime.lock().unwrap();
-            runtime.attached_views.insert("main-a".to_string());
-        }
+        assert_eq!(
+            state
+                .stop(
+                    RendererIdentity::DockedMain,
+                    "workspace-a",
+                    false,
+                    emitter.clone(),
+                )
+                .unwrap_err(),
+            "Stopping Pi requires explicit confirmation"
+        );
         state
-            .detach("workspace-a", "main-a", emitter.clone())
+            .detach(RendererIdentity::DockedMain, "workspace-a", emitter.clone())
             .unwrap();
         assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
+        assert_eq!(
+            state
+                .stop(
+                    RendererIdentity::DockedMain,
+                    "workspace-a",
+                    true,
+                    emitter.clone(),
+                )
+                .unwrap_err(),
+            AUTHORIZATION_ERROR
+        );
         let a_attachment = state.attachment_snapshot(&session_a);
         let a_transcript = BASE64_STANDARD
             .decode(a_attachment.transcript_base64)
@@ -1522,14 +2432,20 @@ mod tests {
         assert!(a_text.contains("A-only"));
         assert!(!a_text.contains("B-only"));
 
-        assert_eq!(
-            state
-                .stop("workspace-a", false, emitter.clone())
-                .unwrap_err(),
-            "Stopping Pi requires explicit confirmation"
-        );
-        assert_eq!(session_a.snapshot().process_state, PiProcessState::Running);
-        state.stop("workspace-a", true, emitter.clone()).unwrap();
+        session_a
+            .runtime
+            .lock()
+            .unwrap()
+            .attached_views
+            .insert(DOCKED_VIEW_ID.to_string());
+        state
+            .stop(
+                RendererIdentity::DockedMain,
+                "workspace-a",
+                true,
+                emitter.clone(),
+            )
+            .unwrap();
         assert_eq!(session_a.snapshot().process_state, PiProcessState::Stopped);
         assert_eq!(session_b.snapshot().process_state, PiProcessState::Running);
 
