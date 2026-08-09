@@ -51,14 +51,23 @@ function attachment(state: "running" | "stopped" = "running"): PiWorkspaceAgentA
       },
     ],
     sessions: [
-      session,
       {
-        ...session,
+        workspaceId: session.workspaceId,
+        workspaceName: session.workspaceName,
+        sessionId: session.sessionId,
+        processState: session.processState,
+        processGeneration: session.processGeneration,
+        lastActivityAt: session.lastActivityAt,
+        attachedViewCount: session.attachedViewCount,
+      },
+      {
         workspaceId: "workspace-b",
         workspaceName: "Workspace B",
-        rootPath: "/workspace/b",
         sessionId: "ide-workspace-b",
-        processId: 202,
+        processState: session.processState,
+        processGeneration: session.processGeneration,
+        lastActivityAt: session.lastActivityAt,
+        attachedViewCount: session.attachedViewCount,
       },
     ],
   };
