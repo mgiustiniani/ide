@@ -525,6 +525,8 @@ vi.mock("@ide/tauri-adapters", () => {
       }
       return Promise.resolve(testHarness.aiAgentCommands);
     }),
+    listAgentRuns: vi.fn((_limit?: number) => Promise.resolve([])),
+    getAgentRunTrace: vi.fn((runId: string) => Promise.resolve({ runId, events: [] })),
     getSessionMessages: vi.fn(() => Promise.resolve(testHarness.aiAgentSessionMessages)),
     sendPrompt: vi.fn((prompt: string) => {
       const responseMetadata = testHarness.aiAgentPromptResponse?.metadata;
@@ -1057,9 +1059,15 @@ vi.mock("@ide/ui", () => ({
       <button type="button" onClick={() => void props.onDetach?.()}>
         Detach
       </button>
-      <button type="button" onClick={() => void props.onStop()}>
-        Stop Pi
-      </button>
+      {props.attachment?.session?.processState === "stopped" ? (
+        <button type="button" onClick={() => void props.onStart()}>
+          Restart Pi
+        </button>
+      ) : (
+        <button type="button" onClick={() => void props.onStop()}>
+          Stop Pi
+        </button>
+      )}
       <button type="button" onClick={() => void props.onRefreshAccessories()}>
         Resources
       </button>
@@ -4852,10 +4860,31 @@ describe("App", () => {
     });
   });
 
-  it("keeps workspace A and B native Pi sessions distinct across A to B to A, detach, and stop", async () => {
+  it("keeps workspace A and B native Pi sessions distinct without legacy AiAgent authority calls", async () => {
+    const expectLegacyAiAgentAuthorityToRemainDormant = (checkpoint: string) => {
+      expect(
+        testHarness.aiAgentAdapter.listAgentRuns,
+        `${checkpoint}: listAgentRuns must remain dormant`,
+      ).toHaveBeenCalledTimes(0);
+      expect(
+        testHarness.aiAgentAdapter.getAgentRunTrace,
+        `${checkpoint}: getAgentRunTrace must remain dormant`,
+      ).toHaveBeenCalledTimes(0);
+      expect(
+        testHarness.aiAgentAdapter.getSessionMessages,
+        `${checkpoint}: getSessionMessages must remain dormant`,
+      ).toHaveBeenCalledTimes(0);
+      expect(
+        testHarness.aiAgentAdapter.sendPrompt,
+        `${checkpoint}: sendPrompt must remain dormant`,
+      ).toHaveBeenCalledTimes(0);
+    };
+
     const { App } = await import("../App");
     render(<App />);
     await screen.findByText("Workspace: Workspace One");
+    await waitFor(() => expect(testHarness.aiAgentAdapter.listCommands).toHaveBeenCalled());
+    expectLegacyAiAgentAuthorityToRemainDormant("initial workspace activation");
 
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     await waitFor(() =>
@@ -4867,7 +4896,7 @@ describe("App", () => {
     const workspaceAProcessId = workspaceASession.processId;
     expect(workspaceASession.sessionId).toBe("ide-workspace-one");
     expect(screen.queryByTestId("RightSidebar")).toBeNull();
-    expect(testHarness.aiAgentAdapter.sendPrompt).not.toHaveBeenCalled();
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Agent selection");
 
     fireEvent.click(screen.getByRole("button", { name: "Detach" }));
     await waitFor(() =>
@@ -4875,10 +4904,18 @@ describe("App", () => {
         "workspace-one",
       ),
     );
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Agent detach");
 
     fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    await waitFor(() =>
+      expect(testHarness.piWorkspaceAgentAdapter.detach).toHaveBeenCalledTimes(1),
+    );
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Agent close");
+
     fireEvent.click(screen.getByRole("option", { name: /Workspace Two/ }));
     await screen.findByText("Workspace: Workspace Two");
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A to B switch");
+
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     await waitFor(() =>
       expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
@@ -4888,10 +4925,25 @@ describe("App", () => {
     const workspaceBSession = testHarness.piWorkspaceAgentSessions.get("workspace-two");
     expect(workspaceBSession.sessionId).toBe("ide-workspace-two");
     expect(workspaceBSession.processId).not.toBe(workspaceAProcessId);
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace B Agent selection");
 
     fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    await waitFor(() =>
+      expect(testHarness.piWorkspaceAgentAdapter.detach).toHaveBeenCalledTimes(2),
+    );
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace B Agent close");
+
     fireEvent.click(screen.getByRole("option", { name: /Workspace One/ }));
     await screen.findByText("Workspace: Workspace One");
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace B to A return");
+
+    fireEvent.click(screen.getByTestId("file-src-main"));
+    await waitFor(() =>
+      expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith("src/main.tsx"),
+    );
+    expect(screen.getByTestId("Editor").dataset.filePath).toBe("src/main.tsx");
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Files and editor navigation");
+
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     await waitFor(() =>
       expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.workspaceId).toBe(
@@ -4900,17 +4952,28 @@ describe("App", () => {
     );
     expect(testHarness.piWorkspaceAgentSessions.get("workspace-one")).toBe(workspaceASession);
     expect(workspaceASession.processId).toBe(workspaceAProcessId);
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Agent reopen");
 
     fireEvent.click(screen.getByRole("button", { name: "Resources" }));
     await waitFor(() =>
       expect(testHarness.piWorkspaceAgentAdapter.accessories).toHaveBeenCalledWith("workspace-one"),
     );
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A accessory navigation");
+
     fireEvent.click(screen.getByRole("button", { name: "Stop Pi" }));
     await waitFor(() =>
       expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.processState).toBe("stopped"),
     );
     expect(workspaceBSession.processState).toBe("running");
-    expect(testHarness.aiAgentAdapter.getSessionMessages).not.toHaveBeenCalled();
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Pi stop");
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart Pi" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("PiWorkspaceAgentScreen").dataset.processState).toBe("running"),
+    );
+    expect(workspaceASession.sessionId).toBe("ide-workspace-one");
+    expect(workspaceBSession.processState).toBe("running");
+    expectLegacyAiAgentAuthorityToRemainDormant("workspace A Pi restart");
   });
 
   it("creates at the workspace root through FileTreeViewModel without flushSync warnings", async () => {
