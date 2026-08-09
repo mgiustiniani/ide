@@ -54,8 +54,14 @@ Desktop App ──strict native evidence adapter──> Rust Backend
   └─ refresh, switch, failure, newer generation, exit, or cached restoration revokes
 
 Desktop App ──token-free recipe inspection adapter──> Rust Backend
-  ├─ request remains `{ workspaceId, generation, moduleRoot }`
+  ├─ exact request remains `{ workspaceId, generation, moduleRoot }`
+  ├─ one positive JS-safe inspection generation is reserved per native attempt
+  │    ├─ accepted authority retains it across repeated inspections
+  │    └─ failed reservation is consumed; later authority advances; exhaustion refuses
   ├─ exact accepted-root match gates contained no-follow metadata reads
+  │    ├─ unchanged reads return identical candidate facts
+  │    └─ changed script/notice/convention facts retain generation but change the digest
+  ├─ post-read workspace and exact-authority stale checks fail closed
   ├─ `.scripts/build.ps1` stays untrusted and is never executed
   ├─ accessible review renders complete escaped notice text separately from identity
   │    └─ unsafe empty/hostile/path/control/oversize notices refuse
@@ -81,15 +87,15 @@ Rust Backend ──> authorized files, JDK, JDT LS, RefactorKit,
 
 ## Runtime Containers
 
-| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                          |
-| ---------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation and build-recipe inspection reject honestly; browser composition performs no filesystem, process, network, storage, polling, approval, or simulated execution work.                                                                                                  |
-| **Desktop App**  | React + Vite in Tauri WebView | Applies trusted activation policies, renders bounded notice text separately from identity, and owns closed review, digest custody, approval, and an uncalled async decision seam that revokes before exact reinspection. It has no recipe execution consumer. Project Foundry remains separate.                         |
-| **Rust Backend** | Rust + Tauri commands         | Owns volatile accepted-root authority, opaque activation evidence, synchronous revocation, and contained metadata inspection. It matches `{ workspaceId, generation, moduleRoot }` to an exact accepted root and never executes `.scripts/build.ps1`. Project Foundry and SDK transactions remain separate authorities. |
+| Container        | Technology                    | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Web App**      | React + Vite SPA              | Browser editing and persistence. Native activation and build-recipe inspection reject honestly; browser composition performs no filesystem, process, network, storage, polling, approval, or simulated execution work.                                                                                                                                                                                                                                             |
+| **Desktop App**  | React + Vite in Tauri WebView | Applies trusted activation policies, renders bounded notice text separately from identity, and owns closed review, digest custody, approval, and an uncalled async decision seam that revokes before exact reinspection. It has no recipe execution consumer. Project Foundry remains separate.                                                                                                                                                                    |
+| **Rust Backend** | Rust + Tauri commands         | Owns volatile accepted-root authority, one reserved positive JavaScript-safe inspection generation per native attempt, synchronous revocation, and contained metadata inspection. The exact token-free request matches an accepted root; repeated unchanged reads preserve candidate facts, changed inputs preserve authority generation but change bound facts, and exhaustion or stale post-read authority fails closed. It never executes `.scripts/build.ps1`. |
 
 JDK, JDT LS, RefactorKit, OS programs, and Steam metadata are external systems rather than IDE containers.
 
-The decision seam is provider-neutral policy, not a caller, executor, or consumer. It makes authority unavailable synchronously before awaiting fresh inspection and refuses changed script, notice, provenance, license, workspace/module context, generation, invalid/error, concurrent, and replay cases. There is no watcher or polling: unseen filesystem drift is detected only when this requested decision reinspects. Refresh and context changes still revoke synchronously.
+The decision seam is provider-neutral policy, not a caller, executor, or consumer. It makes authority unavailable synchronously before awaiting fresh inspection and refuses any changed bound fact, invalid/error, concurrent, or replay case. There is no watcher or polling: unseen filesystem drift is detected only when this requested decision reinspects. Refresh and context changes still revoke synchronously.
 
 For `destination-present`, the Desktop App renders the fixed atomic conflict presentation. Separately, only the exact `failed` / `pre-commit` / `stage-write-failed` / `verified-complete` result renders the fixed **Project creation stopped safely** presentation. Both outcomes clear grant memory, complete `revokeAll`, disable selection, Preview, retry, and Create, and leave only Cancel with equivalent Escape dismissal. Every other result uses one fixed non-interpolating fallback, and no mapping discloses paths, cleanup internals, native identities, commands, or raw causes.
 
