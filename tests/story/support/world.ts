@@ -6,12 +6,16 @@ import {
 } from "./application-content-layout.js";
 import { NativeApplicationContentLayoutSession } from "./native-application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
+import { NativePiWorkspaceAgentStorySession } from "./native-pi-workspace-agent.js";
 import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
 import { NativeXcom2MachineSettingsMissingSteamSession } from "./native-xcom2-machine-settings-missing-steam.js";
 import { NativeXcom2ModuleActivationSession } from "./native-xcom2-module-activation.js";
 import { NativeXcom2ModuleConfigurationActivationSession } from "./native-xcom2-module-configuration-activation.js";
 import { NativeXcom2ModuleConfigurationDiagnosticsSession } from "./native-xcom2-module-configuration-diagnostics.js";
-import { PiWorkspaceAgentStorySession } from "./pi-workspace-agent.js";
+import {
+  PiWorkspaceAgentStorySession,
+  type PiWorkspaceAgentStoryDriver,
+} from "./pi-workspace-agent.js";
 import { RefactorKit062ProtocolFixture } from "./refactorkit-062-protocol-fixture.js";
 import { RefactorKit070SnapshotDiagnosticsFixture } from "./refactorkit-070-snapshot-diagnostics-fixture.js";
 import { RefactorKit070SnapshotProtocolFixture } from "./refactorkit-070-snapshot-protocol-fixture.js";
@@ -50,7 +54,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeXcom2ModuleConfigurationActivationEvidenceAttached = false;
   #nativeXcom2ModuleConfigurationDiagnosticsSession?: NativeXcom2ModuleConfigurationDiagnosticsSession;
   #nativeXcom2ModuleConfigurationDiagnosticsEvidenceAttached = false;
-  #piWorkspaceAgentSession?: PiWorkspaceAgentStorySession;
+  #piWorkspaceAgentSession?: PiWorkspaceAgentStoryDriver;
   #refactorKit062ProtocolFixture?: RefactorKit062ProtocolFixture;
   #refactorKit070SnapshotDiagnosticsFixture?: RefactorKit070SnapshotDiagnosticsFixture;
   #refactorKit070SnapshotProtocolFixture?: RefactorKit070SnapshotProtocolFixture;
@@ -596,30 +600,50 @@ export class StoryWorld extends World<StoryWorldParameters> {
   }
 
   async createPiWorkspaceAgentSession(): Promise<void> {
-    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri") {
+    if (this.targetProfile.name !== "desktop") {
       throw new TypeError(
-        `The Pi workspace Agent Story requires desktop/tauri, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
-      );
-    }
-    if (
-      this.targetEvidence?.kind !== "tauri-harness" ||
-      this.targetEvidence.nativeGui !== false ||
-      this.targetEvidence.e2e !== false ||
-      this.targetEvidence.packagedApplication !== false
-    ) {
-      throw new TypeError(
-        "The Pi workspace Agent Story requires explicit non-native, non-E2E tauri-harness evidence",
+        `The Pi workspace Agent Story requires desktop/tauri or desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
       );
     }
     if (this.#piWorkspaceAgentSession) {
       throw new Error("The Pi workspace Agent Story session has already been created");
     }
-    const session = new PiWorkspaceAgentStorySession();
+
+    let session: PiWorkspaceAgentStoryDriver;
+    if (this.targetProfile.driver === "tauri") {
+      if (
+        this.targetEvidence?.kind !== "tauri-harness" ||
+        this.targetEvidence.nativeGui !== false ||
+        this.targetEvidence.e2e !== false ||
+        this.targetEvidence.packagedApplication !== false
+      ) {
+        throw new TypeError(
+          "The Pi workspace Agent Story harness requires explicit non-native, non-E2E tauri-harness evidence",
+        );
+      }
+      session = new PiWorkspaceAgentStorySession();
+    } else if (this.targetProfile.driver === "tauri-webdriver") {
+      if (
+        this.targetEvidence?.kind !== "tauri-webdriver" ||
+        this.targetEvidence.nativeGui !== true ||
+        this.targetEvidence.e2e !== true ||
+        this.targetEvidence.packagedApplication !== false ||
+        this.targetEvidence.artifactKind !== "release-no-bundle"
+      ) {
+        throw new TypeError(
+          "The native Pi workspace Agent Story requires explicit release/no-bundle tauri-webdriver evidence",
+        );
+      }
+      session = new NativePiWorkspaceAgentStorySession();
+    } else {
+      throw new TypeError("The Pi workspace Agent Story received an unsupported desktop driver");
+    }
+
     this.#piWorkspaceAgentSession = session;
     await session.start();
   }
 
-  piWorkspaceAgentSession(): PiWorkspaceAgentStorySession {
+  piWorkspaceAgentSession(): PiWorkspaceAgentStoryDriver {
     if (!this.#piWorkspaceAgentSession) {
       throw new Error("The Pi workspace Agent Story session has not been created");
     }
@@ -803,9 +827,11 @@ export class StoryWorld extends World<StoryWorldParameters> {
       await desktopPanelLayoutHarness?.dispose();
       if (piWorkspaceAgentSession) {
         try {
-          await this.attach(JSON.stringify(piWorkspaceAgentSession.evidence()), "application/json");
-        } finally {
           await piWorkspaceAgentSession.dispose();
+        } finally {
+          await this.attach(JSON.stringify(piWorkspaceAgentSession.evidence()), "application/json");
+          const diagnostics = piWorkspaceAgentSession.redactedDiagnostics?.();
+          if (diagnostics) await this.attach(diagnostics, "text/plain");
         }
       }
       await refactorKitFixture?.dispose();

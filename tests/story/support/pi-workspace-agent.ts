@@ -19,8 +19,54 @@ const INSTALLED_PACKAGE_FIXTURE = [
   "npm:pi-multi-pass",
 ] as const;
 
+export type PiWorkspaceAgentWorkspaceId = "workspace-a" | "workspace-b";
+export type StoryOperation<T = void> = T | Promise<T>;
+
+/** One runner-neutral Story surface implemented by the deterministic harness and native WebDriver. */
+export interface PiWorkspaceAgentStoryDriver {
+  start(): Promise<void>;
+  evidence(): Readonly<Record<string, unknown>>;
+  dispose(): Promise<void>;
+  redactedDiagnostics?(): string;
+  assertRegistryAndFiles(): StoryOperation;
+  assertFixedPiPtyAvailable(): StoryOperation;
+  selectAgent(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation;
+  assertAttachedToExactRoot(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation;
+  assertRawTransport(): StoryOperation;
+  assertPiOwnsConversation(): StoryOperation;
+  interact(workspaceId: PiWorkspaceAgentWorkspaceId, marker: string): StoryOperation;
+  assertTranscript(workspaceId: PiWorkspaceAgentWorkspaceId, marker: string): StoryOperation;
+  assertCompositeAccessories(): StoryOperation;
+  assertInstalledPackages(): StoryOperation;
+  assertSessionMetadataOnly(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation;
+  switchTo(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation;
+  assertDetachedWithoutTermination(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation;
+  assertNoLeak(
+    from: PiWorkspaceAgentWorkspaceId,
+    to: PiWorkspaceAgentWorkspaceId,
+    marker: string,
+  ): StoryOperation;
+  returnToAAfterB(markerB: string): StoryOperation;
+  assertReattachedA(originalPid: number): StoryOperation;
+  processId(workspaceId: PiWorkspaceAgentWorkspaceId): StoryOperation<number>;
+  openAFile(): StoryOperation;
+  assertExistingEditorOpenedAFile(): StoryOperation;
+  detachA(): StoryOperation;
+  assertDetachedPinnedToA(): StoryOperation;
+  closeDetachedAndReopenDocked(): StoryOperation;
+  assertRunningAfterDetachedClose(originalPid: number): StoryOperation;
+  requestStopA(): StoryOperation;
+  assertNamedStopConfirmation(): StoryOperation;
+  cancelStop(): StoryOperation;
+  confirmStopA(): StoryOperation;
+  assertOnlyAStopped(): StoryOperation;
+  restartA(): StoryOperation;
+  assertRestoredDeterministicSession(): StoryOperation;
+  assertNoParallelAuthorities(): StoryOperation;
+}
+
 interface WorkspaceModel {
-  readonly id: "workspace-a" | "workspace-b";
+  readonly id: PiWorkspaceAgentWorkspaceId;
   readonly name: "Workspace A" | "Workspace B";
   readonly root: string;
   readonly file: string;
@@ -65,7 +111,7 @@ async function runVerification(
  * requiring the focused production UI/controller/adapter tests and the real
  * portable-PTY Rust lifecycle test to pass before any scenario assertion.
  */
-export class PiWorkspaceAgentStorySession {
+export class PiWorkspaceAgentStorySession implements PiWorkspaceAgentStoryDriver {
   #sandbox?: string;
   #workspaces = new Map<WorkspaceModel["id"], WorkspaceModel>();
   #processes = new Map<WorkspaceModel["id"], ProcessModel>();
