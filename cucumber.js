@@ -120,6 +120,12 @@ const piWorkspaceAgentTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+const idePackagingTauriHarness = {
+  ...common,
+  tags: "@REQ-IDE-PACKAGING-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const piWorkspaceAgentNativeGui = {
   ...common,
   tags: "@REQ-PI-WORKSPACE-AGENT-001 and @desktop and @native-gui and not @web",
@@ -197,6 +203,7 @@ export {
   xcom2ProjectBuildRecipeTauriHarness,
   piWorkspaceAgentTauriHarness,
   piWorkspaceAgentNativeGui,
+  idePackagingTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,
   xcom2ProjectFoundryDestinationConflictTauriHarness,
   xcom2ProjectFoundryVerifiedCleanupTauriHarness,
