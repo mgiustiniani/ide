@@ -1,0 +1,36 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-PACKAGING-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "approvalEvidence": {
+    "kind": "bounded-session-confirmation",
+    "repositoryAddressable": false,
+    "statement": "The user approved proceeding with the Linux AppImage packaging slice for CachyOS after the feasibility assessment; deb/rpm/pacman native packaging and Windows/MSI/NSIS packaging are excluded and remain out of scope."
+  },
+  "initialRepository": {
+    "commit": "901efb895e7cab8eea1f629df7054cda317e7688",
+    "tree": "8ef19ff5991662a3da36f709d00fd2e6620af170"
+  },
+  "requirement": {
+    "id": "REQ-IDE-PACKAGING-001",
+    "classification": "Story BDD",
+    "initialIntent": "Produce a real, verifiable AppImage package of the IDE desktop application that runs on CachyOS/Arch (portable Linux) while preserving the existing release/no-bundle native evidence and the REQ-PI-WORKSPACE-AGENT-001 status."
+  },
+  "qualityConstraints": [
+    "Deliver one complete packaging milestone; do not present an intermediate build-config-only slice as finished.",
+    "Use focused tests during implementation and one integrated end-to-end acceptance at completion.",
+    "Native executable selection and bundle arguments must remain fixed; never interpolate project data into shell command strings.",
+    "Keep the existing desktop/web architecture and REQ-PI-WORKSPACE-AGENT-001 status unchanged by this slice.",
+    "Generated artifacts and user-facing product text remain English."
+  ],
+  "exclusions": [
+    "deb/rpm/pacman native packages and custom PKGBUILD",
+    "Windows/MSI/NSIS packaging (blocked: requires a Windows host or CI runner)",
+    "macOS/DMG packaging",
+    "Code signing, installer branding, or distribution/store publication",
+    "Installing, removing, or updating Pi packages, or unrelated repository cleanup"
+  ],
+  "approvedChanges": [
+    "Scope approved by the user: Linux AppImage packaging only, targeted at CachyOS/Arch portable use; deb/rpm/pacman and Windows packaging remain excluded/blocked."
+  ]
+}
