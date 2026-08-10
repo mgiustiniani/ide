@@ -307,7 +307,7 @@ interface PiAgentErrorAlertDomSnapshot {
 
 interface NativePiEvidence {
   readonly requirement: typeof REQUIREMENT;
-  readonly declaredStatus: "implemented-not-e2e-validated";
+  readonly declaredStatus: "implemented-and-validated";
   readonly target: "desktop/tauri-webdriver";
   readonly kind: "tauri-webdriver";
   readonly artifactKind: "release-no-bundle";
@@ -522,7 +522,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
   );
   readonly #evidence: NativePiEvidence = {
     requirement: REQUIREMENT,
-    declaredStatus: "implemented-not-e2e-validated",
+    declaredStatus: "implemented-and-validated",
     target: "desktop/tauri-webdriver",
     kind: "tauri-webdriver",
     artifactKind: "release-no-bundle",
