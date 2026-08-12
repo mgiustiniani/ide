@@ -22,7 +22,7 @@ Given<StoryWorld>(
 );
 
 Given<StoryWorld>(
-  "the host is a portable Linux environment compatible with CachyOS/Arch",
+  /^the host is a portable Linux environment compatible with CachyOS\/Arch$/,
   async function () {},
 );
 
@@ -46,14 +46,14 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  'the artifact exists at the fixed path "{string}"',
+  "the artifact exists at the fixed path {string}",
   async function (fixedPath: string) {
     await packaging(this).assertArtifactExists(fixedPath);
   },
 );
 
 Then<StoryWorld>(
-  'the artifact has the fixed product name "{string}" and the fixed version "{string}"',
+  "the artifact has the fixed product name {string} and the fixed version {string}",
   async function (productName: string, version: string) {
     await packaging(this).assertProductNameAndVersion(productName, version);
   },

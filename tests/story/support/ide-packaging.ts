@@ -134,10 +134,20 @@ function processCmdlines(): Array<{ pid: number; cmdline: string }> {
   return out;
 }
 
-function findSurvivors(artifactPath: string): Array<{ pid: number; cmdline: string }> {
-  const markers = ["IDE.AppImage", "ide-desktop", basename(artifactPath)];
+export function findIdePackagingSurvivors(
+  artifactPath: string | null,
+  processes: ReadonlyArray<{ pid: number; cmdline: string }> = processCmdlines(),
+): Array<{ pid: number; cmdline: string }> {
+  if (!artifactPath) {
+    return [];
+  }
+  const artifactName = basename(artifactPath);
+  if (!artifactName) {
+    return [];
+  }
+  const markers = [artifactPath, artifactName, "ide-desktop"];
   const survivors: Array<{ pid: number; cmdline: string }> = [];
-  for (const proc of processCmdlines()) {
+  for (const proc of processes) {
     if (proc.pid === process.pid) {
       continue;
     }
@@ -149,14 +159,6 @@ function findSurvivors(artifactPath: string): Array<{ pid: number; cmdline: stri
     }
   }
   return survivors;
-}
-
-function killPid(pid: number): void {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    // already gone
-  }
 }
 
 export class IdePackagingStorySession implements IdePackagingStoryDriver {
@@ -219,7 +221,7 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
     try {
       await access(artifactPath, fsConstants.R_OK);
       stats = await stat(artifactPath);
-    } catch (error) {
+    } catch {
       assert.fail(
         [
           `no release AppImage artifact was produced at the fixed path ${artifactPath}`,
@@ -466,7 +468,7 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
     assert(this.launch, "the AppImage was not launched");
     await sleep(SURVIVOR_SCAN_GRACE_MS);
     assert(this.artifactPath, "the AppImage artifact was not asserted");
-    const survivors = findSurvivors(this.artifactPath);
+    const survivors = findIdePackagingSurvivors(this.artifactPath);
     assert.strictEqual(
       survivors.length,
       0,
@@ -498,20 +500,22 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
   }
 
   async dispose(): Promise<void> {
-    if (this.launch) {
-      try {
-        process.kill(-this.launch.pid, "SIGKILL");
-      } catch {
-        // process group already gone
-      }
-      try {
-        this.launch.child.kill("SIGKILL");
-      } catch {
-        // already gone
-      }
+    if (!this.launch) {
+      return;
     }
-    for (const survivor of findSurvivors(this.artifactPath ?? "")) {
-      killPid(survivor.pid);
+    // The launched AppImage is an explicitly detached child, so its PID is the
+    // process-group ID owned by this scenario. Never kill processes discovered
+    // through command-line substring scans: an absent artifact path previously
+    // produced an empty marker, which matched every process in /proc.
+    try {
+      process.kill(-this.launch.pid, "SIGKILL");
+    } catch {
+      // owned process group already gone
+    }
+    try {
+      this.launch.child.kill("SIGKILL");
+    } catch {
+      // owned child already gone
     }
   }
 }
