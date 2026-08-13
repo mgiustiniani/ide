@@ -320,9 +320,22 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
         "7f454c46",
         "the artifact is not an ELF executable",
       );
-      assert(
-        head[8] === 0x41 && head[9] === 0x49 && (head[10] === 0xff || head[10] === 0x02),
-        "the artifact does not carry a recognized AppImage magic (AI\\xff type-1 or AI\\x02 type-2) expected of a self-contained AppImage",
+      // AC-004 strict: the frozen artifact is a type-2 AppImage (AI\x02).
+      // Assert the exact type-2 magic; do not accept type-1 (AI\xff).
+      assert.strictEqual(
+        head[8],
+        0x41,
+        "the artifact does not carry the AppImage magic 'A' (AI\\x02)",
+      );
+      assert.strictEqual(
+        head[9],
+        0x49,
+        "the artifact does not carry the AppImage magic 'I' (AI\\x02)",
+      );
+      assert.strictEqual(
+        head[10],
+        0x02,
+        `the artifact is not a type-2 AppImage (AI\\x02): got byte ${head[10]} (${head[10] === 0xff ? "type-1 AI\\xff" : "unknown"})`,
       );
     } finally {
       await handle.close();
@@ -389,8 +402,15 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
           const wmClass = wmClassMatch ? wmClassMatch[1] : null;
           const pid = pidMatch ? Number(pidMatch[1]) : null;
           const ownedPid = pid !== null && ownedPids.has(pid);
-          const namedIde = (wmName && wmName.includes("IDE")) || (wmClass && (wmClass.includes("ide-desktop") || wmClass.includes("IDE")));
-          if (pid === appPid || ownedPid || namedIde) {
+          const ideDesktopClass =
+            wmClass !== null && (wmClass.includes("ide-desktop") || wmClass.includes("IDE"));
+          // AC-005 strict: acceptance requires a native window whose exact
+          // WM_NAME is "IDE" (matches the independent probe). Keep detection
+          // robust by also accepting windows that carry an owned descendant
+          // PID or an ide-desktop/IDE WM_CLASS, but never accept a window that
+          // does not carry the exact IDE window name.
+          const exactIdeName = wmName !== null && wmName.trim() === "IDE";
+          if (exactIdeName && (pid === appPid || ownedPid || ideDesktopClass)) {
             return parseInt(id, 16);
           }
         } catch {
@@ -422,49 +442,28 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
       }
       await sleep(1000);
     }
-    const displayConnection = await this.hasDisplayConnection(appPid);
-    assert(
-      displayConnection,
-      `the IDE desktop started (pid ${appPid}) but no native window was detected and no display connection was found`,
+    // AC-005 strict: the native IDE window must actually be detected. The
+    // process-alive-and-display-connection path is not an acceptance path.
+    assert.fail(
+      `the IDE desktop started (pid ${appPid}) but no native X11 window with the exact WM_NAME "IDE" was detected within ${WINDOW_READY_TIMEOUT_MS}ms`,
     );
-    this.windowReadyEvidence = "process-alive-and-display-connection";
-  }
-
-  private async hasDisplayConnection(pid: number): Promise<boolean> {
-    try {
-      const environ = await readFile(join("/proc", String(pid), "environ"), "utf8");
-      const hasDisplayEnv = environ.includes("DISPLAY=") || environ.includes("WAYLAND_DISPLAY=");
-      const fdEntries = readdirSync(join("/proc", String(pid), "fd"));
-      const hasSocket = fdEntries.some((entry) => entry.startsWith("socket:["));
-      return hasDisplayEnv && hasSocket;
-    } catch {
-      return false;
-    }
   }
 
   async closeIdeWindow(): Promise<void> {
     assert(this.launch, "the AppImage was not launched");
+    assert(
+      this.windowId,
+      "no native IDE window was detected; AC-006 requires the person to close the detected IDE window via WM_DELETE",
+    );
     const appPid = this.launch.pid;
-    if (this.windowId) {
-      const closed = await this.tryX11CloseWindow(this.windowId);
-      if (closed) {
-        this.closeMethod = "wm_delete_window";
-      } else {
-        try {
-          process.kill(appPid, "SIGTERM");
-        } catch {
-          // already gone
-        }
-        this.closeMethod = "sigterm-fallback";
-      }
-    } else {
-      try {
-        process.kill(appPid, "SIGTERM");
-      } catch {
-        // already gone
-      }
-      this.closeMethod = "sigterm";
-    }
+    // AC-006 strict: the "person closes the IDE window" step must exercise the
+    // X11 WM_DELETE close. A SIGTERM fallback is not an acceptance path.
+    const closed = await this.tryX11CloseWindow(this.windowId);
+    assert(
+      closed,
+      `the X11 WM_DELETE close of window 0x${this.windowId.toString(16)} failed (pid ${appPid})`,
+    );
+    this.closeMethod = "wm_delete_window";
   }
 
   private async tryX11CloseWindow(windowId: number): Promise<boolean> {
@@ -488,9 +487,9 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
         "class Ev(ctypes.Structure):",
         "  _fields_ = [('type', ctypes.c_int), ('serial', ctypes.c_ulong), ('send_event', ctypes.c_int), ('display', ctypes.c_void_p), ('window', ctypes.c_ulong), ('message_type', ctypes.c_ulong), ('format', ctypes.c_int), ('data', ctypes.c_long * 5)]",
         "ev = Ev()",
-        "ev.type = 68",
+        "ev.type = 33  # ClientMessage (X11/X.h)",
         "ev.serial = 0",
-        "ev.send_event = 0",
+        "ev.send_event = 1  # True: synthetic event so the client can identify it",
         "ev.display = d",
         "ev.window = win",
         "ev.message_type = wm_protocols",
@@ -500,6 +499,10 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
         "X.XSendEvent.restype = ctypes.c_int",
         "X.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]",
         "st = X.XSendEvent(d, win, 0, 0, ctypes.byref(ev))",
+        // Set argtypes for XFlush too: without them ctypes truncates the
+        // display pointer to c_int on x86_64 and XFlush segfaults, so the close
+        // never reliably returns success.
+        "X.XFlush.argtypes = [ctypes.c_void_p]",
         "X.XFlush(d)",
         "sys.exit(0 if st else 4)",
       ].join("\n");
@@ -517,9 +520,12 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
     assert(this.launch, "the AppImage was not launched");
     const exit = await waitForExit(this.launch.child, CLOSE_TIMEOUT_MS);
     this.exitInfo = { code: exit.code, signal: exit.signal };
-    assert(
-      exit.code === 0 || exit.signal === "SIGTERM",
-      `the packaged IDE desktop did not exit cleanly after closing (method=${this.closeMethod}, code=${exit.code}, signal=${exit.signal})`,
+    // AC-006 strict: the WM_DELETE close must terminate the packaged app with
+    // exit code 0. A SIGTERM-terminated process is not an acceptance path.
+    assert.strictEqual(
+      exit.code,
+      0,
+      `the packaged IDE desktop did not exit cleanly after the WM_DELETE close (method=${this.closeMethod}, code=${exit.code}, signal=${exit.signal})`,
     );
   }
 
