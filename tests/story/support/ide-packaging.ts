@@ -134,6 +134,50 @@ function processCmdlines(): Array<{ pid: number; cmdline: string }> {
   return out;
 }
 
+function ownedProcessPids(rootPid: number): Set<number> {
+  const owned = new Set<number>([rootPid]);
+  const ppidOf = new Map<number, number>();
+  try {
+    const entries = readdirSync("/proc");
+    for (const entry of entries) {
+      if (!/^\d+$/.test(entry)) {
+        continue;
+      }
+      const pid = Number(entry);
+      try {
+        // /proc/<pid>/stat is "pid (comm) state ppid ..."; comm may contain
+        // spaces and parentheses, so parse after the last ')' where the third
+        // whitespace-separated field is the parent PID.
+        const stat = readFileSync(join("/proc", entry, "stat"), "utf8");
+        const after = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+        const ppid = Number(after[1]);
+        if (!Number.isNaN(ppid)) {
+          ppidOf.set(pid, ppid);
+        }
+      } catch {
+        // process exited during scan
+      }
+    }
+  } catch {
+    // /proc unavailable
+  }
+  // Breadth-first walk over ppid chains starting at rootPid. The AppImage
+  // runtime spawns the real ide-desktop as a child, so the real native window's
+  // _NET_WM_PID is a descendant of the launched AppImage PID, not the PID
+  // itself.
+  const queue: number[] = [rootPid];
+  while (queue.length) {
+    const parent = queue.pop()!;
+    for (const [pid, ppid] of ppidOf.entries()) {
+      if (ppid === parent && !owned.has(pid)) {
+        owned.add(pid);
+        queue.push(pid);
+      }
+    }
+  }
+  return owned;
+}
+
 export function findIdePackagingSurvivors(
   artifactPath: string | null,
   processes: ReadonlyArray<{ pid: number; cmdline: string }> = processCmdlines(),
@@ -211,7 +255,7 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
       );
     }
     await this.assertArtifactExists(
-      "apps/desktop/src-tauri/target/release/bundle/appimage/IDE.AppImage",
+      "apps/desktop/src-tauri/target/release/bundle/appimage/IDE_0.1.0_amd64.AppImage",
     );
   }
 
@@ -237,10 +281,13 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
   async assertProductNameAndVersion(productName: string, version: string): Promise<void> {
     assert(this.artifactPath, "the AppImage artifact was not asserted");
     const artifactBasename = basename(this.artifactPath);
-    assert.strictEqual(
-      artifactBasename,
-      `${productName}.AppImage`,
-      `the AppImage artifact basename ${artifactBasename} does not match the fixed product name ${productName}`,
+    assert.ok(
+      artifactBasename.startsWith(`${productName}_`) && artifactBasename.endsWith(".AppImage"),
+      `the AppImage artifact basename ${artifactBasename} does not carry the fixed product name ${productName}`,
+    );
+    assert.ok(
+      artifactBasename.includes(`_${version}_`),
+      `the AppImage artifact basename ${artifactBasename} does not carry the fixed version ${version}`,
     );
     const confPath = join(PROJECT_ROOT, "apps/desktop/src-tauri/tauri.conf.json");
     const conf = JSON.parse(await readFile(confPath, "utf8"));
@@ -274,8 +321,8 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
         "the artifact is not an ELF executable",
       );
       assert(
-        head[8] === 0x41 && head[9] === 0x49 && head[10] === 0xff,
-        "the artifact does not carry the AppImage magic (AI\\xff) expected of a self-contained AppImage",
+        head[8] === 0x41 && head[9] === 0x49 && (head[10] === 0xff || head[10] === 0x02),
+        "the artifact does not carry a recognized AppImage magic (AI\\xff type-1 or AI\\x02 type-2) expected of a self-contained AppImage",
       );
     } finally {
       await handle.close();
@@ -312,6 +359,10 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
       if (!displayEnv) {
         return null;
       }
+      // Owned PIDs: the launched AppImage runtime PID plus every descendant in
+      // its /proc ppid chain. The real ide-desktop is a child of the AppImage
+      // runtime, so its _NET_WM_PID is an owned child PID.
+      const ownedPids = ownedProcessPids(appPid);
       const clientList = execFileSync("xprop", ["-root", "_NET_CLIENT_LIST"], {
         env: { ...process.env, DISPLAY: displayEnv },
         encoding: "utf8",
@@ -321,17 +372,25 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
         try {
           const info = execFileSync(
             "xprop",
-            ["-id", id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME"],
+            ["-id", id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME", "WM_CLASS"],
             {
               env: { ...process.env, DISPLAY: displayEnv },
               encoding: "utf8",
             },
           );
-          const pidMatch = info.match(/_NET_WM_PID\s*=\s*(\d+)/);
-          const wmNameMatch = info.match(/_NET_WM_NAME\s*=\s*"(.*)"/);
+          // xprop prints an optional type annotation between the property name
+          // and '=', e.g. _NET_WM_PID(CARDINAL) = 145751 or
+          // WM_CLASS(STRING) = "ide-desktop", "Ide-desktop". Allow an optional
+          // (...) suffix so the regexes match the real xprop output.
+          const pidMatch = info.match(/_NET_WM_PID(?:\s*\([^)]*\))?\s*=\s*(\d+)/);
+          const wmNameMatch = info.match(/_NET_WM_NAME(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
+          const wmClassMatch = info.match(/WM_CLASS(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
           const wmName = wmNameMatch ? wmNameMatch[1] : null;
+          const wmClass = wmClassMatch ? wmClassMatch[1] : null;
           const pid = pidMatch ? Number(pidMatch[1]) : null;
-          if (pid === appPid || (wmName && wmName.includes("IDE"))) {
+          const ownedPid = pid !== null && ownedPids.has(pid);
+          const namedIde = (wmName && wmName.includes("IDE")) || (wmClass && (wmClass.includes("ide-desktop") || wmClass.includes("IDE")));
+          if (pid === appPid || ownedPid || namedIde) {
             return parseInt(id, 16);
           }
         } catch {

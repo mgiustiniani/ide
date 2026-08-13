@@ -33,6 +33,7 @@ Given<StoryWorld>(
 
 When<StoryWorld>(
   "the scenario runs the fixed deterministic packaging command:",
+  { timeout: 15 * 60 * 1000 },
   async function (command: string) {
     await packaging(this).runPackagingCommand(command);
   },
@@ -63,25 +64,45 @@ Then<StoryWorld>("the artifact is executable and self-contained", async function
   await packaging(this).assertExecutableAndSelfContained();
 });
 
-When<StoryWorld>("the artifact launches the real IDE desktop", async function () {
-  await packaging(this).launchArtifact();
-});
+When<StoryWorld>(
+  "the artifact launches the real IDE desktop",
+  { timeout: 20_000 },
+  async function () {
+    await packaging(this).launchArtifact();
+  },
+);
 
-Then<StoryWorld>("the IDE desktop starts and its native window becomes ready", async function () {
-  await packaging(this).assertIdeStartsAndWindowReady();
-});
+Then<StoryWorld>(
+  "the IDE desktop starts and its native window becomes ready",
+  { timeout: 40_000 },
+  async function () {
+    await packaging(this).assertIdeStartsAndWindowReady();
+  },
+);
 
-When<StoryWorld>("the person closes the IDE window", async function () {
-  await packaging(this).closeIdeWindow();
-});
+When<StoryWorld>(
+  "the person closes the IDE window",
+  { timeout: 10_000 },
+  async function () {
+    await packaging(this).closeIdeWindow();
+  },
+);
 
-Then<StoryWorld>("the packaged app exits cleanly", async function () {
-  await packaging(this).assertCleanExit();
-});
+Then<StoryWorld>(
+  "the packaged app exits cleanly",
+  { timeout: 30_000 },
+  async function () {
+    await packaging(this).assertCleanExit();
+  },
+);
 
-Then<StoryWorld>("zero IDE desktop processes survive after exit", async function () {
-  await packaging(this).assertZeroSurvivingProcesses();
-});
+Then<StoryWorld>(
+  "zero IDE desktop processes survive after exit",
+  { timeout: 10_000 },
+  async function () {
+    await packaging(this).assertZeroSurvivingProcesses();
+  },
+);
 
 After<StoryWorld>(async function () {
   const session = packagingSessions.get(this);

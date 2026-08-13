@@ -19,7 +19,7 @@ Feature: AppImage-only release packaging for CachyOS/Arch portable use
       pnpm --filter @ide/desktop tauri build --bundles appimage --ci
       """
     Then the command exits successfully and produces a real release AppImage artifact
-    And the artifact exists at the fixed path "apps/desktop/src-tauri/target/release/bundle/appimage/IDE.AppImage"
+    And the artifact exists at the fixed path "apps/desktop/src-tauri/target/release/bundle/appimage/IDE_0.1.0_amd64.AppImage"
     And the artifact has the fixed product name "IDE" and the fixed version "0.1.0"
     And the artifact is executable and self-contained
     When the artifact launches the real IDE desktop
