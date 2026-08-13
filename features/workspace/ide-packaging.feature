@@ -9,7 +9,7 @@ Feature: AppImage-only release packaging for CachyOS/Arch portable use
   This requirement covers only the AppImage bundle produced at the frozen baseline by the fixed deterministic packaging command.
   deb/rpm/pacman native packages, custom PKGBUILD, Windows/MSI/NSIS, macOS/DMG, code signing, installer branding, and distribution or store publication are outside its scope.
 
-  @REQ-IDE-PACKAGING-001 @desktop @packaging @functional-requirement @non-functional-requirement @implemented-and-validated
+  @REQ-IDE-PACKAGING-001 @desktop @packaging @native-gui @functional-requirement @non-functional-requirement @implemented-and-validated
   Scenario: Build and validate the deterministic AppImage release of the IDE desktop
     Given the IDE desktop workspace is at the frozen baseline BASELINE-REQ-IDE-PACKAGING-001-v1
     And the host is a portable Linux environment compatible with CachyOS/Arch
