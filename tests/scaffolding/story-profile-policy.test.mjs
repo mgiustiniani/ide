@@ -714,6 +714,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   const routing = evaluateDeclaredStoryRouting(declared);
   const currentNativeRequirements = [
     "@REQ-DESKTOP-FILE-OPEN-001",
+    "@REQ-IDE-PACKAGING-001",
     "@REQ-LAYOUT-DESKTOP-001",
     "@REQ-PI-WORKSPACE-AGENT-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-002",
@@ -738,14 +739,14 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
   assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds), []);
-  assert.equal(declared.length, 19);
-  assert.equal(validated.length, 10);
+  assert.equal(declared.length, 20);
+  assert.equal(validated.length, 11);
   assert.equal(harnessOnly.length, 9);
   assert.equal(partial.length, 0);
   assert.equal(notImplemented.length, 0);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 9);
-  assert.equal(nativeGui.length, 8);
+  assert.equal(nativeGui.length, 9);
   assert.equal(web.length + harness.length + nativeGui.length, declared.length);
   assert.match(
     dryRunSummary("implementedWeb"),
@@ -757,12 +758,12 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /8 scenarios \(8 skipped\)[\s\S]*233 steps \(233 skipped\)/,
+    /9 scenarios \(9 skipped\)[\s\S]*248 steps \(248 skipped\)/,
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 9);
-  assert.equal(routing.expectedDesktopTauriWebdriver.length, 8);
+  assert.equal(routing.expectedDesktopTauriWebdriver.length, 9);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
     currentNativeRequirements,

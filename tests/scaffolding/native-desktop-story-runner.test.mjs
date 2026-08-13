@@ -1524,7 +1524,7 @@ test("runtime PATH is closed to owned executable directories plus /usr/bin and /
 
 test("native runner profiles select promoted and focused native scenarios", () => {
   assert.equal(selectedScenarioCount("desktopFileOpenNativeGui"), 1);
-  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 8);
+  assert.equal(selectedScenarioCount("implementedDesktopTauriWebdriver"), 9);
   assert.equal(selectedScenarioCount("refactorKitJavaImportNativeGui"), 1);
   assert.equal(selectedScenarioCount("desktopLayoutNativeGui"), 1);
   assert.equal(selectedScenarioCount("piWorkspaceAgentNativeGui"), 1);
@@ -1626,15 +1626,16 @@ test("implemented desktop discovery selects the exact harness and native require
   const selection = discoverNativeDesktopSelection("implementedDesktopTauriWebdriver");
   assert.equal(selection.hasScenarios, true);
   assert.equal(selection.includesNativeJavaImport, true);
-  assert.equal(selection.scenarios.length, 8);
+  assert.equal(selection.scenarios.length, 9);
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /8 scenarios \(8 skipped\)[\s\S]*233 steps \(233 skipped\)/,
+    /9 scenarios \(9 skipped\)[\s\S]*248 steps \(248 skipped\)/,
   );
   assert.deepEqual(
     selection.scenarios.flatMap(({ tags }) => tags.filter((tag) => tag.startsWith("@REQ-"))).sort(),
     [
       "@REQ-DESKTOP-FILE-OPEN-001",
+      "@REQ-IDE-PACKAGING-001",
       "@REQ-LAYOUT-DESKTOP-001",
       "@REQ-PI-WORKSPACE-AGENT-001",
       "@REQ-REFACTORKIT-JAVA-IMPORT-002",

@@ -28,6 +28,21 @@ const targets = {
       artifactKind: "release-no-bundle",
     },
   },
+  // Focused IDE-packaging profile: the ide-packaging.ts driver genuinely
+  // launches the real release AppImage, detects the native x11 window, closes
+  // it, and scans for zero survivors, so this desktop/tauri harness route is
+  // native-capable, E2E, and validates the packaged application. Mirrors the
+  // nativeGui/e2e/packagedApplication flag pattern of the desktop/tauri-
+  // webdriver native profiles while keeping the AppImage-harness driver.
+  idePackagingTauriHarness: {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: true,
+    },
+  },
 };
 
 const defaultProfile = {
@@ -123,7 +138,7 @@ const piWorkspaceAgentTauriHarness = {
 const idePackagingTauriHarness = {
   ...common,
   tags: "@REQ-IDE-PACKAGING-001",
-  worldParameters: targets.desktopTauriHarness,
+  worldParameters: targets.idePackagingTauriHarness,
 };
 
 const piWorkspaceAgentNativeGui = {
