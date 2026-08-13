@@ -104,7 +104,7 @@ Then<StoryWorld>(
   },
 );
 
-After<StoryWorld>(async function () {
+After<StoryWorld>({ tags: "@REQ-IDE-PACKAGING-001" }, async function () {
   const session = packagingSessions.get(this);
   if (session) {
     await this.attach(JSON.stringify(session.evidence()), "application/json");
