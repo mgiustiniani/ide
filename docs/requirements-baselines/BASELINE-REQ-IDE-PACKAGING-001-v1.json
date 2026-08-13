@@ -3,10 +3,40 @@
   "baselineId": "BASELINE-REQ-IDE-PACKAGING-001-v1",
   "receiptStatus": "confirmed-before-production",
   "approvalEvidence": {
-    "kind": "bounded-session-confirmation",
-    "repositoryAddressable": false,
-    "statement": "The user approved proceeding with the Linux AppImage packaging slice for CachyOS after the feasibility assessment; deb/rpm/pacman native packaging and Windows/MSI/NSIS packaging are excluded and remain out of scope."
+    "kind": "explicit-user-approved-ac-receipt",
+    "repositoryAddressable": true,
+    "statement": "The user explicitly approved the seven normalized acceptance criteria (AC-001..AC-007) below as an approved change to the baseline. These AC are embodied and verified in the committed feature features/workspace/ide-packaging.feature (scenario REQ-IDE-PACKAGING-001) and the driver tests/story/support/ide-packaging.ts at HEAD."
   },
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "criterion": "The fixed packaging command pnpm --filter @ide/desktop tauri build --bundles appimage --ci exits with code 0 and produces a real release AppImage artifact."
+    },
+    {
+      "id": "AC-002",
+      "criterion": "The artifact exists at the fixed path apps/desktop/src-tauri/target/release/bundle/appimage/IDE_0.1.0_amd64.AppImage."
+    },
+    {
+      "id": "AC-003",
+      "criterion": "The artifact has fixed product name IDE and fixed version 0.1.0."
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The artifact is executable and self-contained (ELF magic 7f454c46 plus AppImage type-2 magic AI\u0002)."
+    },
+    {
+      "id": "AC-005",
+      "criterion": "Launching the artifact starts the IDE desktop and its native window becomes ready (x11 window with WM_NAME IDE)."
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Closing the IDE window makes the packaged app exit cleanly."
+    },
+    {
+      "id": "AC-007",
+      "criterion": "Zero IDE desktop processes survive after exit."
+    }
+  ],
   "initialRepository": {
     "commit": "901efb895e7cab8eea1f629df7054cda317e7688",
     "tree": "8ef19ff5991662a3da36f709d00fd2e6620af170"
