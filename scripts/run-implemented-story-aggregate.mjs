@@ -95,6 +95,7 @@ export async function runImplementedStoryAggregate({ signal, run = runProfileCom
     ["scripts/run-native-desktop-story.mjs", "--profile", "implementedDesktopTauriWebdriver"],
     { signal },
   );
+  await run(process.execPath, cucumberArguments("idePackagingTauriHarness"), { signal });
 }
 
 async function main() {

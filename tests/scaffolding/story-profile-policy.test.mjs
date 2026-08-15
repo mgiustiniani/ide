@@ -831,7 +831,7 @@ test("validated desktop is rejected unless it opts into native GUI E2E evidence"
   ]);
 });
 
-test("implemented aggregate keeps web and harness routes and adds the bounded native runner", async () => {
+test("implemented aggregate keeps web and harness routes and adds the bounded native and AppImage-packaging runners", async () => {
   const invocations = [];
   await runImplementedStoryAggregate({
     run: async (command, arguments_, options) => {
@@ -839,7 +839,7 @@ test("implemented aggregate keeps web and harness routes and adds the bounded na
     },
   });
 
-  assert.equal(invocations.length, 4);
+  assert.equal(invocations.length, 5);
   assert.ok(invocations[1].arguments_.includes("implementedWeb"));
   assert.ok(invocations[2].arguments_.includes("implementedDesktopTauriHarness"));
   assert.deepEqual(invocations[3].arguments_, [
@@ -847,6 +847,7 @@ test("implemented aggregate keeps web and harness routes and adds the bounded na
     "--profile",
     "implementedDesktopTauriWebdriver",
   ]);
+  assert.ok(invocations[4].arguments_.includes("idePackagingTauriHarness"));
 });
 
 test("interrupting an aggregate profile command terminates its process", async () => {
