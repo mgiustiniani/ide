@@ -83,13 +83,13 @@ const implementedDesktopTauriHarness = {
 
 const implementedDesktopTauriWebdriver = {
   ...common,
-  tags: "@implemented-and-validated and @desktop and @native-gui and not @web",
+  tags: "@implemented-and-validated and @desktop and @native-gui and not @web and not @packaging",
   worldParameters: targets.desktopTauriWebdriver,
 };
 
 const desktopTauriWebdriver = {
   ...common,
-  tags: "@implemented-and-validated and @desktop and @native-gui and not @web",
+  tags: "@implemented-and-validated and @desktop and @native-gui and not @web and not @packaging",
   worldParameters: targets.desktopTauriWebdriver,
 };
 

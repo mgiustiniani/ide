@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { access, readFile, stat, open } from "node:fs/promises";
 import { constants as fsConstants, readFileSync, readdirSync } from "node:fs";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -58,10 +59,37 @@ function isAlive(pid: number): boolean {
 function spawnShell(
   command: string,
 ): Promise<{ stdout: string; stderr: string; code: number | null; signal: NodeJS.Signals | null }> {
+  // The native desktop runner sandboxes $HOME to a temp dir, so os.homedir()
+  // would return that temp dir (it honors $HOME). The real rustup/cargo
+  // homes live under the passwd home, which os.userInfo().homedir reports
+  // independently of $HOME.
+  const realUserHome = os.userInfo().homedir;
+  const cargoBin = `${realUserHome}/.cargo/bin`;
+  // The native desktop runner sandboxes $HOME to a temp dir, so tools that
+  // default to $HOME (rustup, cargo, tauri's linuxdeploy cache) cannot find
+  // their real homes. Point them back at the passwd home (which
+  // os.userInfo().homedir reports independently of $HOME).
+  const sandboxHomeEnv: Record<string, string> = {};
+  if (!process.env.RUSTUP_HOME) {
+    sandboxHomeEnv.RUSTUP_HOME = `${realUserHome}/.rustup`;
+  }
+  if (!process.env.CARGO_HOME) {
+    sandboxHomeEnv.CARGO_HOME = `${realUserHome}/.cargo`;
+  }
+  // The native runner sets XDG_CACHE_HOME to the sandbox cache dir, which
+  // makes tauri download a linuxdeploy that fails to strip modern libs. The
+  // real home cache holds the working linuxdeploy, so always point back at it.
+  sandboxHomeEnv.XDG_CACHE_HOME = `${realUserHome}/.cache`;
   return new Promise((resolvePromise, reject) => {
     const child = spawn("bash", ["-lc", command], {
       cwd: PROJECT_ROOT,
-      env: { ...process.env, CI: "true", NO_COLOR: "1" },
+      env: {
+        ...process.env,
+        PATH: `${dirname(process.execPath)}${delimiter}${cargoBin}${delimiter}${process.env.PATH ?? ""}`,
+        ...sandboxHomeEnv,
+        CI: "true",
+        NO_COLOR: "1",
+      },
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });

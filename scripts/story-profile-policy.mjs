@@ -23,6 +23,7 @@ export function evaluateDeclaredStoryRouting(scenarios) {
   const expectedWeb = [];
   const expectedDesktopTauriHarness = [];
   const expectedDesktopTauriWebdriver = [];
+  const expectedIdePackagingTauriHarness = [];
   const unsupportedValidatedDesktop = [];
 
   for (const scenario of scenarios) {
@@ -49,7 +50,9 @@ export function evaluateDeclaredStoryRouting(scenarios) {
     } else if (status === "@implemented-not-e2e-validated" && target === "@desktop") {
       expectedDesktopTauriHarness.push(scenario);
     } else if (status === "@implemented-and-validated" && target === "@desktop") {
-      if (scenario.tags.has("@native-gui")) {
+      if (scenario.tags.has("@packaging")) {
+        expectedIdePackagingTauriHarness.push(scenario);
+      } else if (scenario.tags.has("@native-gui")) {
         expectedDesktopTauriWebdriver.push(scenario);
       } else {
         unsupportedValidatedDesktop.push(scenario);
@@ -67,6 +70,7 @@ export function evaluateDeclaredStoryRouting(scenarios) {
     expectedWeb,
     expectedDesktopTauriHarness,
     expectedDesktopTauriWebdriver,
+    expectedIdePackagingTauriHarness,
     unsupportedValidatedDesktop,
   };
 }

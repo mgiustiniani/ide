@@ -139,7 +139,7 @@ test("profiles keep default and focused routing while declaring exact aggregate 
   );
   assert.equal(
     cucumberProfiles.implementedDesktopTauriWebdriver.tags,
-    "@implemented-and-validated and @desktop and @native-gui and not @web",
+    "@implemented-and-validated and @desktop and @native-gui and not @web and not @packaging",
   );
   assert.deepEqual(cucumberProfiles.desktopTauriWebdriver.worldParameters, nativeGuiEvidence);
   assert.deepEqual(cucumberProfiles.desktopFileOpenNativeGui.worldParameters, nativeGuiEvidence);
@@ -711,10 +711,10 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   const web = selectedScenarios("implementedWeb");
   const harness = selectedScenarios("implementedDesktopTauriHarness");
   const nativeGui = selectedScenarios("implementedDesktopTauriWebdriver");
+  const packaging = selectedScenarios("idePackagingTauriHarness");
   const routing = evaluateDeclaredStoryRouting(declared);
   const currentNativeRequirements = [
     "@REQ-DESKTOP-FILE-OPEN-001",
-    "@REQ-IDE-PACKAGING-001",
     "@REQ-LAYOUT-DESKTOP-001",
     "@REQ-PI-WORKSPACE-AGENT-001",
     "@REQ-REFACTORKIT-JAVA-IMPORT-002",
@@ -737,6 +737,7 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
     "@REQ-XCOM2-PROJECT-FOUNDRY-004",
   ]);
   assert.deepEqual(nativeGui.flatMap(requirementIds).sort(), currentNativeRequirements);
+  assert.deepEqual(packaging.flatMap(requirementIds).sort(), ["@REQ-IDE-PACKAGING-001"]);
   assert.deepEqual(partial.flatMap(requirementIds), []);
   assert.deepEqual(notImplemented.flatMap(requirementIds), []);
   assert.equal(declared.length, 20);
@@ -746,8 +747,9 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   assert.equal(notImplemented.length, 0);
   assert.equal(web.length, 2);
   assert.equal(harness.length, 9);
-  assert.equal(nativeGui.length, 9);
-  assert.equal(web.length + harness.length + nativeGui.length, declared.length);
+  assert.equal(nativeGui.length, 8);
+  assert.equal(packaging.length, 1);
+  assert.equal(web.length + harness.length + nativeGui.length + packaging.length, declared.length);
   assert.match(
     dryRunSummary("implementedWeb"),
     /2 scenarios \(2 skipped\)[\s\S]*16 steps \(16 skipped\)/,
@@ -758,15 +760,24 @@ test("declared routes and partial versus non-implemented inventory stay exact", 
   );
   assert.match(
     dryRunSummary("implementedDesktopTauriWebdriver"),
-    /9 scenarios \(9 skipped\)[\s\S]*248 steps \(248 skipped\)/,
+    /8 scenarios \(8 skipped\)[\s\S]*233 steps \(233 skipped\)/,
+  );
+  assert.match(
+    dryRunSummary("idePackagingTauriHarness"),
+    /1 scenario \(1 skipped\)[\s\S]*15 steps \(15 skipped\)/,
   );
   assert.deepEqual(routing.failures, []);
   assert.equal(routing.expectedWeb.length, 2);
   assert.equal(routing.expectedDesktopTauriHarness.length, 9);
-  assert.equal(routing.expectedDesktopTauriWebdriver.length, 9);
+  assert.equal(routing.expectedDesktopTauriWebdriver.length, 8);
+  assert.equal(routing.expectedIdePackagingTauriHarness.length, 1);
   assert.deepEqual(
     routing.expectedDesktopTauriWebdriver.flatMap(requirementIds).sort(),
     currentNativeRequirements,
+  );
+  assert.deepEqual(
+    routing.expectedIdePackagingTauriHarness.flatMap(requirementIds).sort(),
+    ["@REQ-IDE-PACKAGING-001"],
   );
 });
 

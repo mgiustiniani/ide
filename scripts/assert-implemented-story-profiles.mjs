@@ -99,6 +99,7 @@ try {
   const validatedDesktop = discover("implementedDesktop");
   const desktopTauriHarness = discover("implementedDesktopTauriHarness");
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
+  const idePackagingTauriHarness = discover("idePackagingTauriHarness");
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
   const piWorkspaceAgentNativeGui = discover("piWorkspaceAgentNativeGui");
@@ -138,6 +139,16 @@ try {
     },
   };
 
+  const idePackagingTauriHarnessEvidence = {
+    target: { name: "desktop", driver: "tauri" },
+    evidence: {
+      kind: "tauri-harness",
+      nativeGui: true,
+      e2e: true,
+      packagedApplication: true,
+    },
+  };
+
   assertWorldParameters("default", unselected, failures);
   assertWorldParameters("declaredDiscovery", unselected, failures);
   assertWorldParameters("implementedDiscovery", unselected, failures);
@@ -149,6 +160,7 @@ try {
     desktopTauriWebdriverEvidence,
     failures,
   );
+  assertWorldParameters("idePackagingTauriHarness", idePackagingTauriHarnessEvidence, failures);
   assertWorldParameters("desktopTauriWebdriver", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
@@ -177,7 +189,7 @@ try {
   compareProfileSelection(
     "implementedDesktop",
     validatedDesktop,
-    [...routing.expectedDesktopTauriWebdriver, ...routing.unsupportedValidatedDesktop],
+    [...routing.expectedDesktopTauriWebdriver, ...routing.expectedIdePackagingTauriHarness, ...routing.unsupportedValidatedDesktop],
     failures,
   );
   compareProfileSelection(
@@ -190,6 +202,12 @@ try {
     "implementedDesktopTauriWebdriver",
     desktopTauriWebdriver,
     routing.expectedDesktopTauriWebdriver,
+    failures,
+  );
+  compareProfileSelection(
+    "idePackagingTauriHarness",
+    idePackagingTauriHarness,
+    routing.expectedIdePackagingTauriHarness,
     failures,
   );
   compareProfileSelection(
@@ -236,7 +254,7 @@ try {
   );
 
   console.log(
-    `Declared Story routes: ${web.length} web/playwright E2E, ${desktopTauriHarness.length} desktop/tauri-harness (not native GUI/E2E), ${desktopTauriWebdriver.length} desktop/tauri-webdriver native GUI E2E, ${routing.unsupportedValidatedDesktop.length} unsupported validated desktop, ${failures.length} routing failure(s).`,
+    `Declared Story routes: ${web.length} web/playwright E2E, ${desktopTauriHarness.length} desktop/tauri-harness (not native GUI/E2E), ${desktopTauriWebdriver.length} desktop/tauri-webdriver native GUI E2E, ${idePackagingTauriHarness.length} desktop/tauri-harness AppImage-packaging E2E, ${routing.unsupportedValidatedDesktop.length} unsupported validated desktop, ${failures.length} routing failure(s).`,
   );
 
   if (failures.length > 0) {
