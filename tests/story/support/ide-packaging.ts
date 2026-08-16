@@ -427,6 +427,8 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
           const wmNameMatch = info.match(/_NET_WM_NAME(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
           const wmClassMatch = info.match(/WM_CLASS(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
           const wmName = wmNameMatch ? wmNameMatch[1] : null;
+const legacyWmNameMatch = info.match(/^WM_NAME(?:\s*\([^)]*\))?\s*=\s*"(.*)"/m);
+const legacyWmName = legacyWmNameMatch ? legacyWmNameMatch[1] : null;
           const wmClass = wmClassMatch ? wmClassMatch[1] : null;
           const pid = pidMatch ? Number(pidMatch[1]) : null;
           const ownedPid = pid !== null && ownedPids.has(pid);
@@ -437,7 +439,7 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
           // robust by also accepting windows that carry an owned descendant
           // PID or an ide-desktop/IDE WM_CLASS, but never accept a window that
           // does not carry the exact IDE window name.
-          const exactIdeName = wmName !== null && wmName.trim() === "IDE";
+const exactIdeName = wmName !== null && wmName.trim() === "IDE" && legacyWmName !== null && legacyWmName.trim() === "IDE";
           if (exactIdeName && (pid === appPid || ownedPid || ideDesktopClass)) {
             return parseInt(id, 16);
           }
