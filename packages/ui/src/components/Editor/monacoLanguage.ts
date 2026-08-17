@@ -1,6 +1,8 @@
 import type { EditorProps } from "./Editor";
 
 const LANGUAGE_ALIASES: Record<string, string> = {
+  adoc: "asciidoc",
+  asciidoc: "asciidoc",
   css: "css",
   htm: "html",
   html: "html",
@@ -15,8 +17,10 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   markdown: "markdown",
   md: "markdown",
   plaintext: "plaintext",
-  rust: "rust",
+  rest: "rst",
   rs: "rust",
+  rst: "rst",
+  rust: "rust",
   scss: "scss",
   text: "plaintext",
   ts: "typescript",
@@ -26,6 +30,8 @@ const LANGUAGE_ALIASES: Record<string, string> = {
 };
 
 const EXTENSION_LANGUAGES: Record<string, string> = {
+  adoc: "asciidoc",
+  asciidoc: "asciidoc",
   css: "css",
   htm: "html",
   html: "html",
@@ -35,9 +41,12 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   json: "json",
   jsonc: "json",
   less: "less",
+  markdown: "markdown",
   md: "markdown",
   mdx: "markdown",
+  rest: "rst",
   rs: "rust",
+  rst: "rst",
   scss: "scss",
   text: "plaintext",
   txt: "plaintext",
