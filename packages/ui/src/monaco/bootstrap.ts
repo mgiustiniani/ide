@@ -1,5 +1,6 @@
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import { registerDocumentLanguages } from "../components/Editor/documentLanguages";
 import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import CssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
@@ -24,6 +25,11 @@ export function configureLocalMonaco(): typeof monaco {
   }
 
   loader.config({ monaco });
+
+  // Register AsciiDoc/reStructuredText Monarch tokenizers on the esm editor.api
+  // namespace. The esm namespace is a subset of the full monaco-editor types, so
+  // cast through never to keep the call compiling.
+  registerDocumentLanguages(monaco as never);
 
   const workerGlobal = globalThis as MonacoWorkerGlobal;
   workerGlobal.MonacoEnvironment = {

@@ -8,6 +8,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BottomPanelTab, PanelLayoutActivity, PanelLayoutActivityContribution } from "@ide/ui";
 
+// ── Contracts ────────────────────────────────────────────────────────────
+import { nextDocumentViewMode } from "@ide/contracts";
+
 // ── Store creation ──────────────────────────────────────────────────────
 import { createFileTreeStore } from "@ide/web-core/state";
 import { createEditorStore } from "@ide/web-core/state";
@@ -217,6 +220,9 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
   const panelState = usePanelState();
   const workspaceCollaboratorsRef = useRef<WorkspaceControllerCollaborators | null>(null);
   const [activeActivity, setActiveActivity] = useState<PanelLayoutActivity>("explorer");
+  const [documentViewMode, setDocumentViewMode] = useState<
+    "split" | "preview-only" | "editor-only"
+  >("split");
   const settings = useSettingsController();
   const projectFoundryController = useXcom2ProjectFoundryController(projectFoundry);
 
@@ -744,39 +750,59 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
                   {editorDiagnostic.message}
                 </div>
               ) : null}
-              <div className="min-h-0 flex flex-1 overflow-hidden">
-                <div className="min-w-0 flex-1">
-                  <Editor
-                    content={activeContent}
-                    language={activeLanguage}
-                    onChange={editorCommands.changeContent}
-                    filePath={editorFilePath}
-                    isLoading={isEditorOpening}
-                    tabs={editorState.tabs}
-                    onTabActivate={editorCommands.activateTab}
-                    onTabClose={editorCommands.closeTab}
-                    revealRequest={documentNavigation.editorRevealRequest}
-                    diagnostics={activeDiagnostics}
-                    documentIdentity={activeDiagnosticDocument}
-                    diagnosticOwner={activeDiagnosticOwner}
-                    javaSemantics={javaSemantics}
-                    onCreateNewFile={fileExplorer.createFile}
-                    createFileTargetLabel={
-                      refactorKitImport.selectedDirectoryPath ?? "Workspace root"
-                    }
-                  />
+              <section className="document-split-pane">
+                <header className="document-split-pane__toolbar">
+                  <button
+                    type="button"
+                    className="document-split-pane__toggle"
+                    aria-label="Toggle document view mode"
+                    onClick={() => setDocumentViewMode(nextDocumentViewMode(documentViewMode))}
+                  >
+                    {documentViewMode === "split"
+                      ? "Editor + Preview"
+                      : documentViewMode === "preview-only"
+                        ? "Preview"
+                        : "Editor"}
+                  </button>
+                </header>
+                <div className="document-split-pane__body">
+                  {documentViewMode !== "preview-only" ? (
+                    <div className="document-split-pane__editor">
+                      <Editor
+                        content={activeContent}
+                        language={activeLanguage}
+                        onChange={editorCommands.changeContent}
+                        filePath={editorFilePath}
+                        isLoading={isEditorOpening}
+                        tabs={editorState.tabs}
+                        onTabActivate={editorCommands.activateTab}
+                        onTabClose={editorCommands.closeTab}
+                        revealRequest={documentNavigation.editorRevealRequest}
+                        diagnostics={activeDiagnostics}
+                        documentIdentity={activeDiagnosticDocument}
+                        diagnosticOwner={activeDiagnosticOwner}
+                        javaSemantics={javaSemantics}
+                        onCreateNewFile={fileExplorer.createFile}
+                        createFileTargetLabel={
+                          refactorKitImport.selectedDirectoryPath ?? "Workspace root"
+                        }
+                      />
+                    </div>
+                  ) : null}
+                  {documentViewMode !== "editor-only" &&
+                  documentNavigation.preview.isVisible &&
+                  documentNavigation.preview.filePath ? (
+                    <div className="document-split-pane__preview">
+                      <DocumentPreviewPanel
+                        content={activeContent}
+                        kind={documentNavigation.preview.kind}
+                        filePath={documentNavigation.preview.filePath}
+                        onClose={documentNavigation.closeDisplayedPreview}
+                      />
+                    </div>
+                  ) : null}
                 </div>
-                {documentNavigation.preview.isVisible && documentNavigation.preview.filePath ? (
-                  <div className="min-h-0 w-[38%] min-w-[320px] max-w-[560px] shrink-0 border-l border-[var(--border-default)]">
-                    <DocumentPreviewPanel
-                      content={activeContent}
-                      kind={documentNavigation.preview.kind}
-                      filePath={documentNavigation.preview.filePath}
-                      onClose={documentNavigation.closeDisplayedPreview}
-                    />
-                  </div>
-                ) : null}
-              </div>
+              </section>
             </div>
           }
           bottomContent={

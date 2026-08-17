@@ -5,7 +5,7 @@
 
 import type { ReactNode } from "react";
 
-export type DocumentPreviewKind = "markdown" | "asciidoc" | "unknown";
+export type DocumentPreviewKind = "markdown" | "asciidoc" | "rst" | "unknown";
 
 export interface DocumentPreviewPanelProps {
   /** Raw document content supplied by the host application. */
@@ -43,6 +43,7 @@ interface InlineCandidate {
 const kindLabels: Record<DocumentPreviewKind, string> = {
   markdown: "Markdown",
   asciidoc: "AsciiDoc",
+  rst: "reStructuredText",
   unknown: "Plain text",
 };
 
@@ -418,9 +419,66 @@ function parseAsciiDoc(content: string): DocumentBlock[] {
   return blocks;
 }
 
+function isRstHeadingLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.length >= 3 && (/^=+$/.test(trimmed) || /^-+$/.test(trimmed));
+}
+
+function parseRst(content: string): DocumentBlock[] {
+  const lines = normalizeContent(content).split("\n");
+  const blocks: DocumentBlock[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    // RST heading: a text line immediately followed by an underline of only
+    // "=" (section) or "-" (subsection) characters (length >= 3).
+    const nextLine = lines[index + 1];
+    if (nextLine && isRstHeadingLine(nextLine)) {
+      const marker = nextLine.trim();
+      const level = marker[0] === "=" ? 1 : 2;
+
+      blocks.push({
+        type: "heading",
+        level,
+        children: parseInline(trimmed, "asciidoc"),
+      });
+      index += 2;
+      continue;
+    }
+
+    // Paragraph: accumulate consecutive non-blank lines (stopping before a
+    // line that starts a heading, i.e. one followed by an underline).
+    const paragraphLines: string[] = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !(lines[index + 1] && isRstHeadingLine(lines[index + 1]))
+    ) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+
+    blocks.push({
+      type: "paragraph",
+      children: parseInline(paragraphLines.join(" "), "asciidoc"),
+    });
+  }
+
+  return blocks;
+}
+
 function parseDocument(content: string, kind: DocumentPreviewKind): DocumentBlock[] {
   if (kind === "markdown") return parseMarkdown(content);
   if (kind === "asciidoc") return parseAsciiDoc(content);
+  if (kind === "rst") return parseRst(content);
 
   const normalized = normalizeContent(content);
   return normalized ? [{ type: "code", text: normalized }] : [];

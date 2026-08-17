@@ -119,7 +119,7 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |`@implemented-and-validated` (feature-declared `@native-gui`; see NOTE)
 |===
 
-NOTE: The configured inventory contains sixteen feature files, twenty scenarios, and twenty repository-unique stable requirement IDs: eleven feature-declared validated and nine harness-only, with zero partial or not implemented. `REQ-IDE-PACKAGING-001` is among the validated, which this architecture reconciliation records as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending the final requirements-quality-reviewer PASS. The status values above are copied from Gherkin, not inferred from observed evidence, including `REQ-IDE-PACKAGING-001`, whose feature source now declares `@implemented-and-validated @native-gui`; the architecture reconciliation records it as implementation-informed/evidence-based AppImage packaging while the final requirements-quality-reviewer PASS remains pending. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`. All four Project Foundry requirements and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remain in deterministic harness routing. `REQ-PI-WORKSPACE-AGENT-001` belongs to native routing under its deterministic-provider Linux X11 release/no-bundle boundary; it supplies no package/installer or external real-provider/model/tool/auth/network evidence. The XCOM routes supply no native chooser or WebKit/native recipe-review E2E evidence.
+NOTE: The configured inventory contains seventeen feature files, twenty-four scenarios, and twenty-one repository-unique stable requirement IDs: eleven feature-declared validated and thirteen harness-only, with zero partial or not implemented. `REQ-IDE-PACKAGING-001` is among the validated, which this architecture reconciliation records as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending the final requirements-quality-reviewer PASS. The status values above are copied from Gherkin, not inferred from observed evidence, including `REQ-IDE-PACKAGING-001`, whose feature source now declares `@implemented-and-validated @native-gui`; the architecture reconciliation records it as implementation-informed/evidence-based AppImage packaging while the final requirements-quality-reviewer PASS remains pending. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`. All four Project Foundry requirements and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remain in deterministic harness routing. `REQ-PI-WORKSPACE-AGENT-001` belongs to native routing under its deterministic-provider Linux X11 release/no-bundle boundary; it supplies no package/installer or external real-provider/model/tool/auth/network evidence. The XCOM routes supply no native chooser or WebKit/native recipe-review E2E evidence.
 
 == Requirement Catalogue
 
@@ -744,7 +744,7 @@ NOTE: The configured inventory contains sixteen feature files, twenty scenarios,
 |Deterministic `desktop/tauri-harness` execution under jsdom with evidence metadata `nativeGui: false`, `e2e: false`, and `packagedApplication: false`. It imports the real desktop `App`, opens the actual FileTree context menu, renders the production review dialog, and exercises the production RefactorKit Import controller and typed Tauri adapters through a fake in-process Tauri invoke boundary. The story loader replaces Monaco with a read-only textarea.
 
 |Dated deterministic Story evidence
-|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement passed 1 scenario and 22/22 steps. The current desktop-harness selection adds both RefactorKit TypeScript requirements, `REQ-XCOM2-MACHINE-SETTINGS-001`, all four Project Foundry requirements, and build-recipe review to this scenario: 9 scenarios/343 runner steps. Workspace-native Pi Agent is now selected by the separate native route. The completion aggregate remains all 20 scenarios/607 runner steps.
+|On 2026-07-15 at repository HEAD `54c28f3`, the focused requirement passed 1 scenario and 22/22 steps. The current desktop-harness selection adds both RefactorKit TypeScript requirements, `REQ-XCOM2-MACHINE-SETTINGS-001`, all four Project Foundry requirements, and build-recipe review to this scenario: 9 scenarios/343 runner steps. Workspace-native Pi Agent is now selected by the separate native route. The completion aggregate remains all 24 scenarios/624 runner steps.
 
 |Capability and clipboard evidence
 |The production composition accepted API `0.2`; `java.importExternalClass` with `targetDirectory`, preview, apply, discard, and rollback; `refactor.apply`; `refactor.discard`; and `patch.rollback` before exactly one `read_clipboard_text` invocation. The accepted capability event precedes that one read, which precedes preview. Rollback capability is required provider authority, but the current import UI exposes no rollback action.
@@ -1150,6 +1150,42 @@ NOTE: The configured inventory contains sixteen feature files, twenty scenarios,
 |The native result proves WebView DOM geometry and interaction only at the observed Linux X11 release/no-bundle 1440×900 boundary. It explicitly proves no OS-window decoration, package/installer, Wayland, other operating system or DPI combination, drag resizing, restart persistence, optional right-sidebar, screen-reader behavior, or reproducible-binary property. A fresh direct ELF build is not package evidence and one recorded executable digest is not reproducibility evidence.
 |===
 
+=== REQ-IDE-DOC-SYNTAX-SPLIT-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-IDE-DOC-SYNTAX-SPLIT-001]]`REQ-IDE-DOC-SYNTAX-SPLIT-001`
+
+|Classification
+|Functional requirement (`@functional-requirement`); the scenarios carry `@desktop` and `@implemented-not-e2e-validated`.
+
+|Source traceability
+|link:../../features/workspace/document-editing-split.feature[`features/workspace/document-editing-split.feature`] and the frozen baseline link:../requirements-baselines/BASELINE-REQ-IDE-DOC-SYNTAX-SPLIT-001-v1.json[`BASELINE-REQ-IDE-DOC-SYNTAX-SPLIT-001-v1.json`].
+
+|Scope
+|Syntax highlighting for coding, markup, and documentation languages, and a split editor/preview pane for markup/documentation files with a toggle to hide either pane. The pure document-kind/view-mode state machine lives in `@ide/contracts` and is exercised headless by Vitest Spec BDD; the desktop wiring is verified by code inspection, not native GUI/E2E.
+
+|Actor / stakeholder
+|A writer editing markup/documentation files who wants the editor and a rendered preview side by side, with a button to hide either pane.
+
+|Capability
+|Open markup/documentation files (markdown, asciidoc, rst) in a split editor/preview layout; cycle the view mode split -> preview-only -> editor-only -> split.
+
+|Scenario
+|_Document markup/documentation files open in a split editor and preview with a view-mode toggle_
+
+|Feature path and exact declaration
+|link:../../features/workspace/document-editing-split.feature[`features/workspace/document-editing-split.feature`], tag declaration at line 10 and scenarios beginning at line 11.
+
+|Tags
+|`@REQ-IDE-DOC-SYNTAX-SPLIT-001`, `@desktop`, `@functional-requirement`, `@implemented-not-e2e-validated`
+
+|Declared status
+|`@implemented-not-e2e-validated` — pure logic GREEN (8 Spec tests), Story living-documentation GREEN (4 scenarios/16 steps via a contract-level driver), desktop wiring typecheck-clean by inspection; no native GUI/E2E observed. Final requirements-quality-reviewer PASS remains pending.
+|===
 === REQ-IDE-PACKAGING-001
 
 [cols="1,4",options="header"]
@@ -1201,9 +1237,9 @@ NOTE: The configured inventory contains sixteen feature files, twenty scenarios,
 
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. The eleven `@implemented-and-validated` and nine `@implemented-not-e2e-validated` requirements retain their bounded target-specific evidence. `REQ-REFACTORKIT-JAVA-IMPORT-001`, lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001`, Project Foundry `REQ-XCOM2-PROJECT-FOUNDRY-001` through `-004`, both RefactorKit TypeScript requirements, and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` are the nine implemented desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, safe XCOM configuration diagnostics, and deterministic-provider workspace-native Pi Agent remain separately validated under their own limits. Native XCOM evidence validates activation regressions only, not recipe review; native Pi evidence does not establish an external real provider.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. The eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated` requirements retain their bounded target-specific evidence. `REQ-REFACTORKIT-JAVA-IMPORT-001`, lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001`, Project Foundry `REQ-XCOM2-PROJECT-FOUNDRY-001` through `-004`, both RefactorKit TypeScript requirements, and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` are the nine implemented desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, safe XCOM configuration diagnostics, and deterministic-provider workspace-native Pi Agent remain separately validated under their own limits. Native XCOM evidence validates activation regressions only, not recipe review; native Pi evidence does not establish an external real provider.
 
-Declared implemented routing selects two web scenarios/16 runner steps, nine deterministic desktop-harness scenarios/343 runner steps, eight native GUI scenarios/233 runner steps, and one AppImage-packaging harness scenario/15 runner steps. The configured inventory is eleven `@implemented-and-validated` and nine `@implemented-not-e2e-validated`, with zero `@partial` or `@not-implemented` across twenty scenarios and requirement IDs. `REQ-IDE-PACKAGING-001` is among the validated; its feature source declares `@implemented-and-validated @native-gui` and this reconciliation records it as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending only the final reviewer PASS. The completion aggregate remains all 20 scenarios/607 runner steps. At exact Pi technical boundary `a0f9a1a`, complementary gates pass 14 Spec files/380 tests, 89 frontend test files/1,832 tests, UI 284 tests, Tauri adapters 1,040 tests, 279 default Rust tests with 10 ignored, web and desktop builds, strict ESLint, repository Prettier, Rust formatting/Clippy with warnings denied, boundaries, BDD type checking/documentation, capability checks, and offline release/no-bundle checks. The native route freshly builds and remains non-packaged evidence; current `test:e2e` selection is 2 web scenarios/16 runner steps plus 8 native scenarios/233 runner steps. Recipe evidence remains deterministic and bounded, with no execution, process/network/write, SDK/game/prefix/proprietary, browser, package, cross-platform, Rust-coverage, or manual-accessibility claim. Pi evidence separately excludes package/installer, external real-provider/model/tool/auth/network, cross-platform, crash-recovery, full-application-exit, and manual accessibility/IME claims. No requirement is promoted from legacy code, supporting tests, route scaffolding, focused GREEN, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
+Declared implemented routing selects two web scenarios/16 runner steps, thirteen deterministic desktop-harness scenarios/360 runner steps, eight native GUI scenarios/233 runner steps, and one AppImage-packaging harness scenario/15 runner steps. The configured inventory is eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated`, with zero `@partial` or `@not-implemented` across twenty-four scenarios and twenty-one requirement IDs. `REQ-IDE-PACKAGING-001` is among the validated; its feature source declares `@implemented-and-validated @native-gui` and this reconciliation records it as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending only the final reviewer PASS. The completion aggregate remains all 24 scenarios/624 runner steps. At exact Pi technical boundary `a0f9a1a`, complementary gates pass 14 Spec files/380 tests, 89 frontend test files/1,832 tests, UI 284 tests, Tauri adapters 1,040 tests, 279 default Rust tests with 10 ignored, web and desktop builds, strict ESLint, repository Prettier, Rust formatting/Clippy with warnings denied, boundaries, BDD type checking/documentation, capability checks, and offline release/no-bundle checks. The native route freshly builds and remains non-packaged evidence; current `test:e2e` selection is 2 web scenarios/16 runner steps plus 8 native scenarios/233 runner steps. Recipe evidence remains deterministic and bounded, with no execution, process/network/write, SDK/game/prefix/proprietary, browser, package, cross-platform, Rust-coverage, or manual-accessibility claim. Pi evidence separately excludes package/installer, external real-provider/model/tool/auth/network, cross-platform, crash-recovery, full-application-exit, and manual accessibility/IME claims. No requirement is promoted from legacy code, supporting tests, route scaffolding, focused GREEN, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
 
 == Reconciliation Checks
 

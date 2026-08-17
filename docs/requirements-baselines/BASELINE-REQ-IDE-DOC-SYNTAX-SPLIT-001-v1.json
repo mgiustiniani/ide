@@ -1,0 +1,40 @@
+{
+  "schema": "ide.requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-DOC-SYNTAX-SPLIT-001-v1",
+  "requirement": {
+    "id": "REQ-IDE-DOC-SYNTAX-SPLIT-001",
+    "title": "Document language syntax highlighting and split preview with hide-toggle",
+    "story": "As a writer editing markup/documentation files (AsciiDoc, reStructuredText, Markdown) I want syntax highlighting in the editor and a rendered preview beside it, with a button that hides either the preview or the editing pane, so I can focus on writing or reviewing the rendered document.",
+    "acceptanceCriteria": [
+      "AC-001: detectDocumentKind recognizes rst for .rst/.rest, asciidoc for .adoc/.asciidoc, markdown for .md/.markdown, and unknown otherwise.",
+      "AC-002: The editor maps document kinds to non-plaintext Monaco language ids (markdown/asciidoc/rst) and registers AsciiDoc and reStructuredText token definitions so syntax highlighting is applied.",
+      "AC-003: The document preview renders rst content (adornment headings and paragraphs) alongside markdown and asciidoc.",
+      "AC-004: For a markup/documentation file the document pane splits the screen: editor on the left, preview on the right.",
+      "AC-005: A toolbar button cycles view modes split -> preview-only (hides the editor) -> editor-only (hides the preview) -> split; nextDocumentViewMode is pure and total."
+    ]
+  },
+  "acceptanceCriteria": [
+    "AC-001: detectDocumentKind returns rst for guide.rst and guide.rest, asciidoc for .adoc/.asciidoc, markdown for .md/.markdown, and unknown otherwise.",
+    "AC-002: getDocumentEditorLanguage maps markdown/asciidoc/rst to non-plaintext Monaco ids and registerDocumentLanguages registers AsciiDoc and reStructuredText Monarch token providers.",
+    "AC-003: DocumentPreviewPanel renders rst content (adornment headings and paragraphs) in addition to markdown and asciidoc.",
+    "AC-004: The document pane for a markup/documentation file shows the editor on the left and the preview on the right.",
+    "AC-005: nextDocumentViewMode cycles split -> preview-only -> editor-only -> split and is total over DOCUMENT_VIEW_MODES; a toolbar toggle button hides the preview pane or the editing pane."
+  ],
+  "qualityConstraints": [
+    "The view-mode state machine and document-kind detection stay pure in @ide/contracts so they are testable without a running UI.",
+    "The toggle cycle is deterministic and total: every DocumentViewMode maps to another DocumentViewMode.",
+    "AsciiDoc and reStructuredText language registration uses Monarch token providers scoped to the document editor pane.",
+    "Existing markdown and asciidoc preview behavior remains unchanged; rst is additive."
+  ],
+  "exclusions": [
+    "Full reStructuredText directive/role parsing (only headings and paragraphs are rendered in this slice).",
+    "Changing the existing desktop Editor props or diagnostics wiring (the toggle wraps the existing Editor and preview).",
+    "Web-app file-opening/preview wiring (the reusable DocumentSplitPane is exported; desktop App is wired in this slice).",
+    "Theme/CSS polish beyond the document-split-pane layout."
+  ],
+  "evidence": {
+    "spec": "tests/spec/ide-document-editing.spec.ts",
+    "story": "features/workspace/document-editing-split.feature",
+    "status": "GREEN for pure-logic spec; desktop wiring verified by code inspection; story is living documentation for the UI behavior."
+  }
+}

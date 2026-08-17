@@ -64,6 +64,8 @@ export type Language =
   | "html"
   | "json"
   | "markdown"
+  | "asciidoc"
+  | "rst"
   | "yaml"
   | "toml"
   | "shell"

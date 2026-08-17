@@ -91,6 +91,34 @@ describe("DocumentPreviewPanel", () => {
     expect(screen.getByText("export const ok = true;")).toBeDefined();
   });
 
+  it("renders reStructuredText headings and emphasis from underline syntax", () => {
+    render(
+      React.createElement(DocumentPreviewPanel, {
+        filePath: "/workspace/docs/guide.rst",
+        kind: "rst",
+        content: [
+          "Title",
+          "=====",
+          "",
+          "A paragraph with *emphasis*.",
+          "",
+          "Section",
+          "-------",
+        ].join("\n"),
+      }),
+    );
+
+    expect(screen.getByText("guide.rst")).toBeDefined();
+    expect(screen.getByText("reStructuredText")).toBeDefined();
+    expect(screen.getByRole("heading", { level: 1, name: "Title" })).toBeDefined();
+    expect(screen.getByRole("heading", { level: 2, name: "Section" })).toBeDefined();
+    // parseRst renders single-star emphasis in asciidoc inline mode as <strong>.
+    expect(
+      screen.getByText((_content, node) => node?.textContent === "A paragraph with emphasis."),
+    ).toBeDefined();
+    expect(screen.getByText("emphasis").tagName).toBe("STRONG");
+  });
+
   it("renders unknown documents as plain text and calls the optional close handler", () => {
     const onClose = vi.fn();
 
