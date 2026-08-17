@@ -1184,7 +1184,7 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |`@REQ-IDE-DOC-SYNTAX-SPLIT-001`, `@desktop`, `@functional-requirement`, `@implemented-not-e2e-validated`
 
 |Declared status
-|`@implemented-not-e2e-validated` — pure logic GREEN (8 Spec tests), Story living-documentation GREEN (4 scenarios/16 steps via a contract-level driver), desktop wiring typecheck-clean by inspection; no native GUI/E2E observed. Final requirements-quality-reviewer PASS remains pending.
+|`@implemented-not-e2e-validated` — pure logic GREEN (8 Spec tests), Story living-documentation GREEN (4 scenarios/13 authored Gherkin steps, 17 runner steps with After-hooks, via a contract-level driver), desktop wiring typecheck-clean by inspection; no native GUI/E2E observed. Final requirements-quality-reviewer PASS remains pending.
 |===
 === REQ-IDE-PACKAGING-001
 
