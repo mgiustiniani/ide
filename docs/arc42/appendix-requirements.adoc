@@ -117,6 +117,12 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |1
 |`REQ-IDE-PACKAGING-001`
 |`@implemented-and-validated` (feature-declared `@native-gui`; see NOTE)
+
+|link:../../features/workspace/document-editing-split.feature[`features/workspace/document-editing-split.feature`]
+|Document language editing with split preview and a view-mode toggle that hides either pane
+|4
+|`REQ-IDE-DOC-SYNTAX-SPLIT-001`
+|`@implemented-not-e2e-validated`
 |===
 
 NOTE: The configured inventory contains seventeen feature files, twenty-four scenarios, and twenty-one repository-unique stable requirement IDs: eleven feature-declared validated and thirteen harness-only, with zero partial or not implemented. `REQ-IDE-PACKAGING-001` is among the validated, which this architecture reconciliation records as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending the final requirements-quality-reviewer PASS. The status values above are copied from Gherkin, not inferred from observed evidence, including `REQ-IDE-PACKAGING-001`, whose feature source now declares `@implemented-and-validated @native-gui`; the architecture reconciliation records it as implementation-informed/evidence-based AppImage packaging while the final requirements-quality-reviewer PASS remains pending. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`. All four Project Foundry requirements and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remain in deterministic harness routing. `REQ-PI-WORKSPACE-AGENT-001` belongs to native routing under its deterministic-provider Linux X11 release/no-bundle boundary; it supplies no package/installer or external real-provider/model/tool/auth/network evidence. The XCOM routes supply no native chooser or WebKit/native recipe-review E2E evidence.
