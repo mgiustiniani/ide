@@ -54,3 +54,4 @@ export type {
 
 // Styles
 import "./styles/globals.css";
+import "./components/DocumentSplitPane/DocumentSplitPane.css";
