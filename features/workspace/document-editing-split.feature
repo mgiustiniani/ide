@@ -14,13 +14,13 @@ Feature: Document language editing with split preview
     And the pane shows the editor on the left and the preview on the right
 
   @REQ-IDE-DOC-SYNTAX-SPLIT-001 @desktop @functional-requirement @implemented-not-e2e-validated
-  Scenario: The toggle button hides the preview pane
+  Scenario: The toggle button hides the editor pane
     Given the document pane is in split view for "guide.rst"
     When the writer activates the document view toggle
     Then the pane shows the preview only and hides the editor
 
   @REQ-IDE-DOC-SYNTAX-SPLIT-001 @desktop @functional-requirement @implemented-not-e2e-validated
-  Scenario: The toggle button hides the editing pane
+  Scenario: The toggle button hides the preview pane
     Given the document pane is in preview-only view for "guide.rst"
     When the writer activates the document view toggle
     Then the pane shows the editor only and hides the preview
