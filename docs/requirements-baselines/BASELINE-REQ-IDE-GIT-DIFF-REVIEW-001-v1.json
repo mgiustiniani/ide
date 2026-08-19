@@ -1,0 +1,46 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Adopt Tier A from the Cursor-feature domain research (bdd-ts-domain-expert report SRC-2026-08-17-001..005): read-only Changes diff with hunk-level review and exact-range open-through-editor, as the first slice.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "The user approved the architectural decision: Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority. This unlocks provider/model flexibility candidates in Tier B/C and requires an ADR; it does NOT create a duplicate REQ-IDE-AI-CHAT requirement now.",
+      "evidence": "User message: 'cmq PI dovrebbe essere, in futuro, uno degli agenti utilizzabili'"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-GIT-DIFF-REVIEW-001",
+    "title": "Read-only Changes diff review with exact-range editor open",
+    "classification": "Story BDD",
+    "capability": "From an existing workspace Changes status, produce file/hunk-level read-only diffs and open an exact diff range through the existing editor; no staging/commit/checkout/revert authority in v1.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given an open workspace with a modified file, the Changes surface shows the file with a read-only hunk-level diff (line/range metadata) without writing to the working tree."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Activating a diff range opens the exact file path and range in the existing editor without creating a new AI/model dependency."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "The diff adapter follows extract -> delegate -> response, contains no hidden domain policy, and reports unavailable honestly when the platform cannot produce a diff (anti-fake: no mock-only or hard-coded response)."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser and Tauri implementations live behind frontend ports (packages/browser-adapters, packages/tauri-adapters, apps/desktop/src-tauri)."
+      }
+    ],
+    "owner": "ts-story-driven (glue/application) + frontend-core-coder / frontend-ui-coder (view-model + UI)",
+    "scope": "Tier A: diff review slice only; no AI chat, no model/provider flexibility, no terminal execution, no agentic editing.",
+    "exclusions": [
+      "REQ-IDE-AI-CHAT (deferred; Pi-as-one-of-agents decision recorded, no duplicate)",
+      "REQ-IDE-AI-CONTEXT-SNAPSHOT-001, REQ-IDE-AI-CONTEXT-POLICY-001, REQ-IDE-CODEBASE-INDEX-001 (sibling Tier A slices, opened later)",
+      "Any write authority over the working tree"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created"
+  }
+}

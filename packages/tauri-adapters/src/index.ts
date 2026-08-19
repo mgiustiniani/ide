@@ -11,6 +11,11 @@ import { TauriAiAgentAdapter } from "./ai-agent-tauri";
 import { TauriPiWorkspaceAgentAdapter } from "./pi-workspace-agent-tauri";
 import { TauriWorkspaceAdapter } from "./workspace-tauri";
 import { TauriClipboardAdapter } from "./clipboard-tauri";
+import {
+  TauriWorkspaceChangesAdapter,
+  TauriReadOnlyDiffAdapter,
+  TauriEditorOpenRangeAdapter,
+} from "./git-diff-review-tauri";
 import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
 import { TauriLanguageSessionAdapter } from "./language-session-tauri";
 import { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
@@ -32,6 +37,12 @@ export {
 } from "./pi-workspace-agent-tauri";
 export { TauriWorkspaceAdapter } from "./workspace-tauri";
 export { TauriClipboardAdapter, TauriClipboardReadError } from "./clipboard-tauri";
+export {
+  TauriWorkspaceChangesAdapter,
+  TauriReadOnlyDiffAdapter,
+  TauriEditorOpenRangeAdapter,
+  GIT_DIFF_REVIEW_COMMANDS,
+} from "./git-diff-review-tauri";
 export {
   TauriRefactorKitAdapter,
   TauriRefactorKitManagedCommandError,
@@ -90,6 +101,9 @@ export function createTauriAdapters(): {
   aiAgentAdapter: TauriAiAgentAdapter;
   piWorkspaceAgentAdapter: TauriPiWorkspaceAgentAdapter;
   workspaceAdapter: TauriWorkspaceAdapter;
+  workspaceChangesAdapter: TauriWorkspaceChangesAdapter;
+  readOnlyDiffAdapter: TauriReadOnlyDiffAdapter;
+  editorOpenRangeAdapter: TauriEditorOpenRangeAdapter;
   clipboardAdapter: TauriClipboardAdapter;
   refactorKitAdapter: TauriRefactorKitAdapter;
   languageSessionAdapter: TauriLanguageSessionAdapter;
@@ -110,6 +124,9 @@ export function createTauriAdapters(): {
     aiAgentAdapter: new TauriAiAgentAdapter(),
     piWorkspaceAgentAdapter: new TauriPiWorkspaceAgentAdapter(),
     workspaceAdapter: new TauriWorkspaceAdapter(),
+    workspaceChangesAdapter: new TauriWorkspaceChangesAdapter(),
+    readOnlyDiffAdapter: new TauriReadOnlyDiffAdapter(),
+    editorOpenRangeAdapter: new TauriEditorOpenRangeAdapter(),
     clipboardAdapter: new TauriClipboardAdapter(),
     refactorKitAdapter: new TauriRefactorKitAdapter(),
     languageSessionAdapter,

@@ -46,6 +46,12 @@ export {
 export { BrowserXcom2SetupAdapter, BrowserXcom2SetupUnavailableError } from "./xcom2-setup-browser";
 export type { BrowserXcom2SetupOperation } from "./xcom2-setup-browser";
 export { BrowserXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-browser";
+export {
+  BrowserWorkspaceChangesAdapter,
+  BrowserReadOnlyDiffAdapter,
+  BrowserEditorOpenRangeAdapter,
+  GIT_STATUS_DESKTOP_ONLY_REASON,
+} from "./git-diff-review-browser";
 
 // ── Storage helpers ─────────────────────────────────────────────────────
 

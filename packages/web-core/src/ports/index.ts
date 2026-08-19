@@ -25,3 +25,12 @@ export type {
 } from "./xcom2-project-build-recipe-inspection-port";
 export type { Xcom2SetupMonitorPort } from "./xcom2-setup-monitor-port";
 export type { Xcom2SetupPort, Xcom2SetupSubscription } from "./xcom2-setup-port";
+export type {
+  DiffHunk,
+  DiffRange,
+  DiffReviewOutcome,
+  HunkLevelDiff,
+  WorkspaceChangesPort,
+} from "./workspace-changes-port";
+export type { ReadOnlyDiffPort } from "./read-only-diff-port";
+export type { EditorOpenRangePort } from "./editor-open-range-port";
