@@ -4,6 +4,9 @@
  * Lists the modified/added tracked paths of the resolved workspace root.
  * The shared hunk-level diff-review contract types also live here so the
  * read-only-diff and editor-open-range ports can import them.
+ *
+ * All port operations are Promise-based so browser, desktop (Tauri), and
+ * test adapters can implement them with async native/platform calls.
  */
 
 import {
@@ -42,7 +45,7 @@ export type DiffReviewOutcome =
 
 /** Port: which modified/added tracked files exist in the workspace. */
 export interface WorkspaceChangesPort {
-  listModifiedFiles(): readonly string[];
+  listModifiedFiles(): Promise<readonly string[]>;
 }
 
 /**
@@ -50,11 +53,12 @@ export interface WorkspaceChangesPort {
  *
  * Delegates to the shared read-only git source for the resolved workspace
  * root: a real `git status --porcelain=v1` scan is executed and the parsed
- * modified/added tracked paths are returned. When git is absent or the
- * workspace is not a repository, the honest result is an empty list.
+ * modified/added tracked paths are resolved asynchronously. When git is
+ * absent or the workspace is not a repository, the honest result is an
+ * empty list.
  */
 const defaultWorkspaceChangesPort: WorkspaceChangesPort = {
-  listModifiedFiles(): readonly string[] {
+  async listModifiedFiles(): Promise<readonly string[]> {
     return createReadOnlyGitDiffSource(resolveWorkspaceRoot()).listModifiedFiles();
   },
 };

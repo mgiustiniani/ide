@@ -11,6 +11,7 @@
 import { After, Given, Then, When } from "@cucumber/cucumber";
 import assert from "node:assert/strict";
 import type { StoryWorld } from "../support/world.js";
+import { DefaultEditorOpenRangePort } from "../../../packages/web-core/src/ports/editor-open-range-port.js";
 import {
   GitDiffReviewSession,
   NOT_IMPLEMENTED,
@@ -86,7 +87,17 @@ When<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     const visible = session.visibleRange() ?? { path: "src/lib/git.ts", startLine: 42, endLine: 60 };
-    await session.openRange(visible.path, visible.startLine, visible.endLine); // RED
+    // Inject a real editor driver so the production port DELEGATES and returns
+    // the driver's outcome — never an identity shortcut. This is the
+    // exact-range-open scenario (REQ-IDE-GIT-DIFF-REVIEW-002).
+    const editorPort = new DefaultEditorOpenRangePort({
+      openRange: (range) => {
+        session.recordEditorDriverOpen(range);
+        return { kind: "ok", opened: range };
+      },
+    });
+    session.setEditorPort(editorPort);
+    await session.openRange(visible.path, visible.startLine, visible.endLine);
     await attachEvidence(session, this);
   },
 );
@@ -155,6 +166,17 @@ Then<StoryWorld>(
     const opened = session.openedRange();
     assert.ok(opened, `${REQUIREMENT} editor port did not open a range`);
     assert.deepEqual(opened, { path: filePath, startLine, endLine });
+    // The exact range came from the injected editor driver, never an identity shortcut.
+    assert.deepEqual(
+      session.editorDriverOpened(),
+      { path: filePath, startLine, endLine },
+      `${REQUIREMENT} the injected editor driver did not open the exact range`,
+    );
+    assert.equal(
+      session.lastOutcomeSource(),
+      "editor-driver",
+      `${REQUIREMENT} range-open outcome did not come from real driver delegation`,
+    );
     await attachEvidence(session, this);
   },
 );

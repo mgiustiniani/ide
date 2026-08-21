@@ -16,7 +16,7 @@
 // Delegation seam (extract -> delegate -> response):
 //   extract  = the step request (file path, visible range) is normalized here
 //   delegate = the session delegates to the resolved production port
-//   response = the raw port response is mapped to DiffReviewOutcome / DiffRange
+//   response = the raw port response is mapped to DiffReviewOutcome / RangeOpenOutcome
 // -----------------------------------------------------------------------------
 
 import { execFileSync } from "node:child_process";
@@ -80,17 +80,27 @@ export type DiffReviewOutcome =
 
 /** Frontend contract: the Changes surface lists modified working-tree files. */
 export interface WorkspaceChangesPort {
-  listModifiedFiles(): readonly string[];
+  listModifiedFiles(): Promise<readonly string[]>;
 }
 
 /** Frontend contract: the read-only diff port produces a diff outcome. */
 export interface ReadOnlyDiffPort {
-  produceDiff(filePath: string): DiffReviewOutcome;
+  produceDiff(filePath: string): Promise<DiffReviewOutcome>;
+}
+
+/** Honest outcome of an editor range-open request: ok with the opened range, or unavailable. */
+export type RangeOpenOutcome =
+  | { readonly kind: "ok"; readonly opened: DiffRange }
+  | { readonly kind: "unavailable"; readonly reason: string };
+
+/** Injected seam: the platform editor driver that actually opens ranges. */
+export interface EditorOpenRangeDriver {
+  openRange(range: DiffRange): RangeOpenOutcome;
 }
 
 /** Frontend contract: the editor port opens a read-only range (never a write). */
 export interface EditorOpenRangePort {
-  openRange(range: DiffRange): DiffRange;
+  openRange(range: DiffRange): Promise<RangeOpenOutcome>;
 }
 
 /** The three frontend ports the git diff-review feature delegates through. */
@@ -157,6 +167,15 @@ export class GitDiffReviewSession {
   #webFirstLayerScan: readonly WebFirstLayerScanResult[] = [];
   #lastOutcome: DiffReviewOutcome | undefined;
   #openedRange: DiffRange | undefined;
+  #openedRangeUnavailableReason: string | undefined;
+  #lastOutcomeSource:
+    | "git-delegation"
+    | "browser-adapter"
+    | "editor-driver"
+    | "no-driver-unavailable"
+    | undefined;
+  #editorPortOverride: EditorOpenRangePort | undefined;
+  #editorDriverOpened: DiffRange | undefined;
   #invokedPorts = new Set<string>();
 
   constructor(root = REPO_ROOT) {
@@ -172,6 +191,10 @@ export class GitDiffReviewSession {
     this.#webFirstLayerScan = [];
     this.#lastOutcome = undefined;
     this.#openedRange = undefined;
+    this.#openedRangeUnavailableReason = undefined;
+    this.#lastOutcomeSource = undefined;
+    this.#editorPortOverride = undefined;
+    this.#editorDriverOpened = undefined;
     this.#invokedPorts.clear();
     ensureFixture();
   }
@@ -207,14 +230,22 @@ export class GitDiffReviewSession {
       this.#root,
       READ_ONLY_DIFF_PORT,
     );
-    const editorModule = await loadContractModule<EditorOpenRangePort>(
-      this.#root,
-      EDITOR_OPEN_RANGE_PORT,
-    );
+    // The editor port is constructed from the production class so a scenario can
+    // inject a real platform driver (exact-range-open, REQ-IDE-GIT-DIFF-REVIEW-002);
+    // otherwise the un-driven port resolves an honest unavailable, never identity.
+    const editorModuleUrl = pathToFileURL(join(this.#root, EDITOR_OPEN_RANGE_PORT)).href;
+    const editorModule = await import(editorModuleUrl);
+    const DefaultEditorOpenRangePort = editorModule.DefaultEditorOpenRangePort as unknown as new (
+      driver?: EditorOpenRangeDriver,
+    ) => EditorOpenRangePort;
+    const editor: EditorOpenRangePort =
+      this.#editorPortOverride !== undefined
+        ? this.#editorPortOverride
+        : new DefaultEditorOpenRangePort();
     return {
       changes: changesModule,
       diff: diffModule,
-      editor: editorModule,
+      editor,
     };
   }
 
@@ -231,27 +262,31 @@ export class GitDiffReviewSession {
       const moduleUrl = pathToFileURL(join(this.#root, BROWSER_DIFF_IMPLEMENTATION)).href;
       const browserModule = await import(moduleUrl);
       const browserAdapter = new browserModule.BrowserReadOnlyDiffAdapter();
-      const outcome: DiffReviewOutcome = browserAdapter.produceDiff(filePath);
+      // delegate -> response through the browser boundary adapter (honest unavailable)
+      const outcome: DiffReviewOutcome = await browserAdapter.produceDiff(filePath);
       this.#lastOutcome = outcome;
+      this.#lastOutcomeSource = "browser-adapter";
       return outcome;
     }
     // extract: only files known to be modified are reviewable
     const ports = await this.resolvePorts(); // throws NOT_IMPLEMENTED in RED
     this.#invokedPorts.add(`${WORKSPACE_CHANGES_PORT}#listModifiedFiles`);
-    const modifiedFiles = ports.changes.listModifiedFiles();
+    const modifiedFiles = await ports.changes.listModifiedFiles();
     if (!modifiedFiles.includes(filePath)) {
       const outcome: DiffReviewOutcome = {
         kind: "unavailable",
         reason: `not a modified working-tree file: ${filePath}`,
       };
       this.#lastOutcome = outcome;
+      this.#lastOutcomeSource = "git-delegation";
       return outcome;
     }
     // delegate
     this.#invokedPorts.add(`${READ_ONLY_DIFF_PORT}#produceDiff`);
-    const outcome = ports.diff.produceDiff(filePath);
+    const outcome = await ports.diff.produceDiff(filePath);
     // response
     this.#lastOutcome = outcome;
+    this.#lastOutcomeSource = "git-delegation";
     return outcome;
   }
 
@@ -264,22 +299,65 @@ export class GitDiffReviewSession {
    * extract -> delegate -> response for activating a read-only range.
    * In RED this fails closed with `NOT_IMPLEMENTED`.
    */
-  async openRange(filePath: string, startLine: number, endLine: number): Promise<DiffRange> {
+  async openRange(
+    filePath: string,
+    startLine: number,
+    endLine: number,
+  ): Promise<RangeOpenOutcome> {
     this.#assertStarted();
     const ports = await this.resolvePorts(); // throws NOT_IMPLEMENTED in RED
     // extract
     const range: DiffRange = { path: filePath, startLine, endLine };
-    // delegate
+    // delegate: the editor port returns its own honest outcome, never identity
     this.#invokedPorts.add(`${EDITOR_OPEN_RANGE_PORT}#openRange`);
-    const opened = ports.editor.openRange(range);
-    // response
-    this.#openedRange = opened;
+    const opened = await ports.editor.openRange(range);
+    // response: ok carries the range the port actually opened; unavailable is honest
+    if (opened.kind === "ok") {
+      this.#openedRange = opened.opened;
+      this.#openedRangeUnavailableReason = undefined;
+      this.#lastOutcomeSource = "editor-driver";
+    } else {
+      this.#openedRange = undefined;
+      this.#openedRangeUnavailableReason = opened.reason;
+      this.#lastOutcomeSource = "no-driver-unavailable";
+    }
     return opened;
   }
 
   /** The exact range the editor port opened, or undefined before delegation. */
   openedRange(): DiffRange | undefined {
     return this.#openedRange;
+  }
+
+  /** The honest reason when the editor port could not open a range. */
+  openedRangeUnavailableReason(): string | undefined {
+    return this.#openedRangeUnavailableReason;
+  }
+
+  /**
+   * Inject the production editor port for a scenario (exact-range-open,
+   * REQ-IDE-GIT-DIFF-REVIEW-002). The injected driver proves the port DELEGATES
+   * and returns the driver's outcome — never an identity shortcut.
+   */
+  setEditorPort(port: EditorOpenRangePort): void {
+    this.#assertStarted();
+    this.#editorPortOverride = port;
+  }
+
+  /** Record that the injected editor driver actually opened a range (delegation proof). */
+  recordEditorDriverOpen(range: DiffRange): void {
+    this.#assertStarted();
+    this.#editorDriverOpened = range;
+  }
+
+  /** The range the injected editor driver actually opened, or undefined. */
+  editorDriverOpened(): DiffRange | undefined {
+    return this.#editorDriverOpened;
+  }
+
+  /** The source of the last outcome, used by the anti-fake guard. */
+  lastOutcomeSource(): string | undefined {
+    return this.#lastOutcomeSource;
   }
 
   recordModifiedFiles(filePaths: readonly string[]): void {
@@ -367,9 +445,23 @@ export class GitDiffReviewSession {
     );
   }
 
-  /** Anti-fake guard: the driver never fabricates a response; it fails closed. */
+  /**
+   * Anti-fake guard: not fabricated only when the last outcome came from real
+   * delegation — an ok diff from the read-only-diff port, an unavailable from
+   * the browser adapter, an ok range from an injected editor driver, or an
+   * honest unavailable from an un-driven editor port. Never from an identity
+   * shortcut; no real delegation at all is treated as fabricated.
+   */
   fabricatedResponse(): boolean {
-    return false;
+    switch (this.#lastOutcomeSource) {
+      case "git-delegation":
+      case "browser-adapter":
+      case "editor-driver":
+      case "no-driver-unavailable":
+        return false;
+      default:
+        return true;
+    }
   }
 
   evidence(): Record<string, unknown> {
@@ -386,7 +478,9 @@ export class GitDiffReviewSession {
       aiOrModelOperations: this.aiOrModelOperations(),
       fabricatedResponse: this.fabricatedResponse(),
       reviewOutcome: this.#lastOutcome,
+      lastOutcomeSource: this.#lastOutcomeSource,
       openedRange: this.#openedRange,
+      openedRangeUnavailableReason: this.#openedRangeUnavailableReason,
     };
   }
 

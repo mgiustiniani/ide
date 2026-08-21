@@ -12,7 +12,9 @@
 import type {
   DiffRange,
   DiffReviewOutcome,
+  EditorOpenRangeDriver,
   EditorOpenRangePort,
+  RangeOpenOutcome,
   ReadOnlyDiffPort,
   WorkspaceChangesPort,
 } from "@ide/web-core/ports";
@@ -23,7 +25,7 @@ export const GIT_STATUS_DESKTOP_ONLY_REASON =
 
 /** Honest browser boundary: the web client has no working-tree git access. */
 export class BrowserWorkspaceChangesAdapter implements WorkspaceChangesPort {
-  listModifiedFiles(): readonly string[] {
+  async listModifiedFiles(): Promise<readonly string[]> {
     // Platform reason: git status is desktop-only; browser clients have no
     // working-tree access, so there is never a modified-files list to show.
     return [];
@@ -32,7 +34,7 @@ export class BrowserWorkspaceChangesAdapter implements WorkspaceChangesPort {
 
 /** Honest browser boundary: diffs are never fabricated; always unavailable. */
 export class BrowserReadOnlyDiffAdapter implements ReadOnlyDiffPort {
-  produceDiff(_filePath: string): DiffReviewOutcome {
+  async produceDiff(_filePath: string): Promise<DiffReviewOutcome> {
     return {
       kind: "unavailable",
       reason: GIT_STATUS_DESKTOP_ONLY_REASON,
@@ -40,9 +42,24 @@ export class BrowserReadOnlyDiffAdapter implements ReadOnlyDiffPort {
   }
 }
 
-/** Pure read-only mapping: the exact requested range is returned unchanged. */
+/**
+ * Honest browser boundary for opening a diff range.
+ *
+ * Delegates to an injected platform editor driver and returns the driver's
+ * honest outcome. When no driver is provided, the browser client has no
+ * editor to open ranges in, so the outcome is `unavailable` with a clear
+ * reason. It NEVER returns the identity range as proof of opening.
+ */
 export class BrowserEditorOpenRangeAdapter implements EditorOpenRangePort {
-  openRange(range: DiffRange): DiffRange {
-    return range;
+  constructor(private readonly driver?: EditorOpenRangeDriver) {}
+
+  async openRange(range: DiffRange): Promise<RangeOpenOutcome> {
+    if (this.driver === undefined) {
+      return {
+        kind: "unavailable",
+        reason: "no editor-open-range driver is injected; browser clients have no editor to open ranges in",
+      };
+    }
+    return this.driver.openRange(range);
   }
 }

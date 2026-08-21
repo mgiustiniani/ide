@@ -17,7 +17,7 @@ Feature: Read-only git diff review behind frontend ports
     And the hunk-level diff carries line and range metadata
     And no write operation touched the working tree during the review
 
-  @REQ-IDE-GIT-DIFF-REVIEW-001 @story-bdd @diff-review @tier-a @web @functional-requirement @implemented-and-validated
+  @REQ-IDE-GIT-DIFF-REVIEW-002 @story-bdd @diff-review @tier-a @web @functional-requirement @implemented-and-validated
   Scenario: Activating a diff range opens the exact file and range in the existing editor
     Given an open workspace with a modified file "src/lib/git.ts"
     And a visible read-only hunk-level diff range from line 42 to line 60
@@ -25,7 +25,7 @@ Feature: Read-only git diff review behind frontend ports
     Then the existing editor port opens the exact path "src/lib/git.ts" at lines 42 to 60
     And the IDE creates no new AI or model dependency for the open operation
 
-  @REQ-IDE-GIT-DIFF-REVIEW-001 @story-bdd @diff-review @tier-a @web @functional-requirement @implemented-and-validated
+  @REQ-IDE-GIT-DIFF-REVIEW-003 @story-bdd @diff-review @tier-a @web @functional-requirement @implemented-and-validated
   Scenario: A platform that cannot produce a diff reports unavailable honestly
     Given an open workspace with a modified file "src/lib/git.ts"
     And a platform that cannot produce a diff for the modified file
@@ -33,7 +33,7 @@ Feature: Read-only git diff review behind frontend ports
     Then the diff adapter reports unavailable honestly with a platform reason
     And the diff adapter does not fall back to a mock-only or hard-coded response
 
-  @REQ-IDE-GIT-DIFF-REVIEW-001 @story-bdd @diff-review @tier-a @web @non-functional-requirement @implemented-and-validated
+  @REQ-IDE-GIT-DIFF-REVIEW-004 @story-bdd @diff-review @tier-a @web @non-functional-requirement @implemented-and-validated
   Scenario: Web-first layers stay free of platform API imports and diff implementations live behind ports
     Given the web-first layers packages/ui, packages/web-core, and apps/web
     When their source is scanned for platform API imports

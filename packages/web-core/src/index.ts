@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 export * from "./ports";
+export { ChangesReviewService } from "./services/changes-review-service";
 export * from "./state";
 export * from "./view-models";
 export * from "./xcom2";

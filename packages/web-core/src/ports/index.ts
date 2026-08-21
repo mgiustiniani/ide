@@ -33,4 +33,9 @@ export type {
   WorkspaceChangesPort,
 } from "./workspace-changes-port";
 export type { ReadOnlyDiffPort } from "./read-only-diff-port";
-export type { EditorOpenRangePort } from "./editor-open-range-port";
+export type {
+  EditorOpenRangeDriver,
+  EditorOpenRangePort,
+  RangeOpenOutcome,
+} from "./editor-open-range-port";
+export { DefaultEditorOpenRangePort } from "./editor-open-range-port";

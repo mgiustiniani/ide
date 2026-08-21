@@ -952,6 +952,15 @@ vi.mock("@ide/tauri-adapters", () => {
       xcom2NativeActivationEvidenceAdapter,
       xcom2ProjectBuildRecipeInspectionAdapter,
     })),
+    TauriWorkspaceChangesAdapter: vi.fn().mockImplementation(() => ({
+      listModifiedFiles: vi.fn().mockResolvedValue([]),
+    })),
+    TauriReadOnlyDiffAdapter: vi.fn().mockImplementation(() => ({
+      produceDiff: vi.fn().mockResolvedValue({ kind: "unavailable", reason: "mock desktop" }),
+    })),
+    TauriEditorOpenRangeAdapter: vi.fn().mockImplementation(() => ({
+      openRange: vi.fn().mockResolvedValue({ kind: "unavailable", reason: "mock desktop" }),
+    })),
   };
 });
 

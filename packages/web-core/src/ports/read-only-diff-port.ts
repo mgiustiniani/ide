@@ -16,7 +16,7 @@ export type { DiffHunk, DiffRange, DiffReviewOutcome, HunkLevelDiff } from "./wo
 
 /** Port: produce a read-only hunk-level diff for one path. */
 export interface ReadOnlyDiffPort {
-  produceDiff(filePath: string): DiffReviewOutcome;
+  produceDiff(filePath: string): Promise<DiffReviewOutcome>;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface ReadOnlyDiffPort {
  * fails, the path is not modified/added, or no hunk-level change is produced.
  */
 const defaultReadOnlyDiffPort: ReadOnlyDiffPort = {
-  produceDiff(filePath: string): DiffReviewOutcome {
+  async produceDiff(filePath: string): Promise<DiffReviewOutcome> {
     return createReadOnlyGitDiffSource(resolveWorkspaceRoot()).produceDiff(filePath);
   },
 };

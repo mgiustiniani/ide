@@ -2,6 +2,7 @@ pub mod ai_agent;
 pub mod clipboard;
 pub mod editor;
 pub mod file_tree;
+pub mod git_diff_review;
 pub mod java_language;
 pub mod pi_workspace_agent;
 pub mod refactorkit;

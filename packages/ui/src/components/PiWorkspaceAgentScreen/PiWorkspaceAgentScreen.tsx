@@ -4,6 +4,7 @@ import type {
   PiWorkspaceAgentAttachment,
   PiWorkspaceAgentProcessState,
 } from "@ide/contracts";
+import type { DiffReviewOutcome, HunkLevelDiff } from "@ide/web-core/ports";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { PiNativeTerminal, type PiTerminalFeedSource } from "./PiNativeTerminal";
@@ -29,6 +30,8 @@ export interface PiWorkspaceAgentScreenProps {
   onStop(): void | Promise<void>;
   onDetach?(): void | Promise<void>;
   onOpenChangedFile?(path: string): void | Promise<void>;
+  reviews?: ReadonlyMap<string, DiffReviewOutcome>;
+  onOpenRange?(path: string, startLine: number, endLine: number): void | Promise<void>;
 }
 
 const TABS: ReadonlyArray<{ id: PiWorkspaceAgentTab; label: string }> = [
@@ -70,6 +73,8 @@ export function PiWorkspaceAgentScreen({
   onStop,
   onDetach,
   onOpenChangedFile,
+  reviews,
+  onOpenRange,
 }: PiWorkspaceAgentScreenProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<PiWorkspaceAgentTab>("pi");
   const [confirmStop, setConfirmStop] = useState(false);
@@ -244,7 +249,9 @@ export function PiWorkspaceAgentScreen({
             {activeTab === "changes" ? (
               <ChangesView
                 changes={accessories?.changes ?? []}
+                reviews={reviews}
                 onOpenChangedFile={onOpenChangedFile}
+                onOpenRange={onOpenRange}
               />
             ) : null}
             {activeTab === "activity" ? (
@@ -333,32 +340,95 @@ function Empty({ children }: { children: string }): JSX.Element {
   );
 }
 
+export interface ChangesViewProps {
+  changes: PiWorkspaceAgentAccessories["changes"];
+  reviews?: ReadonlyMap<string, DiffReviewOutcome>;
+  onOpenChangedFile?(path: string): void | Promise<void>;
+  onOpenRange?(path: string, startLine: number, endLine: number): void | Promise<void>;
+}
+
 function ChangesView({
   changes,
+  reviews,
   onOpenChangedFile,
-}: {
-  changes: PiWorkspaceAgentAccessories["changes"];
-  onOpenChangedFile?: (path: string) => void | Promise<void>;
-}): JSX.Element {
+  onOpenRange,
+}: ChangesViewProps): JSX.Element {
   if (changes.length === 0) return <Empty>No workspace changes detected.</Empty>;
   return (
     <ol className="space-y-1" aria-label="Workspace changes">
-      {changes.map((change) => (
-        <li key={change.path}>
-          <button
-            type="button"
-            className="flex w-full min-w-0 items-start justify-between gap-2 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-2 py-1.5 text-left disabled:cursor-default"
-            disabled={!onOpenChangedFile}
-            onClick={() => void onOpenChangedFile?.(change.path)}
-          >
-            <span className="min-w-0 break-all font-mono text-[0.68rem]">{change.path}</span>
-            <span className="shrink-0 text-[0.62rem] uppercase text-[var(--text-muted)]">
-              {change.status}
-            </span>
-          </button>
-        </li>
-      ))}
+      {changes.map((change) => {
+        const review = reviews?.get(change.path);
+        return (
+          <li key={change.path} className="space-y-1">
+            <button
+              type="button"
+              className="flex w-full min-w-0 items-start justify-between gap-2 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-2 py-1.5 text-left disabled:cursor-default"
+              disabled={!onOpenChangedFile}
+              onClick={() => void onOpenChangedFile?.(change.path)}
+            >
+              <span className="min-w-0 break-all font-mono text-[0.68rem]">{change.path}</span>
+              <span className="shrink-0 text-[0.62rem] uppercase text-[var(--text-muted)]">
+                {change.status}
+              </span>
+            </button>
+            {review?.kind === "ok" ? (
+              <HunkPanel diff={review.diff} onOpenRange={onOpenRange} />
+            ) : review?.kind === "unavailable" ? (
+              <p
+                className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[0.66rem] text-[var(--text-muted)]"
+                role="note"
+              >
+                Diff review unavailable: {review.reason}
+              </p>
+            ) : null}
+          </li>
+        );
+      })}
     </ol>
+  );
+}
+
+function HunkPanel({
+  diff,
+  onOpenRange,
+}: {
+  diff: HunkLevelDiff;
+  onOpenRange?(path: string, startLine: number, endLine: number): void | Promise<void>;
+}): JSX.Element {
+  return (
+    <div
+      className="space-y-1 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-2 py-1.5"
+      aria-label={`Read-only diff for ${diff.path}`}
+    >
+      {diff.hunks.map((hunk, index) => {
+        const endLine = hunk.newStart + hunk.newLines - 1;
+        return (
+          <section
+            key={`${diff.path}:${index}`}
+            className="space-y-1"
+            aria-label={`Hunk ${index + 1}`}
+          >
+            <header className="flex items-center justify-between gap-2">
+              <span className="shrink-0 font-mono text-[0.62rem] text-[var(--text-muted)]">
+                new {hunk.newStart} · {hunk.newLines} lines
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-[var(--border-default)] px-1.5 py-0.5 text-[0.62rem] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-default"
+                disabled={!onOpenRange}
+                aria-label={`Open range ${diff.path}:${hunk.newStart}-${endLine}`}
+                onClick={() => void onOpenRange?.(diff.path, hunk.newStart, endLine)}
+              >
+                Open range
+              </button>
+            </header>
+            <pre className="overflow-x-auto whitespace-pre font-mono text-[0.66rem] leading-4 text-[var(--text-secondary)]">
+              {hunk.text}
+            </pre>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 

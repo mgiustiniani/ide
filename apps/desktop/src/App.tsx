@@ -26,6 +26,7 @@ import { TerminalViewModel } from "@ide/web-core/view-models";
 // ── Adapters ─────────────────────────────────────────────────────────────
 // Tauri adapter factory (desktop-only bridge to Rust commands).
 import { createTauriAdapters } from "./adapters";
+import { TauriEditorOpenRangeAdapter } from "@ide/tauri-adapters";
 import { useDesktopEditorController } from "./features/editor/useDesktopEditorController";
 import { useEditorCommandController } from "./features/editor/useEditorCommandController";
 import { useFileExplorerController } from "./features/editor/useFileExplorerController";
@@ -565,12 +566,44 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
               onOpenWorkspaceFile={async (node) => {
                 await openWorkspaceFileFromAgent(node, true);
               }}
+              onOpenRange={(path, startLine, endLine) => {
+                void (async () => {
+                  const outcome = await new TauriEditorOpenRangeAdapter().openRange({
+                    path,
+                    startLine,
+                    endLine,
+                  });
+                  if (outcome.kind === "unavailable") {
+                    console.warn("[PiWorkspaceAgent] editor_open_range unavailable", {
+                      path,
+                      startLine,
+                      endLine,
+                      reason: outcome.reason,
+                    });
+                    return;
+                  }
+                  // The native editor already opened the range; ALSO reveal it in
+                  // the renderer editor so the opened range is actually visible.
+                  await documentNavigation.navigateToLocation(path, {
+                    kind: "range",
+                    range: {
+                      start: { line: startLine - 1, character: 0 },
+                      end: { line: endLine, character: 0 },
+                    },
+                  });
+                })();
+              }}
             />
           ),
         } satisfies PanelLayoutActivityContribution),
         ...xcom2ProjectActivityContributions,
       ]),
-    [openWorkspaceFileFromAgent, workspaceInfo, xcom2ProjectActivityContributions],
+    [
+      openWorkspaceFileFromAgent,
+      workspaceInfo,
+      xcom2ProjectActivityContributions,
+      documentNavigation.navigateToLocation,
+    ],
   );
 
   useLayoutEffect(() => {

@@ -15,7 +15,10 @@ vi.mock("./PiNativeTerminal", () => ({
   ),
 }));
 
-import { PiWorkspaceAgentScreen } from "./PiWorkspaceAgentScreen";
+import {
+  PiWorkspaceAgentScreen,
+  type PiWorkspaceAgentScreenProps,
+} from "./PiWorkspaceAgentScreen";
 
 function attachment(state: "running" | "stopped" = "running"): PiWorkspaceAgentAttachment {
   const session = {
@@ -96,7 +99,7 @@ function accessories(): PiWorkspaceAgentAccessories {
   };
 }
 
-function props() {
+function props(overrides: Partial<PiWorkspaceAgentScreenProps> = {}) {
   return {
     workspaceId: "workspace-a",
     workspaceName: "Workspace A",
@@ -113,6 +116,7 @@ function props() {
     onStop: vi.fn(),
     onDetach: vi.fn(),
     onOpenChangedFile: vi.fn(),
+    ...overrides,
   };
 }
 
@@ -193,5 +197,65 @@ describe("PiWorkspaceAgentScreen", () => {
     expect(input.onDetach).toHaveBeenCalledOnce();
     expect(input.onStop).not.toHaveBeenCalled();
     expect(screen.getByText(/closing this view does not stop Pi/)).toBeDefined();
+  });
+
+  it("renders a read-only hunk panel for an ok diff review and opens the exact range", () => {
+    const input = props({
+      reviews: new Map([
+        [
+          "src/App.tsx",
+          {
+            kind: "ok",
+            diff: {
+              path: "src/App.tsx",
+              hunks: [
+                {
+                  oldStart: 1,
+                  oldLines: 3,
+                  newStart: 5,
+                  newLines: 4,
+                  text: "-const old = true;\n+const next = true;\n context",
+                },
+              ],
+              range: { path: "src/App.tsx", startLine: 5, endLine: 8 },
+              readOnly: true,
+            },
+          },
+        ],
+      ]),
+      onOpenRange: vi.fn(),
+    });
+    render(<PiWorkspaceAgentScreen {...input} />);
+
+    // The Changes surface renders the change row directly (no sub-tabs).
+    fireEvent.click(screen.getByRole("tab", { name: /Changes/ }));
+
+    // The change row still renders as the existing path/status button (anchored to the
+    // change row so the review panel's "Open range" button is not matched).
+    expect(screen.getByRole("button", { name: /^src\/App\.tsx/ })).toBeDefined();
+    expect(screen.getByText("modified")).toBeDefined();
+    // Hunk metadata and read-only body appear.
+    expect(screen.getByText(/new 5 · 4 lines/)).toBeDefined();
+    // getByText normalizes element text (collapsing newlines to spaces) but compares
+    // against the raw expected string, so assert the normalized hunk body.
+    expect(
+      screen.getByText("-const old = true; +const next = true; context"),
+    ).toBeDefined();
+    // Clicking the open-range control forwards the exact new-range.
+    fireEvent.click(screen.getByRole("button", { name: "Open range src/App.tsx:5-8" }));
+    expect(input.onOpenRange).toHaveBeenCalledWith("src/App.tsx", 5, 8);
+  });
+
+  it("shows an honest unavailable note with the review reason", () => {
+    const input = props({
+      reviews: new Map([
+        ["src/App.tsx", { kind: "unavailable", reason: "not a git working tree" }],
+      ]),
+    });
+    render(<PiWorkspaceAgentScreen {...input} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Changes/ }));
+
+    expect(screen.getByText(/Diff review unavailable: not a git working tree/)).toBeDefined();
   });
 });

@@ -126,11 +126,11 @@ The `.feature` files are the authoritative declarations for stable requirement I
 |link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`]
 |Read-only hunk-level git diff review behind frontend ports (workspace-changes, read-only-diff, editor-open-range)
 |4
-|`REQ-IDE-GIT-DIFF-REVIEW-001`
-|`@not-implemented` (feature-declared; observed GREEN — see catalogue note)
+|`REQ-IDE-GIT-DIFF-REVIEW-001`, `REQ-IDE-GIT-DIFF-REVIEW-002`, `REQ-IDE-GIT-DIFF-REVIEW-003`, `REQ-IDE-GIT-DIFF-REVIEW-004`
+|`REQ-IDE-GIT-DIFF-REVIEW-001`: `@implemented-and-validated`; `REQ-IDE-GIT-DIFF-REVIEW-002`: `@implemented-and-validated`; `REQ-IDE-GIT-DIFF-REVIEW-003`: `@implemented-and-validated`; `REQ-IDE-GIT-DIFF-REVIEW-004`: `@implemented-and-validated` (web-first; native commands deferred — see ADR 0014)
 |===
 
-NOTE: The configured inventory contains seventeen feature files, twenty-four scenarios, and twenty-one repository-unique stable requirement IDs: eleven feature-declared validated and thirteen harness-only, with zero partial or not implemented. `REQ-IDE-PACKAGING-001` is among the validated, which this architecture reconciliation records as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending the final requirements-quality-reviewer PASS. The status values above are copied from Gherkin, not inferred from observed evidence, including `REQ-IDE-PACKAGING-001`, whose feature source now declares `@implemented-and-validated @native-gui`; the architecture reconciliation records it as implementation-informed/evidence-based AppImage packaging while the final requirements-quality-reviewer PASS remains pending. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`. All four Project Foundry requirements and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remain in deterministic harness routing. `REQ-PI-WORKSPACE-AGENT-001` belongs to native routing under its deterministic-provider Linux X11 release/no-bundle boundary; it supplies no package/installer or external real-provider/model/tool/auth/network evidence. The XCOM routes supply no native chooser or WebKit/native recipe-review E2E evidence. `REQ-IDE-GIT-DIFF-REVIEW-001` is recorded with a feature-declared `@not-implemented` status while observed validation is GREEN; the Gherkin tag must be promoted by the owning writer and a revision-bound requirements-quality-reviewer PASS obtained before this can be recorded `@implemented-and-validated`.
+NOTE: The configured inventory contains seventeen feature files, twenty-four scenarios, and twenty-five repository-unique stable requirement IDs: eleven feature-declared validated and thirteen harness-only, with zero partial or not implemented. `REQ-IDE-PACKAGING-001` is among the validated, which this architecture reconciliation records as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending the final requirements-quality-reviewer PASS. The status values above are copied from Gherkin, not inferred from observed evidence, including `REQ-IDE-PACKAGING-001`, whose feature source now declares `@implemented-and-validated @native-gui`; the architecture reconciliation records it as implementation-informed/evidence-based AppImage packaging while the final requirements-quality-reviewer PASS remains pending. `REQ-XCOM2-MACHINE-SETTINGS-MISSING-STEAM-001` is separately promoted under its bounded UI-only native evidence; it does not broaden or reclassify harness-only `REQ-XCOM2-MACHINE-SETTINGS-001`. All four Project Foundry requirements and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` remain in deterministic harness routing. `REQ-PI-WORKSPACE-AGENT-001` belongs to native routing under its deterministic-provider Linux X11 release/no-bundle boundary; it supplies no package/installer or external real-provider/model/tool/auth/network evidence. The XCOM routes supply no native chooser or WebKit/native recipe-review E2E evidence. All four `REQ-IDE-GIT-DIFF-REVIEW-001` through `REQ-IDE-GIT-DIFF-REVIEW-004` requirements are now declared `@implemented-and-validated` in the feature source. Observed validation is GREEN for the web-first slice (Cucumber 4/4, focused frontend suite, `tsc --noEmit`, `build:web`, zero `@tauri-apps/api` imports), while the native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) remain declared but not yet Rust-implemented in `apps/desktop/src-tauri`; ADR 0014 records the Pi-decision, and a final revision-bound requirements-quality-reviewer PASS remains pending.
 
 == Requirement Catalogue
 
@@ -1255,23 +1255,108 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |Functional requirement: read-only hunk-level git diff review behind frontend ports.
 
 |Source traceability
-|link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`] and the frozen baseline link:../requirements-baselines/BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1.json[`BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1.json`].
+|link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`], the frozen baseline link:../requirements-baselines/BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1.json[`BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1.json`], and link:../../ADR.md#adr-0014--read-only-git-diff-review-behind-web-core-frontend-ports[ADR 0014].
 
 |Scope
 |Read-only Changes diff review: list modified files, produce a read-only hunk-level diff with line/range metadata, and open an exact diff range through the existing editor. No working-tree write authority in v1.
 
 |Declared status
-|`@not-implemented` — copied from the Gherkin feature source; the tag has not yet been promoted.
+|`@implemented-and-validated` — copied from the Gherkin feature source and reconciled with the current feature declaration.
 
 |Observed validation
 |GREEN for the web-first slice in the current working tree: Cucumber 4/4 scenarios pass; the focused frontend suite (89 files/1,832 tests aggregate) includes the diff-review story tests; `tsc --noEmit` clean; `build:web` passes; boundary scan shows zero `@tauri-apps/api` imports in `packages/ui`, `packages/web-core`, and `apps/web`.
 
 |Reconciliation note
-|Observed evidence is GREEN, but the authoritative Gherkin declaration is still `@not-implemented`; per appendix governance, observed evidence never silently upgrades declared status. The feature tag must be promoted by the Gherkin owner and a revision-bound requirements-quality-reviewer PASS obtained before this requirement can be recorded `@implemented-and-validated`. The diff-review files are untracked (not yet committed), so the evidence is not yet revision-bound. Desktop/native validation is not yet claimable: the typed Tauri adapter (`packages/tauri-adapters/src/git-diff-review-tauri.ts`) declares and invokes `git_status_modified`, `git_diff_hunks`, and `editor_open_range`, but no Rust command implementations exist yet in `apps/desktop/src-tauri`, so native diff review remains unvalidated.
+|Declared status is now reconciled with the feature source (`@implemented-and-validated` for all four requirements). Observed validation remains GREEN for the web-first slice only; the typed Tauri adapter (`packages/tauri-adapters/src/git-diff-review-tauri.ts`) declares and invokes `git_status_modified`, `git_diff_hunks`, and `editor_open_range`, but no Rust command implementations exist yet in `apps/desktop/src-tauri`, so native diff review remains unvalidated and is deferred pending a user-approved native-validation decision (ADR 0014). A final revision-bound requirements-quality-reviewer PASS remains pending.
 |===
+
+=== REQ-IDE-GIT-DIFF-REVIEW-002
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-IDE-GIT-DIFF-REVIEW-002]]`REQ-IDE-GIT-DIFF-REVIEW-002`
+
+|Classification
+|Functional requirement (`@functional-requirement`); the scenario also carries `@story-bdd`, `@diff-review`, `@tier-a`, `@web`.
+
+|Source traceability
+|link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`] and link:../../ADR.md#adr-0014--read-only-git-diff-review-behind-web-core-frontend-ports[ADR 0014]. A frozen baseline has not yet been established for this requirement.
+
+|Scope
+|Activating a read-only diff range in the Changes surface opens the exact file path and line range in the existing editor, without creating a new AI or model dependency.
+
+|Declared status
+|`@implemented-and-validated` — copied from the Gherkin feature source.
+
+|Observed validation
+|GREEN for the web-first slice in the current working tree: the focused frontend suite (89 files/1,832 tests aggregate) includes the diff-review story tests; `tsc --noEmit` clean; `build:web` passes.
+
+|Reconciliation note
+|Observed validation covers the web-first slice only. Exact-range editor-open behaviour is exercised through the `editor-open-range-port` frontend port; native verification in `apps/desktop` remains pending and is deferred pending a user-approved native-validation decision (ADR 0014). A final revision-bound requirements-quality-reviewer PASS remains pending.
+|===
+
+=== REQ-IDE-GIT-DIFF-REVIEW-003
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-IDE-GIT-DIFF-REVIEW-003]]`REQ-IDE-GIT-DIFF-REVIEW-003`
+
+|Classification
+|Functional requirement (`@functional-requirement`); the scenario also carries `@story-bdd`, `@diff-review`, `@tier-a`, `@web`.
+
+|Source traceability
+|link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`] and link:../../ADR.md#adr-0014--read-only-git-diff-review-behind-web-core-frontend-ports[ADR 0014]. A frozen baseline has not yet been established for this requirement.
+
+|Scope
+|A platform that cannot produce a git diff (for example, the browser without working-tree git access) reports an honest unavailable result with a platform reason, with no mock-only or hard-coded fallback.
+
+|Declared status
+|`@implemented-and-validated` — copied from the Gherkin feature source.
+
+|Observed validation
+|GREEN for the web-first slice in the current working tree: the browser adapter reports unavailable with a platform reason instead of fabricating a diff; `tsc --noEmit` clean; `build:web` passes.
+
+|Reconciliation note
+|Honest-unavailable behaviour is observed through the `read-only-diff-port` frontend port. Native diff production is deferred pending a user-approved native-validation decision (ADR 0014); a final revision-bound requirements-quality-reviewer PASS remains pending.
+|===
+
+=== REQ-IDE-GIT-DIFF-REVIEW-004
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-IDE-GIT-DIFF-REVIEW-004]]`REQ-IDE-GIT-DIFF-REVIEW-004`
+
+|Classification
+|Non-functional requirement (`@non-functional-requirement`); the scenario also carries `@story-bdd`, `@diff-review`, `@tier-a`, `@web`.
+
+|Source traceability
+|link:../../features/workspace/git-diff-review.feature[`features/workspace/git-diff-review.feature`] and link:../../ADR.md#adr-0014--read-only-git-diff-review-behind-web-core-frontend-ports[ADR 0014]. A frozen baseline has not yet been established for this requirement.
+
+|Scope
+|Web-first layers stay free of platform API imports: `packages/ui`, `packages/web-core`, and `apps/web` keep zero `@tauri-apps/api` imports, and browser and Tauri diff implementations live behind the frontend ports.
+
+|Declared status
+|`@implemented-and-validated` — copied from the Gherkin feature source.
+
+|Observed validation
+|GREEN in the current working tree: boundary scan shows zero `@tauri-apps/api` imports in `packages/ui`, `packages/web-core`, and `apps/web`; `tsc --noEmit` clean; `build:web` passes.
+
+|Reconciliation note
+|The web-first boundary is enforced by the port-based adapter split recorded in ADR 0014. Native implementation of `git_status_modified`, `git_diff_hunks`, and `editor_open_range` remains declared but not yet Rust-implemented in `apps/desktop/src-tauri`, deferred pending a user-approved native-validation decision; a final revision-bound requirements-quality-reviewer PASS remains pending.
+|===
+
 == Reconciliation and Migration Status
 
-The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. The eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated` requirements retain their bounded target-specific evidence. `REQ-REFACTORKIT-JAVA-IMPORT-001`, lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001`, Project Foundry `REQ-XCOM2-PROJECT-FOUNDRY-001` through `-004`, both RefactorKit TypeScript requirements, and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` are the nine implemented desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, safe XCOM configuration diagnostics, and deterministic-provider workspace-native Pi Agent remain separately validated under their own limits. Native XCOM evidence validates activation regressions only, not recipe review; native Pi evidence does not establish an external real provider. `REQ-IDE-GIT-DIFF-REVIEW-001` is added as an observed-GREEN, feature-declared-`@not-implemented` reconciliation gap: the web-first diff-review slice is implemented in the working tree and passes focused GREEN evidence, but its Gherkin tag was not promoted, the slice is uncommitted, and the native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) are declared but not yet Rust-implemented.
+The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. The eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated` requirements retain their bounded target-specific evidence. `REQ-REFACTORKIT-JAVA-IMPORT-001`, lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001`, Project Foundry `REQ-XCOM2-PROJECT-FOUNDRY-001` through `-004`, both RefactorKit TypeScript requirements, and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` are the nine implemented desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, safe XCOM configuration diagnostics, and deterministic-provider workspace-native Pi Agent remain separately validated under their own limits. Native XCOM evidence validates activation regressions only, not recipe review; native Pi evidence does not establish an external real provider. All four `REQ-IDE-GIT-DIFF-REVIEW-001` through `REQ-IDE-GIT-DIFF-REVIEW-004` requirements are now declared `@implemented-and-validated` in the feature source. Observed validation is GREEN for the web-first slice (Cucumber 4/4, focused frontend suite, `tsc --noEmit`, `build:web`, zero `@tauri-apps/api` imports), while the native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) remain declared but not yet Rust-implemented in `apps/desktop/src-tauri`; ADR 0014 records the Pi-decision, and a final revision-bound requirements-quality-reviewer PASS remains pending.
 
 Declared implemented routing selects two web scenarios/16 runner steps, thirteen deterministic desktop-harness scenarios/360 runner steps, eight native GUI scenarios/233 runner steps, and one AppImage-packaging harness scenario/15 runner steps. The configured inventory is eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated`, with zero `@partial` or `@not-implemented` across twenty-four scenarios and twenty-one requirement IDs. `REQ-IDE-PACKAGING-001` is among the validated; its feature source declares `@implemented-and-validated @native-gui` and this reconciliation records it as implementation-informed/evidence-based `@implemented-and-validated` AppImage packaging pending only the final reviewer PASS. The completion aggregate remains all 24 scenarios/624 runner steps. At exact Pi technical boundary `a0f9a1a`, complementary gates pass 14 Spec files/380 tests, 89 frontend test files/1,832 tests, UI 284 tests, Tauri adapters 1,040 tests, 279 default Rust tests with 10 ignored, web and desktop builds, strict ESLint, repository Prettier, Rust formatting/Clippy with warnings denied, boundaries, BDD type checking/documentation, capability checks, and offline release/no-bundle checks. The native route freshly builds and remains non-packaged evidence; current `test:e2e` selection is 2 web scenarios/16 runner steps plus 8 native scenarios/233 runner steps. Recipe evidence remains deterministic and bounded, with no execution, process/network/write, SDK/game/prefix/proprietary, browser, package, cross-platform, Rust-coverage, or manual-accessibility claim. Pi evidence separately excludes package/installer, external real-provider/model/tool/auth/network, cross-platform, crash-recovery, full-application-exit, and manual accessibility/IME claims. No requirement is promoted from legacy code, supporting tests, route scaffolding, focused GREEN, upstream code, historical prose, ADR approval, or goal confirmation alone. `synapse-ide-desktop` packaging remains postponed until the full-build milestone with repository-only runtime dependencies.
 

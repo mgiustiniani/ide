@@ -42,7 +42,7 @@ check_package() {
 
 check_package "contracts" ""
 check_package "web-core" "contracts"
-check_package "ui" "contracts"
+check_package "ui" "contracts web-core"
 check_package "browser-adapters" "contracts web-core"
 # Runtime adapters implement the port interfaces exported by web-core.
 check_package "tauri-adapters" "contracts web-core"

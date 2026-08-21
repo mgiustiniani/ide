@@ -20,6 +20,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::file_tree::list_directory,
             commands::file_tree::create_file,
+            commands::git_diff_review::git_status_modified,
+            commands::git_diff_review::git_diff_hunks,
+            commands::git_diff_review::editor_open_range,
             commands::file_tree::create_directory,
             commands::file_tree::delete_path,
             commands::file_tree::rename_path,
