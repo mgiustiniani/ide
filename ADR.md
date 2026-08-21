@@ -1147,4 +1147,4 @@ Observed evidence: Cucumber 4/4 scenarios pass for the feature; the focused fron
 **Negative and limits:**
 
 - Native diff review is implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`; 282 cargo tests), read-only, and wired through the Tauri adapters, but live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved), so the native slice is not e2e-validated.
-- The diff-review files are untracked (not yet committed), so evidence is not yet revision-bound; a final requirements-quality-reviewer PASS remains pending.
+- The diff-review files are committed and revision-bound (commit 5ab07dc); a final requirements-quality-reviewer PASS remains pending.
