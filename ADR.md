@@ -1099,15 +1099,23 @@ The evidence below is historical, revision-bound pre-native evidence. It support
 
 ## ADR 0014 — Read-Only Git Diff Review Behind Web-Core Frontend Ports
 
-**Status:** Accepted. The IDE surface consumes read-only git diff review through web-core frontend ports (`workspace-changes-port`, `read-only-diff-port`, `editor-open-range-port`) rather than calling Tauri or platform APIs directly from `packages/ui`, `packages/web-core`, or `apps/web`. The browser implementation reports honest-unavailable when the platform cannot produce a working-tree diff; the desktop/native implementation (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) is deferred pending a user-approved native-validation decision.
+**Status:** Accepted. The IDE surface consumes read-only git diff review through web-core frontend ports (`workspace-changes-port`, `read-only-diff-port`, `editor-open-range-port`) rather than calling Tauri or platform APIs directly from `packages/ui`, `packages/web-core`, or `apps/web`. The browser implementation reports honest-unavailable when the platform cannot produce a working-tree diff. The desktop/native implementation (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) is implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, and the `lib.rs` `invoke_handler`) and is strictly read-only; the desktop renderer wires them through the Tauri adapters. Live desktop Tauri-window e2e for the native slice remains unvalidated because the current environment is headless (user-approved), not because the commands are unimplemented.
 
 ### Lifecycle and evidence reconciliation
 
-This ADR records the Pi-decision for `REQ-IDE-GIT-DIFF-REVIEW-001` through `-004` in `features/workspace/git-diff-review.feature`. All four requirements are declared `@implemented-and-validated` in the feature source; observed validation is GREEN for the web-first slice (Cucumber 4/4, focused frontend suite, `tsc --noEmit`, `build:web`, zero `@tauri-apps/api` imports). The native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) remain declared but not yet Rust-implemented in `apps/desktop/src-tauri`, so native diff review remains unvalidated and is deferred pending a user-approved native-validation decision.
+This ADR records the Pi-decision and the approved change `APR-DECISION-PI-MULTI-AGENT-001` for `REQ-IDE-GIT-DIFF-REVIEW-001` through `-004` in `features/workspace/git-diff-review.feature`. All four requirements are declared `@implemented-and-validated` in the feature source; observed validation is GREEN for the web-first contract (Cucumber 4/4, focused frontend suite, `tsc --noEmit`, `build:web`, zero `@tauri-apps/api` imports). The native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) are implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, and the `lib.rs` `invoke_handler`; 282 cargo tests) and are strictly read-only; the desktop renderer wires them through the Tauri adapters. Live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved), so the native slice carries `@implemented-not-e2e-validated`-style status rather than full e2e validation; a final revision-bound requirements-quality-reviewer PASS remains pending.
+
+### Approved change (APR-DECISION-PI-MULTI-AGENT-001)
+
+This ADR is required by, and verbatim-consistent with, the approved change `APR-DECISION-PI-MULTI-AGENT-001` recorded in `BASELINE-REQ-IDE-GIT-DIFF-REVIEW-001-v1.json`:
+
+> The user approved the architectural decision: Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority. This unlocks provider/model flexibility candidates in Tier B/C and requires an ADR; it does NOT create a duplicate REQ-IDE-AI-CHAT requirement now.
+
+This ADR exists because of that approved decision; it does not create or imply a duplicate `REQ-IDE-AI-CHAT` requirement now.
 
 ### Context
 
-The IDE needs a read-only hunk-level git diff review of modified files in the Changes surface. The application is web-first: `packages/ui`, `packages/web-core`, and `apps/web` must not import `@tauri-apps/api`, so platform capabilities must be reachable only through frontend ports. The browser has no working-tree git access, so a browser implementation cannot produce a real diff and must not fabricate one. The Tauri desktop shell can run git commands, but the native command implementations are not yet written.
+The IDE needs a read-only hunk-level git diff review of modified files in the Changes surface. The application is web-first: `packages/ui`, `packages/web-core`, and `apps/web` must not import `@tauri-apps/api`, so platform capabilities must be reachable only through frontend ports. The browser has no working-tree git access, so a browser implementation cannot produce a real diff and must not fabricate one. The Tauri desktop shell can run git commands; the native commands are implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`) and are strictly read-only, and the desktop renderer wires them through the Tauri adapters.
 
 ### Decision
 
@@ -1115,14 +1123,14 @@ Adopt a **port-based, honest-unavailable web-first adapter split**:
 
 - The IDE surface consumes read-only git diff review exclusively through web-core frontend ports: `workspace-changes-port` (list modified files), `read-only-diff-port` (produce or refuse a hunk-level diff), and `editor-open-range-port` (open an exact file path and line range in the existing editor).
 - The browser implementation reports an honest unavailable result with a platform reason when it cannot produce a working-tree diff; no mock-only or hard-coded fallback is used.
-- The desktop/native implementation declares `git_status_modified`, `git_diff_hunks`, and `editor_open_range` in the typed Tauri adapter (`packages/tauri-adapters/src/git-diff-review-tauri.ts`) but is deferred: no Rust command implementations exist yet in `apps/desktop/src-tauri`, and native validation awaits a user-approved decision.
+- The desktop/native implementation declares and invokes `git_status_modified`, `git_diff_hunks`, and `editor_open_range` in the typed Tauri adapter (`packages/tauri-adapters/src/git-diff-review-tauri.ts`); the Rust commands are implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`), are strictly read-only, and the desktop renderer wires them through the Tauri adapters. Live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved).
 - The web-first boundary is enforced: zero `@tauri-apps/api` imports in `packages/ui`, `packages/web-core`, and `apps/web`; browser and Tauri diff implementations live behind the frontend ports.
 
 ### Alternatives considered
 
 - **Direct Tauri calls from web-first layers.** Rejected: violates the web-first boundary (`@tauri-apps/api` must stay out of `packages/ui`, `packages/web-core`, and `apps/web`).
 - **Browser-side mock or hard-coded diff fallback.** Rejected for `REQ-IDE-GIT-DIFF-REVIEW-003`: an honest unavailable result with a platform reason is required instead of a fabricated diff.
-- **Native-first implementation now.** Deferred: the native commands are declared but not yet Rust-implemented, and the desktop/native slice requires a user-approved native-validation decision.
+- **Native-first implementation now.** The native commands are now implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`), read-only, and wired through the Tauri adapters; live desktop Tauri-window e2e remains deferred pending a user-approved native-validation decision because the current environment is headless.
 
 ### Decision evidence
 
@@ -1138,5 +1146,5 @@ Observed evidence: Cucumber 4/4 scenarios pass for the feature; the focused fron
 
 **Negative and limits:**
 
-- Native diff review is not yet validated: `git_status_modified`, `git_diff_hunks`, and `editor_open_range` are declared but not Rust-implemented, so the desktop slice is deferred.
+- Native diff review is implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`; 282 cargo tests), read-only, and wired through the Tauri adapters, but live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved), so the native slice is not e2e-validated.
 - The diff-review files are untracked (not yet committed), so evidence is not yet revision-bound; a final requirements-quality-reviewer PASS remains pending.

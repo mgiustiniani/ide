@@ -112,12 +112,9 @@ pub fn editor_open_range(path: String, start_line: u32, end_line: u32) -> Result
         }));
     }
     Ok(json!({
-        "kind": "ok",
-        "opened": {
-            "path": resolved.to_string_lossy(),
-            "startLine": start_line,
-            "endLine": end_line
-        }
+        "path": resolved.to_string_lossy(),
+        "startLine": start_line,
+        "endLine": end_line
     }))
 }
 
