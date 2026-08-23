@@ -1354,6 +1354,61 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |The web-first boundary is enforced by the port-based adapter split recorded in ADR 0014. Native implementation of `git_status_modified`, `git_diff_hunks`, and `editor_open_range` is implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`), read-only, with the desktop renderer wiring them through the Tauri adapters; live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved). A final revision-bound requirements-quality-reviewer PASS remains pending.
 |===
 
+=== REQ-IDE-JAVA-LANGUAGE-001
+
+[cols="1,4",options="header"]
+|===
+|Field |Trace
+
+|Stable ID
+|[[REQ-IDE-JAVA-LANGUAGE-001]]`REQ-IDE-JAVA-LANGUAGE-001`
+
+|Classification
+|Functional requirement (`@functional-requirement`); the feature is classified characterization/evidence-based for already-implemented native behavior and the scenario tags carry `@java`, `@desktop`, `@story-bdd`, and `@not-implemented`. The pure view-model decisions are additionally exercised by Vitest Spec BDD.
+
+|Source traceability
+|link:../../features/workspace/java-language-service.feature[`features/workspace/java-language-service.feature`] and the frozen baseline link:../requirements-baselines/BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json[`BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json`] (receipt status `confirmed-before-production`).
+
+|Scope
+|Operational JetBrains-style Java language service for one workspace: JDT Language Server lifecycle (status/start/stop/restart/poll-events), versioned document synchronization (open/change/save/close), and Java intelligence (completion, hover, signature help) behind provider-neutral ports (`JavaIntelligencePort`, `LanguageSessionPort`, `DocumentSyncPort`). The desktop controller (`apps/desktop/src/features/java/useJavaLanguageController.ts`) wires the service into the editor. RefactorKit Java refactoring, Java navigation, Java build/run/debug, project model, and toolchain installation are separate later slices, not this one.
+
+|Actor / stakeholder
+|A Java developer editing in the desktop IDE who wants a running Java language service with honest availability and cancellable, untrusted intelligence results.
+
+|Capability
+|Spawn and manage a JDT Language Server owned by the Rust backend, track its lifecycle, sync versioned document text, and request completion/hover/signature help through the frontend ports, while browser and desktop adapters expose the same capability behind ports and the web frontend never imports the Tauri API.
+
+|Scenario
+|Six characterization scenarios: AC-001 lifecycle with honest availability, AC-002 document sync serving only ready documents, AC-003 untrusted cancellable Java intelligence, AC-004 honest unavailable/error with no fabricated success, AC-005 web-first boundary, and AC-006 single effective evidence-based status.
+
+|Feature path and exact declaration
+|link:../../features/workspace/java-language-service.feature[`features/workspace/java-language-service.feature`], tag declaration at line 21 and scenarios beginning at line 22; each of the six scenarios declares `@not-implemented` at lines 21/38/52/66/75/83.
+
+|Tags
+|`@REQ-IDE-JAVA-LANGUAGE-001`, `@java`, `@desktop`, `@story-bdd`, `@functional-requirement`, `@not-implemented`
+
+|Declared status
+|`@not-implemented` — the feature still declares `@not-implemented` on all six scenarios with a single effective status; this appendix does NOT promote it. The genuine GREEN evidence below is recorded as characterization/evidence-based pending only. Status is not promoted and a final requirements-quality-reviewer PASS remains pending and is not claimed.
+
+|Frozen baseline
+|The baseline `BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1` is repository-addressable with receipt status `confirmed-before-production`; its `initialUserIntent` records the user-approved operational Java language service slice and `approvedChanges` include `APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001` (RefactorKit as a product feature; Java test infra and Java-only RefactorKit-as-workflow-refactoring-infra remain excluded).
+
+|Observed Story evidence
+|Story `javaLanguageServiceTauriHarness`: 6/6 scenarios GREEN, 65/65 runner steps. The step-count note is reconciled as **53 authored Gherkin steps + 12 After-hook steps = 65 observed steps**.
+
+|Observed Spec/vitest evidence
+|Vitest adapter/Spec suites pass 59 tests: java-intelligence-tauri 28, language-session-tauri 26, language-session-browser 5.
+
+|Observed technical evidence
+|`typecheck:bdd` clean; builds `@ide/web` (740 modules) and `@ide/desktop` (795 modules) both pass with web built Tauri-free; boundary scan shows 0 `@tauri-apps/api` matches in `packages/ui`, `packages/web-core`, and `apps/web` with `JavaIntelligencePort`/`LanguageSessionPort`/`DocumentSyncPort` declared in `packages/web-core/src/ports/`; lint 0 errors / 2 warnings (`apps/desktop/src/App.tsx:601` useMemo missing dep `documentNavigation`; `tests/story/steps/git-diff-review.steps.ts:17` unused `NOT_IMPLEMENTED`).
+
+|Observed native/Rust evidence
+|`cargo test commands::java_language`: 23 passed, 0 failed, 2 ignored — the `managed_jdtls_real_*` live smokes are correctly skipped; the spawn-path unit `fake_lsp_process_initializes_shuts_down_crashes_and_is_killed` passes.
+
+|Evidence limits
+|GREEN evidence covers the honest-unavailable toolchain path and the deterministic in-process native fixture for the ready-path only. NO live JDT LS/JDK spawn and NO native GUI/E2E were executed. This is characterization/evidence-based pending, not validated completion; the feature declaration remains `@not-implemented` and the requirement count is not silently upgraded as validated. A final requirements-quality-reviewer PASS remains pending.
+|===
+
 == Reconciliation and Migration Status
 
 The full-height navigation/editor-column bottom-host amendment remains CURRENT/AS-BUILT. The eleven `@implemented-and-validated` and ten `@implemented-not-e2e-validated` requirements retain their bounded target-specific evidence. `REQ-REFACTORKIT-JAVA-IMPORT-001`, lifecycle `REQ-XCOM2-MACHINE-SETTINGS-001`, Project Foundry `REQ-XCOM2-PROJECT-FOUNDRY-001` through `-004`, both RefactorKit TypeScript requirements, and `REQ-XCOM2-PROJECT-BUILD-RECIPE-001` are the nine implemented desktop-harness scenarios. Native file opening, deterministic-fixture Java import `-002`, UI-only missing-Steam Settings, convention XCOM activation, activation-only configured XCOM activation, safe XCOM configuration diagnostics, and deterministic-provider workspace-native Pi Agent remain separately validated under their own limits. Native XCOM evidence validates activation regressions only, not recipe review; native Pi evidence does not establish an external real provider. All four `REQ-IDE-GIT-DIFF-REVIEW-001` through `REQ-IDE-GIT-DIFF-REVIEW-004` requirements are now declared `@implemented-and-validated` in the feature source. Observed validation is GREEN for the web-first contract (Cucumber 4/4, focused frontend suite, `tsc --noEmit`, `build:web`, zero `@tauri-apps/api` imports), and the native Tauri commands (`git_status_modified`, `git_diff_hunks`, `editor_open_range`) are implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`; 282 cargo tests) and are strictly read-only; the desktop renderer wires them through the Tauri adapters. Live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved); ADR 0014 records the Pi-decision and the approved change `APR-DECISION-PI-MULTI-AGENT-001`, and a final revision-bound requirements-quality-reviewer PASS remains pending.

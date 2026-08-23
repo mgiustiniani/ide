@@ -1148,3 +1148,42 @@ Observed evidence: Cucumber 4/4 scenarios pass for the feature; the focused fron
 
 - Native diff review is implemented and registered in `apps/desktop/src-tauri` (`src/commands/git_diff_review.rs`, `src/commands/mod.rs`, `lib.rs` `invoke_handler`; 282 cargo tests), read-only, and wired through the Tauri adapters, but live desktop Tauri-window e2e remains unvalidated (headless environment, user-approved), so the native slice is not e2e-validated.
 - The diff-review files are committed and revision-bound (commit 5ab07dc); a final requirements-quality-reviewer PASS remains pending.
+
+## ADR 0015 — RefactorKit as a Product Feature (Approved Change)
+
+**Status:** Accepted. This ADR records the user-approved change `APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001` for the `REQ-IDE-JAVA-LANGUAGE-001` slice in `features/workspace/java-language-service.feature`. It does not create or imply a new requirement, and it does not alter the exclusion boundaries recorded by the workflow contract.
+
+### Approved change (APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001)
+
+This ADR is required by, and verbatim-consistent with, the approved change `APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001` recorded in `BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json`:
+
+> User authorized RefactorKit as a PRODUCT FEATURE (Java/RefactorKit product-surface in scope within bdd-ts). Java TEST infra (JavaSpec, Maven, JUnit-specific policy, Java datasets) and Java-only RefactorKit rules as the workflow's own refactoring authority remain EXCLUDED per workflow contract.
+
+This ADR exists because of that approved decision. The user's verbatim authorization message (2026-08-21) was:
+
+> ok, autorizzo refactorkit come feature di prodotto
+
+### Context
+
+The `bdd-ts` workflow excludes JavaSpec, Maven, JUnit-specific policy, and Java datasets as workflow test infrastructure, and Java-only RefactorKit rules as the workflow's own refactoring authority. The user authorized RefactorKit as a first-party product feature surface for the IDE Java language service slice, without relaxing those workflow-contract exclusions.
+
+### Decision
+
+Adopt RefactorKit as a **product feature** for the IDE: the Java/RefactorKit product surface is in scope within `bdd-ts` as a delivered IDE capability, while Java test infrastructure (JavaSpec, Maven, JUnit-specific policy, Java datasets) and Java-only RefactorKit rules as the workflow's own refactoring authority remain excluded per the workflow contract.
+
+### Alternatives considered
+
+- **Keep RefactorKit out of product scope entirely.** Rejected: the user explicitly authorized it as a product feature.
+- **Allow Java test infra or Java-only RefactorKit-as-workflow-refactoring-infra within the workflow.** Rejected: these remain excluded by the workflow contract; this approval does not broaden them.
+
+### Decision evidence
+
+The approved change is recorded verbatim in `BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json` with the user's authorization message `ok, autorizzo refactorkit come feature di prodotto` dated 2026-08-21.
+
+### Consequences
+
+**Positive:**
+- RefactorKit is an in-scope product-surface feature for the IDE Java language service slice; the Java/RefactorKit product surface can be scheduled and validated as a delivered IDE capability within `bdd-ts`.
+
+**Negative and limits:**
+- JavaSpec, Maven, JUnit-specific policy, and Java datasets remain excluded as workflow test infrastructure, and Java-only RefactorKit rules remain excluded as the workflow's own refactoring authority. This approval does not create a new requirement and does not itself promote `REQ-IDE-JAVA-LANGUAGE-001`; a final requirements-quality-reviewer PASS remains pending.

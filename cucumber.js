@@ -135,6 +135,20 @@ const piWorkspaceAgentTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+// Focused Java language service characterization profile (REQ-IDE-JAVA-LANGUAGE-001).
+// Runner-neutral: paths limited to the single java-language-service.feature source, so
+// no competing feature source is exercised. Deterministic desktop/tauri-harness evidence
+// mirrors the throwaway tmp/java-language.cucumber.js payload verified GREEN by
+// ts-story-driven; this permanent profile replaces that throwaway config.
+const javaLanguageServiceTauriHarness = {
+  paths: ["features/workspace/java-language-service.feature"],
+  import: ["tests/story/support/**/*.ts", "tests/story/steps/**/*.ts"],
+  format: ["progress"],
+  strict: true,
+  tags: "@REQ-IDE-JAVA-LANGUAGE-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const idePackagingTauriHarness = {
   ...common,
   tags: "@REQ-IDE-PACKAGING-001",
@@ -217,6 +231,7 @@ export {
   xcom2ProjectFoundryTauriHarness,
   xcom2ProjectBuildRecipeTauriHarness,
   piWorkspaceAgentTauriHarness,
+  javaLanguageServiceTauriHarness,
   piWorkspaceAgentNativeGui,
   idePackagingTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,

@@ -1,0 +1,67 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Make the IDE operational. Complete the JetBrains-style IDE management for Java (the Java language service core), including making RefactorKit support operational as a product feature, and make pi's functioning inside the IDE operational. This slice opens the first coherent behavior slice: the Java language service as an evidence-based BDD requirement.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority. Requires ADR; no duplicate REQ-IDE-AI-CHAT.",
+      "evidence": "User message recorded in ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE (Java/RefactorKit product-surface in scope within bdd-ts). Java TEST infra (JavaSpec, Maven, JUnit-specific policy, Java datasets) and Java-only RefactorKit rules as the workflow's own refactoring authority remain EXCLUDED per workflow contract.",
+      "evidence": "User message: 'ok, autorizzo refactorkit come feature di prodotto' (2026-08-21)"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-JAVA-LANGUAGE-001",
+    "title": "JetBrains-style Java IDE management: operational Java language service",
+    "classification": "Story BDD (characterization/evidence-based for already-implemented native behavior) + Spec BDD for pure view-model decisions",
+    "capability": "Manage a workspace-scoped Java language service (JDT LS spawned and owned by the Rust backend via apps/desktop/src-tauri/src/commands/java_language/*), exposing lifecycle, document synchronization, and Java intelligence (completion, hover, signature help) to the frontend through provider-neutral ports. The desktop controller (apps/desktop/src/features/java/useJavaLanguageController.ts) wires the service into the editor. This slice classifies and validates the already-implemented behavior with an evidence-based status; it does not introduce new AI authority.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java workspace, the language service lifecycle is managed (status/start/stop/restart/poll-events) through JavaLanguagePort adapters, with honest unavailable when no JDT LS/JDK toolchain is discoverable."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Java documents are synchronized (open/change/save/close) to the language service with versioned full text, and only an editor-accepted ready document receives semantics."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "Java intelligence (completion, hover, signature help) is requested through JavaIntelligencePort and rendered in the editor surface, treated as untrusted data, with cancellation support."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; absent toolchain or failed requests report honest unavailable/error, never fabricated success."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri Java implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-006",
+        "criterion": "Status is evidence-based with an explicit state (@implemented-and-validated | @implemented-not-e2e-validated | @partial | ...), never inferred from shells; live Tauri-window Java E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + ts-spec-driven (view-model Spec) + frontend-core-coder/frontend-ui-coder + browser/tauri-adapter-coder + tauri-rust-coder (backend)",
+    "scope": "Java language service management and Java intelligence surface (completion/hover/signature) wired in the desktop editor. Classification + validation of already-implemented native behavior. RefactorKit Java refactoring (rename/move/change-signature/safe-delete), Java navigation (definition/references), Java build/run/debug, and project model are SEPARATE later slices, not in this one.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "RefactorKit Java refactoring operations, Java navigation, Java build/run/debug, project model (later slices)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Characterization RED: since java_language.rs is already implemented, the slice uses characterization scenarios (prove current behavior) rather than new-behavior RED; confirm this is acceptable.",
+      "Toolchain: whether a real JDT LS/JDK is expected to be discovered in this environment, or the slice validates the honest-unavailable path plus harness/unit evidence for the spawn path.",
+      "Editor wiring: whether Java intelligence must be proven wired into the live Monaco editor or a desktop-harness renderer is acceptable evidence.",
+      "Slice boundary: confirm Java language service first, with RefactorKit refactoring/navigation as follow-on slices."
+    ]
+  }
+}
