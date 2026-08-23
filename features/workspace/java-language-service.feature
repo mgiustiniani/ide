@@ -1,3 +1,4 @@
+@not-implemented
 Business Need: Operational JetBrains-style Java language service in the IDE desktop
   To give Java developers reliable JDT language-server behavior: lifecycle, document sync,
   and Java intelligence, without trusting untrusted toolchain output
@@ -18,7 +19,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
   characterization; the feature is classified as characterization and its status is not yet
   promoted. Editor text editing, refactoring, and toolchain installation are outside its scope.
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-001 - The Java language service lifecycle is managed and availability is honest
     Given a workspace contains Java sources and a Java language service controller is wired
     And a JDT Language Server process can be spawned by the Rust backend
@@ -35,7 +36,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
     Then the controller reports Java language service availability honestly as unavailable
     And it neither reports "running" nor fabricates a ready state
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-002 - Document sync keeps versioned full text and serves only ready documents
     Given the Java language service is running for the workspace
     When the person opens a Java document in the editor
@@ -49,7 +50,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
     When an intelligence request targets a document the language server has not fully synced
     Then the controller serves results only for ready documents and declines for not-ready ones
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-003 - Java intelligence is untrusted data and cancellable
     Given a ready Java document is open and the Java language service is running
     When the person requests completion for a position in the document
@@ -63,7 +64,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
     Then the controller cancels the in-flight request and stops awaiting the language server
     And no cancelled result is delivered to the editor
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-004 - Adapters use extract, delegate, and response with no hidden policy
     Given a Java intelligence request arrives at a browser or desktop adapter behind a port
     When the adapter receives the request
@@ -72,7 +73,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
     And the adapter returns the delegated response to the caller
     And the adapter contains no hidden domain policy or fabricated intelligence
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-005 - The web frontend stays Tauri-free at the platform boundary
     Given packages ui, web-core, and web are part of the standalone web frontend
     When the Java language service is exercised through the browser profile
@@ -80,7 +81,7 @@ Feature: Java language service lifecycle, document sync, and untrusted intellige
     And the web frontend builds and runs without Tauri
     And capability access to the Java language service is defined through ports, not platform APIs
 
-  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement @not-implemented
+  @REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement
   Scenario: AC-006 - Implementation status is evidence-based and not promoted
     Given characterization steps and glue establish meaningful RED for this feature
     When the feature file is parsed for requirement and status reconciliation

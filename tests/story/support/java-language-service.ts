@@ -22,6 +22,11 @@
 //     the adapter lifecycle/document-sync/intelligence pipeline for a ready JDT
 //     LS session. It is NOT a live JDT LS spawn; the spawn path is proven
 //     separately by the existing Rust unit tests via `cargo test`.
+//   - version-match       = the deterministic boundary mirrors the real native
+//     contract: a semantic request whose document is not open, or whose version
+//     does not match the opened/ready synchronized version, is rejected honestly
+//     with error.kind "stale-version". No fabricated success for version
+//     mismatch or a not-ready document.
 // -----------------------------------------------------------------------------
 
 import assert from "node:assert/strict";
@@ -231,6 +236,8 @@ class JavaLanguageNativeBoundary implements TauriInternals {
   #deferNextCompletion = false;
   readonly invocations: BoundaryInvocation[] = [];
   readonly syncedDocuments: Record<string, unknown>[] = [];
+  /** Opened/ready synchronized documents, mirroring the native `open_documents` set. */
+  readonly #openedDocuments = new Map<string, { path: string; uri: string; version: number }>();
 
   constructor(private readonly pollLimit: number) {}
 
@@ -266,12 +273,40 @@ class JavaLanguageNativeBoundary implements TauriInternals {
         this.#latestSequence = Math.max(this.#latestSequence, afterSequence);
         return { events: pending, latestSequence: this.#latestSequence };
       }
-      case "open_java_language_document":
-      case "change_java_language_document":
+      case "open_java_language_document": {
+        const opened = (args?.document ?? {}) as Record<string, unknown>;
+        this.syncedDocuments.push(opened);
+        this.#openedDocuments.set(String(opened.path), {
+          path: String(opened.path),
+          uri: String(opened.uri),
+          version: Number(opened.version),
+        });
+        return undefined;
+      }
+      case "change_java_language_document": {
+        const changed = (args?.document ?? {}) as Record<string, unknown>;
+        this.syncedDocuments.push(changed);
+        const current = this.#openedDocuments.get(String(changed.path));
+        if (current !== undefined) {
+          current.version = Number(changed.version);
+        } else {
+          this.#openedDocuments.set(String(changed.path), {
+            path: String(changed.path),
+            uri: String(changed.uri),
+            version: Number(changed.version),
+          });
+        }
+        return undefined;
+      }
       case "save_java_language_document":
-      case "close_java_language_document":
         this.syncedDocuments.push((args?.document ?? {}) as Record<string, unknown>);
         return undefined;
+      case "close_java_language_document": {
+        const closed = (args?.document ?? {}) as Record<string, unknown>;
+        this.syncedDocuments.push(closed);
+        this.#openedDocuments.delete(String(closed.path));
+        return undefined;
+      }
       case "request_java_completion":
       case "request_java_hover":
       case "request_java_signature_help": {
@@ -283,6 +318,12 @@ class JavaLanguageNativeBoundary implements TauriInternals {
               : "signature";
         const request = (args?.request as Record<string, unknown>) ?? {};
         if (this.#available) {
+          // Mirror the real native validate_semantic_open_document contract: a
+          // semantic request whose document is not open, or whose version does
+          // not match the opened/ready synchronized version, is rejected
+          // honestly (error.kind "stale-version"). No fabricated success.
+          const stale = this.#staleVersionFailure(kind, request);
+          if (stale !== undefined) return stale;
           if (this.#deferNextCompletion && kind === "completion") {
             // Defer the completion so cancellation lands while the request is in flight.
             const deferred: {
@@ -410,6 +451,60 @@ class JavaLanguageNativeBoundary implements TauriInternals {
     };
   }
 
+  /**
+   * Honest stale/not-ready rejection, mirroring the native contract. Returns
+   * undefined when the request matches the opened/ready synchronized document.
+   */
+  #staleVersionFailure(
+    _kind: SemanticKind,
+    request: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    const document = (request.document as Record<string, unknown>) ?? {};
+    const path = String(document.path);
+    const version = Number(document.version);
+    const opened = this.#openedDocuments.get(path);
+    if (opened === undefined) {
+      return this.#semanticFailure(
+        request,
+        "stale-version",
+        "Java semantic document is not open",
+        false,
+      );
+    }
+    if (opened.version !== version) {
+      return this.#semanticFailure(
+        request,
+        "stale-version",
+        "Java semantic document version is stale",
+        false,
+      );
+    }
+    return undefined;
+  }
+
+  #semanticFailure(
+    request: Record<string, unknown>,
+    kind: "stale-version",
+    summary: string,
+    retryable: boolean,
+  ): Record<string, unknown> {
+    return {
+      provider: "jdtls",
+      providerVersion: null,
+      workspaceId: String(request.workspaceId),
+      generation: Number(request.generation),
+      path: String((request.document as Record<string, unknown>).path),
+      uri: String((request.document as Record<string, unknown>).uri),
+      version: Number((request.document as Record<string, unknown>).version),
+      requestId: String(request.requestId),
+      cancellationId: String(request.cancellationId),
+      cancelled: false,
+      timeout: false,
+      error: { kind, summary, retryable },
+      result: null,
+    };
+  }
+
   #semanticUnavailable(_kind: SemanticKind, request: Record<string, unknown>): Record<string, unknown> {
     return {
       provider: "jdtls",
@@ -477,7 +572,7 @@ export class JavaLanguageServiceStorySession {
   #webBuildProof?: string;
   #webFirstLayerScan?: WebFirstLayerScanResult[];
   #featureReconciliation?: FeatureStatusReconciliation;
-  #notReadyDecline?: string;
+  #notReadyDecline?: JavaCompletionResponse;
   #syncInvocations: Record<string, unknown>[] = [];
 
   start(): void {
@@ -639,26 +734,35 @@ export class JavaLanguageServiceStorySession {
   }
 
   /**
-   * AC-002 decline: an intelligence-targeted change for a document that was
-   * never fully synced (not opened) must be declined, never served.
+   * AC-003/AC-004 precondition: a READY, synchronized Java document. The editor
+   * opens the document at version 1 and then an accepted edit syncs it to
+   * version 2, so semantic requests at version 2 match the opened/ready
+   * synchronized version and succeed honestly — never a fabricated mismatch.
    */
-  async requestChangeForUnsyncedDocument(): Promise<void> {
+  async openReadyDocument(): Promise<void> {
+    await this.openDocument();
+    await this.changeDocument();
+  }
+
+  /**
+   * AC-002 decline: an intelligence request targeting a document the language
+   * server has not fully synced must be rejected honestly through
+   * JavaIntelligencePort (ok:false, error.kind "stale-version"). No semantics
+   * are served until the document is editor-accepted and synchronized; no
+   * DocumentSyncPort.didChange is used to fake a ready path.
+   */
+  async requestIntelligenceForNotReadyDocument(): Promise<JavaCompletionResponse> {
     this.#assertStarted();
-    try {
-      await this.#documentSync!.didChange({
-        document: {
-          workspaceId: WORKSPACE_ID,
-          path: "src/main/java/example/Unsynced.java",
-          uri: "file:///workspace-java/src/main/java/example/Unsynced.java",
-          languageId: "java",
-          text: "package example;",
-          version: 1,
-        },
-      });
-      this.#notReadyDecline = "accepted";
-    } catch (error) {
-      this.#notReadyDecline = error instanceof Error ? error.message : String(error);
-    }
+    const response = await this.#javaIntelligence!.completion({
+      workspaceId: WORKSPACE_ID,
+      generation: this.#documentStatus!.generation,
+      document: { path: JAVA_DOCUMENT_PATH, uri: JAVA_DOCUMENT_URI, version: 2 },
+      position: { line: 0, character: 0 },
+      requestId: "story-not-ready-1",
+      cancellationId: "story-not-ready-cancel-1",
+    });
+    this.#notReadyDecline = response;
+    return response;
   }
 
   async requestCompletion(): Promise<JavaCompletionResponse> {
@@ -883,7 +987,7 @@ export class JavaLanguageServiceStorySession {
     return this.#cancelledResponse;
   }
 
-  notReadyDecline(): string | undefined {
+  notReadyDecline(): JavaCompletionResponse | undefined {
     return this.#notReadyDecline;
   }
 

@@ -8,6 +8,9 @@
 // in-process Tauri invoke boundary. The driver distinguishes honest-unavailable
 // (genuine environment path) from ready-path (deterministic native fixture) and
 // the spawn path is proven separately by the existing Rust unit tests.
+// Ready-path semantic requests are served only when the requested version
+// matches the opened/ready synchronized document; not-ready or stale-version
+// requests are rejected honestly (ok:false, error.kind "stale-version").
 // The feature file itself is NOT promoted; AC-006 keeps @not-implemented.
 // -----------------------------------------------------------------------------
 
@@ -305,7 +308,7 @@ When<StoryWorld>(
   "an intelligence request targets a document the language server has not fully synced",
   async function () {
     const session = sessionFor(this);
-    await session.requestChangeForUnsyncedDocument();
+    await session.requestIntelligenceForNotReadyDocument();
     await attachEvidence(session, this);
   },
 );
@@ -316,8 +319,12 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const decline = session.notReadyDecline();
     assert.ok(decline, `${REQUIREMENT} did not record a decline outcome`);
-    assert.notEqual(decline, "accepted", `${REQUIREMENT} served a not-ready document`);
-    assert.ok(decline.length > 0, `${REQUIREMENT} decline has no reason`);
+    assert.equal(decline.ok, false, `${REQUIREMENT} served a not-ready document`);
+    assert.equal(
+      decline.error.kind,
+      "stale-version",
+      `${REQUIREMENT} not-ready decline is not an honest rejection`,
+    );
     await attachEvidence(session, this);
   },
 );
@@ -332,7 +339,7 @@ Given<StoryWorld>(
     const session = sessionFor(this);
     session.start();
     await session.startReadySession();
-    await session.openDocument();
+    await session.openReadyDocument();
     await attachEvidence(session, this);
   },
 );
@@ -468,6 +475,7 @@ Given<StoryWorld>(
     const session = sessionFor(this);
     session.start();
     await session.startReadySession();
+    await session.openReadyDocument();
     await attachEvidence(session, this);
   },
 );
