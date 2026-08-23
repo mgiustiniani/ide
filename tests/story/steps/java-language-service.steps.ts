@@ -639,14 +639,19 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
+    assert.equal(
+      new Set(reconciliation.featureStatusTags).size,
+      1,
+      `${REQUIREMENT} feature must declare exactly one effective status at feature level`,
+    );
     assert.ok(
       reconciliation.featureStatusTags.includes("@not-implemented"),
       `${REQUIREMENT} feature does not declare @not-implemented`,
     );
     assert.equal(
-      new Set(reconciliation.scenarioStatusTags).size,
-      1,
-      `${REQUIREMENT} scenarios declare more than one effective status`,
+      reconciliation.scenarioStatusTags.length,
+      0,
+      `${REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
     );
     await attachEvidence(session, this);
   },

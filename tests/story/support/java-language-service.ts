@@ -874,13 +874,18 @@ export class JavaLanguageServiceStorySession {
     });
   }
 
-  /** AC-006: parse the feature file for status/requirement reconciliation. */
+  /** AC-006: parse the feature file for status/requirement reconciliation.
+   * Syntax-aware: feature-level status tags are tag lines in the header before
+   * the `Feature:` keyword, while scenario-level status tags are the tag lines
+   * directly preceding each `Scenario:` line. The two lists are never derived
+   * from the same aggregate, so assertions can independently prove tag placement.
+   */
   reconcileFeatureStatus(): FeatureStatusReconciliation {
     this.#assertStarted();
     const text = readFileSync(FEATURE_PATH, "utf8");
     // Only declared tag lines carry an effective status; step text that merely
     // mentions "@not-implemented" is not a declaration.
-    const tagLines = text.split("\n").filter((line) => /^\s*@/u.test(line));
+    const lines = text.split("\n");
     const statusTags = [
       "@not-implemented",
       "@implemented-and-validated",
@@ -890,13 +895,40 @@ export class JavaLanguageServiceStorySession {
       "@placeholder",
       "@absent",
     ] as const;
-    const declaredStatuses = tagLines.flatMap((line) =>
+
+    // Feature-level tags live in the header block before the `Feature:` keyword.
+    const featureKeywordIndex = lines.findIndex((line) => /^\s*Feature:/u.test(line));
+    const headerLines = featureKeywordIndex >= 0 ? lines.slice(0, featureKeywordIndex) : lines;
+    const featureTagLines = headerLines.filter((line) => /^\s*@/u.test(line));
+    const featureStatusTags = featureTagLines.flatMap((line) =>
       statusTags.filter((tag) => line.includes(tag)),
     );
+
+    // Scenario-level tags are tag lines immediately preceding a `Scenario:` line.
+    const scenarioTagLines: string[] = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      if (/^\s*Scenario:/u.test(lines[i])) {
+        // Walk upward over the tag/blank block directly above the Scenario line.
+        for (let j = i - 1; j >= 0; j -= 1) {
+          const prev = lines[j];
+          if (/^\s*@/u.test(prev)) {
+            scenarioTagLines.push(prev);
+          } else if (prev.trim() === "") {
+            continue;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+    const scenarioStatusTags = scenarioTagLines.flatMap((line) =>
+      statusTags.filter((tag) => line.includes(tag)),
+    );
+
     const requirementTags = [...text.matchAll(/@(REQ-[A-Z0-9-]+)/gu)].map((match) => match[0]);
     this.#featureReconciliation = {
-      featureStatusTags: declaredStatuses,
-      scenarioStatusTags: declaredStatuses,
+      featureStatusTags: featureStatusTags,
+      scenarioStatusTags: scenarioStatusTags,
       requirementTags: requirementTags,
     };
     return this.#featureReconciliation;

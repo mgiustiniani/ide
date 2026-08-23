@@ -1364,7 +1364,7 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |[[REQ-IDE-JAVA-LANGUAGE-001]]`REQ-IDE-JAVA-LANGUAGE-001`
 
 |Classification
-|Functional requirement (`@functional-requirement`); the feature is classified characterization/evidence-based for already-implemented native behavior and the scenario tags carry `@java`, `@desktop`, `@story-bdd`, and `@not-implemented`. The pure view-model decisions are additionally exercised by Vitest Spec BDD.
+|Functional requirement (`@functional-requirement`); the feature is classified characterization/evidence-based for already-implemented native behavior. The single effective status `@not-implemented` is declared at feature level; the scenario tags carry `@java`, `@desktop`, `@story-bdd` with zero scenario-level status tags. The pure view-model decisions are additionally exercised by Vitest Spec BDD.
 
 |Source traceability
 |link:../../features/workspace/java-language-service.feature[`features/workspace/java-language-service.feature`] and the frozen baseline link:../requirements-baselines/BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json[`BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1.json`] (receipt status `confirmed-before-production`).
@@ -1382,13 +1382,13 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |Six characterization scenarios: AC-001 lifecycle with honest availability, AC-002 document sync serving only ready documents, AC-003 untrusted cancellable Java intelligence, AC-004 honest unavailable/error with no fabricated success, AC-005 web-first boundary, and AC-006 single effective evidence-based status.
 
 |Feature path and exact declaration
-|link:../../features/workspace/java-language-service.feature[`features/workspace/java-language-service.feature`], tag declaration at line 21 and scenarios beginning at line 22; each of the six scenarios declares `@not-implemented` at lines 21/38/52/66/75/83.
+|link:../../features/workspace/java-language-service.feature[`features/workspace/java-language-service.feature`]; the single feature-level `@not-implemented` is declared at line 1 and scenarios begin at line 22. Zero scenario-level status tags: the six scenarios (lines 22/39/53/67/76/84) declare only `@REQ-IDE-JAVA-LANGUAGE-001 @java @desktop @story-bdd @functional-requirement`.
 
 |Tags
-|`@REQ-IDE-JAVA-LANGUAGE-001`, `@java`, `@desktop`, `@story-bdd`, `@functional-requirement`, `@not-implemented`
+|`@REQ-IDE-JAVA-LANGUAGE-001`, `@java`, `@desktop`, `@story-bdd`, `@functional-requirement` (scenario-level); `@not-implemented` (feature-level)
 
 |Declared status
-|`@not-implemented` — the feature still declares `@not-implemented` on all six scenarios with a single effective status; this appendix does NOT promote it. The genuine GREEN evidence below is recorded as characterization/evidence-based pending only. Status is not promoted and a final requirements-quality-reviewer PASS remains pending and is not claimed.
+|`@not-implemented` — the feature declares exactly one effective status `@not-implemented` at FEATURE level (line 1) and zero scenario-level status tags; this appendix does NOT promote it. The genuine GREEN evidence below is recorded as characterization/evidence-based pending only. Status is not promoted and a final requirements-quality-reviewer PASS remains pending and is not claimed.
 
 |Frozen baseline
 |The baseline `BASELINE-REQ-IDE-JAVA-LANGUAGE-001-v1` is repository-addressable with receipt status `confirmed-before-production`; its `initialUserIntent` records the user-approved operational Java language service slice and `approvedChanges` include `APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001` (RefactorKit as a product feature; Java test infra and Java-only RefactorKit-as-workflow-refactoring-infra remain excluded).
@@ -1397,7 +1397,7 @@ NOTE: The configured inventory contains seventeen feature files, twenty-four sce
 |Story `javaLanguageServiceTauriHarness`: 6/6 scenarios GREEN, 65/65 runner steps. The step-count note is reconciled as **53 authored Gherkin steps + 12 After-hook steps = 65 observed steps**.
 
 |Observed Spec/vitest evidence
-|Vitest adapter/Spec suites pass 59 tests: java-intelligence-tauri 28, language-session-tauri 26, language-session-browser 5.
+|Vitest adapter/Spec suites pass 86 tests: java-intelligence-tauri 28, language-session-tauri 26, useJavaLanguageController 4, JavaIntelligencePanel 23, language-session-browser 5.
 
 |Observed technical evidence
 |`typecheck:bdd` clean; builds `@ide/web` (740 modules) and `@ide/desktop` (795 modules) both pass with web built Tauri-free; boundary scan shows 0 `@tauri-apps/api` matches in `packages/ui`, `packages/web-core`, and `apps/web` with `JavaIntelligencePort`/`LanguageSessionPort`/`DocumentSyncPort` declared in `packages/web-core/src/ports/`; lint 0 errors / 2 warnings (`apps/desktop/src/App.tsx:601` useMemo missing dep `documentNavigation`; `tests/story/steps/git-diff-review.steps.ts:17` unused `NOT_IMPLEMENTED`).
