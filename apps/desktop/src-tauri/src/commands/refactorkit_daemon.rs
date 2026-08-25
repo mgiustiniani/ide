@@ -17,7 +17,9 @@ use tauri::State;
 pub use application::RefactorKitDaemonState;
 pub use capability_policy::RefactorKitCapabilities;
 pub use contract::{
-    ApplyRequest, ApprovalEvidence, DiscardRequest, PreviewRequest, RollbackRequest,
+    ApplyRefactoringRequest, ApplyRequest, ApprovalEvidence, DiscardRequest, PreviewRequest,
+    PreviewRefactoringRequest, RefactoringOperation, RefactoringTarget, RollbackRequest,
+    RollbackRefactoringRequest,
 };
 pub use saved_snapshot_diagnostics::{
     run_saved_snapshot_diagnostics, TypeScriptDiagnosticsError, TypeScriptDiagnosticsRequest,
@@ -66,6 +68,38 @@ pub fn rollback_refactorkit_transaction(
     state: State<'_, RefactorKitDaemonState>,
 ) -> Result<Value, String> {
     application::rollback_refactorkit_transaction(request, &state)
+}
+
+#[tauri::command]
+pub fn preview_refactorkit_refactoring(
+    request: PreviewRefactoringRequest,
+    state: State<'_, RefactorKitDaemonState>,
+) -> Result<Value, String> {
+    application::preview_refactoring(request, &state)
+}
+
+#[tauri::command]
+pub fn apply_refactorkit_refactoring(
+    request: ApplyRefactoringRequest,
+    state: State<'_, RefactorKitDaemonState>,
+) -> Result<Value, String> {
+    application::apply_refactoring(request, &state)
+}
+
+#[tauri::command]
+pub fn rollback_refactorkit_refactoring(
+    request: RollbackRefactoringRequest,
+    state: State<'_, RefactorKitDaemonState>,
+) -> Result<Value, String> {
+    application::rollback_refactoring(request, &state)
+}
+
+#[tauri::command]
+pub fn discard_refactorkit_refactoring(
+    request: DiscardRequest,
+    state: State<'_, RefactorKitDaemonState>,
+) -> Result<Value, String> {
+    application::discard_refactoring(request, &state)
 }
 
 #[tauri::command]

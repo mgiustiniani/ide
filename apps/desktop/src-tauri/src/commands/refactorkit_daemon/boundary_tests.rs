@@ -1269,6 +1269,7 @@ fn reset_models_workspace_switch_and_app_exit_cleanup() {
             TransactionGuard {
                 workspace_id: "w".into(),
                 workspace_generation: 1,
+                operation: None,
             },
         );
         manager.consumed_plans.insert("old".into());
@@ -1439,6 +1440,7 @@ fn process_death_clears_all_manager_lifecycle_state() {
         TransactionGuard {
             workspace_id: "w".into(),
             workspace_generation: 1,
+            operation: None,
         },
     );
     assert_eq!(
@@ -1582,6 +1584,22 @@ fn command_signatures_remain_stable() {
     let _: for<'a> fn(RollbackRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
         super::rollback_refactorkit_transaction;
     let _: for<'a> fn(
+        PreviewRefactoringRequest,
+        State<'a, RefactorKitDaemonState>,
+    ) -> Result<Value, String> = super::preview_refactorkit_refactoring;
+    let _: for<'a> fn(
+        ApplyRefactoringRequest,
+        State<'a, RefactorKitDaemonState>,
+    ) -> Result<Value, String> = super::apply_refactorkit_refactoring;
+    let _: for<'a> fn(
+        RollbackRefactoringRequest,
+        State<'a, RefactorKitDaemonState>,
+    ) -> Result<Value, String> = super::rollback_refactorkit_refactoring;
+    let _: for<'a> fn(
+        DiscardRequest,
+        State<'a, RefactorKitDaemonState>,
+    ) -> Result<Value, String> = super::discard_refactorkit_refactoring;
+    let _: for<'a> fn(
         State<'a, RefactorKitDaemonState>,
         State<'a, SavedSnapshotSemanticState>,
     ) -> Result<(), String> = super::shutdown_refactorkit_daemon;
@@ -1615,9 +1633,9 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
             .lines()
             .filter(|line| line.trim() == "#[tauri::command]")
             .count(),
-        10
+        14
     );
-    assert!(facade.lines().count() < 120);
+    assert!(facade.lines().count() < 155);
     for forbidden in [
         concat!("std::process::", "Command"),
         concat!("Child", "Stdin"),
@@ -1646,4 +1664,562 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
             "{name} exposes a Tauri command"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// General Java refactoring slice (REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001)
+// ---------------------------------------------------------------------------
+
+fn refactor_target() -> RefactoringTarget {
+    RefactoringTarget {
+        kind: "class".into(),
+        path: "src/main/java/example/Widget.java".into(),
+        identity: "example.Widget".into(),
+        selection: None,
+    }
+}
+
+fn refactor_preview_request(workspace_id: &str) -> PreviewRefactoringRequest {
+    PreviewRefactoringRequest {
+        operation: RefactoringOperation::RenameClass,
+        target: refactor_target(),
+        authority: WorkspaceAuthority {
+            workspace_id: workspace_id.into(),
+            workspace_generation: 1,
+        },
+        selection_generation: 1,
+        request_id: "refactor-request-1".into(),
+    }
+}
+
+fn rich_refactoring_plan(status: &str) -> Value {
+    json!({
+        "planId": "refactor-plan-1",
+        "operation": "rename-class",
+        "status": status,
+        "summary": "Rename Widget to WidgetV2",
+        "confidence": 0.93,
+        "riskLevel": "low",
+        "risks": ["Affects call sites"],
+        "evidence": [
+            {"kind": "edit", "summary": "Update declaration"},
+            {"kind": "edit", "summary": "Update references"}
+        ],
+        "affectedFiles": [{
+            "change": "edit", "path": "src/main/java/example/Widget.java",
+            "previousPath": null, "primary": true
+        }],
+        "renderedDiff": "--- a/src/main/java/example/Widget.java\n+++ b/src/main/java/example/Widget.java",
+        "structuredDiff": [{
+            "path": "src/main/java/example/Widget.java", "change": "edit",
+            "hunks": [{"oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1,
+                "lines": ["-package example;", "+package example;"]}]
+        }],
+        "warnings": [],
+        "diagnosticsAfterPreview": [],
+        "conflicts": [],
+        "refusalReasons": if status == "preview" { json!([]) } else { json!(["not ready"]) },
+        "applyEligibility": {"eligible": status == "preview", "blockers": if status == "preview" { json!([]) } else { json!(["blocked"]) }},
+        "staleness": {"stale": status == "stale", "reasons": if status == "stale" { json!(["changed"]) } else { json!([]) }},
+        "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+    })
+}
+
+#[test]
+fn general_refactoring_requests_are_closed_and_camel_case() {
+    let target = json!({
+        "kind": "class", "path": "src/main/java/example/Widget.java", "identity": "example.Widget"
+    });
+    let preview = json!({
+        "operation": "rename-class", "target": target,
+        "authority": {"workspaceId": "w", "workspaceGeneration": 2},
+        "selectionGeneration": 3, "requestId": "r"
+    });
+    assert!(serde_json::from_value::<PreviewRefactoringRequest>(preview.clone()).is_ok());
+    let mut extra = preview.clone();
+    extra["target"]["package"] = json!("forbidden");
+    assert!(serde_json::from_value::<PreviewRefactoringRequest>(extra).is_err());
+    let mut bad_operation = preview;
+    bad_operation["operation"] = json!("change-signature");
+    assert!(
+        serde_json::from_value::<PreviewRefactoringRequest>(bad_operation).is_err(),
+        "non-canonical change-signature must be rejected"
+    );
+
+    let apply = json!({
+        "planId": "plan-1", "operation": "rename-member", "target": target,
+        "authority": {"workspaceId": "w", "workspaceGeneration": 2},
+        "selectionGeneration": 3, "requestId": "r",
+        "approval": {"approvalId": "a", "approvedPlanId": "plan-1", "approvedAt": "t"}
+    });
+    assert!(serde_json::from_value::<ApplyRefactoringRequest>(apply.clone()).is_ok());
+    let mut extra_apply = apply;
+    extra_apply["unexpected"] = json!(true);
+    assert!(serde_json::from_value::<ApplyRefactoringRequest>(extra_apply).is_err());
+
+    let rollback = json!({
+        "transactionId": "tx-1", "operation": "safe-delete",
+        "authority": {"workspaceId": "w", "workspaceGeneration": 2}, "requestId": "r"
+    });
+    assert!(serde_json::from_value::<RollbackRefactoringRequest>(rollback.clone()).is_ok());
+    let mut extra_rollback = rollback;
+    extra_rollback["force"] = json!(true);
+    assert!(serde_json::from_value::<RollbackRefactoringRequest>(extra_rollback).is_err());
+
+    for (operation, name) in [
+        (RefactoringOperation::RenameClass, "rename-class"),
+        (RefactoringOperation::RenameMember, "rename-member"),
+        (RefactoringOperation::RenameLocalVariable, "rename-local-variable"),
+        (RefactoringOperation::MoveClass, "move-class"),
+        (RefactoringOperation::ChangeMethodSignature, "change-method-signature"),
+        (RefactoringOperation::SafeDelete, "safe-delete"),
+    ] {
+        assert_eq!(operation.as_str(), name);
+        assert_eq!(serde_json::to_value(operation).unwrap(), json!(name));
+        assert!(serde_json::from_value::<RefactoringOperation>(json!(name)).is_ok());
+    }
+}
+
+#[test]
+fn general_refactoring_params_are_exact_and_authority_free() {
+    let target = refactor_target();
+    assert_eq!(
+        refactoring_preview_params("rename-class", &target),
+        json!({
+            "operation": "rename-class",
+            "target": {
+                "kind": "class",
+                "path": "src/main/java/example/Widget.java",
+                "identity": "example.Widget"
+            }
+        })
+    );
+    let with_selection = RefactoringTarget {
+        selection: Some(RefactoringSelection { start: 10, end: 20 }),
+        ..target.clone()
+    };
+    assert_eq!(
+        refactoring_target_params(&with_selection),
+        json!({
+            "kind": "class", "path": "src/main/java/example/Widget.java",
+            "identity": "example.Widget", "selection": {"start": 10, "end": 20}
+        })
+    );
+    assert_eq!(refactoring_apply_params("plan-1"), json!({"planId": "plan-1"}));
+    assert_eq!(refactoring_rollback_params("tx-1"), json!({"transactionId": "tx-1"}));
+    assert_eq!(refactoring_discard_params("plan-1"), json!({"planId": "plan-1"}));
+    let preview = refactoring_preview_params("rename-class", &target);
+    for forbidden in [
+        "workspaceId",
+        "workspaceGeneration",
+        "selectionGeneration",
+        "requestId",
+        "approval",
+        "authority",
+    ] {
+        assert!(preview.get(forbidden).is_none());
+    }
+}
+
+#[test]
+fn general_refactoring_preview_statuses_are_normalized_without_apply_authority() {
+    let root = temp_workspace("refactor-normalize");
+    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    let request = refactor_preview_request(&workspace_id_for_path(&root));
+    for (wire, status) in [
+        ("preview", "ready"),
+        ("refused", "refused"),
+        ("stale", "stale"),
+        ("error", "error"),
+    ] {
+        let normalized =
+            normalize_refactoring_preview(rich_refactoring_plan(wire), &root, &request).unwrap();
+        assert_eq!(normalized["status"], status);
+        assert_eq!(normalized["operation"], "rename-class");
+        assert_eq!(normalized["grantsApplyAuthority"], false);
+        assert_eq!(
+            normalized.pointer("/target/path").and_then(Value::as_str),
+            Some("src/main/java/example/Widget.java")
+        );
+        assert_eq!(normalized["authority"]["workspaceId"], request.authority.workspace_id);
+        assert_eq!(normalized["selectionGeneration"], request.selection_generation);
+        assert_eq!(normalized["risks"], json!(["Affects call sites"]));
+        assert_eq!(
+            normalized.pointer("/evidence/0/kind").and_then(Value::as_str),
+            Some("edit")
+        );
+        assert_eq!(
+            normalized.pointer("/applyEligibility/eligible"),
+            Some(&Value::Bool(status == "ready"))
+        );
+        assert!(normalized.get("code").is_none());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn general_refactoring_apply_outcomes_are_normalized_honestly() {
+    let root = temp_workspace("refactor-apply");
+    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    let applied = json!({
+        "planId": "refactor-plan-1", "operation": "rename-class", "outcome": "applied",
+        "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
+        "primaryFile": "src/main/java/example/Widget.java", "diagnostics": [],
+        "transactionId": "refactor-tx-1",
+        "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+    });
+    let normalized =
+        normalize_refactoring_apply(applied.clone(), &root, "refactor-plan-1", "rename-class")
+            .unwrap();
+    assert_eq!(normalized["outcome"], "applied");
+    assert_eq!(normalized["transactionId"], "refactor-tx-1");
+
+    for outcome in ["refused", "stale", "failed", "indeterminate"] {
+        let raw = json!({
+            "planId": "refactor-plan-1", "operation": "rename-class", "outcome": outcome,
+            "changedFiles": [], "diagnostics": [],
+            "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+        });
+        let normalized =
+            normalize_refactoring_apply(raw, &root, "refactor-plan-1", "rename-class").unwrap();
+        assert_eq!(normalized["outcome"], outcome);
+        assert!(
+            normalized.get("transactionId").is_none(),
+            "{outcome} must not fabricate a transaction"
+        );
+    }
+
+    let mut wrong_plan = applied.clone();
+    wrong_plan["planId"] = json!("other-plan");
+    assert!(normalize_refactoring_apply(wrong_plan, &root, "refactor-plan-1", "rename-class").is_err());
+    let mut wrong_operation = applied.clone();
+    wrong_operation["operation"] = json!("move-class");
+    assert!(normalize_refactoring_apply(wrong_operation, &root, "refactor-plan-1", "rename-class").is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn general_refactoring_rollback_is_normalized_and_correlated() {
+    let root = temp_workspace("refactor-rollback");
+    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    let raw = json!({
+        "transactionId": "tx-1", "rolledBack": true,
+        "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
+        "conflicts": [{"kind": "reference", "summary": "External call site"}],
+        "diagnostics": []
+    });
+    let normalized = normalize_refactoring_rollback(raw.clone(), &root, "tx-1").unwrap();
+    assert_eq!(normalized["rolledBack"], true);
+    assert_eq!(normalized["transactionId"], "tx-1");
+    assert_eq!(
+        normalized.pointer("/conflicts/0/kind").and_then(Value::as_str),
+        Some("reference")
+    );
+    let mut mismatch = raw;
+    mismatch["transactionId"] = json!("tx-2");
+    assert!(normalize_refactoring_rollback(mismatch, &root, "tx-1").is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn general_refactoring_capability_is_advertised_only_when_offered() {
+    let mut advertised = complete_capabilities();
+    advertised["javaRefactor"] = json!({
+        "operations": ["rename-class","rename-member","rename-local-variable","move-class","change-method-signature","safe-delete"],
+        "stability": "experimental", "preview": true, "apply": true, "rollback": true, "discard": true
+    });
+    advertised["methods"].as_array_mut().unwrap().extend(json!([
+        {"name": "java.refactor.preview"}, {"name": "java.refactor.apply"},
+        {"name": "java.refactor.rollback"}, {"name": "java.refactor.discard"}
+    ]).as_array().unwrap().clone());
+
+    let normalized = serde_json::to_value(available_managed_capabilities(
+        normalize_server_capabilities(&advertised).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(
+        normalized.pointer("/generalRefactoring/supported"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        normalized.pointer("/generalRefactoring/operations"),
+        Some(&json!([
+            "rename-class", "rename-member", "rename-local-variable",
+            "move-class", "change-method-signature", "safe-delete"
+        ]))
+    );
+    for flag in ["preview", "apply", "rollback", "discard"] {
+        assert_eq!(
+            normalized.pointer(&format!("/generalRefactoring/{flag}")),
+            Some(&json!(true))
+        );
+    }
+
+    let absent = serde_json::to_value(available_managed_capabilities(
+        normalize_server_capabilities(&complete_capabilities()).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(
+        absent.pointer("/generalRefactoring/supported"),
+        Some(&json!(false))
+    );
+    assert!(absent.pointer("/generalRefactoring/reason").is_some());
+    assert_eq!(
+        absent.pointer("/generalRefactoring/operations"),
+        Some(&json!([
+            "rename-class", "rename-member", "rename-local-variable",
+            "move-class", "change-method-signature", "safe-delete"
+        ]))
+    );
+
+    let mut incomplete_operations = advertised.clone();
+    incomplete_operations["javaRefactor"]["operations"] = json!(["rename-class"]);
+    assert_eq!(
+        normalize_server_capabilities(&incomplete_operations).err().as_deref(),
+        Some(UNAVAILABLE)
+    );
+    let mut missing_method = advertised.clone();
+    missing_method["methods"].as_array_mut().unwrap().retain(|method| {
+        method.get("name").and_then(Value::as_str) != Some("java.refactor.rollback")
+    });
+    assert_eq!(
+        normalize_server_capabilities(&missing_method).err().as_deref(),
+        Some(UNAVAILABLE)
+    );
+    let mut false_flag = advertised.clone();
+    false_flag["javaRefactor"]["rollback"] = json!(false);
+    assert_eq!(
+        normalize_server_capabilities(&false_flag).err().as_deref(),
+        Some(UNAVAILABLE)
+    );
+}
+
+#[test]
+fn refactoring_rollback_rejects_operation_mismatch_and_unknown_transaction() {
+    let state = RefactorKitDaemonState::default();
+    let root = canonical_workspace().unwrap();
+    let workspace_id = workspace_id_for_path(&root);
+    {
+        let mut manager = state.0.lock().unwrap();
+        manager.transactions.insert(
+            "tx-1".into(),
+            TransactionGuard {
+                workspace_id: workspace_id.clone(),
+                workspace_generation: 1,
+                operation: Some("rename-class".into()),
+            },
+        );
+    }
+    let authority = WorkspaceAuthority {
+        workspace_id: workspace_id.clone(),
+        workspace_generation: 1,
+    };
+    let mismatch = RollbackRefactoringRequest {
+        transaction_id: "tx-1".into(),
+        operation: RefactoringOperation::MoveClass,
+        authority: authority.clone(),
+        request_id: "r".into(),
+    };
+    assert_eq!(
+        rollback_refactoring(mismatch, &state),
+        Err("RefactorKit transaction operation mismatch.".to_string())
+    );
+    let unknown = RollbackRefactoringRequest {
+        transaction_id: "tx-999".into(),
+        operation: RefactoringOperation::RenameClass,
+        authority,
+        request_id: "r".into(),
+    };
+    assert_eq!(
+        rollback_refactoring(unknown, &state),
+        Err("RefactorKit transaction is stale or unknown.".to_string())
+    );
+}
+
+#[cfg(unix)]
+fn install_fixture_daemon(
+    root: &Path,
+    workspace_root: &Path,
+    caps: &Value,
+    preview: &Value,
+    apply: &Value,
+    rollback: &Value,
+) -> PathBuf {
+    fs::write(root.join("caps.json"), format!("{}\n", serde_json::to_string(caps).unwrap())).unwrap();
+    fs::write(root.join("preview.json"), format!("{}\n", serde_json::to_string(preview).unwrap())).unwrap();
+    fs::write(root.join("apply.json"), format!("{}\n", serde_json::to_string(apply).unwrap())).unwrap();
+    fs::write(root.join("rollback.json"), format!("{}\n", serde_json::to_string(rollback).unwrap())).unwrap();
+    let caps_path = root.join("caps.json").display().to_string();
+    let preview_path = root.join("preview.json").display().to_string();
+    let apply_path = root.join("apply.json").display().to_string();
+    let rollback_path = root.join("rollback.json").display().to_string();
+    let open = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"root\":\"{}\"}}}}",
+        workspace_root.display()
+    );
+    let discard = "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"discarded\":true}}";
+    let script = root.join(format!(
+        "fixture-daemon-{}.sh",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let body = format!(
+        "#!/bin/sh\nwhile read line; do\n  id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9]\\+\\)[^0-9].*/\\1/p')\n  case \"$id\" in\n    1) cat '{caps_path}' ;;\n    2) printf '%s\\n' '{open}' ;;\n    3) cat '{preview_path}' ;;\n    4) printf '%s\\n' '{discard}' ;;\n    5) sed 's/\"id\":3/\"id\":5/' '{preview_path}' ;;\n    6) cat '{apply_path}' ;;\n    7) cat '{rollback_path}' ;;\n  esac\n done\n",
+        caps_path = caps_path,
+        preview_path = preview_path,
+        apply_path = apply_path,
+        rollback_path = rollback_path,
+        open = open,
+        discard = discard,
+    );
+    fs::write(&script, body).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&script, permissions).unwrap();
+    env::set_var("IDE_REFACTORKIT_DAEMON", &script);
+    script
+}
+
+#[test]
+#[cfg(unix)]
+fn general_refactoring_preview_discard_apply_rollback_flow_with_fixture_peer() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("refactor-flow");
+    let workspace_root = canonical_workspace().unwrap();
+    let workspace_id = workspace_id_for_path(&workspace_root);
+
+    let caps = json!({
+        "id": 1, "jsonrpc": "2.0", "result": {
+            "version": "0.5.0-SNAPSHOT", "apiVersion": "0.2",
+            "protocol": "json-rpc-2.0", "transport": "stdio",
+            "methods": [
+                {"name": "refactor.apply"}, {"name": "refactor.discard"}, {"name": "patch.rollback"},
+                {"name": "java.importExternalClass", "stability": "experimental", "features": {
+                    "targetDirectory": true, "preview": true, "apply": true,
+                    "discard": true, "rollback": true}},
+                {"name": "java.refactor.preview"}, {"name": "java.refactor.apply"},
+                {"name": "java.refactor.rollback"}, {"name": "java.refactor.discard"}
+            ],
+            "javaRefactor": {
+                "operations": ["rename-class","rename-member","rename-local-variable","move-class","change-method-signature","safe-delete"],
+                "stability": "experimental", "preview": true, "apply": true,
+                "rollback": true, "discard": true
+            }
+        }
+    });
+    let preview = json!({
+        "id": 3, "jsonrpc": "2.0", "result": {
+            "planId": "refactor-plan-1", "operation": "rename-class", "status": "preview",
+            "summary": "Rename Widget to WidgetV2", "confidence": 0.93, "riskLevel": "low",
+            "risks": ["Affects call sites"],
+            "evidence": [
+                {"kind": "edit", "summary": "Update declaration"},
+                {"kind": "edit", "summary": "Update references"}
+            ],
+            "affectedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java",
+                "previousPath": null, "primary": true}],
+            "renderedDiff": "--- a/src/main/java/example/Widget.java\n+++ b/src/main/java/example/Widget.java",
+            "structuredDiff": [{"path": "src/main/java/example/Widget.java", "change": "edit",
+                "hunks": [{"oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1,
+                    "lines": ["-package example;", "+package example;"]}]}],
+            "warnings": [], "diagnosticsAfterPreview": [], "conflicts": [],
+            "refusalReasons": [], "applyEligibility": {"eligible": true, "blockers": []},
+            "staleness": {"stale": false, "reasons": []},
+            "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+        }
+    });
+    let apply = json!({
+        "id": 6, "jsonrpc": "2.0", "result": {
+            "planId": "refactor-plan-1", "operation": "rename-class", "outcome": "applied",
+            "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
+            "primaryFile": "src/main/java/example/Widget.java", "diagnostics": [],
+            "transactionId": "refactor-tx-1",
+            "provider": {"name": "refactorkit", "version": "0.5.0-SNAPSHOT"}
+        }
+    });
+    let rollback = json!({
+        "id": 7, "jsonrpc": "2.0", "result": {
+            "transactionId": "refactor-tx-1", "rolledBack": true,
+            "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
+            "conflicts": [], "diagnostics": []
+        }
+    });
+    let script = install_fixture_daemon(&root, &workspace_root, &caps, &preview, &apply, &rollback);
+
+    let state = RefactorKitDaemonState::default();
+
+    let previewed = preview_refactoring(refactor_preview_request(&workspace_id), &state).unwrap();
+    assert_eq!(previewed["planId"], "refactor-plan-1");
+    assert_eq!(previewed["operation"], "rename-class");
+    assert_eq!(previewed["status"], "ready");
+    assert_eq!(previewed["grantsApplyAuthority"], false);
+    assert_eq!(
+        previewed.pointer("/applyEligibility/eligible"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(previewed["authority"]["workspaceId"], workspace_id.clone());
+    assert_eq!(previewed["selectionGeneration"], 1);
+
+    let discarded = discard_refactoring(
+        DiscardRequest {
+            plan_id: "refactor-plan-1".into(),
+            workspace_id: workspace_id.clone(),
+            workspace_generation: 1,
+            selection_generation: 1,
+            request_id: "refactor-request-1".into(),
+        },
+        &state,
+    )
+    .unwrap();
+    assert_eq!(discarded["discarded"], true);
+
+    let previewed2 = preview_refactoring(refactor_preview_request(&workspace_id), &state).unwrap();
+    assert_eq!(previewed2["status"], "ready");
+
+    let applied = apply_refactoring(
+        ApplyRefactoringRequest {
+            plan_id: "refactor-plan-1".into(),
+            operation: RefactoringOperation::RenameClass,
+            target: refactor_target(),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id.clone(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "refactor-request-1".into(),
+            approval: ApprovalEvidence {
+                approval_id: "approval-1".into(),
+                approved_plan_id: "refactor-plan-1".into(),
+                approved_at: "2026-07-13T00:00:00Z".into(),
+            },
+        },
+        &state,
+    )
+    .unwrap();
+    assert_eq!(applied["outcome"], "applied");
+    assert_eq!(applied["transactionId"], "refactor-tx-1");
+
+    let rolled_back = rollback_refactoring(
+        RollbackRefactoringRequest {
+            transaction_id: "refactor-tx-1".into(),
+            operation: RefactoringOperation::RenameClass,
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id.clone(),
+                workspace_generation: 1,
+            },
+            request_id: "refactor-request-3".into(),
+        },
+        &state,
+    )
+    .unwrap();
+    assert_eq!(rolled_back["rolledBack"], true);
+    assert_eq!(rolled_back["transactionId"], "refactor-tx-1");
+
+    state.shutdown_all();
+    env::remove_var("IDE_REFACTORKIT_DAEMON");
+    fs::remove_file(&script).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }

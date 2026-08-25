@@ -1,0 +1,64 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Make RefactorKit Java refactoring operational as an IDE product feature (user-authorized APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001). Complete the JetBrains-style Java IDE management: expose deterministic Java refactoring operations (rename class/member/local-var, move class, change method signature, safe delete; plus the existing scan/symbol/definition/references/diagnostics surface) through the RefactorKit daemon, with preview -> apply -> rollback, honest unavailable, and web-first boundary. RefactorKit engine (installed /home/paperboy/workspace/refactorkit) supports full Java refactoring; this slice makes it operational in the IDE surface.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE (Java/RefactorKit product-surface in scope within bdd-ts). Java TEST infra (JavaSpec, Maven, JUnit-specific policy, Java datasets) and Java-only RefactorKit rules as the workflow's own refactoring authority remain EXCLUDED.",
+      "evidence": "User message: 'ok, autorizzo refactorkit come feature di prodotto' (2026-08-21); ADR 0015"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001",
+    "title": "Operational RefactorKit Java refactoring in the IDE (preview -> apply -> rollback)",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "Expose deterministic Java refactoring operations (rename class/member/local-variable, move class, change method signature, safe delete) through the RefactorKit daemon behind provider-neutral frontend ports. The IDE requests a preview patch plan for a selected symbol/range, presents it read-only, applies it on explicit authority, and supports rollback where advertised. Honest unavailable when the RefactorKit capability is absent or the operation is unsupported. No hidden domain policy in adapters.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java symbol/selection, the IDE requests a preview patch plan for a named refactoring operation (rename, move class, change signature, safe delete) and presents it read-only before any apply; no write occurs before explicit user/authority approval."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Apply binds to the exact reviewed plan and authority; the result is reported honestly (applied vs rejected) and rollback is supported only when the daemon advertises it."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; absent capability or unsupported operation reports honest unavailable/error, never fabricated success."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri RefactorKit implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Status is evidence-based with an explicit state, never inferred from shells; live Tauri-window Java refactoring E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-domain-expert (domain research) + bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + ts-spec-driven (view-model Spec) + tauri-rust-coder (daemon commands) + tauri-adapter-coder + browser-adapter-coder + frontend-core-coder/frontend-ui-coder (view-model + UI)",
+    "scope": "RefactorKit Java refactoring operations (rename/move-class/change-signature/safe-delete) as a coherent first slice, reusing the existing daemon preview/apply/rollback infrastructure. The existing scan/symbol/definition/references/diagnostics surface stays as-is (no rework). Java navigation go-to-definition/references and Java build/run/debug and project model remain separate later slices.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "RefactorKit TS-only diagnostics/symbols rework (existing surface unchanged)",
+      "Java navigation, Java build/run/debug, project model (later slices)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Operation scope: which operations are first-class in this slice (rename class/member/local-var, move class, change signature, safe delete) — confirm the set.",
+      "Preview source: whether the preview patch plan comes from the deterministic daemon fixture or the real refactorkit engine in this environment; if only fixture/harness evidence is available, the real-engine path stays honest-unavailable/unit-evidenced.",
+      "Editor wiring: whether Java refactoring UX is proven wired into the live editor or a desktop-harness renderer is acceptable evidence.",
+      "Authority: confirm apply requires explicit user/authority approval bound to the exact reviewed plan (no auto-apply)."
+    ]
+  }
+}

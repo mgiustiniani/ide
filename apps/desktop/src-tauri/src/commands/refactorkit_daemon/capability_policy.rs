@@ -57,6 +57,23 @@ const DIAGNOSTICS_V2_SNAPSHOT_MODES: [&str; 2] = ["immutable-editor-overlay", "s
 const DIAGNOSTICS_V2_RANGE_CAPABILITY: &str = "exact-utf16-or-explicit-partial";
 const DIAGNOSTICS_V2_BACKEND: &str = "typescript-compiler-exact-v1";
 
+pub(super) const GENERAL_REFACTORING_OPERATIONS: [&str; 6] = [
+    "rename-class",
+    "rename-member",
+    "rename-local-variable",
+    "move-class",
+    "change-method-signature",
+    "safe-delete",
+];
+const GENERAL_REFACTORING_METHODS: [&str; 4] = [
+    "java.refactor.preview",
+    "java.refactor.apply",
+    "java.refactor.rollback",
+    "java.refactor.discard",
+];
+const GENERAL_REFACTORING_UNAVAILABLE: &str =
+    "RefactorKit general Java refactoring is unavailable. The daemon did not advertise the general-refactoring operation set.";
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RefactorKitCapabilities {
@@ -65,6 +82,7 @@ pub struct RefactorKitCapabilities {
     pub(super) provider: &'static str,
     pub(super) provider_version: Option<String>,
     pub(super) java_import_external_class: ExternalImportCapability,
+    pub(super) general_refactoring: GeneralRefactoringCapability,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
@@ -80,6 +98,22 @@ pub(super) struct ExternalImportCapability {
     pub(super) preview: bool,
     pub(super) apply: bool,
     pub(super) rollback: bool,
+    pub(super) stability: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) update_guidance: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct GeneralRefactoringCapability {
+    pub(super) supported: bool,
+    pub(super) operations: Vec<String>,
+    pub(super) preview: bool,
+    pub(super) apply: bool,
+    pub(super) rollback: bool,
+    pub(super) discard: bool,
     pub(super) stability: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) reason: Option<String>,
@@ -187,6 +221,7 @@ pub(super) struct SafetyCapabilities {
 pub(super) struct ManagedCapabilityMetadata {
     pub(super) provider_version: String,
     pub(super) java_import_external_class: ExternalImportCapability,
+    pub(super) general_refactoring: GeneralRefactoringCapability,
     pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
     pub(super) safety: Option<SafetyCapabilities>,
@@ -246,6 +281,7 @@ pub(super) fn normalize_server_capabilities(
         })
         .map(ToString::to_string)
         .ok_or_else(|| UNAVAILABLE.to_string())?;
+    let general_refactoring = normalize_general_refactoring(object.get("javaRefactor"), methods)?;
     let language_kernel = match object.get("languageKernel") {
         None | Some(Value::Null) => unavailable_language_kernel(),
         Some(value) => LanguageKernelStatus {
@@ -271,6 +307,7 @@ pub(super) fn normalize_server_capabilities(
             reason: None,
             update_guidance: None,
         },
+        general_refactoring,
         methods: normalized_methods,
         language_kernel,
         safety,
@@ -766,6 +803,95 @@ pub(super) fn normalize_safety(value: &Value) -> Result<SafetyCapabilities, Stri
     })
 }
 
+/// Capability-before-offer: general refactoring is advertised only when the daemon
+/// explicitly advertises the operation set and the supporting methods. Support is
+/// never inferred from a version number, a generic apply button, or the import API.
+pub(super) fn normalize_general_refactoring(
+    value: Option<&Value>,
+    methods: &[Value],
+) -> Result<GeneralRefactoringCapability, String> {
+    let Some(value) = value else {
+        return Ok(unavailable_general_refactoring());
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| UNAVAILABLE.to_string())?;
+    for required in GENERAL_REFACTORING_METHODS {
+        if !methods
+            .iter()
+            .any(|method| method.get("name").and_then(Value::as_str) == Some(required))
+        {
+            return Err(UNAVAILABLE.to_string());
+        }
+    }
+    let operations = object
+        .get("operations")
+        .and_then(Value::as_array)
+        .filter(|operations| !operations.is_empty() && operations.len() <= MAX_ITEMS)
+        .ok_or_else(|| UNAVAILABLE.to_string())?;
+    let mut seen = HashSet::with_capacity(operations.len());
+    for operation in operations {
+        let name = operation
+            .as_str()
+            .filter(|name| {
+                !name.is_empty()
+                    && name.len() <= MAX_METHOD_STRING_BYTES
+                    && !name.chars().any(char::is_control)
+            })
+            .ok_or_else(|| UNAVAILABLE.to_string())?;
+        if !GENERAL_REFACTORING_OPERATIONS.contains(&name) || !seen.insert(name) {
+            return Err(UNAVAILABLE.to_string());
+        }
+    }
+    if GENERAL_REFACTORING_OPERATIONS
+        .iter()
+        .any(|required| !seen.contains(*required))
+    {
+        return Err(UNAVAILABLE.to_string());
+    }
+    let stability = protocol_enum(
+        object.get("stability").and_then(Value::as_str),
+        &["experimental", "preview", "stable"],
+    )
+    .map_err(|_| UNAVAILABLE.to_string())?;
+    for feature in ["preview", "apply", "rollback", "discard"] {
+        if object.get(feature).and_then(Value::as_bool) != Some(true) {
+            return Err(UNAVAILABLE.to_string());
+        }
+    }
+    Ok(GeneralRefactoringCapability {
+        supported: true,
+        operations: GENERAL_REFACTORING_OPERATIONS
+            .iter()
+            .map(|operation| operation.to_string())
+            .collect(),
+        preview: true,
+        apply: true,
+        rollback: true,
+        discard: true,
+        stability,
+        reason: None,
+        update_guidance: None,
+    })
+}
+
+pub(super) fn unavailable_general_refactoring() -> GeneralRefactoringCapability {
+    GeneralRefactoringCapability {
+        supported: false,
+        operations: GENERAL_REFACTORING_OPERATIONS
+            .iter()
+            .map(|operation| operation.to_string())
+            .collect(),
+        preview: false,
+        apply: false,
+        rollback: false,
+        discard: false,
+        stability: "experimental",
+        reason: Some(GENERAL_REFACTORING_UNAVAILABLE.to_string()),
+        update_guidance: None,
+    }
+}
+
 pub(super) fn require_exact_vocabulary(
     object: &Map<String, Value>,
     field: &str,
@@ -885,6 +1011,7 @@ pub(super) fn available_managed_capabilities(
         provider: "refactorkit",
         provider_version: Some(capabilities.provider_version),
         java_import_external_class: capabilities.java_import_external_class,
+        general_refactoring: capabilities.general_refactoring,
         methods: capabilities.methods,
         language_kernel: capabilities.language_kernel,
         safety: capabilities.safety,
@@ -913,6 +1040,7 @@ pub(super) fn available_capabilities(version: Option<String>) -> RefactorKitCapa
             reason: None,
             update_guidance: None,
         },
+        general_refactoring: unavailable_general_refactoring(),
         methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,
@@ -935,6 +1063,7 @@ pub(super) fn unavailable_capabilities() -> RefactorKitCapabilities {
             reason: Some(UNAVAILABLE.to_string()),
             update_guidance: Some(UPDATE_GUIDANCE.to_string()),
         },
+        general_refactoring: unavailable_general_refactoring(),
         methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,

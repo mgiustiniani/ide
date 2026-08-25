@@ -4,10 +4,16 @@ import type {
   DiscardRefactorKitPlanRequest,
   DiscardRefactorKitPlanResult,
   PreviewExternalJavaImportRequest,
+  RefactorApplyRequest,
+  RefactorApplyResult,
   RefactorKitCapabilities,
   RefactorKitCommandResult,
   RefactorKitPatchPlan,
   RefactorKitStatus,
+  RefactorPreviewRequest,
+  RefactorPreviewResult,
+  RefactorRollbackRequest,
+  RefactorRollbackResult,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
@@ -136,6 +142,24 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
   }
 
   discardPlan(_request: DiscardRefactorKitPlanRequest): Promise<DiscardRefactorKitPlanResult> {
+    return unavailable();
+  }
+
+  previewRefactoring(_request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
+    return unavailable();
+  }
+
+  applyRefactoring(_request: RefactorApplyRequest): Promise<RefactorApplyResult> {
+    return unavailable();
+  }
+
+  rollbackRefactoring(_request: RefactorRollbackRequest): Promise<RefactorRollbackResult> {
+    return unavailable();
+  }
+
+  discardRefactoring(
+    _request: DiscardRefactorKitPlanRequest,
+  ): Promise<DiscardRefactorKitPlanResult> {
     return unavailable();
   }
 }

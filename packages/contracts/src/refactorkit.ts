@@ -456,3 +456,147 @@ export interface DiscardRefactorKitPlanResult {
   planId: string;
   discarded: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// General Java refactoring (rename / move / change-method-signature / safe-delete)
+// ---------------------------------------------------------------------------
+// Provider-neutral request/result contracts for the operational RefactorKit
+// Java refactoring slice (REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001). These
+// types reuse the shared review-evidence types above (RefactorKitAffectedFile,
+// RefactorKitStructuredDiff, RefactorKitPlanDiagnostic, RefactorKitPlanConflict,
+// RefactorKitApplyEligibility, RefactorKitPlanStaleness, RefactorKitEvidence,
+// RefactorKitApprovalEvidence) rather than redefining import-only shapes.
+//
+// A preview is always read-only and grants no apply authority. Apply binds to
+// the exact reviewed plan identity under explicit authority. Rollback is exposed
+// only when the provider advertises the relevant transaction class.
+// ---------------------------------------------------------------------------
+
+/** The general Java refactoring operation set declared by this slice. */
+export type RefactoringOperation =
+  | "rename-class"
+  | "rename-member"
+  | "rename-local-variable"
+  | "move-class"
+  | "change-method-signature"
+  | "safe-delete";
+
+/** An exact semantic Java target bound by the IDE for a refactoring request. */
+export interface RefactoringTarget {
+  /** Java element kind: class, member, or local binding. */
+  kind: "class" | "member" | "local-binding";
+  /** Workspace-relative path of the containing source file. */
+  path: string;
+  /** Stable semantic identity of the element (e.g. FQN for a class, signature for a member). */
+  identity: string;
+  /** Selection in UTF-16 offsets when the request is selection-bound. */
+  selection?: {
+    start: number;
+    end: number;
+  };
+}
+
+/** Workspace authority carried by every general refactoring request/result. */
+export interface RefactorWorkspaceAuthority {
+  workspaceId: string;
+  workspaceGeneration: number;
+}
+
+/** Request one read-only Java refactoring preview for an exact operation + target. */
+export interface RefactorPreviewRequest {
+  operation: RefactoringOperation;
+  target: RefactoringTarget;
+  authority: RefactorWorkspaceAuthority;
+  selectionGeneration: number;
+  requestId: string;
+}
+
+/**
+ * Backend-produced immutable patch plan for a general Java refactoring preview.
+ * Correlated to the operation, target, workspace authority, selection/request,
+ * and provider. Review evidence reuses the shared RefactorKit types; no
+ * project-content effect occurs before explicit authority, and the preview
+ * grants no apply authority.
+ */
+export interface RefactorPreviewResult {
+  planId: string;
+  operation: RefactoringOperation;
+  target: RefactoringTarget;
+  status: RefactorKitPatchPlanStatus;
+  summary: string;
+  confidence: number;
+  riskLevel: RefactorKitRiskLevel;
+  /** Explicit risk evidence detail (riskLevel remains the coarse level). */
+  risks: string[];
+  evidence: RefactorKitEvidence[];
+  /** Proposed effects: create, edit, move, or delete. */
+  affectedFiles: RefactorKitAffectedFile[];
+  renderedDiff: string;
+  structuredDiff: RefactorKitStructuredDiff[];
+  warnings: string[];
+  diagnosticsAfterPreview: RefactorKitPlanDiagnostic[];
+  conflicts: RefactorKitPlanConflict[];
+  refusalReasons: string[];
+  applyEligibility: RefactorKitApplyEligibility;
+  staleness: RefactorKitPlanStaleness;
+  /** The preview is always read-only and grants no apply authority. */
+  grantsApplyAuthority: false;
+  authority: RefactorWorkspaceAuthority;
+  selectionGeneration: number;
+  requestId: string;
+  provider: string;
+  providerVersion: string | null;
+}
+
+/**
+ * Explicit IDE authority binding to the exact reviewed plan. Reuses
+ * RefactorKitApprovalEvidence: the approval references the reviewed plan ID and
+ * timestamp, so Apply never reconstructs Java source or UI-fabricated edits.
+ */
+export interface RefactorApplyRequest {
+  /** Identity of the exact reviewed plan being applied. */
+  planId: string;
+  operation: RefactoringOperation;
+  target: RefactoringTarget;
+  authority: RefactorWorkspaceAuthority;
+  selectionGeneration: number;
+  requestId: string;
+  approval: RefactorKitApprovalEvidence;
+}
+
+/** Honest outcome reported after an Apply attempt. */
+export type RefactorApplyOutcome =
+  | "applied"
+  | "refused"
+  | "stale"
+  | "failed"
+  | "indeterminate";
+
+export interface RefactorApplyResult {
+  planId: string;
+  operation: RefactoringOperation;
+  outcome: RefactorApplyOutcome;
+  changedFiles: RefactorKitAffectedFile[];
+  primaryFile: string | null;
+  diagnostics: RefactorKitPlanDiagnostic[];
+  /** Present only when the provider supplies a correlated transaction identity. */
+  transactionId?: string;
+  provider: string;
+  providerVersion: string | null;
+}
+
+/** Request rollback for an advertised, transaction-bound compensating write. */
+export interface RefactorRollbackRequest {
+  transactionId: string;
+  operation: RefactoringOperation;
+  authority: RefactorWorkspaceAuthority;
+  requestId: string;
+}
+
+export interface RefactorRollbackResult {
+  transactionId: string;
+  rolledBack: boolean;
+  changedFiles: RefactorKitAffectedFile[];
+  conflicts: RefactorKitPlanConflict[];
+  diagnostics: RefactorKitPlanDiagnostic[];
+}

@@ -8,6 +8,12 @@ import type {
   RefactorKitCommandResult,
   RefactorKitPatchPlan,
   RefactorKitStatus,
+  RefactorApplyRequest,
+  RefactorApplyResult,
+  RefactorPreviewRequest,
+  RefactorPreviewResult,
+  RefactorRollbackRequest,
+  RefactorRollbackResult,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
@@ -52,4 +58,21 @@ export interface RefactorKitPort {
     request: RollbackRefactorKitTransactionRequest,
   ): Promise<RollbackRefactorKitTransactionResult>;
   discardPlan(request: DiscardRefactorKitPlanRequest): Promise<DiscardRefactorKitPlanResult>;
+
+  // ---------------------------------------------------------------------------
+  // General Java refactoring (rename / move / change-method-signature / safe-delete)
+  // Provider-neutral boundary: adapters alone translate these calls to an
+  // installed API. Preview is read-only and grants no apply authority; Apply
+  // binds to the exact reviewed plan under explicit authority; Rollback is
+  // exposed only when the provider advertises the relevant transaction class.
+  // When the provider is absent, its capability metadata is unacceptable, or
+  // the operation is unsupported, an adapter returns an honest unavailable /
+  // unsupported outcome (refused / error status) and never fabricates a plan,
+  // a successful result, or a fallback textual rewrite.
+  // ---------------------------------------------------------------------------
+  previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult>;
+  applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult>;
+  /** Adapters must reject this call when rollback is not advertised. */
+  rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult>;
+  discardRefactoring(request: DiscardRefactorKitPlanRequest): Promise<DiscardRefactorKitPlanResult>;
 }

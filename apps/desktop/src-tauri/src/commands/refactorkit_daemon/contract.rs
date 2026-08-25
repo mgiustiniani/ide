@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::path_policy::{nullable_safe_path, safe_path};
@@ -62,6 +62,101 @@ pub struct RollbackRequest {
     pub(super) transaction_id: String,
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
+    pub(super) request_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// General Java refactoring (rename / move / change-method-signature / delete)
+// ---------------------------------------------------------------------------
+// Closed request DTOs for the operational RefactorKit Java refactoring slice.
+// A preview is always read-only and grants no apply authority. Apply binds to
+// the exact reviewed plan identity under explicit approval authority. Rollback
+// is transaction-bound and exposed only when the provider advertises it.
+// ---------------------------------------------------------------------------
+
+/// The canonical general Java refactoring operation set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RefactoringOperation {
+    RenameClass,
+    RenameMember,
+    RenameLocalVariable,
+    MoveClass,
+    ChangeMethodSignature,
+    SafeDelete,
+}
+
+impl RefactoringOperation {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            RefactoringOperation::RenameClass => "rename-class",
+            RefactoringOperation::RenameMember => "rename-member",
+            RefactoringOperation::RenameLocalVariable => "rename-local-variable",
+            RefactoringOperation::MoveClass => "move-class",
+            RefactoringOperation::ChangeMethodSignature => "change-method-signature",
+            RefactoringOperation::SafeDelete => "safe-delete",
+        }
+    }
+}
+
+/// An exact semantic Java target bound by the IDE for a refactoring request.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RefactoringTarget {
+    pub(super) kind: String,
+    pub(super) path: String,
+    pub(super) identity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) selection: Option<RefactoringSelection>,
+}
+
+/// Selection in UTF-16 offsets when a request is selection-bound.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RefactoringSelection {
+    pub(super) start: u64,
+    pub(super) end: u64,
+}
+
+/// Workspace authority carried by every general refactoring request/result.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceAuthority {
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
+}
+
+/// Request one read-only Java refactoring preview for an exact operation + target.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewRefactoringRequest {
+    pub(super) operation: RefactoringOperation,
+    pub(super) target: RefactoringTarget,
+    pub(super) authority: WorkspaceAuthority,
+    pub(super) selection_generation: u64,
+    pub(super) request_id: String,
+}
+
+/// Explicit IDE authority binding to the exact reviewed plan.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyRefactoringRequest {
+    pub(super) plan_id: String,
+    pub(super) operation: RefactoringOperation,
+    pub(super) target: RefactoringTarget,
+    pub(super) authority: WorkspaceAuthority,
+    pub(super) selection_generation: u64,
+    pub(super) request_id: String,
+    pub(super) approval: ApprovalEvidence,
+}
+
+/// Request rollback for an advertised, transaction-bound compensating write.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RollbackRefactoringRequest {
+    pub(super) transaction_id: String,
+    pub(super) operation: RefactoringOperation,
+    pub(super) authority: WorkspaceAuthority,
     pub(super) request_id: String,
 }
 
@@ -171,6 +266,175 @@ pub(super) fn normalize_rollback(raw: Value, root: &Path, expected: &str) -> Res
         "changedFiles": normalize_files(object.get("changedFiles"), root)?,
         "diagnostics": normalize_diagnostics(object.get("diagnostics"), root)?
     }))
+}
+
+pub(super) fn normalize_refactoring_preview(
+    raw: Value,
+    root: &Path,
+    request: &PreviewRefactoringRequest,
+) -> Result<Value, String> {
+    let object = raw.as_object().ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    let status = match required_string(object, "status")? {
+        "preview" => "ready",
+        "refused" => "refused",
+        "stale" => "stale",
+        "error" => "error",
+        _ => return Err(PROTOCOL_FAILED.to_string()),
+    };
+    let plan_id = protocol_id_field(object, "planId")?;
+    let operation = required_string(object, "operation")?;
+    if operation != request.operation.as_str() {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    let summary = bounded_string(object, "summary", MAX_TEXT_BYTES)?;
+    let confidence = object
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .filter(|v| (0.0..=1.0).contains(v))
+        .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    let risk = enum_string(object, "riskLevel", &["low", "medium", "high", "unknown"])?;
+    let risks = string_array(object.get("risks"))?;
+    let evidence = normalize_refactoring_evidence(object.get("evidence"))?;
+    let affected = normalize_files(object.get("affectedFiles"), root)?;
+    let rendered_diff = bounded_multiline(object.get("renderedDiff"), MAX_TEXT_BYTES)?;
+    let structured = normalize_structured_diff(object.get("structuredDiff"), root)?;
+    let warnings = string_array(object.get("warnings"))?;
+    let diagnostics = normalize_diagnostics(object.get("diagnosticsAfterPreview"), root)?;
+    let conflicts = normalize_conflicts(object.get("conflicts"), root)?;
+    let refusal_reasons = string_array(object.get("refusalReasons"))?;
+    let eligibility = normalize_eligibility(object.get("applyEligibility"))?;
+    let staleness = normalize_staleness(object.get("staleness"))?;
+    let provider = record_field(object, "provider")?;
+    let target = normalize_refactoring_target(&request.target, root)?;
+    Ok(json!({
+        "planId": plan_id,
+        "operation": operation,
+        "target": target,
+        "status": status,
+        "summary": summary,
+        "confidence": confidence,
+        "riskLevel": risk,
+        "risks": risks,
+        "evidence": evidence,
+        "affectedFiles": affected,
+        "renderedDiff": rendered_diff,
+        "structuredDiff": structured,
+        "warnings": warnings,
+        "diagnosticsAfterPreview": diagnostics,
+        "conflicts": conflicts,
+        "refusalReasons": refusal_reasons,
+        "applyEligibility": eligibility,
+        "staleness": staleness,
+        "grantsApplyAuthority": false,
+        "authority": {
+            "workspaceId": request.authority.workspace_id,
+            "workspaceGeneration": request.authority.workspace_generation
+        },
+        "selectionGeneration": request.selection_generation,
+        "requestId": request.request_id,
+        "provider": bounded_value_string(provider.get("name"), 256)?,
+        "providerVersion": nullable_string(provider.get("version"))?
+    }))
+}
+
+pub(super) fn normalize_refactoring_apply(
+    raw: Value,
+    root: &Path,
+    expected_plan: &str,
+    expected_operation: &str,
+) -> Result<Value, String> {
+    let object = raw.as_object().ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    if required_string(object, "planId")? != expected_plan {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    let outcome = enum_string(
+        object,
+        "outcome",
+        &["applied", "refused", "stale", "failed", "indeterminate"],
+    )?;
+    let operation = required_string(object, "operation")?;
+    if operation != expected_operation {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    let provider = record_field(object, "provider")?;
+    let mut result = json!({
+        "planId": expected_plan,
+        "operation": expected_operation,
+        "outcome": outcome,
+        "changedFiles": normalize_files(object.get("changedFiles"), root)?,
+        "primaryFile": nullable_safe_path(object.get("primaryFile"), root)?,
+        "diagnostics": normalize_diagnostics(object.get("diagnostics"), root)?,
+        "provider": bounded_value_string(provider.get("name"), 256)?,
+        "providerVersion": nullable_string(provider.get("version"))?
+    });
+    if let Some(transaction_id) = optional_protocol_id(object.get("transactionId"))? {
+        result["transactionId"] = Value::String(transaction_id);
+    }
+    Ok(result)
+}
+
+pub(super) fn normalize_refactoring_rollback(
+    raw: Value,
+    root: &Path,
+    expected_transaction: &str,
+) -> Result<Value, String> {
+    let object = raw.as_object().ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+    if required_string(object, "transactionId")? != expected_transaction {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    Ok(json!({
+        "transactionId": expected_transaction,
+        "rolledBack": object.get("rolledBack").and_then(Value::as_bool).ok_or_else(|| PROTOCOL_FAILED.to_string())?,
+        "changedFiles": normalize_files(object.get("changedFiles"), root)?,
+        "conflicts": normalize_conflicts(object.get("conflicts"), root)?,
+        "diagnostics": normalize_diagnostics(object.get("diagnostics"), root)?
+    }))
+}
+
+pub(super) fn normalize_refactoring_evidence(
+    value: Option<&Value>,
+) -> Result<Vec<Value>, String> {
+    array(value)?
+        .iter()
+        .map(|item| {
+            let object = item
+                .as_object()
+                .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+            let kind = enum_string(object, "kind", &["create", "edit", "move", "delete"])?;
+            let summary = bounded_string(object, "summary", MAX_TEXT_BYTES)?;
+            let mut result = json!({"kind": kind, "summary": summary});
+            if let Some(detail) = optional_bounded_string(object.get("detail"), MAX_TEXT_BYTES)? {
+                result["detail"] = Value::String(detail);
+            }
+            Ok(result)
+        })
+        .collect()
+}
+
+pub(super) fn normalize_refactoring_target(
+    target: &RefactoringTarget,
+    root: &Path,
+) -> Result<Value, String> {
+    let path = safe_path(&target.path, root)?;
+    let mut result = json!({"kind": target.kind, "path": path, "identity": target.identity});
+    if let Some(selection) = &target.selection {
+        result["selection"] = json!({"start": selection.start, "end": selection.end});
+    }
+    Ok(result)
+}
+
+pub(super) fn optional_protocol_id(value: Option<&Value>) -> Result<Option<String>, String> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let id = value
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| PROTOCOL_FAILED.to_string())?;
+            validate_id(id)?;
+            Ok(Some(id.to_string()))
+        }
+    }
 }
 
 pub(super) fn normalize_files(value: Option<&Value>, root: &Path) -> Result<Vec<Value>, String> {

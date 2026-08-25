@@ -13,9 +13,18 @@ import type {
   DiscardRefactorKitPlanRequest,
   DiscardRefactorKitPlanResult,
   PreviewExternalJavaImportRequest,
+  RefactorApplyRequest,
+  RefactorApplyResult,
+  RefactorPreviewRequest,
+  RefactorPreviewResult,
+  RefactorRollbackRequest,
+  RefactorRollbackResult,
+  RefactoringTarget,
+  RefactorWorkspaceAuthority,
   RefactorKitAffectedFile,
   RefactorKitCapabilities,
   RefactorKitCommandResult,
+  RefactorKitEvidence,
   RefactorKitLanguageAdapter,
   RefactorKitLanguageAdapterResourceLimits,
   RefactorKitLanguageAdapterRuntime,
@@ -25,6 +34,7 @@ import type {
   RefactorKitPatchPlan,
   RefactorKitSafetyCapabilities,
   RefactorKitPlanDiagnostic,
+  RefactorKitPlanConflict,
   RefactorKitStatus,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
@@ -100,6 +110,16 @@ const DIAGNOSTIC_RANGE_CAPABILITY_VOCABULARY = [DIAGNOSTIC_RANGE_CAPABILITY] as 
 const DIAGNOSTICS_V2_METHOD = "diagnostics.v2" as const;
 const DIAGNOSTICS_OPERATION = "diagnostics" as const;
 const DIAGNOSTICS_V2_BACKEND = "typescript-compiler-exact-v1" as const;
+const REFACTORING_OPERATIONS = [
+  "rename-class",
+  "rename-member",
+  "rename-local-variable",
+  "move-class",
+  "change-method-signature",
+  "safe-delete",
+] as const;
+const REFACTOR_TARGET_KINDS = ["class", "member", "local-binding"] as const;
+const REFACTOR_APPLY_OUTCOMES = ["applied", "refused", "stale", "failed", "indeterminate"] as const;
 const UTF8_ENCODER = new TextEncoder();
 const UPDATE_REQUIRED =
   "This RefactorKit operation requires an updated managed backend with targetDirectory preview, apply, discard, and rollback support.";
@@ -1468,6 +1488,57 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
       "RefactorKit could not discard the retained plan.",
     );
   }
+  if (command === "preview_refactorkit_refactoring") {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      /refus|reject/.test(text) ? "REFACTORKIT_PREVIEW_REFUSED" : "REFACTORKIT_PREVIEW_FAILED",
+      /refus|reject/.test(text)
+        ? "RefactorKit refused to preview this Java refactoring."
+        : "RefactorKit could not preview this Java refactoring.",
+    );
+  }
+  if (command === "apply_refactorkit_refactoring") {
+    if (/stale|unknown|guard mismatch/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_APPLY_STALE",
+        "The reviewed RefactorKit refactoring plan is stale or no longer available.",
+      );
+    }
+    if (/refus|reject|approval/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_APPLY_REFUSED",
+        "RefactorKit refused to apply the reviewed refactoring plan.",
+      );
+    }
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_APPLY_FAILED",
+      "RefactorKit could not apply the reviewed refactoring plan.",
+    );
+  }
+  if (command === "discard_refactorkit_refactoring") {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_DISCARD_FAILED",
+      "RefactorKit could not discard the retained refactoring plan.",
+    );
+  }
+  if (command === "rollback_refactorkit_refactoring") {
+    if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_ROLLBACK_CONFLICT",
+        "RefactorKit could not roll back because the refactoring transaction conflicts with current workspace state.",
+      );
+    }
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_ROLLBACK_FAILED",
+      "RefactorKit could not roll back the refactoring transaction.",
+    );
+  }
   if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
     return new TauriRefactorKitManagedCommandError(
       command,
@@ -2230,6 +2301,290 @@ function normalizeRollback(
   };
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) return value;
+  if (Object.isFrozen(value)) return value;
+  const record = value as Record<PropertyKey, unknown>;
+  for (const key of Object.keys(record)) deepFreeze(record[key]);
+  Object.freeze(value);
+  return value;
+}
+
+function validateRefactoringOperation(value: string, command: string): void {
+  if (!(REFACTORING_OPERATIONS as readonly string[]).includes(value)) {
+    throw new TauriAdapterError(command, "Invalid RefactorKit refactoring operation");
+  }
+}
+
+function validateRefactorTarget(request: RefactoringTarget, command: string): RecordValue {
+  const record = request as unknown as RecordValue;
+  const target: RecordValue = {
+    kind: enumValue(command, record, "kind", REFACTOR_TARGET_KINDS),
+    path: validatePath(command, request.path, "path"),
+    identity: protocolString(command, record, "identity", MAX_TEXT, false),
+  };
+  if (request.selection !== undefined) {
+    const selection = request.selection;
+    if (
+      !Number.isSafeInteger(selection.start) ||
+      !Number.isSafeInteger(selection.end) ||
+      selection.start < 0 ||
+      selection.end < 0 ||
+      selection.end < selection.start
+    ) {
+      throw new TauriAdapterError(command, "Invalid RefactorKit refactoring target selection");
+    }
+    target.selection = { start: selection.start, end: selection.end };
+  }
+  return target;
+}
+
+function validateRefactorAuthority(
+  request: RefactorWorkspaceAuthority,
+  command: string,
+): RecordValue {
+  requestId(request.workspaceId, command, "workspaceId");
+  requestGeneration(request.workspaceGeneration, command, "workspaceGeneration");
+  return {
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+  };
+}
+
+function validatePreviewRefactoringRequest(
+  request: RefactorPreviewRequest,
+  command: string,
+): RecordValue {
+  validateRefactoringOperation(request.operation, command);
+  const target = validateRefactorTarget(request.target, command);
+  const authority = validateRefactorAuthority(request.authority, command);
+  requestGeneration(request.selectionGeneration, command, "selectionGeneration");
+  requestId(request.requestId, command, "requestId");
+  return {
+    operation: request.operation,
+    target,
+    authority,
+    selectionGeneration: request.selectionGeneration,
+    requestId: request.requestId,
+  };
+}
+
+function validateApplyRefactoringRequest(
+  request: RefactorApplyRequest,
+  command: string,
+): RecordValue {
+  validateRefactoringOperation(request.operation, command);
+  requestId(request.planId, command, "planId");
+  requestId(request.requestId, command, "requestId");
+  requestId(request.approval.approvalId, command, "approvalId");
+  requestId(request.approval.approvedPlanId, command, "approvedPlanId");
+  requestGeneration(request.selectionGeneration, command, "selectionGeneration");
+  if (request.approval.approvedPlanId !== request.planId) {
+    throw new TauriAdapterError(command, "Approval does not bind the requested RefactorKit plan");
+  }
+  const timestamp = request.approval.approvedAt;
+  if (
+    timestamp.length > MAX_ID ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(timestamp) ||
+    Number.isNaN(Date.parse(timestamp))
+  ) {
+    throw new TauriAdapterError(command, "Invalid RefactorKit approvedAt timestamp");
+  }
+  const target = validateRefactorTarget(request.target, command);
+  const authority = validateRefactorAuthority(request.authority, command);
+  return {
+    planId: request.planId,
+    operation: request.operation,
+    target,
+    authority,
+    selectionGeneration: request.selectionGeneration,
+    requestId: request.requestId,
+    approval: {
+      approvalId: request.approval.approvalId,
+      approvedPlanId: request.approval.approvedPlanId,
+      approvedAt: request.approval.approvedAt,
+    },
+  };
+}
+
+function validateRollbackRefactoringRequest(
+  request: RefactorRollbackRequest,
+  command: string,
+): RecordValue {
+  validateRefactoringOperation(request.operation, command);
+  requestId(request.transactionId, command, "transactionId");
+  requestId(request.requestId, command, "requestId");
+  const authority = validateRefactorAuthority(request.authority, command);
+  return {
+    transactionId: request.transactionId,
+    operation: request.operation,
+    authority,
+    requestId: request.requestId,
+  };
+}
+
+function normalizeRefactorTarget(command: string, value: unknown): RefactoringTarget {
+  const record = protocolRecord(command, value, "target");
+  const target: RefactoringTarget = {
+    kind: enumValue(command, record, "kind", REFACTOR_TARGET_KINDS),
+    path: validatePath(
+      command,
+      protocolString(command, record, "path", MAX_PATH, false),
+      "target.path",
+    ),
+    identity: protocolString(command, record, "identity", MAX_TEXT, false),
+  };
+  if (record.selection !== undefined && record.selection !== null) {
+    const selection = protocolRecord(command, record.selection, "target.selection");
+    const start = integer(command, selection, "start");
+    const end = integer(command, selection, "end");
+    if (end < start) throw invalidProtocolShape(command, "invalid target.selection");
+    target.selection = { start, end };
+  }
+  return target;
+}
+
+function normalizeRefactorPreview(command: string, response: unknown): RefactorPreviewResult {
+  const record = protocolRecord(command, response);
+  const confidence = record.confidence;
+  if (
+    typeof confidence !== "number" ||
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 1
+  ) {
+    throw invalidProtocolShape(command, "invalid confidence");
+  }
+  if (record.grantsApplyAuthority !== false) {
+    throw invalidProtocolShape(command, "invalid grantsApplyAuthority");
+  }
+  const eligibility = protocolRecord(command, record.applyEligibility, "applyEligibility");
+  const staleness = protocolRecord(command, record.staleness, "staleness");
+  const authority = protocolRecord(command, record.authority, "authority");
+  const result: RefactorPreviewResult = {
+    planId: protocolId(command, record, "planId"),
+    operation: enumValue(command, record, "operation", REFACTORING_OPERATIONS),
+    target: normalizeRefactorTarget(command, record.target),
+    status: enumValue(command, record, "status", ["ready", "refused", "stale", "error"] as const),
+    summary: protocolString(command, record, "summary", MAX_TEXT, false),
+    confidence,
+    riskLevel: enumValue(
+      command,
+      record,
+      "riskLevel",
+      ["low", "medium", "high", "unknown"] as const,
+    ),
+    risks: strings(command, record.risks, "risks"),
+    evidence: array(command, record.evidence, "evidence", (item) => {
+      const normalized: RefactorKitEvidence = {
+        kind: protocolString(command, item, "kind", MAX_TEXT, false),
+        summary: protocolString(command, item, "summary"),
+      };
+      const path = optionalProtocolString(command, item, "path", true);
+      const detail = optionalProtocolString(command, item, "detail");
+      if (path !== undefined) normalized.path = path;
+      if (detail !== undefined) normalized.detail = detail;
+      return normalized;
+    }),
+    affectedFiles: affectedFiles(command, record.affectedFiles, "affectedFiles"),
+    renderedDiff: protocolString(command, record, "renderedDiff", MAX_DIFF),
+    structuredDiff: array(command, record.structuredDiff, "structuredDiff", (item) => ({
+      path: validatePath(
+        command,
+        protocolString(command, item, "path", MAX_PATH, false),
+        "structuredDiff.path",
+      ),
+      change: enumValue(command, item, "change", ["create", "edit", "move", "delete"] as const),
+      hunks: array(command, item.hunks, "structuredDiff.hunks", (hunk) => ({
+        oldStart: integer(command, hunk, "oldStart"),
+        oldLines: integer(command, hunk, "oldLines"),
+        newStart: integer(command, hunk, "newStart"),
+        newLines: integer(command, hunk, "newLines"),
+        lines: strings(command, hunk.lines, "structuredDiff.hunks.lines"),
+      })),
+    })),
+    warnings: strings(command, record.warnings, "warnings"),
+    diagnosticsAfterPreview: diagnostics(
+      command,
+      record.diagnosticsAfterPreview,
+      "diagnosticsAfterPreview",
+    ),
+    conflicts: array(command, record.conflicts, "conflicts", (item) => {
+      const normalized: RefactorKitPlanConflict = {
+        kind: protocolString(command, item, "kind", MAX_TEXT, false),
+        summary: protocolString(command, item, "summary"),
+      };
+      const path = optionalProtocolString(command, item, "path", true);
+      if (path !== undefined) normalized.path = path;
+      return normalized;
+    }),
+    refusalReasons: strings(command, record.refusalReasons, "refusalReasons"),
+    applyEligibility: {
+      eligible: protocolBoolean(command, eligibility, "eligible"),
+      blockers: strings(command, eligibility.blockers, "applyEligibility.blockers"),
+    },
+    staleness: {
+      stale: protocolBoolean(command, staleness, "stale"),
+      reasons: strings(command, staleness.reasons, "staleness.reasons"),
+    },
+    grantsApplyAuthority: false,
+    authority: {
+      workspaceId: protocolId(command, authority, "workspaceId"),
+      workspaceGeneration: integer(command, authority, "workspaceGeneration", 1),
+    },
+    selectionGeneration: integer(command, record, "selectionGeneration", 1),
+    requestId: protocolId(command, record, "requestId"),
+    provider: protocolString(command, record, "provider", MAX_TEXT, false),
+    providerVersion: nullableString(command, record, "providerVersion"),
+  };
+  return deepFreeze(result);
+}
+
+function normalizeRefactorApply(command: string, response: unknown): RefactorApplyResult {
+  const record = protocolRecord(command, response);
+  const primaryFile =
+    record.primaryFile === null
+      ? null
+      : validatePath(
+          command,
+          protocolString(command, record, "primaryFile", MAX_PATH, false),
+          "primaryFile",
+        );
+  const result: RefactorApplyResult = {
+    planId: protocolId(command, record, "planId"),
+    operation: enumValue(command, record, "operation", REFACTORING_OPERATIONS),
+    outcome: enumValue(command, record, "outcome", REFACTOR_APPLY_OUTCOMES),
+    changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
+    primaryFile,
+    diagnostics: diagnostics(command, record.diagnostics, "diagnostics"),
+    provider: protocolString(command, record, "provider", MAX_TEXT, false),
+    providerVersion: nullableString(command, record, "providerVersion"),
+  };
+  if (Object.prototype.hasOwnProperty.call(record, "transactionId")) {
+    result.transactionId = protocolId(command, record, "transactionId");
+  }
+  return result;
+}
+
+function normalizeRefactorRollback(command: string, response: unknown): RefactorRollbackResult {
+  const record = protocolRecord(command, response);
+  return {
+    transactionId: protocolId(command, record, "transactionId"),
+    rolledBack: protocolBoolean(command, record, "rolledBack"),
+    changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
+    conflicts: array(command, record.conflicts, "conflicts", (item) => {
+      const normalized: RefactorKitPlanConflict = {
+        kind: protocolString(command, item, "kind", MAX_TEXT, false),
+        summary: protocolString(command, item, "summary"),
+      };
+      const path = optionalProtocolString(command, item, "path", true);
+      if (path !== undefined) normalized.path = path;
+      return normalized;
+    }),
+    diagnostics: diagnostics(command, record.diagnostics, "diagnostics"),
+  };
+}
+
 // Existing fixed-command normalization.
 function requireRecord(command: string, value: unknown): RecordValue {
   if (!isRecord(value)) throw invalidShape(command, "expected object", value);
@@ -2581,6 +2936,54 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
 
   async discardPlan(request: DiscardRefactorKitPlanRequest): Promise<DiscardRefactorKitPlanResult> {
     const command = "discard_refactorkit_plan";
+    validateDiscardRequest(request, command);
+    const exactRequest = {
+      planId: request.planId,
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      selectionGeneration: request.selectionGeneration,
+      requestId: request.requestId,
+    };
+    const result = normalizeDiscard(command, await invokeManaged(command, exactRequest));
+    if (result.planId !== request.planId) {
+      throw invalidProtocolShape(command, "response planId does not match the requested plan");
+    }
+    return result;
+  }
+
+  async previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
+    const command = "preview_refactorkit_refactoring";
+    const exactRequest = validatePreviewRefactoringRequest(request, command);
+    return normalizeRefactorPreview(command, await invokeManaged(command, exactRequest));
+  }
+
+  async applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult> {
+    const command = "apply_refactorkit_refactoring";
+    const exactRequest = validateApplyRefactoringRequest(request, command);
+    const result = normalizeRefactorApply(command, await invokeManaged(command, exactRequest));
+    if (result.planId !== request.planId) {
+      throw invalidProtocolShape(command, "response planId does not match the requested plan");
+    }
+    return result;
+  }
+
+  async rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult> {
+    const command = "rollback_refactorkit_refactoring";
+    const exactRequest = validateRollbackRefactoringRequest(request, command);
+    const result = normalizeRefactorRollback(command, await invokeManaged(command, exactRequest));
+    if (result.transactionId !== request.transactionId) {
+      throw invalidProtocolShape(
+        command,
+        "response transactionId does not match the requested transaction",
+      );
+    }
+    return result;
+  }
+
+  async discardRefactoring(
+    request: DiscardRefactorKitPlanRequest,
+  ): Promise<DiscardRefactorKitPlanResult> {
+    const command = "discard_refactorkit_refactoring";
     validateDiscardRequest(request, command);
     const exactRequest = {
       planId: request.planId,

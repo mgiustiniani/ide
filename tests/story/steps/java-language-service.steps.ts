@@ -36,6 +36,17 @@ function sessionFor(world: StoryWorld): JavaLanguageServiceStorySession {
   return session;
 }
 
+/**
+ * Shared-session accessor used by shared-operational.steps.ts so the shared
+ * adapter/web-first/status step wording and this file's feature-specific steps
+ * operate on the SAME session instance per world.
+ */
+export function getJavaLanguageServiceSession(
+  world: StoryWorld,
+): JavaLanguageServiceStorySession {
+  return sessionFor(world);
+}
+
 async function attachEvidence(session: JavaLanguageServiceStorySession, world: StoryWorld): Promise<void> {
   await world.attach(JSON.stringify(session.evidence(), null, 2), "application/json");
 }
@@ -480,32 +491,6 @@ Given<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "the adapter receives the request",
-  async function () {
-    const session = sessionFor(this);
-    await session.requestCompletion();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the adapter extracts only the request payload needed by the delegate",
-  async function () {
-    const session = sessionFor(this);
-    const envelope = session.adapterEnvelope();
-    assert.ok(envelope, `${REQUIREMENT} adapter envelope is missing`);
-    assert.deepEqual(
-      Object.keys(envelope).sort(),
-      ["cancellationId", "document", "generation", "position", "requestId", "workspaceId"],
-      `${REQUIREMENT} adapter extracted fields beyond the delegate payload`,
-    );
-    assert.deepEqual(Object.keys((envelope.document as Record<string, unknown>)).sort(), ["path", "uri", "version"]);
-    assert.deepEqual(Object.keys((envelope.position as Record<string, unknown>)).sort(), ["character", "line"]);
-    await attachEvidence(session, this);
-  },
-);
-
 Then<StoryWorld>(
   "the adapter delegates the extracted request to the Java language service",
   async function () {
@@ -515,17 +500,6 @@ Then<StoryWorld>(
       session.completionResponse()?.ok === true,
       `${REQUIREMENT} delegation did not reach the language service`,
     );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the adapter returns the delegated response to the caller",
-  async function () {
-    const session = sessionFor(this);
-    const response = session.completionResponse();
-    assert.ok(response, `${REQUIREMENT} delegated response is missing`);
-    assert.equal(response.requestId, "story-completion-1", `${REQUIREMENT} response is not correlated to the request`);
     await attachEvidence(session, this);
   },
 );
@@ -551,48 +525,11 @@ Then<StoryWorld>(
 // AC-005 — the web frontend stays Tauri-free at the platform boundary
 // -----------------------------------------------------------------------------
 
-Given<StoryWorld>(
-  "packages ui, web-core, and web are part of the standalone web frontend",
-  async function () {
-    const session = sessionFor(this);
-    session.start();
-    session.scanWebFirstLayers();
-    await attachEvidence(session, this);
-  },
-);
-
 When<StoryWorld>(
   "the Java language service is exercised through the browser profile",
   async function () {
     const session = sessionFor(this);
     await session.proveWebBuild();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "no file under ui, web-core, or web imports {string}",
-  async function (platformApi: string) {
-    const session = sessionFor(this);
-    assert.equal(platformApi, "@tauri-apps/api", `${REQUIREMENT} boundary API token mismatch`);
-    const scan = session.webFirstLayerScan();
-    assert.ok(scan && scan.length > 0, `${REQUIREMENT} web-first layer scan is missing`);
-    for (const result of scan) {
-      assert.equal(
-        result.platformApiImportCount,
-        0,
-        `${REQUIREMENT} ${result.layer} imports @tauri-apps/api ${result.platformApiImportCount} time(s)`,
-      );
-    }
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the web frontend builds and runs without Tauri",
-  async function () {
-    const session = sessionFor(this);
-    assert.equal(session.webBuildProof(), "passed", `${REQUIREMENT} web build did not pass`);
     await attachEvidence(session, this);
   },
 );
@@ -620,53 +557,6 @@ Given<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     session.start();
-    await attachEvidence(session, this);
-  },
-);
-
-When<StoryWorld>(
-  "the feature file is parsed for requirement and status reconciliation",
-  async function () {
-    const session = sessionFor(this);
-    session.reconcileFeatureStatus();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the feature declares exactly one effective status \"@not-implemented\" at feature level",
-  async function () {
-    const session = sessionFor(this);
-    const reconciliation = session.featureReconciliation();
-    assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
-    assert.equal(
-      new Set(reconciliation.featureStatusTags).size,
-      1,
-      `${REQUIREMENT} feature must declare exactly one effective status at feature level`,
-    );
-    assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT} feature does not declare @not-implemented`,
-    );
-    assert.equal(
-      reconciliation.scenarioStatusTags.length,
-      0,
-      `${REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "no scenario overrides that single effective status",
-  async function () {
-    const session = sessionFor(this);
-    const reconciliation = session.featureReconciliation();
-    assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
-    assert.ok(
-      reconciliation.scenarioStatusTags.every((tag) => tag === "@not-implemented"),
-      `${REQUIREMENT} a scenario overrides @not-implemented`,
-    );
     await attachEvidence(session, this);
   },
 );

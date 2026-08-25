@@ -25,6 +25,7 @@ pub(super) struct Guard {
 pub(super) struct TransactionGuard {
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
+    pub(super) operation: Option<String>,
 }
 
 #[derive(Default)]
@@ -203,6 +204,7 @@ pub fn apply_refactorkit_plan(
         TransactionGuard {
             workspace_id: request.workspace_id,
             workspace_generation: request.workspace_generation,
+            operation: None,
         },
     );
     Ok(result)
@@ -301,6 +303,225 @@ pub fn rollback_refactorkit_transaction(
     Ok(result)
 }
 
+pub fn preview_refactoring(
+    request: PreviewRefactoringRequest,
+    state: &RefactorKitDaemonState,
+) -> Result<Value, String> {
+    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    require_generation(request.selection_generation)?;
+    validate_id(&request.request_id)?;
+    validate_refactoring_target(&root, &request.target)?;
+    let operation = request.operation.as_str();
+
+    let mut manager = lock(state)?;
+    ensure_session(
+        &mut manager,
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+        &root,
+    )?;
+    let raw = call(
+        &mut manager,
+        "java.refactor.preview",
+        refactoring_preview_params(operation, &request.target),
+        REQUEST_TIMEOUT,
+    )?;
+    let normalized = match normalize_refactoring_preview(raw, &root, &request) {
+        Ok(plan) => plan,
+        Err(error) => {
+            reset(&mut manager);
+            return Err(error);
+        }
+    };
+    let plan_id = string_field(&normalized, "planId")?.to_string();
+    let retained = normalized.get("status").and_then(Value::as_str) == Some("ready")
+        && normalized
+            .pointer("/applyEligibility/eligible")
+            .and_then(Value::as_bool)
+            == Some(true);
+    if retained {
+        manager.plans.insert(
+            plan_id,
+            Guard {
+                workspace_id: request.authority.workspace_id,
+                workspace_generation: request.authority.workspace_generation,
+                selection_generation: request.selection_generation,
+                request_id: request.request_id,
+            },
+        );
+    } else {
+        manager.consumed_plans.insert(plan_id);
+    }
+    Ok(normalized)
+}
+
+pub fn apply_refactoring(
+    request: ApplyRefactoringRequest,
+    state: &RefactorKitDaemonState,
+) -> Result<Value, String> {
+    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    require_generation(request.selection_generation)?;
+    for value in [
+        &request.plan_id,
+        &request.request_id,
+        &request.approval.approval_id,
+        &request.approval.approved_at,
+    ] {
+        validate_id(value)?;
+    }
+    if !approval_matches(&request.approval, &request.plan_id) {
+        return Err("Approval does not bind the requested RefactorKit plan.".to_string());
+    }
+    validate_refactoring_target(&root, &request.target)?;
+    let operation = request.operation.as_str();
+
+    let mut manager = lock(state)?;
+    ensure_session(
+        &mut manager,
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+        &root,
+    )?;
+    let guard = manager
+        .plans
+        .get(&request.plan_id)
+        .ok_or_else(|| "RefactorKit plan is stale or unknown.".to_string())?;
+    if !guard_matches(
+        guard,
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+        request.selection_generation,
+        &request.request_id,
+    ) {
+        return Err("RefactorKit plan approval guard mismatch.".to_string());
+    }
+    let raw = call(
+        &mut manager,
+        "java.refactor.apply",
+        refactoring_apply_params(&request.plan_id),
+        REQUEST_TIMEOUT,
+    )?;
+    let result = match normalize_refactoring_apply(raw, &root, &request.plan_id, operation) {
+        Ok(result) => result,
+        Err(error) => {
+            // Applying is a write boundary. An uncorrelated response leaves transaction state
+            // indeterminate, so no local guard or process may survive it.
+            reset(&mut manager);
+            return Err(error);
+        }
+    };
+    if result.get("outcome").and_then(Value::as_str) == Some("applied") {
+        if let Some(transaction_id) = result.get("transactionId").and_then(Value::as_str) {
+            manager.transactions.insert(
+                transaction_id.to_string(),
+                TransactionGuard {
+                    workspace_id: request.authority.workspace_id,
+                    workspace_generation: request.authority.workspace_generation,
+                    operation: Some(operation.to_string()),
+                },
+            );
+        }
+    }
+    consume_plan(&mut manager, &request.plan_id);
+    Ok(result)
+}
+
+pub fn rollback_refactoring(
+    request: RollbackRefactoringRequest,
+    state: &RefactorKitDaemonState,
+) -> Result<Value, String> {
+    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    validate_id(&request.transaction_id)?;
+    validate_id(&request.request_id)?;
+    let mut manager = lock(state)?;
+    let guard = manager
+        .transactions
+        .get(&request.transaction_id)
+        .ok_or_else(|| "RefactorKit transaction is stale or unknown.".to_string())?;
+    if guard.workspace_id != request.authority.workspace_id
+        || guard.workspace_generation != request.authority.workspace_generation
+    {
+        return Err("RefactorKit transaction ownership mismatch.".to_string());
+    }
+    if guard.operation.as_deref() != Some(request.operation.as_str()) {
+        return Err("RefactorKit transaction operation mismatch.".to_string());
+    }
+    ensure_session(
+        &mut manager,
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+        &root,
+    )?;
+    let raw = call(
+        &mut manager,
+        "java.refactor.rollback",
+        refactoring_rollback_params(&request.transaction_id),
+        REQUEST_TIMEOUT,
+    )?;
+    let result = match normalize_refactoring_rollback(raw, &root, &request.transaction_id) {
+        Ok(result) => result,
+        Err(error) => {
+            reset(&mut manager);
+            return Err(error);
+        }
+    };
+    if result
+        .get("rolledBack")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        manager.transactions.remove(&request.transaction_id);
+    }
+    Ok(result)
+}
+
+pub fn discard_refactoring(
+    request: DiscardRequest,
+    state: &RefactorKitDaemonState,
+) -> Result<Value, String> {
+    let root = validate_workspace(&request.workspace_id, request.workspace_generation)?;
+    require_generation(request.selection_generation)?;
+    validate_id(&request.plan_id)?;
+    validate_id(&request.request_id)?;
+    let mut manager = lock(state)?;
+    if manager.consumed_plans.contains(&request.plan_id) {
+        return Ok(json!({"planId": request.plan_id, "discarded": false}));
+    }
+    let guard = manager
+        .plans
+        .get(&request.plan_id)
+        .ok_or_else(|| "RefactorKit plan is stale or unknown.".to_string())?;
+    if !guard_matches(
+        guard,
+        &request.workspace_id,
+        request.workspace_generation,
+        request.selection_generation,
+        &request.request_id,
+    ) {
+        return Err("RefactorKit plan discard guard mismatch.".to_string());
+    }
+    consume_plan(&mut manager, &request.plan_id);
+    ensure_session(
+        &mut manager,
+        &request.workspace_id,
+        request.workspace_generation,
+        &root,
+    )?;
+    let response = call(
+        &mut manager,
+        "java.refactor.discard",
+        refactoring_discard_params(&request.plan_id),
+        REQUEST_TIMEOUT,
+    );
+    match response {
+        Ok(value) => Ok(json!({
+            "planId": request.plan_id,
+            "discarded": value.get("discarded").and_then(Value::as_bool).unwrap_or(true)
+        })),
+        Err(error) => Err(error),
+    }
+}
+
 pub fn shutdown_refactorkit_daemon(state: &RefactorKitDaemonState) -> Result<(), String> {
     let mut manager = lock(state)?;
     reset(&mut manager);
@@ -389,6 +610,52 @@ pub(super) fn plan_params(plan_id: &str) -> Value {
 
 pub(super) fn transaction_params(transaction_id: &str) -> Value {
     json!({"transactionId": transaction_id})
+}
+
+pub(super) fn refactoring_target_params(target: &RefactoringTarget) -> Value {
+    let mut value = json!({
+        "kind": target.kind,
+        "path": target.path,
+        "identity": target.identity
+    });
+    if let Some(selection) = &target.selection {
+        value["selection"] = json!({"start": selection.start, "end": selection.end});
+    }
+    value
+}
+
+pub(super) fn refactoring_preview_params(operation: &str, target: &RefactoringTarget) -> Value {
+    json!({"operation": operation, "target": refactoring_target_params(target)})
+}
+
+pub(super) fn refactoring_apply_params(plan_id: &str) -> Value {
+    json!({"planId": plan_id})
+}
+
+pub(super) fn refactoring_rollback_params(transaction_id: &str) -> Value {
+    json!({"transactionId": transaction_id})
+}
+
+pub(super) fn refactoring_discard_params(plan_id: &str) -> Value {
+    json!({"planId": plan_id})
+}
+
+pub(super) fn validate_refactoring_target(root: &Path, target: &RefactoringTarget) -> Result<String, String> {
+    if !matches!(target.kind.as_str(), "class" | "member" | "local-binding") {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    if target.identity.is_empty()
+        || target.identity.len() > MAX_TEXT_BYTES
+        || target.identity.chars().any(char::is_control)
+    {
+        return Err(PROTOCOL_FAILED.to_string());
+    }
+    if let Some(selection) = &target.selection {
+        if selection.end < selection.start {
+            return Err(PROTOCOL_FAILED.to_string());
+        }
+    }
+    safe_path(&target.path, root)
 }
 
 pub(super) fn call(

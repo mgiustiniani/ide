@@ -2,6 +2,9 @@ import type {
   ApplyRefactorKitPlanRequest,
   DiscardRefactorKitPlanRequest,
   PreviewExternalJavaImportRequest,
+  RefactorApplyRequest,
+  RefactorPreviewRequest,
+  RefactorRollbackRequest,
   RollbackRefactorKitTransactionRequest,
   SavedSnapshotDefinitionRequest,
   SavedSnapshotDefinitionResult,
@@ -37,6 +40,8 @@ const SNAPSHOT_ID = "snapshot-secret-a742";
 const START_SNAPSHOT_HASH = `sha256:${"b".repeat(64)}`;
 const SYMBOL_QUERY = "symbol-query-secret-ec17";
 const WORKSPACE_ROOT = "/workspace/secret-project";
+const TARGET_IDENTITY = "target-identity-secret-3f18";
+const TARGET_PATH = "/workspace/secret-refactoring-target.java";
 const PROVIDER = "provider-secret-92d1";
 const PROVIDER_VERSION = "provider-version-secret-8f20";
 const BACKEND = "backend-secret-1e43";
@@ -56,6 +61,8 @@ const FORBIDDEN_IDENTIFIERS = [
   START_SNAPSHOT_HASH,
   SYMBOL_QUERY,
   WORKSPACE_ROOT,
+  TARGET_IDENTITY,
+  TARGET_PATH,
   PROVIDER,
   PROVIDER_VERSION,
   BACKEND,
@@ -101,6 +108,52 @@ const discardRequest: DiscardRefactorKitPlanRequest = {
   workspaceId: WORKSPACE_ID,
   workspaceGeneration: 11,
   selectionGeneration: 12,
+  requestId: REQUEST_ID,
+};
+
+const previewRefactoringRequest: RefactorPreviewRequest = {
+  operation: "rename-class",
+  target: {
+    kind: "class",
+    path: TARGET_PATH,
+    identity: TARGET_IDENTITY,
+  },
+  authority: {
+    workspaceId: WORKSPACE_ID,
+    workspaceGeneration: 11,
+  },
+  selectionGeneration: 12,
+  requestId: REQUEST_ID,
+};
+
+const applyRefactoringRequest: RefactorApplyRequest = {
+  planId: PLAN_ID,
+  operation: "rename-class",
+  target: {
+    kind: "class",
+    path: TARGET_PATH,
+    identity: TARGET_IDENTITY,
+  },
+  authority: {
+    workspaceId: WORKSPACE_ID,
+    workspaceGeneration: 11,
+  },
+  selectionGeneration: 12,
+  requestId: REQUEST_ID,
+  approval: {
+    approvalId: "approval-secret-c751",
+    approvedPlanId: PLAN_ID,
+    approvedAt: "2026-07-13T12:00:00.000Z",
+  },
+};
+
+const rollbackRefactoringRequest: RefactorRollbackRequest = {
+  transactionId: TRANSACTION_ID,
+  operation: "rename-class",
+  authority: {
+    workspaceId: WORKSPACE_ID,
+    workspaceGeneration: 11,
+  },
   requestId: REQUEST_ID,
 };
 
@@ -278,6 +331,23 @@ describe("BrowserRefactorKitAdapter", () => {
       (adapter: BrowserRefactorKitAdapter) => adapter.rollbackTransaction(rollbackRequest),
     ],
     ["discardPlan", (adapter: BrowserRefactorKitAdapter) => adapter.discardPlan(discardRequest)],
+    [
+      "previewRefactoring",
+      (adapter: BrowserRefactorKitAdapter) => adapter.previewRefactoring(previewRefactoringRequest),
+    ],
+    [
+      "applyRefactoring",
+      (adapter: BrowserRefactorKitAdapter) => adapter.applyRefactoring(applyRefactoringRequest),
+    ],
+    [
+      "rollbackRefactoring",
+      (adapter: BrowserRefactorKitAdapter) =>
+        adapter.rollbackRefactoring(rollbackRefactoringRequest),
+    ],
+    [
+      "discardRefactoring",
+      (adapter: BrowserRefactorKitAdapter) => adapter.discardRefactoring(discardRequest),
+    ],
   ] as const)(
     "rejects %s with one typed static error that redacts supplied identifiers",
     async (_name, operation) => {
