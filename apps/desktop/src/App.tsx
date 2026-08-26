@@ -44,6 +44,8 @@ import {
   REFACTOR_KIT_IMPORT_UNAVAILABLE,
   useRefactorKitImportController,
 } from "./features/refactorkit-import/useRefactorKitImportController";
+import { useJavaRefactoringController } from "./features/refactorkit-java/useJavaRefactoringController";
+import { JavaRefactoringPreviewDialog } from "./features/refactorkit-java/JavaRefactoringPreviewDialog";
 import { useRefactorKitStatusController } from "./features/refactorkit-status/useRefactorKitStatusController";
 import {
   useRefactorKitDiagnosticsController,
@@ -338,6 +340,13 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     openResultFile: desktopEditorController.openFileProgrammatically,
   });
 
+  const javaRefactoring = useJavaRefactoringController({
+    refactorKit: refactorKitAdapter,
+    capabilities: refactorKitStatus.capabilities,
+    workspaceId: workspace.currentWorkspaceId,
+    getWorkspaceGeneration: workspace.getGeneration,
+  });
+
   const xcom2Setup = useXcom2SetupController({
     monitor: xcom2SetupMonitorAdapter,
     transactions: xcom2SetupAdapter,
@@ -489,6 +498,9 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
       },
       refactorKitImport: {
         resetWorkspace: refactorKitImport.resetWorkspace,
+      },
+      javaRefactoring: {
+        resetWorkspace: javaRefactoring.resetWorkspace,
       },
       refactorKitStatus: refactorKitStatus.workspaceCollaborator,
       semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
@@ -676,6 +688,19 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
             onClick={handleOpenSettings}
           >
             Settings
+          </button>
+          <button
+            type="button"
+            className="rounded-sm px-2 py-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--highlight-bg)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+            onClick={() => {
+              javaRefactoring.open("rename-class", {
+                kind: "class",
+                path: "",
+                identity: "",
+              });
+            }}
+          >
+            Java Refactor
           </button>
         </div>
         <div
@@ -896,6 +921,27 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
           onApply={(plan) => {
             void refactorKitImport.applyDisplayedPlan(plan);
           }}
+        />
+      ) : null}
+      {javaRefactoring.dialog ? (
+        <JavaRefactoringPreviewDialog
+          dialog={javaRefactoring.dialog}
+          rollbackAdvertised={Boolean(
+            refactorKitStatus.capabilities?.generalRefactoring?.rollback,
+          )}
+          onSetOperation={javaRefactoring.setOperation}
+          onSetTarget={javaRefactoring.setTarget}
+          onPreview={() => {
+            void javaRefactoring.preview();
+          }}
+          onApply={(plan) => {
+            void javaRefactoring.applyDisplayedPlan(plan);
+          }}
+          onRollback={(result) => {
+            void javaRefactoring.rollback(result);
+          }}
+          onDiscard={javaRefactoring.discardDisplayedPlan}
+          onCancel={javaRefactoring.cancel}
         />
       ) : null}
       <SettingsPanel

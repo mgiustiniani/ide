@@ -31,6 +31,9 @@ export interface WorkspaceControllerCollaborators {
   refactorKitImport: {
     resetWorkspace(): void;
   };
+  javaRefactoring: {
+    resetWorkspace(): void;
+  };
   refactorKitStatus: RefactorKitStatusWorkspaceCollaborator;
   semanticSymbols?: {
     /** Stops and invalidates the old saved-snapshot session before authorization changes. */
@@ -431,6 +434,7 @@ export function useWorkspaceController(
         collaborators.xcom2ModuleActivation.beginWorkspaceSwitch(workspaceGeneration);
       collaborators.editor.resetWorkspace();
       collaborators.refactorKitImport.resetWorkspace();
+      collaborators.javaRefactoring.resetWorkspace();
 
       const javaDetach = collaborators.java.detach(workspaceGeneration);
       const semanticSymbolsReset =

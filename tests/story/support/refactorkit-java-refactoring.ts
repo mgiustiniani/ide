@@ -285,7 +285,7 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
         rollback: true,
         stability: "experimental",
       },
-      general_refactoring: {
+      generalRefactoring: {
         supported: true,
         operations: [...REFACTOR_OPERATIONS],
         preview: true,
@@ -587,15 +587,28 @@ export class RefactorKitJavaRefactoringStorySession {
   /**
    * Drives the REAL production capability-discovery path (TauriRefactorKitAdapter
    * getCapabilities) and records which general refactoring operations the daemon
-   * authoritatively advertises. The adapter-normalized capabilities do not carry
-   * the general-refactoring advertisement, so the advertisement is read from the
-   * authoritative daemon capability metadata behind the seam.
+   * authoritatively advertises. The adapter-normalized capabilities now carry the
+   * general-refactoring advertisement (capabilities.generalRefactoring.operations),
+   * so the advertisement is sourced from the adapter-normalized authoritative
+   * metadata; the fake daemon boundary behind the seam is used only as a cross-check.
    */
   async observeCapability(): Promise<RefactorKitCapabilities> {
     this.#assertStarted();
     const capabilities = await this.#adapter!.getCapabilities();
     this.#capabilities = capabilities;
-    this.#advertisedOperations = this.#boundary!.advertisedRefactorOperations();
+    const general = capabilities.generalRefactoring;
+    assert.ok(
+      general !== undefined && general.supported,
+      `${REQUIREMENT}: the adapter-normalized capabilities do not advertise the general-refactoring operation set`,
+    );
+    this.#advertisedOperations = general.operations;
+    // Cross-check only: the adapter-normalized advertisement must match the daemon
+    // capability metadata behind the seam.
+    assert.deepEqual(
+      [...general.operations],
+      [...this.#boundary!.advertisedRefactorOperations()],
+      `${REQUIREMENT}: adapter-normalized advertisement diverges from the daemon capability metadata`,
+    );
     return capabilities;
   }
 
@@ -795,6 +808,13 @@ export class RefactorKitJavaRefactoringStorySession {
     } catch {
       rejected = true;
     }
+    // Honest refusal: rollback for a not-advertised transaction class must be
+    // refused (rejected truthy / thrown), never fabricated as a successful rollback.
+    assert.equal(
+      rejected,
+      true,
+      `${REQUIREMENT}: rollback fabricated success for a not-advertised transaction class`,
+    );
     this.#notAdvertisedRollbackOutcome = {
       advertised: false,
       offered: false,

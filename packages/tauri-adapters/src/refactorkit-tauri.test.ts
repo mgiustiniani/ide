@@ -113,6 +113,30 @@ function treeSitterAdapter(languageId: "javascript" | "typescript", extension: "
   };
 }
 
+const GENERAL_REFACTORING_OPERATIONS = [
+  "rename-class",
+  "rename-member",
+  "rename-local-variable",
+  "move-class",
+  "change-method-signature",
+  "safe-delete",
+] as const;
+
+// Honest unavailable advertisement: the daemon always serializes generalRefactoring,
+// so normalizeCapabilities surfaces an honest unavailable shape when the operation set
+// was never advertised (supported false, all feature flags false, stability experimental).
+const generalRefactoringUnavailable = {
+  supported: false,
+  operations: [...GENERAL_REFACTORING_OPERATIONS],
+  preview: false,
+  apply: false,
+  rollback: false,
+  discard: false,
+  stability: "experimental",
+  reason:
+    "RefactorKit general Java refactoring is unavailable. The daemon did not advertise the general-refactoring operation set.",
+};
+
 const actualSchemaV1Capabilities = {
   api: "refactorkit",
   apiVersion: "0.2",
@@ -144,6 +168,7 @@ const actualSchemaV1Capabilities = {
       vocabulary: LANGUAGE_VOCABULARY,
     },
   },
+  generalRefactoring: generalRefactoringUnavailable,
   safety: {
     previewBeforeApply: true,
     snapshotValidation: true,
@@ -1021,6 +1046,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
         rollback: true,
         stability: "experimental",
       },
+      generalRefactoring: generalRefactoringUnavailable,
     };
     invokeMock.mockResolvedValueOnce(capabilities);
     await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual(capabilities);
@@ -1345,6 +1371,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
         rollback: false,
         stability: "experimental",
       },
+      generalRefactoring: generalRefactoringUnavailable,
     };
     invokeMock.mockResolvedValueOnce(legacy);
     const normalizedLegacy = await new TauriRefactorKitAdapter().getCapabilities();
@@ -1352,6 +1379,93 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     expect(normalizedLegacy).not.toHaveProperty("methods");
     expect(normalizedLegacy).not.toHaveProperty("languageKernel");
     expect(normalizedLegacy).not.toHaveProperty("safety");
+  });
+
+  it("normalizes an advertised general refactoring capability with feature flags and guidance", async () => {
+    const advertised = {
+      ...structuredClone(actualSchemaV1Capabilities),
+      generalRefactoring: {
+        supported: true,
+        operations: [...GENERAL_REFACTORING_OPERATIONS],
+        preview: true,
+        apply: true,
+        rollback: true,
+        discard: true,
+        stability: "preview",
+        reason: "General Java refactoring is advertised by the daemon.",
+        updateGuidance: "No update required.",
+      },
+    };
+    invokeMock.mockResolvedValueOnce(advertised);
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized.generalRefactoring).toEqual({
+      supported: true,
+      operations: [...GENERAL_REFACTORING_OPERATIONS],
+      preview: true,
+      apply: true,
+      rollback: true,
+      discard: true,
+      stability: "preview",
+      reason: "General Java refactoring is advertised by the daemon.",
+      updateGuidance: "No update required.",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("get_refactorkit_capabilities", undefined);
+  });
+
+  it("surfaces an honest unavailable general refactoring capability when the daemon omits it", async () => {
+    const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
+    delete capabilities.generalRefactoring;
+    invokeMock.mockResolvedValueOnce(capabilities);
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized.generalRefactoring).toEqual(generalRefactoringUnavailable);
+    expect(invokeMock).toHaveBeenCalledWith("get_refactorkit_capabilities", undefined);
+  });
+
+  it.each([
+    [
+      "invalid operation string",
+      (value: any) => {
+        value.generalRefactoring.operations = ["rename-class", "bogus-operation"];
+      },
+    ],
+    [
+      "duplicate operation",
+      (value: any) => {
+        value.generalRefactoring.operations = ["rename-class", "rename-class"];
+      },
+    ],
+    [
+      "incomplete operation set when supported",
+      (value: any) => {
+        value.generalRefactoring.supported = true;
+        value.generalRefactoring.operations = ["rename-class"];
+      },
+    ],
+    [
+      "bad stability",
+      (value: any) => {
+        value.generalRefactoring.stability = "unstable";
+      },
+    ],
+    [
+      "non-boolean feature flag",
+      (value: any) => {
+        value.generalRefactoring.preview = "yes";
+      },
+    ],
+  ])("rejects invalid general refactoring capability metadata: %s", async (_case, mutate) => {
+    const response = structuredClone(actualSchemaV1Capabilities) as any;
+    mutate(response);
+    invokeMock.mockResolvedValueOnce(response);
+    const error = await new TauriRefactorKitAdapter()
+      .getCapabilities()
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_capabilities",
+      cause: undefined,
+    });
+    expect(error).not.toHaveProperty("response");
   });
 
   it("preserves explicit false capability flags from an old installation", async () => {
@@ -2034,6 +2148,243 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
       for (const loggingSpy of loggingSpies) loggingSpy.mockRestore();
     }
   });
+});
+
+describe("TauriRefactorKitAdapter general refactoring capability-before-offer gate", () => {
+  const previewRefactorRequest = {
+    operation: "rename-class" as const,
+    target: {
+      kind: "class" as const,
+      path: "src/main/java/example/Widget.java",
+      identity: "example.Widget",
+    },
+    authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
+    selectionGeneration: 9,
+    requestId: "preview-r1",
+  };
+  const applyRefactorRequest = {
+    planId: "plan-g-1",
+    operation: "rename-class" as const,
+    target: {
+      kind: "class" as const,
+      path: "src/main/java/example/Widget.java",
+      identity: "example.Widget",
+    },
+    authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
+    selectionGeneration: 9,
+    requestId: "apply-r1",
+    approval: {
+      approvalId: "approval-g-1",
+      approvedPlanId: "plan-g-1",
+      approvedAt: "2026-07-12T12:34:56.123Z",
+    },
+  };
+  const rollbackRefactorRequest = {
+    transactionId: "transaction-g-1",
+    operation: "rename-class" as const,
+    authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
+    requestId: "rollback-r1",
+  };
+  const discardRefactorRequest = {
+    planId: "plan-g-2",
+    workspaceId: "workspace:1",
+    workspaceGeneration: 7,
+    selectionGeneration: 9,
+    requestId: "discard-r1",
+  };
+
+  const gatingCommands = [
+    {
+      name: "previewRefactoring",
+      command: "preview_refactorkit_refactoring",
+      feature: "preview" as const,
+      operation: "rename-class" as const,
+      invoke: (adapter: TauriRefactorKitAdapter) =>
+        adapter.previewRefactoring(previewRefactorRequest),
+      wire: {
+        operation: "rename-class",
+        target: previewRefactorRequest.target,
+        authority: previewRefactorRequest.authority,
+        selectionGeneration: 9,
+        requestId: "preview-r1",
+      },
+      result: {
+        planId: "plan-g-1",
+        operation: "rename-class",
+        target: {
+          kind: "class",
+          path: "src/main/java/example/Widget.java",
+          identity: "example.Widget",
+        },
+        status: "ready",
+        summary: "Rename Widget to WidgetV2",
+        confidence: 0.9,
+        riskLevel: "low",
+        risks: [],
+        evidence: [{ kind: "semantic", summary: "target resolved" }],
+        affectedFiles: [
+          { change: "edit", path: "src/main/java/example/Widget.java", primary: true },
+        ],
+        renderedDiff: "--- a/Widget.java\n+++ b/Widget.java",
+        structuredDiff: [
+          {
+            path: "src/main/java/example/Widget.java",
+            change: "edit",
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: 1,
+                newStart: 1,
+                newLines: 1,
+                lines: ["-class Widget", "+class WidgetV2"],
+              },
+            ],
+          },
+        ],
+        warnings: [],
+        diagnosticsAfterPreview: [],
+        conflicts: [],
+        refusalReasons: [],
+        applyEligibility: { eligible: true, blockers: [] },
+        staleness: { stale: false, reasons: [] },
+        grantsApplyAuthority: false,
+        authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
+        selectionGeneration: 9,
+        requestId: "preview-r1",
+        provider: "refactorkit",
+        providerVersion: "0.5.0-SNAPSHOT",
+      },
+    },
+    {
+      name: "applyRefactoring",
+      command: "apply_refactorkit_refactoring",
+      feature: "apply" as const,
+      operation: "rename-class" as const,
+      invoke: (adapter: TauriRefactorKitAdapter) =>
+        adapter.applyRefactoring(applyRefactorRequest),
+      wire: {
+        planId: "plan-g-1",
+        operation: "rename-class",
+        target: applyRefactorRequest.target,
+        authority: applyRefactorRequest.authority,
+        selectionGeneration: 9,
+        requestId: "apply-r1",
+        approval: {
+          approvalId: "approval-g-1",
+          approvedPlanId: "plan-g-1",
+          approvedAt: "2026-07-12T12:34:56.123Z",
+        },
+      },
+      result: {
+        planId: "plan-g-1",
+        operation: "rename-class",
+        outcome: "applied",
+        changedFiles: [
+          { change: "edit", path: "src/main/java/example/Widget.java", primary: true },
+        ],
+        primaryFile: "src/main/java/example/Widget.java",
+        diagnostics: [],
+        transactionId: "transaction-g-1",
+        provider: "refactorkit",
+        providerVersion: "0.5.0-SNAPSHOT",
+      },
+    },
+    {
+      name: "rollbackRefactoring",
+      command: "rollback_refactorkit_refactoring",
+      feature: "rollback" as const,
+      operation: "rename-class" as const,
+      invoke: (adapter: TauriRefactorKitAdapter) =>
+        adapter.rollbackRefactoring(rollbackRefactorRequest),
+      wire: {
+        transactionId: "transaction-g-1",
+        operation: "rename-class",
+        authority: rollbackRefactorRequest.authority,
+        requestId: "rollback-r1",
+      },
+      result: {
+        transactionId: "transaction-g-1",
+        rolledBack: true,
+        changedFiles: [
+          { change: "edit", path: "src/main/java/example/Widget.java", primary: true },
+        ],
+        conflicts: [],
+        diagnostics: [],
+      },
+    },
+    {
+      name: "discardRefactoring",
+      command: "discard_refactorkit_refactoring",
+      feature: "discard" as const,
+      operation: undefined as string | undefined,
+      invoke: (adapter: TauriRefactorKitAdapter) =>
+        adapter.discardRefactoring(discardRefactorRequest),
+      wire: {
+        planId: "plan-g-2",
+        workspaceId: "workspace:1",
+        workspaceGeneration: 7,
+        selectionGeneration: 9,
+        requestId: "discard-r1",
+      },
+      result: { planId: "plan-g-2", discarded: true },
+    },
+  ];
+
+  beforeEach(() => invokeMock.mockReset());
+
+  function advertisedCapabilities(
+    overrides: (general: any) => void = () => undefined,
+  ): any {
+    const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
+    const general = capabilities.generalRefactoring;
+    general.supported = true;
+    general.operations = [...GENERAL_REFACTORING_OPERATIONS];
+    general.preview = true;
+    general.apply = true;
+    general.rollback = true;
+    general.discard = true;
+    overrides(general);
+    return capabilities;
+  }
+
+  it.each(gatingCommands)(
+    "refuses $name and does not invoke $command when general refactoring is unsupported",
+    async ({ command, invoke }) => {
+      const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
+      capabilities.generalRefactoring = {
+        ...generalRefactoringUnavailable,
+      };
+      invokeMock.mockResolvedValueOnce(capabilities);
+      const error = await invoke(new TauriRefactorKitAdapter()).catch((value: unknown) => value);
+      expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: undefined });
+      expect(invokeMock).not.toHaveBeenCalledWith(command, expect.anything());
+    },
+  );
+
+  it.each(gatingCommands)(
+    "refuses $name when its $feature feature flag is not advertised",
+    async ({ command, feature, invoke }) => {
+      invokeMock.mockResolvedValueOnce(
+        advertisedCapabilities((general) => {
+          general[feature] = false;
+        }),
+      );
+      const error = await invoke(new TauriRefactorKitAdapter()).catch((value: unknown) => value);
+      expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: undefined });
+      expect(invokeMock).not.toHaveBeenCalledWith(command, expect.anything());
+    },
+  );
+
+  it.each(gatingCommands)(
+    "invokes $command after the advertised general refactoring capability passes the gate",
+    async ({ command, wire, result, invoke }) => {
+      invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+      invokeMock.mockResolvedValueOnce(result);
+      await expect(invoke(new TauriRefactorKitAdapter())).resolves.toEqual(result);
+      expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_capabilities", undefined]);
+      expect(invokeMock).toHaveBeenCalledWith(command, { request: wire });
+    },
+  );
 });
 
 describe("TauriRefactorKitAdapter saved-snapshot semantic lifecycle boundary", () => {

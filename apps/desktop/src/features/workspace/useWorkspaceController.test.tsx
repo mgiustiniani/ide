@@ -87,6 +87,9 @@ function createHarness(
     refactorKitImport: {
       resetWorkspace: vi.fn(() => order.push("refactorkit-import.reset")),
     },
+    javaRefactoring: {
+      resetWorkspace: vi.fn(() => order.push("java-refactoring.reset")),
+    },
     refactorKitStatus: {
       beginWorkspaceSwitch: vi.fn((generation) => {
         order.push(`refactorkit-status.begin:${generation}`);
@@ -497,6 +500,7 @@ describe("useWorkspaceController", () => {
       `xcom2-module.begin:${nextGeneration}`,
       "editor.reset",
       "refactorkit-import.reset",
+      "java-refactoring.reset",
       `java.detach:${nextGeneration}`,
       `xcom.begin:${nextGeneration}`,
       `refactorkit-status.begin:${nextGeneration}`,

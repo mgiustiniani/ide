@@ -262,6 +262,28 @@ export function normalizeRefactorKitMethodCapabilities(
   }
 }
 
+/**
+ * Capability-before-offer shape mirroring the daemon `generalRefactoring`
+ * advertisement (GeneralRefactoringCapability). The IDE must surface this
+ * authoritative advertisement; support is never inferred from a version number,
+ * a generic apply button, or the import API. When the daemon does not advertise
+ * the general-refactoring operation set, `supported` is false and the canonical
+ * operation set is still listed (preview/apply/rollback/discard all false).
+ */
+export interface RefactorKitGeneralRefactoringCapability {
+  supported: boolean;
+  /** The canonical general Java refactoring operation set the daemon advertises. */
+  operations: RefactoringOperation[];
+  preview: boolean;
+  apply: boolean;
+  rollback: boolean;
+  discard: boolean;
+  stability: RefactorKitCapabilityStability;
+  /** Honest unavailable reason when `supported` is false. */
+  reason?: string;
+  updateGuidance?: string;
+}
+
 /** Capabilities are authoritative; the IDE must not infer them from a version number. */
 export interface RefactorKitCapabilities {
   api: string;
@@ -269,6 +291,8 @@ export interface RefactorKitCapabilities {
   provider: string;
   providerVersion: string | null;
   javaImportExternalClass: RefactorKitExternalClassImportCapability;
+  /** The daemon's general Java refactoring advertisement (capability-before-offer). */
+  generalRefactoring?: RefactorKitGeneralRefactoringCapability;
   /** Absent for legacy adapters, including RefactorKit 0.6.2. */
   methods?: RefactorKitMethodCapability[];
   /** Absent only for legacy adapters that predate language-kernel discovery. */

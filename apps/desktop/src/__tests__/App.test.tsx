@@ -267,6 +267,23 @@ const testHarness = vi.hoisted(() => {
         rollback: false,
         stability: "experimental",
       },
+      generalRefactoring: {
+        supported: false,
+        operations: [
+          "rename-class",
+          "rename-member",
+          "rename-local-variable",
+          "move-class",
+          "change-method-signature",
+          "safe-delete",
+        ],
+        preview: false,
+        apply: false,
+        rollback: false,
+        discard: false,
+        stability: "experimental",
+        reason: "RefactorKit general Java refactoring is unavailable.",
+      },
       languageKernel: {
         available: true,
         schema: {
@@ -315,6 +332,9 @@ const testHarness = vi.hoisted(() => {
     };
     harness.externalJavaPlan = null;
     harness.externalJavaApplyResult = null;
+    harness.javaRefactoringPreview = null;
+    harness.javaRefactoringApplyResult = null;
+    harness.latestJavaRefactoringDialogProps = null;
     harness.latestPanelLayoutProps = null;
     harness.latestProjectFoundryDialogProps = null;
     harness.latestSemanticSymbolSearchProps = null;
@@ -421,6 +441,66 @@ function enableExternalJavaImport() {
     changedFiles: [{ change: "create", path: "src/Imported.java", primary: true }],
     primaryFile: "src/Imported.java",
     diagnostics: [],
+    provider: "managed-refactorkit",
+    providerVersion: "future",
+  };
+}
+
+function javaRefactoringPreview(request: any, overrides: Record<string, any> = {}) {
+  return {
+    planId: `plan-${request.requestId}`,
+    operation: request.operation,
+    target: request.target,
+    status: "ready",
+    summary: `Refactor ${request.target.identity}`,
+    confidence: 0.97,
+    riskLevel: "low",
+    risks: [],
+    evidence: [{ kind: "semantic", summary: "Backend semantic analysis" }],
+    affectedFiles: [{ change: "edit", path: request.target.path, primary: true }],
+    renderedDiff: "- public class A {} \n+ public class A2 {}",
+    structuredDiff: [],
+    warnings: [],
+    diagnosticsAfterPreview: [],
+    conflicts: [],
+    refusalReasons: [],
+    applyEligibility: { eligible: true, blockers: [] },
+    staleness: { stale: false, reasons: [] },
+    grantsApplyAuthority: false,
+    authority: {
+      workspaceId: request.authority.workspaceId,
+      workspaceGeneration: request.authority.workspaceGeneration,
+    },
+    selectionGeneration: request.selectionGeneration,
+    requestId: request.requestId,
+    provider: "managed-refactorkit",
+    providerVersion: "future",
+    ...overrides,
+  };
+}
+
+function enableGeneralJavaRefactoring() {
+  testHarness.externalJavaCapabilities = {
+    ...testHarness.externalJavaCapabilities,
+    generalRefactoring: {
+      ...testHarness.externalJavaCapabilities.generalRefactoring,
+      supported: true,
+      preview: true,
+      apply: true,
+      rollback: true,
+      discard: true,
+      stability: "preview",
+    },
+  };
+  testHarness.javaRefactoringPreview = (request: any) => javaRefactoringPreview(request);
+  testHarness.javaRefactoringApplyResult = {
+    planId: `plan-java-refactor-1`,
+    operation: "rename-class",
+    outcome: "applied",
+    changedFiles: [{ change: "edit", path: "src/main/java/example/A.java", primary: true }],
+    primaryFile: "src/main/java/example/A.java",
+    diagnostics: [],
+    transactionId: "tx-java-refactor-1",
     provider: "managed-refactorkit",
     providerVersion: "future",
   };
@@ -677,6 +757,33 @@ vi.mock("@ide/tauri-adapters", () => {
     applyPlan: vi.fn(() => Promise.resolve(testHarness.externalJavaApplyResult)),
     rollbackTransaction: vi.fn(),
     discardPlan: vi.fn((request: any) =>
+      Promise.resolve({ planId: request.planId, discarded: true }),
+    ),
+    previewRefactoring: vi.fn((request: any) =>
+      Promise.resolve(
+        typeof testHarness.javaRefactoringPreview === "function"
+          ? testHarness.javaRefactoringPreview(request)
+          : testHarness.javaRefactoringPreview,
+      ),
+    ),
+    applyRefactoring: vi.fn((request: any) =>
+      Promise.resolve({
+        ...testHarness.javaRefactoringApplyResult,
+        planId: request.planId,
+        operation: request.operation,
+        target: request.target,
+      }),
+    ),
+    rollbackRefactoring: vi.fn((request: any) =>
+      Promise.resolve({
+        transactionId: request.transactionId,
+        rolledBack: true,
+        changedFiles: [],
+        conflicts: [],
+        diagnostics: [],
+      }),
+    ),
+    discardRefactoring: vi.fn((request: any) =>
       Promise.resolve({ planId: request.planId, discarded: true }),
     ),
     scan: vi.fn(() => Promise.resolve(testHarness.refactorKitResult)),
@@ -1438,6 +1545,64 @@ vi.mock("@ide/ui", () => ({
       </button>
     </div>
   ),
+  JavaRefactoringPreviewDialog: (props: any) => {
+    testHarness.latestJavaRefactoringDialogProps = props;
+    const dialog = props.dialog;
+    return (
+      <div
+        role="dialog"
+        aria-label="Java Refactor"
+        data-status={dialog.status}
+        data-operation={dialog.operation}
+        data-rollback-advertised={String(props.rollbackAdvertised)}
+      >
+        <span data-testid="java-refactor-operation">{dialog.operation}</span>
+        <span data-testid="java-refactor-target-path">{dialog.target.path}</span>
+        <span>{dialog.selection?.workspaceId ?? "Not authorized"}</span>
+        <span>{dialog.message ?? ""}</span>
+        <pre data-testid="java-refactor-plan">
+          {dialog.plan ? JSON.stringify(dialog.plan) : ""}
+        </pre>
+        <span>{dialog.result?.transactionId ?? ""}</span>
+        <span>{dialog.rollback?.transactionId ?? ""}</span>
+        <button type="button" onClick={() => props.onSetOperation("move-class")}>
+          Set operation
+        </button>
+        <button type="button" onClick={() => props.onSetTarget({ ...dialog.target, path: "b.java" })}>
+          Set target
+        </button>
+        <button type="button" onClick={props.onPreview}>Preview</button>
+        <button
+          type="button"
+          disabled={dialog.status !== "preview" || !dialog.plan}
+          onClick={() => props.onApply(dialog.plan)}
+        >
+          Apply
+        </button>
+        <button
+          type="button"
+          disabled={dialog.status !== "applied" || !dialog.result}
+          onClick={() => props.onRollback(dialog.result)}
+        >
+          Rollback
+        </button>
+        <button
+          type="button"
+          disabled={
+            dialog.status !== "preview" &&
+            dialog.status !== "loading" &&
+            dialog.status !== "applying"
+          }
+          onClick={props.onDiscard}
+        >
+          Discard
+        </button>
+        <button type="button" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+    );
+  },
   Editor: ({
     content,
     filePath,
@@ -3356,6 +3521,117 @@ describe("App", () => {
     });
     expect(screen.queryByRole("dialog", { name: "Paste Java Class from Clipboard" })).toBeNull();
     expect(testHarness.refactorKitAdapter.discardPlan).toHaveBeenCalledOnce();
+  });
+
+  it("opens the Java Refactor dialog and reports general refactoring unavailable when not advertised", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Java Refactor" }));
+    await screen.findByRole("dialog", { name: "Java Refactor" });
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    await screen.findByText(/RefactorKit general Java refactoring is unavailable/);
+    expect(testHarness.refactorKitAdapter.previewRefactoring).not.toHaveBeenCalled();
+    expect(testHarness.refactorKitAdapter.applyRefactoring).not.toHaveBeenCalled();
+    expect(
+      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("previews read-only, applies the exact reviewed Java plan, and rolls back when advertised and transaction-bound", async () => {
+    enableGeneralJavaRefactoring();
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Java Refactor" }));
+    await screen.findByRole("dialog", { name: "Java Refactor" });
+    // Enter a real semantic target through the dialog inputs.
+    fireEvent.change(screen.getByLabelText("Source path"), {
+      target: { value: "src/main/java/example/A.java" },
+    });
+    fireEvent.change(screen.getByLabelText("Element identity"), {
+      target: { value: "example.A" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    await screen.findByText("Refactor example.A");
+    const request = testHarness.refactorKitAdapter.previewRefactoring.mock.calls[0][0];
+    expect(request).toMatchObject({
+      operation: "rename-class",
+      target: { kind: "class", identity: "example.A", path: "src/main/java/example/A.java" },
+      authority: { workspaceId: "workspace-one", workspaceGeneration: expect.any(Number) },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => {
+      expect(testHarness.refactorKitAdapter.applyRefactoring).toHaveBeenCalledOnce();
+    });
+    const applyRequest = testHarness.refactorKitAdapter.applyRefactoring.mock.calls[0][0];
+    expect(applyRequest).toEqual({
+      planId: `plan-${request.requestId}`,
+      operation: request.operation,
+      target: request.target,
+      authority: request.authority,
+      selectionGeneration: request.selectionGeneration,
+      requestId: request.requestId,
+      approval: {
+        approvalId: `desktop-java-refactor-approval-${request.requestId}`,
+        approvedPlanId: `plan-${request.requestId}`,
+        approvedAt: expect.any(String),
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("tx-java-refactor-1")).toBeDefined();
+      expect(document.body.textContent).toContain("applied successfully");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rollback" }));
+    await waitFor(() => {
+      expect(testHarness.refactorKitAdapter.rollbackRefactoring).toHaveBeenCalledOnce();
+      expect(screen.getByText(/rolled back/)).toBeDefined();
+    });
+    expect(testHarness.refactorKitAdapter.rollbackRefactoring.mock.calls[0][0]).toMatchObject({
+      transactionId: "tx-java-refactor-1",
+      operation: "rename-class",
+      authority: request.authority,
+    });
+    expect(testHarness.refactorKitAdapter.discardRefactoring).not.toHaveBeenCalled();
+  });
+
+  it("discards the retained Java refactor plan on cancel without applying", async () => {
+    enableGeneralJavaRefactoring();
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Java Refactor" }));
+    await screen.findByRole("dialog", { name: "Java Refactor" });
+    fireEvent.change(screen.getByLabelText("Source path"), {
+      target: { value: "src/main/java/example/A.java" },
+    });
+    fireEvent.change(screen.getByLabelText("Element identity"), {
+      target: { value: "example.A" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await screen.findByText("Refactor example.A");
+    const previewRequest = testHarness.refactorKitAdapter.previewRefactoring.mock.calls[0][0];
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Java Refactor" })).toBeNull();
+    expect(testHarness.refactorKitAdapter.discardRefactoring).toHaveBeenCalledOnce();
+    expect(testHarness.refactorKitAdapter.discardRefactoring.mock.calls[0][0]).toEqual({
+      planId: `plan-${previewRequest.requestId}`,
+      workspaceId: previewRequest.authority.workspaceId,
+      workspaceGeneration: previewRequest.authority.workspaceGeneration,
+      selectionGeneration: previewRequest.selectionGeneration,
+      requestId: previewRequest.requestId,
+    });
+    expect(testHarness.refactorKitAdapter.applyRefactoring).not.toHaveBeenCalled();
+    expect(testHarness.refactorKitAdapter.rollbackRefactoring).not.toHaveBeenCalled();
   });
 
   it("opens Settings on the AI Agents section with the mocked Pi adapter data", async () => {

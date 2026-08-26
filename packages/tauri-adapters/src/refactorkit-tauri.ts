@@ -25,6 +25,7 @@ import type {
   RefactorKitCapabilities,
   RefactorKitCommandResult,
   RefactorKitEvidence,
+  RefactorKitGeneralRefactoringCapability,
   RefactorKitLanguageAdapter,
   RefactorKitLanguageAdapterResourceLimits,
   RefactorKitLanguageAdapterRuntime,
@@ -36,6 +37,7 @@ import type {
   RefactorKitPlanDiagnostic,
   RefactorKitPlanConflict,
   RefactorKitStatus,
+  RefactoringOperation,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
@@ -2058,6 +2060,55 @@ function normalizeSafety(command: string, value: unknown): RefactorKitSafetyCapa
   };
 }
 
+function normalizeGeneralRefactoring(
+  command: string,
+  value: unknown,
+): RefactorKitGeneralRefactoringCapability {
+  // Legacy adapters and daemons that predate the general-refactoring operation set
+  // omit generalRefactoring. Surface an honest unavailable advertisement with the
+  // canonical operation set still listed and every feature flag false; support is
+  // never inferred from a version number, a generic apply button, or the import API.
+  if (value === undefined || value === null) {
+    return {
+      supported: false,
+      operations: [...REFACTORING_OPERATIONS],
+      preview: false,
+      apply: false,
+      rollback: false,
+      discard: false,
+      stability: "experimental",
+      reason:
+        "RefactorKit general Java refactoring is unavailable. The daemon did not advertise the general-refactoring operation set.",
+    };
+  }
+  const record = protocolRecord(command, value, "generalRefactoring");
+  const supported = protocolBoolean(command, record, "supported");
+  const operations = strings(command, record.operations, "operations").map((operation) => {
+    validateRefactoringOperation(operation, command);
+    return operation as RefactoringOperation;
+  });
+  if (new Set(operations).size !== operations.length) {
+    throw invalidProtocolShape(command, "duplicate general refactoring operation");
+  }
+  if (supported && REFACTORING_OPERATIONS.some((operation) => !operations.includes(operation))) {
+    throw invalidProtocolShape(command, "incomplete general refactoring operation set");
+  }
+  const result: RefactorKitGeneralRefactoringCapability = {
+    supported,
+    operations,
+    preview: protocolBoolean(command, record, "preview"),
+    apply: protocolBoolean(command, record, "apply"),
+    rollback: protocolBoolean(command, record, "rollback"),
+    discard: protocolBoolean(command, record, "discard"),
+    stability: enumValue(command, record, "stability", ["experimental", "preview", "stable"]),
+  };
+  const reason = optionalProtocolString(command, record, "reason");
+  const updateGuidance = optionalProtocolString(command, record, "updateGuidance");
+  if (reason !== undefined) result.reason = reason;
+  if (updateGuidance !== undefined) result.updateGuidance = updateGuidance;
+  return result;
+}
+
 function normalizeCapabilities(command: string, response: unknown): RefactorKitCapabilities {
   const record = protocolRecord(command, response);
   const capability = protocolRecord(
@@ -2078,6 +2129,8 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
       rollback: protocolBoolean(command, capability, "rollback"),
       stability: enumValue(command, capability, "stability", ["experimental", "preview", "stable"]),
     },
+    // The daemon always serializes generalRefactoring, so normalize it always.
+    generalRefactoring: normalizeGeneralRefactoring(command, record.generalRefactoring),
   };
   if (Object.prototype.hasOwnProperty.call(record, "methods")) {
     try {
@@ -2951,15 +3004,51 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     return result;
   }
 
+  // Capability-before-offer: general Java refactoring is offered only when the
+  // daemon explicitly advertises the operation set and the requested feature. The
+  // adapter never infers support from a version number, a generic apply button, or
+  // the import API. This gate fetches the authoritative capabilities advertisement
+  // and refuses (throws) before any refactoring command is invoked when the
+  // capability is not supported, the specific operation is not advertised, or the
+  // specific feature flag (preview/apply/rollback/discard) is not advertised.
+  private async requireGeneralRefactoringFeature(
+    command: string,
+    operation: RefactoringOperation | undefined,
+    feature: "preview" | "apply" | "rollback" | "discard",
+  ): Promise<void> {
+    const capabilities = await this.getCapabilities();
+    const general = capabilities.generalRefactoring;
+    if (!general || !general.supported) {
+      throw new TauriAdapterError(
+        command,
+        "RefactorKit general Java refactoring is unavailable. The daemon did not advertise the general-refactoring operation set.",
+      );
+    }
+    if (operation !== undefined && !general.operations.includes(operation)) {
+      throw new TauriAdapterError(
+        command,
+        `RefactorKit general Java refactoring operation ${operation} is not advertised by the daemon.`,
+      );
+    }
+    if (!general[feature]) {
+      throw new TauriAdapterError(
+        command,
+        `RefactorKit general Java refactoring ${feature} is not advertised by the daemon.`,
+      );
+    }
+  }
+
   async previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
     const command = "preview_refactorkit_refactoring";
     const exactRequest = validatePreviewRefactoringRequest(request, command);
+    await this.requireGeneralRefactoringFeature(command, request.operation, "preview");
     return normalizeRefactorPreview(command, await invokeManaged(command, exactRequest));
   }
 
   async applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult> {
     const command = "apply_refactorkit_refactoring";
     const exactRequest = validateApplyRefactoringRequest(request, command);
+    await this.requireGeneralRefactoringFeature(command, request.operation, "apply");
     const result = normalizeRefactorApply(command, await invokeManaged(command, exactRequest));
     if (result.planId !== request.planId) {
       throw invalidProtocolShape(command, "response planId does not match the requested plan");
@@ -2970,6 +3059,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   async rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult> {
     const command = "rollback_refactorkit_refactoring";
     const exactRequest = validateRollbackRefactoringRequest(request, command);
+    await this.requireGeneralRefactoringFeature(command, request.operation, "rollback");
     const result = normalizeRefactorRollback(command, await invokeManaged(command, exactRequest));
     if (result.transactionId !== request.transactionId) {
       throw invalidProtocolShape(
@@ -2985,6 +3075,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   ): Promise<DiscardRefactorKitPlanResult> {
     const command = "discard_refactorkit_refactoring";
     validateDiscardRequest(request, command);
+    await this.requireGeneralRefactoringFeature(command, undefined, "discard");
     const exactRequest = {
       planId: request.planId,
       workspaceId: request.workspaceId,
