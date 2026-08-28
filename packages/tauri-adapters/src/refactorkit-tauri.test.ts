@@ -137,6 +137,92 @@ const generalRefactoringUnavailable = {
     "RefactorKit general Java refactoring is unavailable. The daemon did not advertise the general-refactoring operation set.",
 };
 
+// Real-engine capability surface helpers for REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001.
+// getCapabilities() invokes the engine command first (get_refactorkit_engine_capabilities)
+// and the base command second (get_refactorkit_capabilities), merging generalRefactoring
+// from the engine report while preserving the base external-import/language-kernel/methods/
+// safety surface. These helpers model the engine wire and the resulting surface.
+const ENGINE_OPERATIONAL_SURFACE = [
+  "preview",
+  "apply",
+  "rollback",
+  "discard",
+  "rename-class",
+  "safe-delete",
+] as const;
+
+// The engine-derived generalRefactoring advertisement when the engine is discovered and
+// advertises operations: preview follows previewReadOnly, rollback follows rollbackAdvertised,
+// apply/discard follow supported, and stability is authoritative as "stable".
+const engineGeneralRefactoringAdvertised = {
+  supported: true,
+  operations: [...GENERAL_REFACTORING_OPERATIONS],
+  preview: true,
+  apply: true,
+  rollback: true,
+  discard: true,
+  stability: "stable",
+};
+
+// Honest unavailable surface when the engine is not discovered (or reports no operations):
+// supported=false, every feature flag false, stability experimental, reason retained.
+const engineGeneralRefactoringUnavailable = {
+  supported: false,
+  operations: [],
+  preview: false,
+  apply: false,
+  rollback: false,
+  discard: false,
+  stability: "experimental",
+  reason: "The real engine was not discovered through the wrapper PATH.",
+};
+
+// Extra engine fields surfaced on TauriRefactorKitEngineCapabilities beside the base
+// RefactorKitCapabilities shape, matching the discovered engineCapabilitiesWire().
+function engineSurfaceFields(): Record<string, unknown> {
+  return {
+    engineDiscovered: true,
+    enginePath: "/usr/local/bin/refactorkit",
+    engineVersion: "0.7.0-SNAPSHOT",
+    operationalSurface: [...ENGINE_OPERATIONAL_SURFACE],
+    workspaceId: "workspace:authorized",
+  };
+}
+
+// Wire for the engine capability report (get_refactorkit_engine_capabilities) when a real
+// engine is discovered and advertises the general-refactoring operation set.
+function engineCapabilitiesWire(overrides: (record: any) => void = () => undefined): any {
+  const record: any = {
+    engineDiscovered: true,
+    operations: [...GENERAL_REFACTORING_OPERATIONS],
+    operationalSurface: [...ENGINE_OPERATIONAL_SURFACE],
+    rollbackAdvertised: true,
+    previewReadOnly: true,
+    path: "/usr/local/bin/refactorkit",
+    version: "0.7.0-SNAPSHOT",
+    workspaceId: "workspace:authorized",
+    reason: null,
+  };
+  overrides(record);
+  return record;
+}
+
+// Wire for the engine capability report when no real engine is discoverable (honest
+// unavailable advertisement: supported false, all feature flags false).
+function unavailableEngineCapabilitiesWire(): any {
+  return {
+    engineDiscovered: false,
+    operations: [],
+    operationalSurface: [],
+    rollbackAdvertised: false,
+    previewReadOnly: false,
+    path: null,
+    version: null,
+    workspaceId: "workspace:authorized",
+    reason: "The real engine was not discovered through the wrapper PATH.",
+  };
+}
+
 const actualSchemaV1Capabilities = {
   api: "refactorkit",
   apiVersion: "0.2",
@@ -1048,18 +1134,30 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
       },
       generalRefactoring: generalRefactoringUnavailable,
     };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(capabilities);
-    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual(capabilities);
-    expect(invokeMock).toHaveBeenCalledWith("get_refactorkit_capabilities", undefined);
+    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual({
+      ...capabilities,
+      generalRefactoring: engineGeneralRefactoringAdvertised,
+      ...engineSurfaceFields(),
+    });
+    expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
+    expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
   });
 
   it("normalizes actual schema-v1 Java, JavaScript, and TypeScript discovery with exact safety flags", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
 
-    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual(
-      actualSchemaV1Capabilities,
-    );
-    expect(invokeMock.mock.calls).toEqual([["get_refactorkit_capabilities", undefined]]);
+    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual({
+      ...actualSchemaV1Capabilities,
+      generalRefactoring: engineGeneralRefactoringAdvertised,
+      ...engineSurfaceFields(),
+    });
+    expect(invokeMock.mock.calls).toEqual([
+      ["get_refactorkit_engine_capabilities", undefined],
+      ["get_refactorkit_capabilities", undefined],
+    ]);
   });
 
   it("retains ordered method metadata while independently cloning methods and feature maps", async () => {
@@ -1067,6 +1165,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     const sourceMethods = response.methods;
     const sourceDiagnostics = sourceMethods[1]!;
     const sourceFeatures = sourceDiagnostics.features as Record<string, boolean>;
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
@@ -1119,6 +1218,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     const response = diagnosticsV2Capabilities() as any;
     mutate(response);
     response.privateDetail = PRIVATE_NATIVE_DETAIL;
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const error = await new TauriRefactorKitAdapter()
@@ -1136,6 +1236,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
 
   it("retains diagnostics snapshot modes and range capability in operation and vocabulary metadata", async () => {
     const response = diagnosticsV2Capabilities();
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const normalized = (await new TauriRefactorKitAdapter().getCapabilities()) as any;
@@ -1208,6 +1309,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
   ])("rejects invalid language-kernel diagnostics metadata: %s", async (_case, mutate) => {
     const response = diagnosticsV2Capabilities() as any;
     mutate(response);
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const error = await new TauriRefactorKitAdapter()
@@ -1303,10 +1405,15 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
         workspaceScopedWrites: true,
       },
     };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(structuredClone(providerNeutralCapabilities));
 
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
-    expect(normalized).toEqual(providerNeutralCapabilities);
+    expect(normalized).toEqual({
+      ...providerNeutralCapabilities,
+      generalRefactoring: engineGeneralRefactoringAdvertised,
+      ...engineSurfaceFields(),
+    });
     expect(normalized.languageKernel?.available).toBe(true);
     if (!normalized.languageKernel?.available)
       throw new Error("expected available language kernel");
@@ -1323,12 +1430,16 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     expect(renameCapability.backend).not.toBe(kotlinAdapter.backend);
     expect(renameCapability.runtime).not.toEqual(kotlinAdapter.runtime);
     expect(renameCapability.extensions).not.toEqual(kotlinAdapter.extensions);
-    expect(invokeMock.mock.calls).toEqual([["get_refactorkit_capabilities", undefined]]);
+    expect(invokeMock.mock.calls).toEqual([
+      ["get_refactorkit_engine_capabilities", undefined],
+      ["get_refactorkit_capabilities", undefined],
+    ]);
   });
 
   it("clones operation runtime limits and extensions instead of retaining wire references", async () => {
     const response = structuredClone(actualSchemaV1Capabilities);
     const sourceCapability = response.languageKernel.schema.adapters[0].capabilities[0];
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
@@ -1355,8 +1466,13 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
         reason: "RefactorKit language-kernel capability metadata is unavailable.",
       },
     };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(unavailable);
-    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual(unavailable);
+    await expect(new TauriRefactorKitAdapter().getCapabilities()).resolves.toEqual({
+      ...unavailable,
+      generalRefactoring: engineGeneralRefactoringAdvertised,
+      ...engineSurfaceFields(),
+    });
 
     const legacy = {
       api: "refactorkit",
@@ -1373,52 +1489,43 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
       },
       generalRefactoring: generalRefactoringUnavailable,
     };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(legacy);
     const normalizedLegacy = await new TauriRefactorKitAdapter().getCapabilities();
-    expect(normalizedLegacy).toEqual(legacy);
+    expect(normalizedLegacy).toEqual({
+      ...legacy,
+      generalRefactoring: engineGeneralRefactoringAdvertised,
+      ...engineSurfaceFields(),
+    });
     expect(normalizedLegacy).not.toHaveProperty("methods");
     expect(normalizedLegacy).not.toHaveProperty("languageKernel");
     expect(normalizedLegacy).not.toHaveProperty("safety");
   });
 
-  it("normalizes an advertised general refactoring capability with feature flags and guidance", async () => {
-    const advertised = {
-      ...structuredClone(actualSchemaV1Capabilities),
-      generalRefactoring: {
-        supported: true,
-        operations: [...GENERAL_REFACTORING_OPERATIONS],
-        preview: true,
-        apply: true,
-        rollback: true,
-        discard: true,
-        stability: "preview",
-        reason: "General Java refactoring is advertised by the daemon.",
-        updateGuidance: "No update required.",
-      },
-    };
-    invokeMock.mockResolvedValueOnce(advertised);
+  it("surfaces the real-engine general refactoring advertisement as authoritative", async () => {
+    // generalRefactoring is engine-derived: the engine report drives supported/preview/apply/
+    // rollback/discard while the base daemon surface is preserved alongside engine fields.
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
-    expect(normalized.generalRefactoring).toEqual({
-      supported: true,
-      operations: [...GENERAL_REFACTORING_OPERATIONS],
-      preview: true,
-      apply: true,
-      rollback: true,
-      discard: true,
-      stability: "preview",
-      reason: "General Java refactoring is advertised by the daemon.",
-      updateGuidance: "No update required.",
-    });
-    expect(invokeMock).toHaveBeenCalledWith("get_refactorkit_capabilities", undefined);
+    expect(normalized.generalRefactoring).toEqual(engineGeneralRefactoringAdvertised);
+    expect(normalized).toMatchObject(engineSurfaceFields());
+    expect(normalized.javaImportExternalClass).toEqual(
+      actualSchemaV1Capabilities.javaImportExternalClass,
+    );
+    expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
+    expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
   });
 
-  it("surfaces an honest unavailable general refactoring capability when the daemon omits it", async () => {
+  it("surfaces an honest unavailable general refactoring capability when the real engine is not discovered", async () => {
     const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
     delete capabilities.generalRefactoring;
+    invokeMock.mockResolvedValueOnce(unavailableEngineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(capabilities);
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
-    expect(normalized.generalRefactoring).toEqual(generalRefactoringUnavailable);
-    expect(invokeMock).toHaveBeenCalledWith("get_refactorkit_capabilities", undefined);
+    expect(normalized.generalRefactoring).toEqual(engineGeneralRefactoringUnavailable);
+    expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
+    expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
   });
 
   it.each([
@@ -1456,6 +1563,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
   ])("rejects invalid general refactoring capability metadata: %s", async (_case, mutate) => {
     const response = structuredClone(actualSchemaV1Capabilities) as any;
     mutate(response);
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
     const error = await new TauriRefactorKitAdapter()
       .getCapabilities()
@@ -1469,6 +1577,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
   });
 
   it("preserves explicit false capability flags from an old installation", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce({
       api: "refactorkit",
       apiVersion: "unknown",
@@ -1637,6 +1746,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     const source = "private operation metadata must stay redacted";
     mutate(response);
     response.source = source;
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const error = await new TauriRefactorKitAdapter()
@@ -1856,6 +1966,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     const source = "private backend source must stay redacted";
     mutate(response);
     response.source = source;
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(response);
 
     const error = await new TauriRefactorKitAdapter()
@@ -1873,6 +1984,7 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
   });
 
   it("rejects incomplete capability mappings with a redacted protocol error", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce({
       api: "refactorkit",
       apiVersion: "0.2",
@@ -2196,14 +2308,19 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
   const gatingCommands = [
     {
       name: "previewRefactoring",
-      command: "preview_refactorkit_refactoring",
+      command: "preview_refactorkit_engine_refactoring",
       feature: "preview" as const,
       operation: "rename-class" as const,
+      engineFeatureOff: () =>
+        engineCapabilitiesWire((record) => {
+          record.previewReadOnly = false;
+        }),
       invoke: (adapter: TauriRefactorKitAdapter) =>
         adapter.previewRefactoring(previewRefactorRequest),
       wire: {
         operation: "rename-class",
         target: previewRefactorRequest.target,
+        change: {},
         authority: previewRefactorRequest.authority,
         selectionGeneration: 9,
         requestId: "preview-r1",
@@ -2257,15 +2374,17 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
     },
     {
       name: "applyRefactoring",
-      command: "apply_refactorkit_refactoring",
+      command: "apply_refactorkit_engine_refactoring",
       feature: "apply" as const,
       operation: "rename-class" as const,
+      engineFeatureOff: () => unavailableEngineCapabilitiesWire(),
       invoke: (adapter: TauriRefactorKitAdapter) =>
         adapter.applyRefactoring(applyRefactorRequest),
       wire: {
         planId: "plan-g-1",
         operation: "rename-class",
         target: applyRefactorRequest.target,
+        change: {},
         authority: applyRefactorRequest.authority,
         selectionGeneration: 9,
         requestId: "apply-r1",
@@ -2291,9 +2410,13 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
     },
     {
       name: "rollbackRefactoring",
-      command: "rollback_refactorkit_refactoring",
+      command: "rollback_refactorkit_engine_refactoring",
       feature: "rollback" as const,
       operation: "rename-class" as const,
+      engineFeatureOff: () =>
+        engineCapabilitiesWire((record) => {
+          record.rollbackAdvertised = false;
+        }),
       invoke: (adapter: TauriRefactorKitAdapter) =>
         adapter.rollbackRefactoring(rollbackRefactorRequest),
       wire: {
@@ -2314,15 +2437,18 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
     },
     {
       name: "discardRefactoring",
-      command: "discard_refactorkit_refactoring",
+      command: "discard_refactorkit_engine_refactoring",
       feature: "discard" as const,
       operation: undefined as string | undefined,
+      engineFeatureOff: () => unavailableEngineCapabilitiesWire(),
       invoke: (adapter: TauriRefactorKitAdapter) =>
         adapter.discardRefactoring(discardRefactorRequest),
       wire: {
         planId: "plan-g-2",
-        workspaceId: "workspace:1",
-        workspaceGeneration: 7,
+        authority: {
+          workspaceId: "workspace:1",
+          workspaceGeneration: 7,
+        },
         selectionGeneration: 9,
         requestId: "discard-r1",
       },
@@ -2350,11 +2476,11 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
   it.each(gatingCommands)(
     "refuses $name and does not invoke $command when general refactoring is unsupported",
     async ({ command, invoke }) => {
-      const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
-      capabilities.generalRefactoring = {
-        ...generalRefactoringUnavailable,
-      };
-      invokeMock.mockResolvedValueOnce(capabilities);
+      // getCapabilities() fetches the engine report first; when the engine is not
+      // discovered the merged generalRefactoring is honestly unsupported and the gate
+      // throws before any refactoring command is invoked.
+      invokeMock.mockResolvedValueOnce(unavailableEngineCapabilitiesWire());
+      invokeMock.mockResolvedValueOnce(advertisedCapabilities());
       const error = await invoke(new TauriRefactorKitAdapter()).catch((value: unknown) => value);
       expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: undefined });
       expect(invokeMock).not.toHaveBeenCalledWith(command, expect.anything());
@@ -2363,12 +2489,12 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
 
   it.each(gatingCommands)(
     "refuses $name when its $feature feature flag is not advertised",
-    async ({ command, feature, invoke }) => {
-      invokeMock.mockResolvedValueOnce(
-        advertisedCapabilities((general) => {
-          general[feature] = false;
-        }),
-      );
+    async ({ command, invoke, engineFeatureOff }) => {
+      // The feature flag is engine-derived: preview follows previewReadOnly, rollback
+      // follows rollbackAdvertised, and apply/discard follow supported. Each command's
+      // engineFeatureOff wire makes its own feature honest-unavailable.
+      invokeMock.mockResolvedValueOnce(engineFeatureOff());
+      invokeMock.mockResolvedValueOnce(advertisedCapabilities());
       const error = await invoke(new TauriRefactorKitAdapter()).catch((value: unknown) => value);
       expect(error).toMatchObject({ name: "TauriAdapterError", command, cause: undefined });
       expect(invokeMock).not.toHaveBeenCalledWith(command, expect.anything());
@@ -2378,11 +2504,13 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
   it.each(gatingCommands)(
     "invokes $command after the advertised general refactoring capability passes the gate",
     async ({ command, wire, result, invoke }) => {
+      invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
       invokeMock.mockResolvedValueOnce(advertisedCapabilities());
       invokeMock.mockResolvedValueOnce(result);
       await expect(invoke(new TauriRefactorKitAdapter())).resolves.toEqual(result);
-      expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_capabilities", undefined]);
-      expect(invokeMock).toHaveBeenCalledWith(command, { request: wire });
+      expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
+      expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
+      expect(invokeMock.mock.calls[2]).toEqual([command, { request: wire }]);
     },
   );
 });

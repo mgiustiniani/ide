@@ -164,6 +164,21 @@ const refactorKitJavaRefactoringTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+// Focused RefactorKit engine-integration characterization profile (REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001).
+// Runner-neutral: paths limited to the single engine-integration.feature source, so no competing feature
+// source is exercised. Deterministic desktop/tauri-harness evidence mirrors the throwaway
+// tmp/refactorkit-engine-integration.cucumber.cjs payload verified GREEN by ts-story-driven; this permanent
+// profile replaces that throwaway config. Support drivers plus the full steps glob (which includes
+// shared-operational.steps.ts) are imported, and the focused tag scope disambiguates shared step wording.
+const refactorKitEngineIntegrationTauriHarness = {
+  paths: ["features/refactorkit/engine-integration.feature"],
+  import: ["tests/story/support/**/*.ts", "tests/story/steps/**/*.ts"],
+  format: ["progress"],
+  strict: true,
+  tags: "@REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const idePackagingTauriHarness = {
   ...common,
   tags: "@REQ-IDE-PACKAGING-001",
@@ -248,6 +263,7 @@ export {
   piWorkspaceAgentTauriHarness,
   javaLanguageServiceTauriHarness,
   refactorKitJavaRefactoringTauriHarness,
+  refactorKitEngineIntegrationTauriHarness,
   piWorkspaceAgentNativeGui,
   idePackagingTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,

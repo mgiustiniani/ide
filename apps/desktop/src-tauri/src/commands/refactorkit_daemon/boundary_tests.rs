@@ -1628,14 +1628,17 @@ fn command_signatures_remain_stable() {
 #[test]
 fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
     let facade = include_str!("../refactorkit_daemon.rs");
+    // The real-engine slice (REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001) adds 10 thin
+    // command wrappers on top of the original 14; the facade stays thin (no process,
+    // no Tauri dependency below the inbound boundary, no forbidden imports).
     assert_eq!(
         facade
             .lines()
             .filter(|line| line.trim() == "#[tauri::command]")
             .count(),
-        14
+        24
     );
-    assert!(facade.lines().count() < 155);
+    assert!(facade.lines().count() < 260);
     for forbidden in [
         concat!("std::process::", "Command"),
         concat!("Child", "Stdin"),

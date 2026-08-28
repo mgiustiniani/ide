@@ -1271,3 +1271,34 @@ export class RefactorKitJavaRefactoringStorySession {
     this.#windowRestored = true;
   }
 }
+
+/**
+ * Shared-session accessor used by shared-operational.steps.ts and
+ * refactorkit-java-refactoring.steps.ts so shared and feature-specific steps
+ * operate on the SAME session instance per world. Lives here (not in the steps
+ * file) so importing shared-operational does not load the java-refactoring
+ * step definitions into a focused runner.
+ */
+import type { StoryWorld } from "./world.js";
+
+const sharedSessions = new WeakMap<StoryWorld, RefactorKitJavaRefactoringStorySession>();
+
+export function getRefactorKitJavaRefactoringSession(
+  world: StoryWorld,
+): RefactorKitJavaRefactoringStorySession {
+  let session = sharedSessions.get(world);
+  if (session === undefined) {
+    session = new RefactorKitJavaRefactoringStorySession();
+    sharedSessions.set(world, session);
+  }
+  return session;
+}
+
+/** Disposes and releases the session for a world, if one was created. */
+export function disposeRefactorKitJavaRefactoringSession(world: StoryWorld): void {
+  const session = sharedSessions.get(world);
+  if (session !== undefined) {
+    session.dispose();
+    sharedSessions.delete(world);
+  }
+}

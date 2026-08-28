@@ -1,0 +1,68 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Integrate the real RefactorKit engine into the IDE (REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001). The engine existence check (deferred to integration moment per user APR) is now RESOLVED: refactorkit 0.7.0-SNAPSHOT verified operational at /home/paperboy/workspace/refactorkit with global wrapper on PATH (scan/symbols/definition/references/rename/rename-member/extract-method/change-signature; preview read-only no-write, apply real). The RefactorKit daemon currently uses a deterministic in-process fixture peer; this slice makes it delegate to the REAL engine for the operational surface (the 6 refactoring operations + scan/symbols/definition/references), replacing/augmenting fixture-only evidence with real-engine semantic transformation.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE. Java TEST infra (JavaSpec/Maven/JUnit/dataset) and Java-only RefactorKit rules as workflow refactoring authority remain EXCLUDED.",
+      "evidence": "ADR 0015"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-ENGINE-DEFER-001",
+      "statement": "User deferred real-engine existence checks to the moment of integration; now resolved — engine verified operational.",
+      "evidence": "User message verbatim: 'refactorkit potrà essere integrato direttamente nel progetto quindi controlli sulla sua esistenza possono essere posticipati al momento'; probe 2026-08-26"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001",
+    "title": "Real-engine RefactorKit integration in the IDE daemon",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "The RefactorKit daemon delegates to the REAL refactorkit engine (CLI at /home/paperboy/workspace/refactorkit, wrapper on PATH) instead of a deterministic fixture peer, for the operational surface: scan, symbols, definition, references, diagnostics, and the 6 refactoring operations (rename-class/rename-member/rename-local-variable/move-class/change-method-signature/safe-delete). Real-engine preview is read-only (no write before explicit authority); apply performs the real transformation bound to the exact reviewed plan + explicit approval; rollback when advertised. Honest unavailable when the engine is not discoverable or an operation is unsupported.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java workspace, the daemon discovers the real refactorkit engine (wrapper/PATH + installed path) and reports capabilities authoritatively; honest unavailable when the engine is not discoverable."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Real-engine preview for a named refactoring operation returns an immutable patch plan (create/edit/move/delete + review evidence) that is read-only — no workspace write before explicit authority; the preview is correlated to operation/target/authority/generation/selection."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "Apply runs the real engine transformation bound to the exact reviewed plan + explicit approval authority and reports applied/refused/stale/failed honestly; rollback only when advertised; no fabricated plan/success."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; browser adapter remains honest-unavailable; web-first boundary: packages/ui, packages/web-core, apps/web never import @tauri-apps/api."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Status is evidence-based with an explicit state (@implemented-and-validated | @implemented-not-e2e-validated | ...), never inferred from shells; live Tauri-window refactoring E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-domain-expert (domain research) + bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + tauri-rust-coder (daemon real-engine delegation) + tauri-adapter-coder + browser-adapter-coder + frontend-core-coder/frontend-app-coder (view-model + controller)",
+    "scope": "Real-engine RefactorKit integration in the daemon: engine discovery, real preview/apply/rollback for the operational surface, replacing fixture-only evidence with real-engine semantic transformation. The existing fixture peer may remain as a deterministic fallback/harness but must not be claimed as real-engine evidence. Java navigation, Java build/run/debug, project model remain separate later slices.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "Java navigation, Java build/run/debug, project model (later slices)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Engine discovery: whether to discover via PATH wrapper only, or also the installed path /home/paperboy/workspace/refactorkit; honest-unavailable when neither discoverable. Confirm the discovery strategy.",
+      "Real-engine evidence: whether the Story/quality evidence drives the REAL CLI (now runnable) or a harness wrapping the CLI; confirm real CLI execution is acceptable evidence in this environment.",
+      "Fixture peer: whether the deterministic fixture peer remains as fallback/harness or is fully replaced by the real engine. Confirm.",
+      "Apply authority: confirm apply binds to the exact reviewed plan + explicit authority (no auto-apply), consistent with REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001."
+    ]
+  }
+}

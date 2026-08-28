@@ -607,7 +607,7 @@ fn locations_from_output(
         .collect()
 }
 
-fn parse_location_line(line: &str) -> Option<(&str, u32, Option<u32>)> {
+pub(crate) fn parse_location_line(line: &str) -> Option<(&str, u32, Option<u32>)> {
     let line = line.trim();
     let (prefix, final_number) = line.rsplit_once(':')?;
     let final_number = parse_one_based_number(final_number)?;
@@ -632,7 +632,7 @@ fn parse_one_based_number(value: &str) -> Option<u32> {
     (number > 0).then_some(number)
 }
 
-fn authorize_location(workspace_root: &Path, reported_path: &str) -> Option<String> {
+pub(crate) fn authorize_location(workspace_root: &Path, reported_path: &str) -> Option<String> {
     #[cfg(not(windows))]
     if has_windows_drive_prefix(reported_path) {
         return None;
@@ -788,17 +788,17 @@ fn is_java_identifier(value: &str) -> bool {
             .all(|character| character.is_alphanumeric() || character == '_' || character == '$')
 }
 
-struct CappedCommandOutput {
-    stdout: String,
-    stderr: String,
-    success: bool,
-    code: i32,
-    timed_out: bool,
-    stdout_truncated: bool,
-    stderr_truncated: bool,
+pub(crate) struct CappedCommandOutput {
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+    pub(crate) success: bool,
+    pub(crate) code: i32,
+    pub(crate) timed_out: bool,
+    pub(crate) stdout_truncated: bool,
+    pub(crate) stderr_truncated: bool,
 }
 
-fn run_capped_command(
+pub(crate) fn run_capped_command(
     executable: &Path,
     args: &[OsString],
     cwd: &Path,

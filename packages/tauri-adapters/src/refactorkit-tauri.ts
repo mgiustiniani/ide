@@ -1453,6 +1453,9 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
   if (command === "get_refactorkit_capabilities") {
     return new TauriRefactorKitUpdateRequiredError(command);
   }
+  if (command === "get_refactorkit_engine_capabilities") {
+    return new TauriRefactorKitUpdateRequiredError(command);
+  }
   if (command === "preview_refactorkit_external_java_import") {
     return new TauriRefactorKitManagedCommandError(
       command,
@@ -1539,6 +1542,57 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
       command,
       "REFACTORKIT_ROLLBACK_FAILED",
       "RefactorKit could not roll back the refactoring transaction.",
+    );
+  }
+  if (command === "preview_refactorkit_engine_refactoring") {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      /refus|reject/.test(text) ? "REFACTORKIT_PREVIEW_REFUSED" : "REFACTORKIT_PREVIEW_FAILED",
+      /refus|reject/.test(text)
+        ? "RefactorKit refused to preview this real-engine Java refactoring."
+        : "RefactorKit could not preview this real-engine Java refactoring.",
+    );
+  }
+  if (command === "apply_refactorkit_engine_refactoring") {
+    if (/stale|unknown|guard mismatch/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_APPLY_STALE",
+        "The reviewed real-engine RefactorKit plan is stale or no longer available.",
+      );
+    }
+    if (/refus|reject|approval/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_APPLY_REFUSED",
+        "RefactorKit refused to apply the reviewed real-engine refactoring plan.",
+      );
+    }
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_APPLY_FAILED",
+      "RefactorKit could not apply the reviewed real-engine refactoring plan.",
+    );
+  }
+  if (command === "discard_refactorkit_engine_refactoring") {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_DISCARD_FAILED",
+      "RefactorKit could not discard the retained real-engine refactoring plan.",
+    );
+  }
+  if (command === "rollback_refactorkit_engine_refactoring") {
+    if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_ROLLBACK_CONFLICT",
+        "RefactorKit could not roll back because the real-engine refactoring transaction conflicts with current workspace state.",
+      );
+    }
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_ROLLBACK_FAILED",
+      "RefactorKit could not roll back the real-engine refactoring transaction.",
     );
   }
   if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
@@ -2152,6 +2206,69 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
   return normalized;
 }
 
+/**
+ * Surfaces the authoritative real-engine capability report (RealEngineCapabilities)
+ * as a provider-neutral RefactorKitCapabilities advertisement plus the engine's own
+ * presence/version and CLI operational-surface metadata. Support is authoritative
+ * only from the real engine's own report (engineDiscovered + advertised operations);
+ * nothing is inferred from the fixture peer, a version string alone, or a visible
+ * control. When the engine is not discoverable or reports no operations, the surface
+ * is honestly unavailable (supported=false, all feature flags false, reason retained).
+ */
+function normalizeEngineCapabilities(
+  command: string,
+  response: unknown,
+): TauriRefactorKitEngineCapabilities {
+  const record = protocolRecord(command, response);
+  const engineDiscovered = protocolBoolean(command, record, "engineDiscovered");
+  const operations = strings(command, record.operations, "operations").map((operation) => {
+    validateRefactoringOperation(operation, command);
+    return operation as RefactoringOperation;
+  });
+  if (new Set(operations).size !== operations.length) {
+    throw invalidProtocolShape(command, "duplicate engine refactoring operation");
+  }
+  const operationalSurface = strings(command, record.operationalSurface, "operationalSurface");
+  const rollbackAdvertised = protocolBoolean(command, record, "rollbackAdvertised");
+  const previewReadOnly = protocolBoolean(command, record, "previewReadOnly");
+  const path = nullableString(command, record, "path");
+  const version = nullableString(command, record, "version");
+  const workspaceId = protocolId(command, record, "workspaceId");
+  const reason = nullableString(command, record, "reason");
+  const supported = engineDiscovered && operations.length > 0;
+  const generalRefactoring: RefactorKitGeneralRefactoringCapability = {
+    supported,
+    operations,
+    preview: supported && previewReadOnly,
+    apply: supported,
+    rollback: supported && rollbackAdvertised,
+    discard: supported,
+    stability: supported ? "stable" : "experimental",
+  };
+  if (!supported && reason !== null) generalRefactoring.reason = reason;
+  const normalized: TauriRefactorKitEngineCapabilities = {
+    api: "refactorkit",
+    apiVersion: "0.2",
+    provider: "refactorkit",
+    providerVersion: version,
+    javaImportExternalClass: {
+      supported: false,
+      targetDirectory: false,
+      preview: false,
+      apply: false,
+      rollback: false,
+      stability: "experimental",
+    },
+    generalRefactoring,
+    engineDiscovered,
+    enginePath: path,
+    engineVersion: version,
+    operationalSurface,
+    workspaceId,
+  };
+  return deepFreeze(normalized);
+}
+
 function affectedFiles(command: string, value: unknown, field: string): RefactorKitAffectedFile[] {
   return array(command, value, field, (record) => {
     const path = validatePath(
@@ -2413,9 +2530,15 @@ function validatePreviewRefactoringRequest(
   const authority = validateRefactorAuthority(request.authority, command);
   requestGeneration(request.selectionGeneration, command, "selectionGeneration");
   requestId(request.requestId, command, "requestId");
+  // The real-engine request carries an operation-specific change descriptor. The
+  // provider-neutral preview request does not carry rename/move/signature parameters
+  // yet, so the adapter delegates an empty change descriptor and lets the engine's
+  // own validation honestly refuse operations that require one (rename-class,
+  // rename-member, rename-local-variable, move-class, change-method-signature).
   return {
     operation: request.operation,
     target,
+    change: {},
     authority,
     selectionGeneration: request.selectionGeneration,
     requestId: request.requestId,
@@ -2449,6 +2572,7 @@ function validateApplyRefactoringRequest(
     planId: request.planId,
     operation: request.operation,
     target,
+    change: {},
     authority,
     selectionGeneration: request.selectionGeneration,
     requestId: request.requestId,
@@ -2757,6 +2881,25 @@ function normalizeCommandResult(command: string, response: unknown): RefactorKit
   };
 }
 
+/**
+ * The real-engine capability surface returned by getCapabilities(): the
+ * provider-neutral RefactorKitCapabilities advertisement plus the engine's own
+ * presence/version and CLI operational-surface metadata. Backward-compatible
+ * with callers that read only the base RefactorKitCapabilities shape.
+ */
+export interface TauriRefactorKitEngineCapabilities extends RefactorKitCapabilities {
+  /** Whether a real engine was discovered through a wrapper PATH or installed path. */
+  engineDiscovered: boolean;
+  /** Absolute path of the discovered real engine, when present. */
+  enginePath: string | null;
+  /** Version reported by the discovered real engine, when present. */
+  engineVersion: string | null;
+  /** The CLI operational surface the real engine authoritatively advertises. */
+  operationalSurface: string[];
+  /** The workspace the real-engine capability report is correlated to. */
+  workspaceId: string;
+}
+
 export class TauriRefactorKitAdapter implements RefactorKitPort {
   private currentSavedSnapshotSymbolSearchResult:
     Readonly<SavedSnapshotSymbolSearchResult> | undefined;
@@ -2767,9 +2910,34 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     return normalizeStatus(command, await invokeTauri<unknown>(command));
   }
 
-  async getCapabilities(): Promise<RefactorKitCapabilities> {
-    const command = "get_refactorkit_capabilities";
-    return normalizeCapabilities(command, await invokeManaged(command));
+  async getCapabilities(): Promise<TauriRefactorKitEngineCapabilities> {
+    // generalRefactoring is authoritative from the real engine's own capability
+    // report; the base daemon surface (external-import, language-kernel, methods,
+    // safety) is preserved alongside engine presence/version + operational surface.
+    const engineCommand = "get_refactorkit_engine_capabilities";
+    const engine = normalizeEngineCapabilities(
+      engineCommand,
+      await invokeManaged(engineCommand),
+    );
+    const baseCommand = "get_refactorkit_capabilities";
+    const base = normalizeCapabilities(baseCommand, await invokeManaged(baseCommand));
+    const merged: TauriRefactorKitEngineCapabilities = {
+      api: base.api,
+      apiVersion: base.apiVersion,
+      provider: base.provider,
+      providerVersion: base.providerVersion,
+      javaImportExternalClass: base.javaImportExternalClass,
+      generalRefactoring: engine.generalRefactoring,
+      engineDiscovered: engine.engineDiscovered,
+      enginePath: engine.enginePath,
+      engineVersion: engine.engineVersion,
+      operationalSurface: engine.operationalSurface,
+      workspaceId: engine.workspaceId,
+    };
+    if (base.methods !== undefined) merged.methods = base.methods;
+    if (base.languageKernel !== undefined) merged.languageKernel = base.languageKernel;
+    if (base.safety !== undefined) merged.safety = base.safety;
+    return deepFreeze(merged);
   }
 
   async scan(): Promise<RefactorKitCommandResult> {
@@ -3039,14 +3207,14 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   }
 
   async previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
-    const command = "preview_refactorkit_refactoring";
+    const command = "preview_refactorkit_engine_refactoring";
     const exactRequest = validatePreviewRefactoringRequest(request, command);
     await this.requireGeneralRefactoringFeature(command, request.operation, "preview");
     return normalizeRefactorPreview(command, await invokeManaged(command, exactRequest));
   }
 
   async applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult> {
-    const command = "apply_refactorkit_refactoring";
+    const command = "apply_refactorkit_engine_refactoring";
     const exactRequest = validateApplyRefactoringRequest(request, command);
     await this.requireGeneralRefactoringFeature(command, request.operation, "apply");
     const result = normalizeRefactorApply(command, await invokeManaged(command, exactRequest));
@@ -3057,7 +3225,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   }
 
   async rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult> {
-    const command = "rollback_refactorkit_refactoring";
+    const command = "rollback_refactorkit_engine_refactoring";
     const exactRequest = validateRollbackRefactoringRequest(request, command);
     await this.requireGeneralRefactoringFeature(command, request.operation, "rollback");
     const result = normalizeRefactorRollback(command, await invokeManaged(command, exactRequest));
@@ -3073,13 +3241,15 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   async discardRefactoring(
     request: DiscardRefactorKitPlanRequest,
   ): Promise<DiscardRefactorKitPlanResult> {
-    const command = "discard_refactorkit_refactoring";
+    const command = "discard_refactorkit_engine_refactoring";
     validateDiscardRequest(request, command);
     await this.requireGeneralRefactoringFeature(command, undefined, "discard");
     const exactRequest = {
       planId: request.planId,
-      workspaceId: request.workspaceId,
-      workspaceGeneration: request.workspaceGeneration,
+      authority: {
+        workspaceId: request.workspaceId,
+        workspaceGeneration: request.workspaceGeneration,
+      },
       selectionGeneration: request.selectionGeneration,
       requestId: request.requestId,
     };

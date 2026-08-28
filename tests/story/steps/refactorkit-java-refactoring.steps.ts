@@ -39,31 +39,15 @@ import {
   WORKSPACE_ID,
   REFACTOR_OPERATIONS,
   type RefactorOperation,
+  getRefactorKitJavaRefactoringSession,
+  disposeRefactorKitJavaRefactoringSession,
 } from "../support/refactorkit-java-refactoring.js";
 
 /** Tag scope that disambiguates this slice's shared step wording from other slices. */
 const REQUIREMENT_TAG = `@${REQUIREMENT}`;
 
-const sessions = new WeakMap<StoryWorld, RefactorKitJavaRefactoringStorySession>();
-
 function sessionFor(world: StoryWorld): RefactorKitJavaRefactoringStorySession {
-  let session = sessions.get(world);
-  if (session === undefined) {
-    session = new RefactorKitJavaRefactoringStorySession();
-    sessions.set(world, session);
-  }
-  return session;
-}
-
-/**
- * Shared-session accessor used by shared-operational.steps.ts so the shared
- * adapter/web-first/status step wording and this file's feature-specific steps
- * operate on the SAME session instance per world.
- */
-export function getRefactorKitJavaRefactoringSession(
-  world: StoryWorld,
-): RefactorKitJavaRefactoringStorySession {
-  return sessionFor(world);
+  return getRefactorKitJavaRefactoringSession(world);
 }
 
 async function attachEvidence(
@@ -175,63 +159,9 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "no proposed project-content effect occurs before explicit authority",
-  async function () {
-    const session = sessionFor(this);
-    await session.assertNoProjectContentEffectBeforeAuthority();
-    assert.equal(
-      session.appliedBeforeAuthority(),
-      false,
-      `${REQUIREMENT} a project-content effect occurred before explicit authority`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the preview grants no apply authority for the plan",
-  async function () {
-    const session = sessionFor(this);
-    await session.assertPreviewGrantsNoApplyAuthority();
-    const plan = session.previewOutcome()?.plan;
-    assert.ok(plan, `${REQUIREMENT} no plan to check apply authority`);
-    assert.equal(
-      plan.grantsApplyAuthority,
-      false,
-      `${REQUIREMENT} the preview granted apply authority`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
 // -----------------------------------------------------------------------------
 // AC-002 — exact-plan apply / conditional rollback (GREEN)
 // -----------------------------------------------------------------------------
-
-Given<StoryWorld>(
-  "the exact reviewed plan is still current against the workspace, selection, and request",
-  async function () {
-    const session = sessionFor(this);
-    session.start();
-    await session.recordReviewedPlanCurrency();
-    assert.equal(
-      session.reviewedPlanCurrent(),
-      true,
-      `${REQUIREMENT} no exact reviewed plan is current`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-When<StoryWorld>(
-  "the person gives explicit apply authority bound to that exact reviewed plan",
-  async function () {
-    const session = sessionFor(this);
-    await session.requestGeneralRefactoringApply(PRIMARY_OPERATION);
-    await attachEvidence(session, this);
-  },
-);
 
 Then<StoryWorld>(
   "the provider receives the plan authority rather than reconstructed Java source or UI-fabricated edits",
@@ -258,20 +188,6 @@ Then<StoryWorld>(
       apply.appliedExactPlan,
       true,
       `${REQUIREMENT} Apply did not occur for the exact reviewed plan and current context`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "a changed or replaced plan requires a fresh preview and review before any Apply",
-  async function () {
-    const session = sessionFor(this);
-    await session.assertChangedPlanRequiresFreshPreview();
-    assert.equal(
-      session.changedPlanRequiresFreshPreview(),
-      true,
-      `${REQUIREMENT} an Apply occurred for a changed/replaced plan without a fresh preview`,
     );
     await attachEvidence(session, this);
   },
@@ -305,74 +221,6 @@ Then<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "rollback is authoritatively advertised for the relevant transaction class",
-  async function () {
-    const session = sessionFor(this);
-    await session.recordRollbackAdvertisement();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "rollback is exposed only for that advertised, transaction-bound compensating write",
-  async function () {
-    const session = sessionFor(this);
-    const rollback = session.advertisedRollbackOutcome();
-    assert.ok(rollback?.advertised, `${REQUIREMENT} rollback is not advertised for the transaction class`);
-    assert.equal(rollback.offered, true, `${REQUIREMENT} advertised rollback is not exposed`);
-    assert.ok(
-      rollback.transactionId !== undefined,
-      `${REQUIREMENT} rollback is not bound to a transaction`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "its restoration result, conflicts, changed files, and diagnostics are reported honestly",
-  async function () {
-    const session = sessionFor(this);
-    const rollback = session.advertisedRollbackOutcome();
-    assert.ok(rollback?.advertised, `${REQUIREMENT} no advertised rollback restoration result`);
-    assert.equal(rollback.rolledBack, true, `${REQUIREMENT} rollback restoration did not occur`);
-    assert.ok(Array.isArray(rollback.changedFiles), `${REQUIREMENT} changed files not reported`);
-    assert.ok(Array.isArray(rollback.conflicts), `${REQUIREMENT} conflicts not reported`);
-    assert.ok(Array.isArray(rollback.diagnostics), `${REQUIREMENT} diagnostics not reported`);
-    await attachEvidence(session, this);
-  },
-);
-
-When<StoryWorld>(
-  "rollback is not advertised",
-  async function () {
-    const session = sessionFor(this);
-    await session.recordRollbackNotAdvertised();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "rollback is neither offered nor described as read-only, and no rollback success is inferred from a transaction ID, generic apply capability, or a visible control",
-  async function () {
-    const session = sessionFor(this);
-    const rollback = session.notAdvertisedRollbackOutcome();
-    assert.ok(rollback, `${REQUIREMENT} not-advertised rollback outcome is missing`);
-    assert.equal(rollback.offered, false, `${REQUIREMENT} rollback was offered without advertisement`);
-    assert.equal(
-      rollback.describedAsReadOnly,
-      false,
-      `${REQUIREMENT} rollback was described as read-only without advertisement`,
-    );
-    assert.equal(
-      rollback.successInferred,
-      false,
-      `${REQUIREMENT} rollback success was inferred from a transaction ID, generic apply capability, or a control`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
 // -----------------------------------------------------------------------------
 // AC-003 — adapters extract/delegate/response and honest unavailable outcomes
 // -----------------------------------------------------------------------------
@@ -400,51 +248,11 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "the adapter contains no hidden domain policy, direct workspace mutation, or fabricated evidence",
-  async function () {
-    const session = sessionFor(this);
-    const adapter = session.adapterOutcome();
-    assert.equal(adapter?.noHiddenPolicy, true, `${REQUIREMENT} the adapter hid domain policy`);
-    assert.equal(
-      adapter?.noDirectWorkspaceMutation,
-      true,
-      `${REQUIREMENT} the adapter mutated the workspace directly`,
-    );
-    assert.equal(adapter?.fabricatedEvidence, false, `${REQUIREMENT} the adapter fabricated evidence`);
-    await attachEvidence(session, this);
-  },
-);
-
 When<StoryWorld>(
   "the provider is absent, its capability metadata is absent or unacceptable, or the operation is unsupported",
   async function () {
     const session = sessionFor(this);
     await session.recordUnsupportedOperation();
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "the IDE reports the capability honestly as unavailable",
-  async function () {
-    const session = sessionFor(this);
-    assert.equal(
-      session.reportsCapabilityUnavailable(),
-      true,
-      `${REQUIREMENT} the IDE fabricated availability for an unsupported operation`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "it neither fabricates a plan, successful result, nor fallback textual rewrite",
-  async function () {
-    const session = sessionFor(this);
-    assert.equal(session.fabricatedPlan(), false, `${REQUIREMENT} a plan was fabricated`);
-    assert.equal(session.fabricatedSuccess(), false, `${REQUIREMENT} a successful result was fabricated`);
-    assert.equal(session.fallbackRewrite(), false, `${REQUIREMENT} a fallback textual rewrite was fabricated`);
     await attachEvidence(session, this);
   },
 );
@@ -493,15 +301,6 @@ Then<StoryWorld>(
 // -----------------------------------------------------------------------------
 // AC-005 — implementation status is evidence-based and stays @not-implemented
 // -----------------------------------------------------------------------------
-
-Given<StoryWorld>(
-  "meaningful RED precedes new product behavior for this feature",
-  async function () {
-    const session = sessionFor(this);
-    session.start();
-    await attachEvidence(session, this);
-  },
-);
 
 Then<StoryWorld>(
   "the requirement ID \"@REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001\" is repository-unique and reconciled",
@@ -584,30 +383,11 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "live e2e may remain unvalidated headless without silently upgrading the declared status",
-  async function () {
-    const session = sessionFor(this);
-    const reconciliation = session.featureReconciliation();
-    assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
-    assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT} unvalidated e2e silently upgraded the declared status`,
-    );
-    assert.equal(
-      reconciliation.scenarioStatusTags.length,
-      0,
-      `${REQUIREMENT} unvalidated e2e silently upgraded a scenario status`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
 After<StoryWorld>({ tags: REQUIREMENT_TAG }, async function () {
-  const session = sessions.get(this);
+  const session = getRefactorKitJavaRefactoringSession(this);
   if (session !== undefined) {
     session.dispose();
     await attachEvidence(session, this);
-    sessions.delete(this);
+    disposeRefactorKitJavaRefactoringSession(this);
   }
 });

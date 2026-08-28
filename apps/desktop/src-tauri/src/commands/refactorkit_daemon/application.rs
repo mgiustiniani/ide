@@ -22,10 +22,24 @@ pub(super) struct Guard {
     pub(super) request_id: String,
 }
 
+#[derive(Clone)]
 pub(super) struct TransactionGuard {
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
     pub(super) operation: Option<String>,
+}
+
+/// Exact reviewed real-engine plan guard. Apply re-runs the real engine CLI
+/// operation against this exact operation + target under explicit approval;
+/// a changed or replaced plan requires a fresh preview and review.
+#[derive(Clone)]
+pub(super) struct EnginePlanGuard {
+    pub(super) operation: String,
+    pub(super) target: RefactoringTarget,
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
+    pub(super) selection_generation: u64,
+    pub(super) request_id: String,
 }
 
 #[derive(Default)]
@@ -34,6 +48,7 @@ pub(super) struct Manager {
     pub(super) plans: HashMap<String, Guard>,
     pub(super) transactions: HashMap<String, TransactionGuard>,
     pub(super) consumed_plans: HashSet<String>,
+    pub(super) engine_plans: HashMap<String, EnginePlanGuard>,
 }
 
 pub struct RefactorKitDaemonState(pub(super) Mutex<Manager>);
@@ -544,6 +559,7 @@ pub(super) fn reset(manager: &mut Manager) {
     manager.plans.clear();
     manager.transactions.clear();
     manager.consumed_plans.clear();
+    manager.engine_plans.clear();
 }
 
 pub(super) fn ensure_session(
