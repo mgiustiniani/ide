@@ -563,19 +563,47 @@ export function refactorOperationRequiresIntent(operation: RefactoringOperation)
   return operation !== "safe-delete";
 }
 
+/** True when a string is empty or whitespace-only (leading/trailing whitespace trimmed). */
+function isWhitespaceOnly(value: string): boolean {
+  return value.trim().length === 0;
+}
+
+/**
+ * True when a path is a safe, non-empty workspace-relative path: no traversal
+ * (`.`/`..` segments), no backslash, no absolute or drive-letter prefix, and no
+ * surrounding whitespace. Used to validate move-class source/target paths.
+ */
+function isSafeWorkspacePath(path: string): boolean {
+  if (isWhitespaceOnly(path)) return false;
+  if (path !== path.trim()) return false;
+  if (path.includes("\\")) return false;
+  if (path.startsWith("/")) return false;
+  if (/^[a-zA-Z]:/.test(path)) return false;
+  const segments = path.split("/");
+  if (segments.some((segment) => segment === "." || segment === ".." || segment.length === 0)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Validates an optional change intent against the request operation. Returns a
  * refusal reason when the operation requires intent that is absent, mismatched,
  * or incomplete; returns undefined when the intent is executable. Never
  * fabricates missing intent — an operation that requires intent but has none is
- * honestly refused.
+ * honestly refused. Field values are trimmed so whitespace-only input is
+ * rejected, and move-class source/target paths are validated when supplied.
+ * `safe-delete` requires no intent and rejects any supplied intent.
  */
 export function validateRefactorChangeIntent(
   operation: RefactoringOperation,
   intent: RefactorKitChangeIntent | undefined,
 ): string | undefined {
   if (!refactorOperationRequiresIntent(operation)) {
-    // safe-delete requires no intent; an extra intent is tolerated.
+    // safe-delete requires no intent; any intent is invalid for safe-delete.
+    if (intent !== undefined) {
+      return "safe-delete does not accept any change intent";
+    }
     return undefined;
   }
   if (intent === undefined) {
@@ -587,23 +615,33 @@ export function validateRefactorChangeIntent(
   switch (intent.operation) {
     case "rename-class":
     case "rename-member":
-      return intent.newName.length === 0
+      return isWhitespaceOnly(intent.newName)
         ? `${intent.operation} requires a non-empty newName`
         : undefined;
     case "rename-local-variable":
-      return intent.fromName.length === 0 || intent.newName.length === 0
+      return isWhitespaceOnly(intent.fromName) || isWhitespaceOnly(intent.newName)
         ? "rename-local-variable requires non-empty fromName and newName"
         : undefined;
-    case "move-class":
-      return intent.newPackage.length === 0
-        ? "move-class requires a non-empty newPackage"
-        : undefined;
+    case "move-class": {
+      if (isWhitespaceOnly(intent.newPackage)) {
+        return "move-class requires a non-empty newPackage";
+      }
+      if (intent.sourcePath !== undefined && !isSafeWorkspacePath(intent.sourcePath)) {
+        return "move-class requires a safe, non-empty workspace-relative sourcePath when supplied";
+      }
+      if (intent.targetPath !== undefined && !isSafeWorkspacePath(intent.targetPath)) {
+        return "move-class requires a safe, non-empty workspace-relative targetPath when supplied";
+      }
+      return undefined;
+    }
     case "change-method-signature":
-      return intent.oldParameter.length === 0 || intent.newParameter.length === 0
+      return isWhitespaceOnly(intent.oldParameter) || isWhitespaceOnly(intent.newParameter)
         ? "change-method-signature requires non-empty oldParameter and newParameter"
         : undefined;
     case "safe-delete":
-      return undefined;
+      // Unreachable: safe-delete is refused before the switch, and a mismatched
+      // intent was already rejected. Guard for exhaustiveness.
+      return "safe-delete does not accept any change intent";
   }
 }
 

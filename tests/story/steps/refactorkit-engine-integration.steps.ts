@@ -3,26 +3,31 @@
 // Story BDD steps for REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001
 // (features/refactorkit/engine-integration.feature, 5 scenarios / 48 Gherkin steps + 15 hooks = 63 observed).
 //
-// RED: real-engine delegation (engine discovery + real CLI preview/apply/rollback)
-// does NOT exist in the production daemon. These steps drive the REAL
+// GREEN: real-engine delegation (engine discovery + real CLI preview/apply/rollback)
+// IS implemented in the production daemon (apps/desktop/src-tauri/src/commands/
+// refactorkit_daemon/real_engine.rs). These steps drive the REAL
 // TauriRefactorKitAdapter (and honest BrowserRefactorKitAdapter) through a fake
 // in-process Tauri invoke boundary whose daemon reflects the real
-// refactorkit_daemon engine-integration gap: engine discovery absent and
-// preview/apply/rollback honestly unavailable / refused. Engine integration is
-// never fabricated.
+// refactorkit_daemon engine-integration semantics: engine discovery present, and
+// preview/apply/rollback delegate to the real engine. Engine integration is
+// honestly reported and never fabricated.
 //
-// Expected RED (honest unavailable/refused):
-//   - AC-001 fails on "reports real-engine capability" and "correlated to the
-//     discovered engine"; the honest-unavailable branch passes.
-//   - AC-002 fails on "returns one real-engine patch plan"; the read-only /
+// Expected GREEN (honest real-engine delegation):
+//   - AC-001: engine discovered (wrapper PATH), authoritative operational surface
+//     reported and correlated to the discovered engine/version/workspace; the
+//     honest-unavailable branch passes.
+//   - AC-002: returns one real-engine read-only patch plan; the read-only /
 //     no-apply-authority / fixture-harness-only branches pass.
-//   - AC-003 fails on "runs the real engine transformation", "rollback is exposed
-//     only for that advertised ...", and "restoration result ... reported"; the
-//     honest-refusal, changed-plan, and not-advertised branches pass.
-//   - AC-004 fails on "delegates the extracted request to the owned real-engine
-//     capability" and "returns the delegated response"; extraction,
-//     honest-unavailable, browser, web-first, and ports branches pass.
-//   - AC-005 passes: status stays @not-implemented, requirement unique/reconciled,
+//   - AC-003: runs the real engine transformation bound to the exact reviewed
+//     plan + approval; rollback is exposed only for that advertised transaction-
+//     bound compensating write; restoration result reported honestly. Apply
+//     requires the operation-specific changeIntent and the apply outcome is
+//     compared to the retained plan (differing -> stale/refused); applied only on
+//     success + changed files.
+//   - AC-004: adapter delegates the extracted request to the owned real-engine
+//     capability and returns the delegated response; extraction, honest-unavailable,
+//     browser, web-first, and ports branches pass.
+//   - AC-005: status stays @not-implemented, requirement unique/reconciled,
 //     production gap documented without promotion.
 //
 // Shared step wording (adapter extract/delegate/response, web-first, status
@@ -84,8 +89,8 @@ Given<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     session.start();
-    // Honest RED: the production daemon has no wrapper-PATH / installed-engine-path
-    // discovery, so the engine is recorded as NOT discovered (no fabrication).
+    // Honest GREEN: the production daemon discovers the engine through the
+    // wrapper-PATH / installed-engine-path discovery (real_engine.rs).
     await session.observeEngineDiscovery();
     await attachEvidence(session, this);
   },
@@ -105,13 +110,12 @@ Then<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     const outcome = await session.reportEngineCapability();
-    // RED: the production daemon does NOT report a real-engine authoritative
-    // capability (real-engine delegation absent; extract-method and the renamed
-    // rename/change-signature surfaces are not advertised).
+    // GREEN: the production daemon reports a real-engine authoritative capability
+    // (real_engine.rs discovery + operational surface advertisement).
     assert.equal(
       outcome.reportsRealEngineCapability,
       true,
-      `${REQUIREMENT}: the daemon did NOT report the real engine authoritative capability for the operational surface — real-engine delegation is absent`,
+      `${REQUIREMENT}: the daemon did NOT report the real engine authoritative capability for the operational surface — real-engine delegation is not observed`,
     );
     assert.equal(
       outcome.missingOperationalSurfaces.length,
@@ -127,7 +131,7 @@ Then<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     const outcome = await session.reportEngineCapability();
-    // RED: no engine is discovered, so no capability is correlated to it.
+    // GREEN: the engine is discovered, so the capability is correlated to it.
     assert.equal(
       outcome.capabilityCorrelated,
       true,
@@ -200,12 +204,12 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const preview = session.previewOutcome();
     assert.ok(preview, `${REQUIREMENT}: preview outcome is missing`);
-    // RED: the production daemon returns NO real-engine patch plan — preview is
-    // honestly refused because real-engine delegation is absent.
+    // GREEN: the production daemon returns one real-engine read-only patch plan
+    // (real-engine preview delegation implemented).
     assert.equal(
       preview.previewRefused,
       false,
-      `${REQUIREMENT}: the provider returned NO real-engine patch plan — real-engine preview delegation is absent`,
+      `${REQUIREMENT}: the provider returned NO real-engine patch plan — real-engine preview delegation is not observed`,
     );
     assert.ok(preview.plan !== undefined, `${REQUIREMENT}: no real-engine patch plan was returned`);
     await attachEvidence(session, this);
@@ -216,7 +220,7 @@ Then<StoryWorld>(
   "the fixture peer may serve as a harness only and is never reported as real-engine preview evidence",
   async function () {
     const session = sessionFor(this);
-    // Honest RED: the fixture peer is a harness only and is never presented as
+    // Honest GREEN: the fixture peer is a harness only and is never presented as
     // real-engine preview evidence.
     assert.equal(
       session.fixturePeerAsRealEngineEvidence(),
@@ -237,12 +241,13 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const apply = session.applyOutcome();
     assert.ok(apply, `${REQUIREMENT}: apply outcome is missing`);
-    // RED: no real-engine transformation runs — Apply is refused because
-    // real-engine delegation is absent.
+    // GREEN: a real-engine transformation runs (Apply delegates to the real
+    // engine), bound to the exact reviewed plan + approval and the operation-
+    // specific changeIntent; the apply outcome is compared to the retained plan.
     assert.equal(
       apply.receivedPlanAuthority && apply.appliedExactPlan,
       true,
-      `${REQUIREMENT}: the provider did NOT run the real engine transformation against the exact reviewed plan and current context — real-engine apply delegation is absent`,
+      `${REQUIREMENT}: the provider did NOT run the real engine transformation against the exact reviewed plan and current context — real-engine apply delegation is not observed`,
     );
     await attachEvidence(session, this);
   },
@@ -267,7 +272,7 @@ Then<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     const outcome = session.reportedOutcome();
-    // Honest RED: the IDE reports the honest refused outcome and never fabricates
+    // Honest GREEN: the IDE reports the honest outcome and never fabricates
     // success.
     assert.ok(
       outcome !== undefined &&
@@ -303,12 +308,12 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const adapter = session.adapterOutcome();
     assert.ok(adapter, `${REQUIREMENT}: adapter outcome is missing`);
-    // RED: the adapter cannot delegate to an owned real-engine capability because
-    // real-engine delegation is absent; the capability gate refuses.
+    // GREEN: the adapter delegates to an owned real-engine capability
+    // (real-engine delegation implemented).
     assert.equal(
       adapter.delegated,
       true,
-      `${REQUIREMENT}: the adapter did NOT delegate the extracted request to an owned real-engine capability — real-engine delegation is absent`,
+      `${REQUIREMENT}: the adapter did NOT delegate the extracted request to an owned real-engine capability — real-engine delegation is not observed`,
     );
     await attachEvidence(session, this);
   },
@@ -396,7 +401,7 @@ Then<StoryWorld>(
   "deterministic fixture-peer evidence, real-engine semantic transformation, rollback restoration, live editor or native GUI wiring, packaging, and platform coverage are reported separately",
   async function () {
     const session = sessionFor(this);
-    // Honest RED: this RED uses a deterministic in-process daemon boundary behind
+    // Honest GREEN: this GREEN uses a deterministic in-process daemon boundary behind
     // the REAL adapter; real-engine transformation, rollback restoration, live
     // editor/native-GUI wiring, packaging, and platform coverage are reported
     // separately and not claimed here.

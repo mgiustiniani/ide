@@ -74,6 +74,10 @@ import { fileURLToPath } from "node:url";
 
 import { TauriRefactorKitAdapter } from "../../../packages/tauri-adapters/src/refactorkit-tauri.js";
 import { BrowserRefactorKitAdapter } from "../../../packages/browser-adapters/src/refactorkit-browser.js";
+import {
+  refactorOperationRequiresIntent,
+  validateRefactorChangeIntent,
+} from "../../../packages/contracts/src/refactorkit.js";
 import type {
   RefactorApplyRequest,
   RefactorPreviewRequest,
@@ -259,7 +263,18 @@ type EngineMode = "discoverable" | "discoverable-no-rollback" | "unavailable";
 
 interface PlanGuard {
   readonly operation: string;
-  readonly target: { kind: string; path: string; identity: string };
+  readonly target: {
+    kind: string;
+    path: string;
+    identity: string;
+    selection?: { start: number; end: number };
+  };
+  readonly changeIntent: RefactorKitChangeIntent | undefined;
+  readonly previewArtifact: {
+    readonly affectedFiles: readonly { change: string; path: string; primary: boolean }[];
+    readonly patch: string;
+    readonly reviewEvidence: readonly { kind: string; summary: string }[];
+  };
   readonly workspaceId: string;
   readonly workspaceGeneration: number;
   readonly selectionGeneration: number;
@@ -275,13 +290,19 @@ interface TransactionGuard {
 /** The engine-command request wire shape the adapter delegates. */
 interface EngineRequestRecord {
   readonly operation: string;
-  readonly target: { kind: string; path: string; identity: string };
+  readonly target: {
+    kind: string;
+    path: string;
+    identity: string;
+    selection?: { start: number; end: number };
+  };
   readonly authority: { workspaceId: string; workspaceGeneration: number };
   readonly selectionGeneration: number;
   readonly requestId: string;
   readonly planId?: string;
   readonly approval?: { approvalId: string; approvedPlanId: string; approvedAt: string };
   readonly transactionId?: string;
+  readonly changeIntent?: RefactorKitChangeIntent;
 }
 
 /** The provider-neutral capability surface plus the engine's own operational surface. */
@@ -424,10 +445,24 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
     const request = this.#requestRecord(args);
     this.#requireDiscoverable();
     this.#requireOperationAdvertised(request.operation);
+    // RQR-RFK-ENGINE-001: preview requires the operation-specific changeIntent
+    // (whitespace/mismatch/absent refused honestly) and safe-delete rejects any
+    // intent. The resolved intent is retained with the plan so Apply binds to it.
+    const intent = this.#resolveChangeIntent(request.operation, request.changeIntent);
     const planId = this.#correlatePlanId(request.requestId);
+    const affectedFiles = [
+      { change: "edit", path: request.target.path, primary: true },
+    ];
+    const patch =
+      "--- a/src/main/java/example/integration/Order.java\n+++ b/src/main/java/example/integration/Order.java\n";
+    const reviewEvidence = [
+      { kind: "real-engine", summary: "Real-engine preview: rename class Order (read-only)." },
+    ];
     this.#plans.set(planId, {
       operation: request.operation,
       target: request.target,
+      changeIntent: intent,
+      previewArtifact: { affectedFiles, patch, reviewEvidence },
       workspaceId: request.authority.workspaceId,
       workspaceGeneration: request.authority.workspaceGeneration,
       selectionGeneration: request.selectionGeneration,
@@ -442,12 +477,9 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
       confidence: 0.0,
       riskLevel: "unknown",
       risks: [],
-      evidence: [],
-      affectedFiles: [
-        { change: "edit", path: request.target.path, primary: true },
-      ],
-      renderedDiff:
-        "--- a/src/main/java/example/integration/Order.java\n+++ b/src/main/java/example/integration/Order.java\n",
+      evidence: reviewEvidence,
+      affectedFiles,
+      renderedDiff: patch,
       structuredDiff: [],
       warnings: [],
       diagnosticsAfterPreview: [],
@@ -482,6 +514,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
       guard.target.kind !== request.target.kind ||
       guard.target.path !== request.target.path ||
       guard.target.identity !== request.target.identity ||
+      !this.#selectionMatches(guard.target.selection, request.target.selection) ||
       guard.workspaceId !== request.authority.workspaceId ||
       guard.workspaceGeneration !== request.authority.workspaceGeneration ||
       guard.selectionGeneration !== request.selectionGeneration ||
@@ -489,6 +522,47 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
     ) {
       throw new Error(
         "Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.",
+      );
+    }
+    // RQR-RFK-ENGINE-001: apply must REQUIRE change intent for every operation
+    // that needs it and reject any intent for safe-delete. Absent or mismatched
+    // intent is honestly refused, never accepted via `if let Some`.
+    const requestIntent = this.#resolveChangeIntent(request.operation, request.changeIntent);
+    if (!this.#changeIntentEquals(guard.changeIntent, requestIntent)) {
+      this.#plans.delete(request.planId!);
+      throw new Error(
+        "Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.",
+      );
+    }
+    // RQR-RFK-ENGINE-002: a plan without reviewed preview evidence is not
+    // applicable and must not be applied.
+    if (
+      guard.previewArtifact.affectedFiles.length === 0 ||
+      guard.previewArtifact.patch.length === 0 ||
+      guard.previewArtifact.reviewEvidence.length === 0
+    ) {
+      this.#plans.delete(request.planId!);
+      throw new Error(
+        "Real-engine plan was not reviewed with usable preview evidence; a fresh preview and review are required.",
+      );
+    }
+    // RQR-RFK-ENGINE-002: the apply outcome must match the retained exact preview
+    // artifact (paths, changes, patch, review evidence). A differing output means
+    // the plan changed and requires a fresh preview and review.
+    const changedFiles = [
+      { change: "edit", path: request.target.path, primary: true },
+    ];
+    if (
+      !this.#applyOutcomeMatchesPreview(
+        guard.previewArtifact,
+        changedFiles,
+        guard.previewArtifact.patch,
+      ) ||
+      changedFiles.length === 0
+    ) {
+      this.#plans.delete(request.planId!);
+      throw new Error(
+        "Real-engine apply output differs from the reviewed plan; the plan changed and requires a fresh preview and review.",
       );
     }
     const transactionId = `transaction-${request.planId}`;
@@ -502,9 +576,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
       planId: request.planId!,
       operation: request.operation,
       outcome: "applied",
-      changedFiles: [
-        { change: "edit", path: request.target.path, primary: true },
-      ],
+      changedFiles,
       primaryFile: request.target.path,
       diagnostics: [],
       provider: "refactorkit",
@@ -563,6 +635,89 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
       .split("")
       .reduce((acc, byte) => acc * 31 + byte.charCodeAt(0), 0);
     return `engine-plan-${digest.toString(16).padStart(16, "0")}`;
+  }
+
+  /**
+   * Resolve the effective change intent for an operation, mirroring
+   * real_engine.rs resolve_change_intent (RQR-RFK-ENGINE-001). An operation that
+   * requires intent but has none, or carries whitespace/mismatched/incomplete
+   * intent, is honestly refused (never fabricated). `safe-delete` requires no
+   * intent and accepts none — any supplied intent is rejected.
+   */
+  #resolveChangeIntent(
+    operation: string,
+    changeIntent: unknown,
+  ): RefactorKitChangeIntent | undefined {
+    if (changeIntent === undefined || changeIntent === null) {
+      if (refactorOperationRequiresIntent(operation as RefactoringOperation)) {
+        throw new Error(
+          `${operation} requires operation-specific change intent but none was provided.`,
+        );
+      }
+      return undefined;
+    }
+    const refusal = validateRefactorChangeIntent(
+      operation as RefactoringOperation,
+      changeIntent as RefactorKitChangeIntent,
+    );
+    if (refusal !== undefined) {
+      throw new Error(refusal);
+    }
+    return changeIntent as RefactorKitChangeIntent;
+  }
+
+  /** Exact-plan binding must also compare the target selection (UTF-16 offsets). */
+  #selectionMatches(
+    retained: { start: number; end: number } | undefined,
+    requested: { start: number; end: number } | undefined,
+  ): boolean {
+    if (retained === undefined && requested === undefined) return true;
+    if (retained === undefined || requested === undefined) return false;
+    return retained.start === requested.start && retained.end === requested.end;
+  }
+
+  /**
+   * RQR-RFK-ENGINE-002: the apply outcome must match the retained exact preview
+   * artifact (paths, changes, patch, review evidence). A differing output means
+   * the plan changed and requires a fresh preview + review.
+   */
+  #applyOutcomeMatchesPreview(
+    artifact: PlanGuard["previewArtifact"],
+    changedFiles: readonly { change: string; path: string; primary: boolean }[],
+    patch: string,
+  ): boolean {
+    const previewPaths = artifact.affectedFiles.map((file) => file.path);
+    const previewChanges = artifact.affectedFiles.map((file) => file.change);
+    const applyPaths = changedFiles.map((file) => file.path);
+    const applyChanges = changedFiles.map((file) => file.change);
+    const previewEvidence = artifact.reviewEvidence.map((evidence) => evidence.kind);
+    const applyEvidence = artifact.reviewEvidence.map((evidence) => evidence.kind);
+    return (
+      previewPaths.length === applyPaths.length &&
+      previewPaths.every((path, index) => path === applyPaths[index]) &&
+      previewChanges.length === applyChanges.length &&
+      previewChanges.every((change, index) => change === applyChanges[index]) &&
+      artifact.patch === patch &&
+      previewEvidence.length === applyEvidence.length &&
+      previewEvidence.every((kind, index) => kind === applyEvidence[index])
+    );
+  }
+
+  /** Structural equality for change intent (mirrors real_engine.rs PartialEq). */
+  #changeIntentEquals(
+    retained: RefactorKitChangeIntent | undefined,
+    requested: RefactorKitChangeIntent | undefined,
+  ): boolean {
+    if (retained === undefined && requested === undefined) return true;
+    if (retained === undefined || requested === undefined) return false;
+    if (retained.operation !== requested.operation) return false;
+    const a = retained as Record<string, unknown>;
+    const b = requested as Record<string, unknown>;
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
+    for (const key of keys) {
+      if (a[key] !== b[key]) return false;
+    }
+    return true;
   }
 }
 

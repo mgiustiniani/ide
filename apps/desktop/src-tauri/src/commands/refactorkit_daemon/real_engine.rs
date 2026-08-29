@@ -38,7 +38,8 @@ use crate::commands::workspace_registry::workspace_id_for_path;
 use super::application::{lock, RefactorKitDaemonState, EnginePlanGuard, RefactorKitPreviewArtifact};
 use super::contract::{
     normalize_refactoring_target, refactor_operation_requires_intent, ApprovalEvidence,
-    RefactoringOperation, RefactoringTarget, RefactorKitChangeIntent, WorkspaceAuthority,
+    RefactoringOperation, RefactoringSelection, RefactoringTarget, RefactorKitChangeIntent,
+    WorkspaceAuthority,
 };
 use super::path_policy::{canonical_workspace, require_generation, safe_path, validate_workspace};
 use super::application::validate_refactoring_target;
@@ -533,6 +534,7 @@ pub(super) fn apply_refactoring(
         || guard.target.kind != request.target.kind
         || guard.target.path != request.target.path
         || guard.target.identity != request.target.identity
+        || !selection_matches(&guard.target.selection, &request.target.selection)
         || guard.workspace_id != request.authority.workspace_id
         || guard.workspace_generation != request.authority.workspace_generation
         || guard.selection_generation != request.selection_generation
@@ -542,12 +544,13 @@ pub(super) fn apply_refactoring(
     }
     // RQR-RFK-ENGINE-002: Apply binds to the exact reviewed plan. The arguments
     // are built from the retained change descriptor + target, never rebuilt from
-    // the fresh request. A request changeIntent that differs from the reviewed
-    // plan is a changed/replaced plan and requires a fresh preview.
-    if let Some(request_intent) = request.change_intent.as_ref() {
-        if guard.change_intent.as_ref() != Some(request_intent) {
-            return Err("Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.".to_string());
-        }
+    // the fresh request. RQR-RFK-ENGINE-001: apply must REQUIRE change intent
+    // for every operation that needs it (rename-*, move-class,
+    // change-method-signature) and reject any intent for safe-delete. Absent or
+    // mismatched intent is honestly refused, never accepted via `if let Some`.
+    let request_intent = resolve_change_intent(request.operation, request.change_intent.as_ref())?;
+    if guard.change_intent != request_intent {
+        return Err("Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.".to_string());
     }
     // The retained preview artifact must carry non-empty affected files, a
     // rendered patch/diff, and review evidence — a plan without reviewed evidence
@@ -561,6 +564,15 @@ pub(super) fn apply_refactoring(
     }
     let args = build_refactor_args(guard.operation, &guard.target, guard.change_intent.as_ref(), true, &root)?;
     let output = run_capped_command(&probe.path, &args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
+    // RQR-RFK-ENGINE-002: before reporting applied, the CLI output patch,
+    // affected files, and review evidence must match the retained exact preview
+    // artifact. A differing output means the plan changed and requires a fresh
+    // preview and review — never accept a rerun that diverges from the reviewed
+    // plan as the reviewed result.
+    if !apply_outcome_matches_preview(&output, &root, guard.operation, &guard.preview_artifact) {
+        manager.engine_plans.remove(&request.plan_id);
+        return Err("Real-engine apply output differs from the reviewed plan; the plan changed and requires a fresh preview and review.".to_string());
+    }
     let result = match normalize_engine_apply(&output, &request, &probe, &root) {
         Ok(result) => result,
         Err(error) => {
@@ -570,7 +582,12 @@ pub(super) fn apply_refactoring(
             return Err(error);
         }
     };
-    let transaction_id = result.get("transactionId").and_then(Value::as_str).map(ToString::to_string);
+    let transaction_id = result
+        .get("outcome")
+        .and_then(Value::as_str)
+        .filter(|outcome| *outcome == "applied")
+        .and_then(|_| result.get("transactionId").and_then(Value::as_str))
+        .map(ToString::to_string);
     manager.engine_plans.remove(&request.plan_id);
     if let Some(transaction_id) = transaction_id {
         manager.transactions.insert(
@@ -842,10 +859,18 @@ fn build_refactor_args(
 
 /// Resolve the effective change intent for an operation. An operation that
 /// requires intent but has none is honestly refused (never fabricated).
+/// RQR-RFK-ENGINE-001: `safe-delete` requires no intent and accepts none — any
+/// intent supplied for `safe-delete` is honestly rejected.
 fn resolve_change_intent(
     operation: RefactoringOperation,
     change_intent: Option<&RefactorKitChangeIntent>,
 ) -> Result<Option<RefactorKitChangeIntent>, String> {
+    if operation == RefactoringOperation::SafeDelete {
+        if change_intent.is_some() {
+            return Err("safe-delete accepts no change intent.".to_string());
+        }
+        return Ok(None);
+    }
     if let Some(intent) = change_intent {
         intent.validate(operation)?;
         return Ok(Some(intent.clone()));
@@ -962,21 +987,28 @@ fn normalize_engine_apply(
     root: &Path,
 ) -> Result<Value, String> {
     let text = &output.stdout;
-    let outcome = if text.contains("Applied. Transaction:")
-        || text.contains("Applied. Transaction")
-    {
-        "applied"
-    } else if text.contains("refused") || text.contains("Refused") {
-        "refused"
-    } else {
-        "failed"
-    };
     let affected_change = match request.operation {
         RefactoringOperation::SafeDelete => "delete",
         RefactoringOperation::MoveClass => "move",
         _ => "edit",
     };
     let changed_files = parse_affected_files(text, root, affected_change)?;
+    // RQR-RFK-ENGINE-006: `applied` requires a successful engine process (exit
+    // code 0), non-empty changed files, and the engine's applied-transaction
+    // report — NOT merely stdout containing "Applied. Transaction". A failing
+    // engine process reports honest failure/indeterminate, never fabricated
+    // applied.
+    let outcome = if output.success
+        && output.code == 0
+        && !changed_files.is_empty()
+        && (text.contains("Applied. Transaction:") || text.contains("Applied. Transaction"))
+    {
+        "applied"
+    } else if output.success && (text.contains("refused") || text.contains("Refused")) {
+        "refused"
+    } else {
+        "failed"
+    };
     // RQR-RFK-ENGINE-003: primaryFile is serialized as a PATH STRING (not an
     // affected-file object), matching what refactorkit-tauri.ts requires.
     let primary_path = changed_files
@@ -1117,6 +1149,75 @@ fn extract_preview_artifact(normalized: &Value) -> RefactorKitPreviewArtifact {
         affected_files,
         patch,
         review_evidence,
+    }
+}
+
+/// RQR-RFK-ENGINE-002: the apply CLI output must match the retained exact
+/// preview artifact (patch, affected files, review evidence). A differing output
+/// means the plan changed and requires a fresh preview + review. The stateless
+/// CLI is never rerun and accepted as the reviewed plan when it diverges.
+fn apply_outcome_matches_preview(
+    output: &CappedCommandOutput,
+    root: &Path,
+    operation: RefactoringOperation,
+    artifact: &RefactorKitPreviewArtifact,
+) -> bool {
+    let text = &output.stdout;
+    let affected_change = match operation {
+        RefactoringOperation::SafeDelete => "delete",
+        RefactoringOperation::MoveClass => "move",
+        _ => "edit",
+    };
+    let Ok(affected) = parse_affected_files(text, root, affected_change) else {
+        return false;
+    };
+    let patch = parse_patch(text).unwrap_or_default();
+    let evidence = parse_review_evidence(text);
+
+    let preview_paths: Vec<&str> = artifact
+        .affected_files
+        .iter()
+        .filter_map(|file| file.get("path").and_then(Value::as_str))
+        .collect();
+    let preview_changes: Vec<&str> = artifact
+        .affected_files
+        .iter()
+        .filter_map(|file| file.get("change").and_then(Value::as_str))
+        .collect();
+    let apply_paths: Vec<&str> = affected
+        .iter()
+        .filter_map(|file| file.get("path").and_then(Value::as_str))
+        .collect();
+    let apply_changes: Vec<&str> = affected
+        .iter()
+        .filter_map(|file| file.get("change").and_then(Value::as_str))
+        .collect();
+    let preview_evidence: Vec<&str> = artifact
+        .review_evidence
+        .iter()
+        .filter_map(|evidence| evidence.get("kind").and_then(Value::as_str))
+        .collect();
+    let apply_evidence: Vec<&str> = evidence
+        .iter()
+        .filter_map(|evidence| evidence.get("kind").and_then(Value::as_str))
+        .collect();
+
+    preview_paths == apply_paths
+        && preview_changes == apply_changes
+        && artifact.patch == patch
+        && preview_evidence == apply_evidence
+}
+
+/// RQR-RFK-ENGINE-002: exact-plan binding must also compare the target selection
+/// (UTF-16 offsets), not just kind/path/identity and generation/workspace IDs.
+fn selection_matches(
+    retained: &Option<RefactoringSelection>,
+    requested: &Option<RefactoringSelection>,
+) -> bool {
+    match (retained, requested) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.start == b.start && a.end == b.end,
+        _ => false,
     }
 }
 
@@ -1526,6 +1627,236 @@ mod tests {
         };
         let error = apply_refactoring(apply, &state).unwrap_err();
         assert!(error.contains("fresh preview and review"));
+        remove_engine_override();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Harness that distinguishes the apply invocation (`--apply`) from preview so
+    /// tests can prove the apply CLI output is compared against the reviewed plan
+    /// and that a failing apply process reports honest failure.
+    fn install_apply_aware_harness(
+        root: &Path,
+        preview_stdout: &str,
+        apply_stdout: &str,
+        apply_exit: i32,
+    ) -> PathBuf {
+        let script = root.join(format!(
+            "engine-apply-aware-{}.sh",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let caps_json = java_capabilities();
+        let body = format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'RefactorKit 0.7.0-SNAPSHOT (API 0.2)' ;;\n  capabilities) printf '%s\\n' '{caps_json}' ;;\n  --help) echo 'refactorkit patch rollback <id>' ;;\n  rename) if echo \"$@\" | grep -q -- '--apply'; then printf '%s' '{apply_stdout}'; exit {apply_exit}; else printf '%s' '{preview_stdout}'; fi ;;\n  *) echo 'unsupported' >&2; exit 1 ;;\nesac\n",
+            caps_json = caps_json,
+            apply_stdout = apply_stdout,
+            apply_exit = apply_exit,
+            preview_stdout = preview_stdout,
+        );
+        fs::write(&script, body).unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+        env::set_var("IDE_REFACTORKIT_ENGINE", &script);
+        script
+    }
+
+    /// An apply output whose patch/affected-files differ from the reviewed preview
+    /// artifact, proving the exact-plan binding refuses a diverging rerun.
+    fn differing_apply_stdout() -> String {
+        "Operation: renameClass\nStatus: APPLY\nRename A -> B\nEvidence: JDT_BINDING\nAffected files:\n- src/A.java\n- src/B.java\nPatch:\n--- a/src/A.java\n+++ b/src/A.java\n@@\n- old\n+ new2\nApplied. Transaction: transaction-abc123\nTo rollback: refactorkit patch rollback transaction-abc123\n".to_string()
+    }
+
+    #[test]
+    fn resolve_change_intent_requires_intent_and_rejects_intent_for_safe_delete() {
+        // An intent-requiring operation with no intent is honestly refused.
+        let error = resolve_change_intent(RefactoringOperation::RenameClass, None).unwrap_err();
+        assert!(error.contains("requires operation-specific change intent"));
+        // safe-delete accepts no intent.
+        let intent = RefactorKitChangeIntent {
+            operation: RefactoringOperation::SafeDelete,
+            new_name: None,
+            from_name: None,
+            new_package: None,
+            source_path: None,
+            target_path: None,
+            old_parameter: None,
+            new_parameter: None,
+        };
+        let error = resolve_change_intent(RefactoringOperation::SafeDelete, Some(&intent)).unwrap_err();
+        assert!(error.contains("safe-delete accepts no change intent"));
+        // safe-delete with no intent resolves to None.
+        assert!(resolve_change_intent(RefactoringOperation::SafeDelete, None)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_apply_refuses_absent_change_intent_for_intent_requiring_operation() {
+        let _lock = engine_env_lock();
+        let root = temp_workspace("apply-no-intent");
+        install_engine_harness(&root, Some(&java_capabilities()), &complete_preview_stdout(), true);
+        let state = RefactorKitDaemonState::default();
+        let preview = EnginePreviewRequest {
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-no-intent-req".to_string(),
+        };
+        let previewed = preview_refactoring(preview, &state).unwrap();
+        let plan_id = previewed["planId"].as_str().unwrap().to_string();
+        let apply = EngineApplyRequest {
+            plan_id: plan_id.clone(),
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: None,
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-no-intent-req".to_string(),
+            approval: ApprovalEvidence {
+                approval_id: "approval-no-intent".to_string(),
+                approved_plan_id: plan_id.clone(),
+                approved_at: "2026-08-27T00:00:00Z".to_string(),
+            },
+        };
+        let error = apply_refactoring(apply, &state).unwrap_err();
+        assert!(error.contains("requires operation-specific change intent"));
+        // A refused apply must not consume the reviewed plan guard.
+        assert_eq!(state.0.lock().unwrap().engine_plans.len(), 1);
+        remove_engine_override();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_apply_refuses_apply_output_differing_from_reviewed_plan() {
+        let _lock = engine_env_lock();
+        let root = temp_workspace("apply-diff");
+        install_apply_aware_harness(&root, &complete_preview_stdout(), &differing_apply_stdout(), 0);
+        let state = RefactorKitDaemonState::default();
+        let preview = EnginePreviewRequest {
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-diff-req".to_string(),
+        };
+        let previewed = preview_refactoring(preview, &state).unwrap();
+        let plan_id = previewed["planId"].as_str().unwrap().to_string();
+        let apply = EngineApplyRequest {
+            plan_id: plan_id.clone(),
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-diff-req".to_string(),
+            approval: ApprovalEvidence {
+                approval_id: "approval-diff".to_string(),
+                approved_plan_id: plan_id.clone(),
+                approved_at: "2026-08-27T00:00:00Z".to_string(),
+            },
+        };
+        let error = apply_refactoring(apply, &state).unwrap_err();
+        assert!(error.contains("differs from the reviewed plan"));
+        // An uncorrelated apply is a write boundary: the guard must not survive.
+        assert!(state.0.lock().unwrap().engine_plans.is_empty());
+        remove_engine_override();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_apply_reports_honest_failure_when_engine_process_fails() {
+        let _lock = engine_env_lock();
+        let root = temp_workspace("apply-fail");
+        // The engine exits non-zero but prints an applied-transaction line. A
+        // failing process must report honest failure, never fabricated applied.
+        install_apply_aware_harness(&root, &complete_preview_stdout(), &complete_preview_stdout(), 1);
+        let state = RefactorKitDaemonState::default();
+        let preview = EnginePreviewRequest {
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-fail-req".to_string(),
+        };
+        let previewed = preview_refactoring(preview, &state).unwrap();
+        let plan_id = previewed["planId"].as_str().unwrap().to_string();
+        let apply = EngineApplyRequest {
+            plan_id: plan_id.clone(),
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-fail-req".to_string(),
+            approval: ApprovalEvidence {
+                approval_id: "approval-fail".to_string(),
+                approved_plan_id: plan_id.clone(),
+                approved_at: "2026-08-27T00:00:00Z".to_string(),
+            },
+        };
+        let result = apply_refactoring(apply, &state).unwrap();
+        assert_eq!(result["outcome"], "failed");
+        // No transaction may be recorded for a failed apply.
+        assert!(state.0.lock().unwrap().transactions.is_empty());
+        assert!(state.0.lock().unwrap().engine_plans.is_empty());
         remove_engine_override();
         fs::remove_dir_all(&root).unwrap();
     }
