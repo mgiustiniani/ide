@@ -526,6 +526,87 @@ export interface RefactorWorkspaceAuthority {
   workspaceGeneration: number;
 }
 
+/**
+ * Operation-specific mutation intent required by the real engine before a
+ * rename/move/signature preview or apply can execute. The intent is optional on
+ * the request but validated: an operation that requires intent but has none is
+ * honestly refused (never fabricated). The `operation` discriminator must match
+ * the request `operation`. `safe-delete` requires no intent. Field names mirror
+ * the engine change descriptor (newName/fromName/newPackage/oldParameter/newParameter).
+ */
+export type RefactorKitChangeIntent =
+  | { operation: "rename-class"; newName: string }
+  | { operation: "rename-member"; newName: string }
+  | {
+      operation: "rename-local-variable";
+      /** Current local binding name (engine requires fromName + newName). */
+      fromName: string;
+      newName: string;
+    }
+  | {
+      operation: "move-class";
+      newPackage: string;
+      /** Optional workspace-relative source file path for the move. */
+      sourcePath?: string;
+      /** Optional workspace-relative target file path for the move. */
+      targetPath?: string;
+    }
+  | {
+      operation: "change-method-signature";
+      oldParameter: string;
+      newParameter: string;
+    }
+  | { operation: "safe-delete" };
+
+/** True when the operation requires operation-specific change intent to execute. */
+export function refactorOperationRequiresIntent(operation: RefactoringOperation): boolean {
+  return operation !== "safe-delete";
+}
+
+/**
+ * Validates an optional change intent against the request operation. Returns a
+ * refusal reason when the operation requires intent that is absent, mismatched,
+ * or incomplete; returns undefined when the intent is executable. Never
+ * fabricates missing intent — an operation that requires intent but has none is
+ * honestly refused.
+ */
+export function validateRefactorChangeIntent(
+  operation: RefactoringOperation,
+  intent: RefactorKitChangeIntent | undefined,
+): string | undefined {
+  if (!refactorOperationRequiresIntent(operation)) {
+    // safe-delete requires no intent; an extra intent is tolerated.
+    return undefined;
+  }
+  if (intent === undefined) {
+    return `${operation} requires operation-specific change intent but none was provided`;
+  }
+  if (intent.operation !== operation) {
+    return `change intent operation ${intent.operation} does not match request operation ${operation}`;
+  }
+  switch (intent.operation) {
+    case "rename-class":
+    case "rename-member":
+      return intent.newName.length === 0
+        ? `${intent.operation} requires a non-empty newName`
+        : undefined;
+    case "rename-local-variable":
+      return intent.fromName.length === 0 || intent.newName.length === 0
+        ? "rename-local-variable requires non-empty fromName and newName"
+        : undefined;
+    case "move-class":
+      return intent.newPackage.length === 0
+        ? "move-class requires a non-empty newPackage"
+        : undefined;
+    case "change-method-signature":
+      return intent.oldParameter.length === 0 || intent.newParameter.length === 0
+        ? "change-method-signature requires non-empty oldParameter and newParameter"
+        : undefined;
+    case "safe-delete":
+      return undefined;
+  }
+}
+
 /** Request one read-only Java refactoring preview for an exact operation + target. */
 export interface RefactorPreviewRequest {
   operation: RefactoringOperation;
@@ -533,6 +614,12 @@ export interface RefactorPreviewRequest {
   authority: RefactorWorkspaceAuthority;
   selectionGeneration: number;
   requestId: string;
+  /**
+   * Operation-specific mutation intent the real engine needs to execute a
+   * rename/move/signature preview. Optional but validated: an operation that
+   * requires intent but has none is honestly refused, never fabricated.
+   */
+  changeIntent?: RefactorKitChangeIntent;
 }
 
 /**
@@ -586,6 +673,12 @@ export interface RefactorApplyRequest {
   selectionGeneration: number;
   requestId: string;
   approval: RefactorKitApprovalEvidence;
+  /**
+   * Operation-specific mutation intent the real engine needs to execute a
+   * rename/move/signature apply. Optional but validated: an operation that
+   * requires intent but has none is honestly refused, never fabricated.
+   */
+  changeIntent?: RefactorKitChangeIntent;
 }
 
 /** Honest outcome reported after an Apply attempt. */

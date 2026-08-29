@@ -99,6 +99,78 @@ impl RefactoringOperation {
     }
 }
 
+/// True when an operation requires operation-specific change intent to execute.
+/// Only `safe-delete` needs no intent.
+pub(super) fn refactor_operation_requires_intent(operation: RefactoringOperation) -> bool {
+    !matches!(operation, RefactoringOperation::SafeDelete)
+}
+
+/// Operation-specific mutation intent required by the real engine before a
+/// rename/move/signature preview or apply can execute. The intent is optional on
+/// the request but validated: an operation that requires intent but has none is
+/// honestly refused (never fabricated). The `operation` discriminator must match
+/// the request `operation`. `safe-delete` requires no intent. Field names mirror
+/// the engine change descriptor (newName/fromName/newPackage/sourcePath/targetPath/
+/// oldParameter/newParameter).
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RefactorKitChangeIntent {
+    pub(super) operation: RefactoringOperation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) from_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) old_parameter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_parameter: Option<String>,
+}
+
+impl RefactorKitChangeIntent {
+    /// Validates the intent discriminator against the request operation and the
+    /// per-operation required parameters. Returns an honest refusal reason when
+    /// the intent is absent, mismatched, or incomplete; never fabricates intent.
+    pub(super) fn validate(&self, operation: RefactoringOperation) -> Result<(), String> {
+        if self.operation != operation {
+            return Err(format!(
+                "change intent operation {} does not match request operation {}.",
+                self.operation.as_str(),
+                operation.as_str()
+            ));
+        }
+        match operation {
+            RefactoringOperation::RenameClass | RefactoringOperation::RenameMember => {
+                require_intent_field(&self.new_name, "newName")
+            }
+            RefactoringOperation::RenameLocalVariable => {
+                require_intent_field(&self.from_name, "fromName")?;
+                require_intent_field(&self.new_name, "newName")
+            }
+            RefactoringOperation::MoveClass => require_intent_field(&self.new_package, "newPackage"),
+            RefactoringOperation::ChangeMethodSignature => {
+                require_intent_field(&self.old_parameter, "oldParameter")?;
+                require_intent_field(&self.new_parameter, "newParameter")
+            }
+            RefactoringOperation::SafeDelete => Ok(()),
+        }
+    }
+}
+
+fn require_intent_field(value: &Option<String>, name: &str) -> Result<(), String> {
+    value
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|_| ())
+        .ok_or_else(|| format!("{} requires a non-empty {name}.", "change intent"))
+}
+
 /// An exact semantic Java target bound by the IDE for a refactoring request.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

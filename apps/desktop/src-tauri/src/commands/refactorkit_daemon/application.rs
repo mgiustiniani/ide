@@ -29,13 +29,28 @@ pub(super) struct TransactionGuard {
     pub(super) operation: Option<String>,
 }
 
-/// Exact reviewed real-engine plan guard. Apply re-runs the real engine CLI
-/// operation against this exact operation + target under explicit approval;
-/// a changed or replaced plan requires a fresh preview and review.
+/// Preview artifact retained from the exact reviewed plan so Apply binds to the
+/// reviewed change rather than rebuilding from a fresh request. Retains the
+/// affected files, the rendered patch/diff, and the review evidence that made
+/// the plan eligible.
+#[derive(Clone)]
+pub(super) struct RefactorKitPreviewArtifact {
+    pub(super) affected_files: Vec<Value>,
+    pub(super) patch: String,
+    pub(super) review_evidence: Vec<Value>,
+}
+
+/// Exact reviewed real-engine plan guard. Apply binds to the retained exact
+/// plan: the retained change descriptor (change intent), target, authority, and
+/// preview artifact from the reviewed preview. Apply never rebuilds arguments
+/// from a fresh request; a changed or replaced plan requires a fresh preview and
+/// review.
 #[derive(Clone)]
 pub(super) struct EnginePlanGuard {
-    pub(super) operation: String,
+    pub(super) operation: RefactoringOperation,
     pub(super) target: RefactoringTarget,
+    pub(super) change_intent: Option<RefactorKitChangeIntent>,
+    pub(super) preview_artifact: RefactorKitPreviewArtifact,
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
     pub(super) selection_generation: u64,

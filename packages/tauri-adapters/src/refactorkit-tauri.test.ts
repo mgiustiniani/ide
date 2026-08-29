@@ -263,6 +263,10 @@ const actualSchemaV1Capabilities = {
   },
 };
 
+// Real-engine structural command result (RealEngineCommandResult): the engine
+// serializes `command` as a string array (not an object with executable/args) and
+// carries engine/engineVersion metadata that the port contract drops. normalizeEngineCommandResult
+// reads `command` via legacyStrings, so the wire uses the engine string-array shape.
 const rustCommandResult = {
   stdout: "scan complete",
   stderr: "",
@@ -272,14 +276,7 @@ const rustCommandResult = {
   timedOut: false,
   stdoutTruncated: false,
   stderrTruncated: false,
-  command: {
-    executable: "/usr/local/bin/refactorkit",
-    args: ["scan", "/workspace/project"],
-    cwd: "/workspace/project",
-    workspaceRoot: "/workspace/project",
-    timeoutMs: 60_000,
-    outputLimitBytes: 524_288,
-  },
+  command: ["/usr/local/bin/refactorkit", "scan", "/workspace/project"],
 };
 
 const DIAGNOSTICS_OPERATION_RUNTIME = {
@@ -706,7 +703,7 @@ describe("TauriRefactorKitAdapter", () => {
       stderrTruncated: false,
       command: ["/usr/local/bin/refactorkit", "scan", "/workspace/project"],
     });
-    expect(invokeMock).toHaveBeenCalledWith("run_refactorkit_scan", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("run_refactorkit_engine_scan", undefined);
   });
 
   it("normalizes multiple locations, preserves paths, and omits an absent column", async () => {
@@ -865,28 +862,25 @@ describe("TauriRefactorKitAdapter", () => {
       name: "definition",
       invokeAdapter: (adapter: TauriRefactorKitAdapter, symbol: string) =>
         adapter.definition(symbol),
-      command: "run_refactorkit_definition",
+      command: "run_refactorkit_engine_definition",
       action: "definition",
     },
     {
       name: "references",
       invokeAdapter: (adapter: TauriRefactorKitAdapter, symbol: string) =>
         adapter.references(symbol),
-      command: "run_refactorkit_references",
+      command: "run_refactorkit_engine_references",
       action: "references",
     },
   ])(
-    "invokes the fixed $name command with the symbol and normalizes its result",
+    "invokes the fixed $name engine command with the symbol and normalizes its result",
     async ({ invokeAdapter, command, action }) => {
       const adapter = new TauriRefactorKitAdapter();
       const symbol = "com.example.Service#execute(java.lang.String)";
       invokeMock.mockResolvedValueOnce({
         ...rustCommandResult,
         stdout: `${action} result`,
-        command: {
-          ...rustCommandResult.command,
-          args: [action, "--symbol", symbol, "/workspace/project"],
-        },
+        command: ["/usr/local/bin/refactorkit", action, "--symbol", symbol, "/workspace/project"],
       });
 
       await expect(invokeAdapter(adapter, symbol)).resolves.toEqual({
@@ -909,13 +903,13 @@ describe("TauriRefactorKitAdapter", () => {
       name: "definition",
       invokeAdapter: (adapter: TauriRefactorKitAdapter, symbol: string) =>
         adapter.definition(symbol),
-      command: "run_refactorkit_definition",
+      command: "run_refactorkit_engine_definition",
     },
     {
       name: "references",
       invokeAdapter: (adapter: TauriRefactorKitAdapter, symbol: string) =>
         adapter.references(symbol),
-      command: "run_refactorkit_references",
+      command: "run_refactorkit_engine_references",
     },
   ])(
     "propagates $name backend rejections with command context",
@@ -951,43 +945,43 @@ describe("TauriRefactorKitAdapter", () => {
       name: "fractional exit code",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, code: 0.5 },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "missing locations list",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: undefined },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "non-array locations list",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: {} },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "empty location path",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: [{ path: "", line: 1 }] },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "non-string location path",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: [{ path: 42, line: 1 }] },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "zero location line",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: [{ path: "Main.java", line: 0 }] },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "fractional location line",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.scan(),
       payload: { ...rustCommandResult, locations: [{ path: "Main.java", line: 1.5 }] },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "zero location column",
@@ -996,7 +990,7 @@ describe("TauriRefactorKitAdapter", () => {
         ...rustCommandResult,
         locations: [{ path: "Main.java", line: 1, column: 0 }],
       },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "fractional location column",
@@ -1005,7 +999,7 @@ describe("TauriRefactorKitAdapter", () => {
         ...rustCommandResult,
         locations: [{ path: "Main.java", line: 1, column: 2.5 }],
       },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
       name: "null location column",
@@ -1014,28 +1008,28 @@ describe("TauriRefactorKitAdapter", () => {
         ...rustCommandResult,
         locations: [{ path: "Main.java", line: 1, column: null }],
       },
-      command: "run_refactorkit_scan",
+      command: "run_refactorkit_engine_scan",
     },
     {
-      name: "array command metadata",
+      name: "object command metadata",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.symbols(),
       payload: {
         ...rustCommandResult,
-        command: ["refactorkit", "symbols", "/workspace/project"],
+        command: {
+          executable: "/usr/local/bin/refactorkit",
+          args: ["symbols", "/workspace/project"],
+        },
       },
-      command: "run_refactorkit_symbols",
+      command: "run_refactorkit_engine_symbols",
     },
     {
       name: "non-string command argument",
       invokeAdapter: (adapter: TauriRefactorKitAdapter) => adapter.symbols(),
       payload: {
         ...rustCommandResult,
-        command: {
-          ...rustCommandResult.command,
-          args: ["symbols", 42],
-        },
+        command: ["refactorkit", "symbols", 42],
       },
-      command: "run_refactorkit_symbols",
+      command: "run_refactorkit_engine_symbols",
     },
   ])("rejects malformed payloads: $name", async ({ invokeAdapter, payload, command }) => {
     const adapter = new TauriRefactorKitAdapter();
@@ -2273,6 +2267,9 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
     authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
     selectionGeneration: 9,
     requestId: "preview-r1",
+    // RQR-RFK-ENGINE-001: rename-class requires an operation-specific changeIntent;
+    // the wire carries it in camelCase (never an empty change descriptor).
+    changeIntent: { operation: "rename-class", newName: "WidgetV2" } as const,
   };
   const applyRefactorRequest = {
     planId: "plan-g-1",
@@ -2290,6 +2287,9 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
       approvedPlanId: "plan-g-1",
       approvedAt: "2026-07-12T12:34:56.123Z",
     },
+    // RQR-RFK-ENGINE-001: rename-class requires an operation-specific changeIntent;
+    // the wire carries it in camelCase (never an empty change descriptor).
+    changeIntent: { operation: "rename-class", newName: "WidgetV2" } as const,
   };
   const rollbackRefactorRequest = {
     transactionId: "transaction-g-1",
@@ -2320,7 +2320,7 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
       wire: {
         operation: "rename-class",
         target: previewRefactorRequest.target,
-        change: {},
+        changeIntent: { operation: "rename-class", newName: "WidgetV2" },
         authority: previewRefactorRequest.authority,
         selectionGeneration: 9,
         requestId: "preview-r1",
@@ -2384,7 +2384,7 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
         planId: "plan-g-1",
         operation: "rename-class",
         target: applyRefactorRequest.target,
-        change: {},
+        changeIntent: { operation: "rename-class", newName: "WidgetV2" },
         authority: applyRefactorRequest.authority,
         selectionGeneration: 9,
         requestId: "apply-r1",

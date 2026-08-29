@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tests/story/support/refactorkit-engine-integration.ts
 // Story BDD driver for REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001
-// (features/refactorkit/engine-integration.feature, 5 scenarios / 55 steps).
+// (features/refactorkit/engine-integration.feature, 5 scenarios / 48 Gherkin steps + 15 hooks = 63 observed).
 //
 // GREEN: the production daemon now delegates to the real RefactorKit engine
 // (apps/desktop/src-tauri/src/commands/refactorkit_daemon/real_engine.rs):
@@ -32,10 +32,14 @@
 // Evidence boundaries: this GREEN is driven through a deterministic in-process
 // boundary behind the REAL adapter — it exercises the adapter/port/daemon wiring
 // and the real-engine capability surface, but NOT a live external engine CLI
-// execution, no native GUI, no E2E, and no packaging. Live real-engine CLI
-// execution is proven by the Rust unit tests in real_engine.rs and reported
-// separately; the in-process boundary is a fixture/harness and is never claimed
-// as real-engine execution evidence.
+// execution, no native GUI, no E2E, and no packaging. The Rust unit tests in
+// real_engine.rs exercise a deterministic fake-shell engine harness
+// (install_engine_harness), not a live CLI, and are never claimed as live CLI
+// proof. Real-engine CLI evidence is reported separately: the CLI version and
+// scan were executed (0.7.0-SNAPSHOT, API 0.2); the rename-preview CLI was NOT
+// executed (blocked by a stale empty local.jar classpath artifact). The
+// in-process boundary is a fixture/harness and is never claimed as real-engine
+// execution evidence.
 //
 // Expected GREEN (honest real-engine delegation):
 //   - AC-001: engine discovered (wrapper PATH), authoritative operational surface
@@ -75,6 +79,7 @@ import type {
   RefactorPreviewRequest,
   RefactorRollbackRequest,
   RefactorKitCapabilities,
+  RefactorKitChangeIntent,
   RefactoringOperation,
 } from "../../../packages/contracts/src/refactorkit.js";
 
@@ -1300,7 +1305,23 @@ export class RefactorKitEngineIntegrationStorySession {
       authority: { workspaceId: WORKSPACE_ID, workspaceGeneration: 1 },
       selectionGeneration: 1,
       requestId: `story-engine-preview-${Date.now()}`,
+      changeIntent: this.#changeIntentFor(operation),
     };
+  }
+
+  /**
+   * Operation-specific change intent the real engine requires before a
+   * rename/move/signature preview or apply. RQR-RFK-ENGINE-001: the adapter
+   * honestly refuses an operation that requires intent but has none, so the Story
+   * supplies the exact intent for the operations it exercises. rename-class is
+   * the primary operation; unsupported operations (e.g. extract-method) get no
+   * intent and are honestly refused.
+   */
+  #changeIntentFor(operation: RefactoringOperation): RefactorKitChangeIntent | undefined {
+    if (operation === "rename-class") {
+      return { operation: "rename-class", newName: "OrderV2" };
+    }
+    return undefined;
   }
 
   #buildApplyRequest(): RefactorApplyRequest {
@@ -1323,6 +1344,7 @@ export class RefactorKitEngineIntegrationStorySession {
         approvedPlanId: planId,
         approvedAt: new Date().toISOString(),
       },
+      changeIntent: this.#changeIntentFor(PRIMARY_OPERATION),
     };
   }
 

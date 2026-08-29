@@ -35,10 +35,10 @@ use crate::commands::refactorkit::{
 };
 use crate::commands::workspace_registry::workspace_id_for_path;
 
-use super::application::{lock, RefactorKitDaemonState, EnginePlanGuard};
+use super::application::{lock, RefactorKitDaemonState, EnginePlanGuard, RefactorKitPreviewArtifact};
 use super::contract::{
-    normalize_refactoring_target, ApprovalEvidence, RefactoringOperation, RefactoringTarget,
-    WorkspaceAuthority,
+    normalize_refactoring_target, refactor_operation_requires_intent, ApprovalEvidence,
+    RefactoringOperation, RefactoringTarget, RefactorKitChangeIntent, WorkspaceAuthority,
 };
 use super::path_policy::{canonical_workspace, require_generation, safe_path, validate_workspace};
 use super::application::validate_refactoring_target;
@@ -108,23 +108,17 @@ pub struct RealEngineCapabilities {
     pub(super) reason: Option<String>,
 }
 
-/// Operation-specific CLI parameters for a real-engine refactoring request.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EngineRefactoringChange {
-    pub new_name: Option<String>,
-    pub from_name: Option<String>,
-    pub new_package: Option<String>,
-    pub old_parameter: Option<String>,
-    pub new_parameter: Option<String>,
-}
+
+
+
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnginePreviewRequest {
     pub(super) operation: RefactoringOperation,
     pub(super) target: RefactoringTarget,
-    pub(super) change: EngineRefactoringChange,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) change_intent: Option<RefactorKitChangeIntent>,
     pub(super) authority: WorkspaceAuthority,
     pub(super) selection_generation: u64,
     pub(super) request_id: String,
@@ -136,7 +130,8 @@ pub struct EngineApplyRequest {
     pub(super) plan_id: String,
     pub(super) operation: RefactoringOperation,
     pub(super) target: RefactoringTarget,
-    pub(super) change: EngineRefactoringChange,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) change_intent: Option<RefactorKitChangeIntent>,
     pub(super) authority: WorkspaceAuthority,
     pub(super) selection_generation: u64,
     pub(super) request_id: String,
@@ -478,7 +473,11 @@ pub(super) fn preview_refactoring(
     validate_refactoring_target(&root, &request.target)?;
     let probe = discover_real_engine()?;
     require_operation_advertised(&probe, request.operation)?;
-    let args = build_refactor_args(request.operation, &request.target, &request.change, false, &root)?;
+    // The preview change descriptor is resolved from the canonical changeIntent.
+    // An operation that requires intent but has none is honestly refused (never
+    // fabricated).
+    let intent = resolve_change_intent(request.operation, request.change_intent.as_ref())?;
+    let args = build_refactor_args(request.operation, &request.target, intent.as_ref(), false, &root)?;
     let output = run_capped_command(&probe.path, &args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
     if !output.success {
         return Err(engine_command_error(&output));
@@ -490,8 +489,10 @@ pub(super) fn preview_refactoring(
     manager.engine_plans.insert(
         plan_id.clone(),
         EnginePlanGuard {
-            operation: request.operation.as_str().to_string(),
+            operation: request.operation,
             target: request.target.clone(),
+            change_intent: intent,
+            preview_artifact: extract_preview_artifact(&normalized),
             workspace_id: request.authority.workspace_id.clone(),
             workspace_generation: request.authority.workspace_generation,
             selection_generation: request.selection_generation,
@@ -528,7 +529,7 @@ pub(super) fn apply_refactoring(
         .get(&request.plan_id)
         .cloned()
         .ok_or_else(|| "Real-engine plan is stale or unknown; a fresh preview and review are required.".to_string())?;
-    if guard.operation != request.operation.as_str()
+    if guard.operation != request.operation
         || guard.target.kind != request.target.kind
         || guard.target.path != request.target.path
         || guard.target.identity != request.target.identity
@@ -539,7 +540,26 @@ pub(super) fn apply_refactoring(
     {
         return Err("Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.".to_string());
     }
-    let args = build_refactor_args(request.operation, &request.target, &request.change, true, &root)?;
+    // RQR-RFK-ENGINE-002: Apply binds to the exact reviewed plan. The arguments
+    // are built from the retained change descriptor + target, never rebuilt from
+    // the fresh request. A request changeIntent that differs from the reviewed
+    // plan is a changed/replaced plan and requires a fresh preview.
+    if let Some(request_intent) = request.change_intent.as_ref() {
+        if guard.change_intent.as_ref() != Some(request_intent) {
+            return Err("Real-engine plan approval guard mismatch; a changed plan requires a fresh preview and review.".to_string());
+        }
+    }
+    // The retained preview artifact must carry non-empty affected files, a
+    // rendered patch/diff, and review evidence — a plan without reviewed evidence
+    // is not applicable and must not be applied.
+    if guard.preview_artifact.affected_files.is_empty()
+        || guard.preview_artifact.patch.is_empty()
+        || guard.preview_artifact.review_evidence.is_empty()
+    {
+        manager.engine_plans.remove(&request.plan_id);
+        return Err("Real-engine plan was not reviewed with usable preview evidence; a fresh preview and review are required.".to_string());
+    }
+    let args = build_refactor_args(guard.operation, &guard.target, guard.change_intent.as_ref(), true, &root)?;
     let output = run_capped_command(&probe.path, &args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
     let result = match normalize_engine_apply(&output, &request, &probe, &root) {
         Ok(result) => result,
@@ -738,14 +758,14 @@ fn run_structural(action: StructuralAction, symbol: Option<String>) -> Result<Re
 fn build_refactor_args(
     operation: RefactoringOperation,
     target: &RefactoringTarget,
-    change: &EngineRefactoringChange,
+    intent: Option<&RefactorKitChangeIntent>,
     apply: bool,
     root: &Path,
 ) -> Result<Vec<OsString>, String> {
     let mut args: Vec<OsString> = Vec::new();
     match operation {
         RefactoringOperation::RenameClass => {
-            let name = required_change(&change.new_name, "rename-class requires newName")?;
+            let name = intent_required(intent, "new_name", "rename-class requires newName")?;
             args.extend([
                 OsString::from("rename"),
                 OsString::from("--symbol"),
@@ -755,7 +775,7 @@ fn build_refactor_args(
             ]);
         }
         RefactoringOperation::RenameMember => {
-            let name = required_change(&change.new_name, "rename-member requires newName")?;
+            let name = intent_required(intent, "new_name", "rename-member requires newName")?;
             args.extend([
                 OsString::from("rename-member"),
                 OsString::from("--symbol"),
@@ -765,8 +785,8 @@ fn build_refactor_args(
             ]);
         }
         RefactoringOperation::RenameLocalVariable => {
-            let from = required_change(&change.from_name, "rename-local-variable requires fromName")?;
-            let to = required_change(&change.new_name, "rename-local-variable requires newName")?;
+            let from = intent_required(intent, "from_name", "rename-local-variable requires fromName")?;
+            let to = intent_required(intent, "new_name", "rename-local-variable requires newName")?;
             args.extend([
                 OsString::from("local-rename"),
                 OsString::from(&target.path),
@@ -783,7 +803,7 @@ fn build_refactor_args(
             return Ok(args);
         }
         RefactoringOperation::MoveClass => {
-            let package = required_change(&change.new_package, "move-class requires newPackage")?;
+            let package = intent_required(intent, "new_package", "move-class requires newPackage")?;
             args.extend([
                 OsString::from("move-class"),
                 OsString::from("--symbol"),
@@ -793,8 +813,8 @@ fn build_refactor_args(
             ]);
         }
         RefactoringOperation::ChangeMethodSignature => {
-            let old = required_change(&change.old_parameter, "change-method-signature requires oldParameter")?;
-            let new = required_change(&change.new_parameter, "change-method-signature requires newParameter")?;
+            let old = intent_required(intent, "old_parameter", "change-method-signature requires oldParameter")?;
+            let new = intent_required(intent, "new_parameter", "change-method-signature requires newParameter")?;
             args.extend([
                 OsString::from("change-signature"),
                 OsString::from("--symbol"),
@@ -820,11 +840,48 @@ fn build_refactor_args(
     Ok(args)
 }
 
-fn required_change(value: &Option<String>, message: &str) -> Result<String, String> {
+/// Resolve the effective change intent for an operation. An operation that
+/// requires intent but has none is honestly refused (never fabricated).
+fn resolve_change_intent(
+    operation: RefactoringOperation,
+    change_intent: Option<&RefactorKitChangeIntent>,
+) -> Result<Option<RefactorKitChangeIntent>, String> {
+    if let Some(intent) = change_intent {
+        intent.validate(operation)?;
+        return Ok(Some(intent.clone()));
+    }
+    if refactor_operation_requires_intent(operation) {
+        return Err(format!(
+            "{} requires operation-specific change intent but none was provided.",
+            operation.as_str()
+        ));
+    }
+    Ok(None)
+}
+
+fn intent_required(
+    intent: Option<&RefactorKitChangeIntent>,
+    field: &str,
+    message: &str,
+) -> Result<String, String> {
+    let Some(intent) = intent else {
+        return Err(message.to_string());
+    };
+    let value = match field {
+        "new_name" => intent.new_name.as_ref(),
+        "from_name" => intent.from_name.as_ref(),
+        "new_package" => intent.new_package.as_ref(),
+        "old_parameter" => intent.old_parameter.as_ref(),
+        "new_parameter" => intent.new_parameter.as_ref(),
+        _ => None,
+    };
     value
-        .as_ref()
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty() && value.len() <= MAX_TEXT_BYTES && !value.chars().any(char::is_control))
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= MAX_TEXT_BYTES
+                && !value.chars().any(char::is_control)
+        })
         .ok_or_else(|| message.to_string())
 }
 
@@ -855,6 +912,16 @@ fn normalize_engine_preview(
     let affected = parse_affected_files(text, root, affected_change)?;
     let rendered_diff = parse_patch(text).unwrap_or_default();
     let warnings = parse_warnings(text);
+    let review_evidence = parse_review_evidence(text);
+    // RQR-RFK-ENGINE-002: a successful preview requires non-empty affected files,
+    // a rendered patch/diff, and review evidence. A zero-exit shell without these
+    // is not a usable preview — it is honestly unavailable/refused, never
+    // reported as status "ready".
+    if affected.is_empty() || rendered_diff.is_empty() || review_evidence.is_empty() {
+        return Err(
+            "The real RefactorKit engine produced no usable preview evidence (non-empty affected files, a rendered patch/diff, and review evidence).".to_string(),
+        );
+    }
     let target = normalize_refactoring_target(&request.target, root)?;
     Ok(json!({
         "planId": plan_id,
@@ -865,7 +932,7 @@ fn normalize_engine_preview(
         "confidence": 0.0,
         "riskLevel": "unknown",
         "risks": [],
-        "evidence": [],
+        "evidence": review_evidence,
         "affectedFiles": affected,
         "renderedDiff": rendered_diff,
         "structuredDiff": [],
@@ -873,7 +940,7 @@ fn normalize_engine_preview(
         "diagnosticsAfterPreview": [],
         "conflicts": [],
         "refusalReasons": [],
-        "applyEligibility": {"eligible": false, "blockers": ["preview grants no apply authority"]},
+        "applyEligibility": {"eligible": true, "blockers": []},
         "staleness": {"stale": false, "reasons": []},
         "grantsApplyAuthority": false,
         "authority": {
@@ -910,14 +977,20 @@ fn normalize_engine_apply(
         _ => "edit",
     };
     let changed_files = parse_affected_files(text, root, affected_change)?;
-    let primary = changed_files.first().cloned().unwrap_or(Value::Null);
+    // RQR-RFK-ENGINE-003: primaryFile is serialized as a PATH STRING (not an
+    // affected-file object), matching what refactorkit-tauri.ts requires.
+    let primary_path = changed_files
+        .first()
+        .and_then(|file| file.get("path"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
     let transaction_id = parse_transaction_id(text);
     let mut result = json!({
         "planId": request.plan_id,
         "operation": request.operation.as_str(),
         "outcome": outcome,
         "changedFiles": changed_files,
-        "primaryFile": primary,
+        "primaryFile": primary_path.map_or(Value::Null, Value::String),
         "diagnostics": [],
         "provider": "refactorkit",
         "providerVersion": probe.version
@@ -1002,6 +1075,49 @@ fn parse_warnings(text: &str) -> Vec<String> {
         }
     }
     warnings
+}
+
+/// Review evidence reported by the engine on an `Evidence: <kind>` line. This is
+/// the review evidence that makes a preview eligible for apply; a successful
+/// preview must carry at least one non-empty evidence kind.
+fn parse_review_evidence(text: &str) -> Vec<Value> {
+    let mut evidence = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Evidence:") {
+            let kind = rest.trim();
+            if !kind.is_empty() {
+                evidence.push(json!({"kind": kind, "summary": kind}));
+            }
+        }
+    }
+    evidence
+}
+
+/// Extracts the preview artifact (affected files, rendered patch/diff, review
+/// evidence) from the normalized preview so the guard retains the exact reviewed
+/// plan for Apply binding.
+fn extract_preview_artifact(normalized: &Value) -> RefactorKitPreviewArtifact {
+    let affected_files = normalized
+        .get("affectedFiles")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let patch = normalized
+        .get("renderedDiff")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let review_evidence = normalized
+        .get("evidence")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    RefactorKitPreviewArtifact {
+        affected_files,
+        patch,
+        review_evidence,
+    }
 }
 
 fn parse_summary(text: &str) -> Option<String> {
@@ -1178,6 +1294,26 @@ mod tests {
         r#"{"schemaVersion":1,"adapters":[{"languageId":"java","extensions":["java"],"backend":"eclipse-jdt-3.44","runtime":{"executionMode":"in-process","supportsTimeout":false,"supportsCancellation":false,"usesWorkspaceOverlay":false,"recordsProcessProvenance":false,"limits":{"requestTimeoutMillis":null,"maxInputBytes":null,"maxOutputBytes":null,"maxProcesses":null}},"capabilities":[{"operation":"definition","stability":"experimental","evidence":"compiler","mutationAuthority":"none","backend":"eclipse-jdt-3.44"},{"operation":"references","stability":"experimental","evidence":"compiler","mutationAuthority":"none","backend":"eclipse-jdt-3.44"},{"operation":"renameClass","stability":"stable","evidence":"compiler","mutationAuthority":"managed-stable","backend":"eclipse-jdt-3.44"},{"operation":"renameMember","stability":"stable","evidence":"compiler","mutationAuthority":"managed-stable","backend":"eclipse-jdt-3.44"},{"operation":"extractMethod","stability":"experimental","evidence":"compiler","mutationAuthority":"proposal-only","backend":"eclipse-jdt-3.44"},{"operation":"changeSignature.addParameter","stability":"experimental","evidence":"compiler","mutationAuthority":"proposal-only","backend":"eclipse-jdt-3.44"},{"operation":"moveClass","stability":"stable","evidence":"compiler","mutationAuthority":"managed-stable","backend":"eclipse-jdt-3.44"},{"operation":"safeDelete","stability":"stable","evidence":"compiler","mutationAuthority":"managed-stable","backend":"eclipse-jdt-3.44"}]}]}"#.to_string()
     }
 
+    /// A canonical rename-class change intent used by the preview/apply tests.
+    fn rename_class_intent(new_name: &str) -> RefactorKitChangeIntent {
+        RefactorKitChangeIntent {
+            operation: RefactoringOperation::RenameClass,
+            new_name: Some(new_name.to_string()),
+            from_name: None,
+            new_package: None,
+            source_path: None,
+            target_path: None,
+            old_parameter: None,
+            new_parameter: None,
+        }
+    }
+
+    /// A complete preview output carrying affected files, a rendered patch, and
+    /// review evidence, plus an applied transaction outcome for the apply step.
+    fn complete_preview_stdout() -> String {
+        "Operation: renameClass\nStatus: PREVIEW\nRename A -> B\nEvidence: JDT_BINDING\nAffected files:\n- src/A.java\nPatch:\n--- a/src/A.java\n+++ b/src/A.java\n@@\n- old\n+ new\nApplied. Transaction: transaction-abc123\nTo rollback: refactorkit patch rollback transaction-abc123\n".to_string()
+    }
+
     #[test]
     #[cfg(unix)]
     fn engine_discovery_and_capability_are_authoritative_from_engine_report() {
@@ -1225,7 +1361,7 @@ mod tests {
     fn real_engine_preview_is_read_only_and_grants_no_apply_authority() {
         let _lock = engine_env_lock();
         let root = temp_workspace("preview");
-        install_engine_harness(&root, Some(&java_capabilities()), "Operation: renameClass\nStatus: PREVIEW\nRename A -> B\nAffected files:\n- src/A.java\nPatch:\n--- a/src/A.java\n+++ b/src/A.java\nUse --apply to apply this change.\n" , true);
+        install_engine_harness(&root, Some(&java_capabilities()), &complete_preview_stdout(), true);
         let state = RefactorKitDaemonState::default();
         let request = EnginePreviewRequest {
             operation: RefactoringOperation::RenameClass,
@@ -1235,13 +1371,7 @@ mod tests {
                 identity: "example.A".to_string(),
                 selection: None,
             },
-            change: EngineRefactoringChange {
-                new_name: Some("B".to_string()),
-                from_name: None,
-                new_package: None,
-                old_parameter: None,
-                new_parameter: None,
-            },
+            change_intent: Some(rename_class_intent("B")),
             authority: WorkspaceAuthority {
                 workspace_id: workspace_id(),
                 workspace_generation: 1,
@@ -1253,8 +1383,56 @@ mod tests {
         assert_eq!(result["operation"], "rename-class");
         assert_eq!(result["status"], "ready");
         assert_eq!(result["grantsApplyAuthority"], false);
-        assert_eq!(result.pointer("/applyEligibility/eligible"), Some(&Value::Bool(false)));
+        // RQR-RFK-ENGINE-003: an eligible plan is reported eligible=true (no
+        // blocker), so JavaRefactoringPreviewDialog enables Apply.
+        assert_eq!(result.pointer("/applyEligibility/eligible"), Some(&Value::Bool(true)));
+        assert_eq!(result.pointer("/applyEligibility/blockers"), Some(&Value::Array(vec![])));
         assert_eq!(result["provider"], "refactorkit");
+        // RQR-RFK-ENGINE-002: the guard retains the change descriptor + preview
+        // artifact from the exact reviewed plan.
+        let state_lock = state.0.lock().unwrap();
+        let guard = state_lock
+            .engine_plans
+            .get(result["planId"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(guard.change_intent.as_ref().unwrap().new_name.as_deref(), Some("B"));
+        assert_eq!(guard.preview_artifact.affected_files.len(), 1);
+        assert!(!guard.preview_artifact.patch.is_empty());
+        assert_eq!(guard.preview_artifact.review_evidence.len(), 1);
+        drop(state_lock);
+        remove_engine_override();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_preview_refuses_zero_exit_shell_without_evidence() {
+        let _lock = engine_env_lock();
+        let root = temp_workspace("preview-evidence");
+        // A zero-exit engine shell with no affected files, no patch, and no review
+        // evidence must be honestly unavailable/refused, never status "ready".
+        install_engine_harness(&root, Some(&java_capabilities()), "Operation: renameClass\nStatus: PREVIEW\n", true);
+        let state = RefactorKitDaemonState::default();
+        let request = EnginePreviewRequest {
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "preview-evidence-req-1".to_string(),
+        };
+        let error = preview_refactoring(request, &state).unwrap_err();
+        assert!(error.contains("no usable preview evidence"));
+        // No guard may be retained for an unevidenced preview.
+        assert!(state.0.lock().unwrap().engine_plans.is_empty());
         remove_engine_override();
         fs::remove_dir_all(&root).unwrap();
     }
@@ -1264,7 +1442,7 @@ mod tests {
     fn engine_apply_binds_exact_reviewed_plan_and_approval() {
         let _lock = engine_env_lock();
         let root = temp_workspace("apply");
-        install_engine_harness(&root, Some(&java_capabilities()), "Operation: renameClass\nStatus: PREVIEW\nAffected files:\n- src/A.java\nApplied. Transaction: transaction-abc123\nTo rollback: refactorkit patch rollback transaction-abc123\n" , true);
+        install_engine_harness(&root, Some(&java_capabilities()), &complete_preview_stdout(), true);
         let state = RefactorKitDaemonState::default();
         let preview = EnginePreviewRequest {
             operation: RefactoringOperation::RenameClass,
@@ -1274,13 +1452,7 @@ mod tests {
                 identity: "example.A".to_string(),
                 selection: None,
             },
-            change: EngineRefactoringChange {
-                new_name: Some("B".to_string()),
-                from_name: None,
-                new_package: None,
-                old_parameter: None,
-                new_parameter: None,
-            },
+            change_intent: Some(rename_class_intent("B")),
             authority: WorkspaceAuthority {
                 workspace_id: workspace_id(),
                 workspace_generation: 1,
@@ -1299,13 +1471,7 @@ mod tests {
                 identity: "example.A".to_string(),
                 selection: None,
             },
-            change: EngineRefactoringChange {
-                new_name: Some("B".to_string()),
-                from_name: None,
-                new_package: None,
-                old_parameter: None,
-                new_parameter: None,
-            },
+            change_intent: Some(rename_class_intent("B")),
             authority: WorkspaceAuthority {
                 workspace_id: workspace_id(),
                 workspace_generation: 1,
@@ -1322,6 +1488,9 @@ mod tests {
         assert_eq!(result["outcome"], "applied");
         assert_eq!(result["transactionId"], "transaction-abc123");
         assert_eq!(result["planId"], plan_id);
+        // RQR-RFK-ENGINE-003: primaryFile is a PATH STRING, not an affected-file object.
+        assert_eq!(result["primaryFile"], "src/A.java");
+        assert!(result["primaryFile"].is_string());
         remove_engine_override();
         fs::remove_dir_all(&root).unwrap();
     }
@@ -1331,7 +1500,7 @@ mod tests {
     fn engine_apply_refuses_unknown_or_mismatched_plan() {
         let _lock = engine_env_lock();
         let root = temp_workspace("apply-refuse");
-        install_engine_harness(&root, Some(&java_capabilities()), "Operation: renameClass\nStatus: PREVIEW\n" , true);
+        install_engine_harness(&root, Some(&java_capabilities()), "Operation: renameClass\nStatus: PREVIEW\n", true);
         let state = RefactorKitDaemonState::default();
         let apply = EngineApplyRequest {
             plan_id: "engine-plan-unknown".to_string(),
@@ -1342,13 +1511,7 @@ mod tests {
                 identity: "example.A".to_string(),
                 selection: None,
             },
-            change: EngineRefactoringChange {
-                new_name: Some("B".to_string()),
-                from_name: None,
-                new_package: None,
-                old_parameter: None,
-                new_parameter: None,
-            },
+            change_intent: Some(rename_class_intent("B")),
             authority: WorkspaceAuthority {
                 workspace_id: workspace_id(),
                 workspace_generation: 1,

@@ -6,6 +6,7 @@ import {
   normalizeSavedSnapshotSemanticSessionStopResult,
   normalizeSavedSnapshotSymbolSearchResult,
   normalizeTypeScriptDiagnosticsResponse,
+  validateRefactorChangeIntent,
 } from "@ide/contracts";
 import type {
   ApplyRefactorKitPlanRequest,
@@ -2526,23 +2527,30 @@ function validatePreviewRefactoringRequest(
   command: string,
 ): RecordValue {
   validateRefactoringOperation(request.operation, command);
+  // RQR-RFK-ENGINE-001: the real-engine request carries an operation-specific
+  // changeIntent. An operation that requires intent but is absent, mismatched, or
+  // incomplete is honestly refused here (never fabricated, never an empty change
+  // descriptor), so the daemon never sees a rename/move/signature preview without
+  // its required intent. safe-delete needs no intent and is passed without one.
+  const refusal = validateRefactorChangeIntent(request.operation, request.changeIntent);
+  if (refusal !== undefined) {
+    throw new TauriAdapterError(command, refusal);
+  }
   const target = validateRefactorTarget(request.target, command);
   const authority = validateRefactorAuthority(request.authority, command);
   requestGeneration(request.selectionGeneration, command, "selectionGeneration");
   requestId(request.requestId, command, "requestId");
-  // The real-engine request carries an operation-specific change descriptor. The
-  // provider-neutral preview request does not carry rename/move/signature parameters
-  // yet, so the adapter delegates an empty change descriptor and lets the engine's
-  // own validation honestly refuse operations that require one (rename-class,
-  // rename-member, rename-local-variable, move-class, change-method-signature).
-  return {
+  const wire: RecordValue = {
     operation: request.operation,
     target,
-    change: {},
     authority,
     selectionGeneration: request.selectionGeneration,
     requestId: request.requestId,
   };
+  if (request.changeIntent !== undefined) {
+    wire.changeIntent = request.changeIntent;
+  }
+  return wire;
 }
 
 function validateApplyRefactoringRequest(
@@ -2550,6 +2558,14 @@ function validateApplyRefactoringRequest(
   command: string,
 ): RecordValue {
   validateRefactoringOperation(request.operation, command);
+  // RQR-RFK-ENGINE-001: the real-engine apply carries an operation-specific
+  // changeIntent. An operation that requires intent but is absent, mismatched, or
+  // incomplete is honestly refused here (never fabricated, never an empty change
+  // descriptor). safe-delete needs no intent and is passed without one.
+  const refusal = validateRefactorChangeIntent(request.operation, request.changeIntent);
+  if (refusal !== undefined) {
+    throw new TauriAdapterError(command, refusal);
+  }
   requestId(request.planId, command, "planId");
   requestId(request.requestId, command, "requestId");
   requestId(request.approval.approvalId, command, "approvalId");
@@ -2568,11 +2584,10 @@ function validateApplyRefactoringRequest(
   }
   const target = validateRefactorTarget(request.target, command);
   const authority = validateRefactorAuthority(request.authority, command);
-  return {
+  const wire: RecordValue = {
     planId: request.planId,
     operation: request.operation,
     target,
-    change: {},
     authority,
     selectionGeneration: request.selectionGeneration,
     requestId: request.requestId,
@@ -2582,6 +2597,10 @@ function validateApplyRefactoringRequest(
       approvedAt: request.approval.approvedAt,
     },
   };
+  if (request.changeIntent !== undefined) {
+    wire.changeIntent = request.changeIntent;
+  }
+  return wire;
 }
 
 function validateRollbackRefactoringRequest(
@@ -2847,14 +2866,6 @@ function normalizeLocations(
     return column === undefined ? { path, line } : { path, line, column };
   });
 }
-function normalizeCommand(command: string, response: unknown): string[] {
-  const metadata = requireRecord(command, response).command;
-  if (!isRecord(metadata)) throw invalidShape(command, "missing command metadata object", response);
-  return [
-    requireString(command, response, metadata, "executable"),
-    ...legacyStrings(command, response, metadata.args, "command.args"),
-  ];
-}
 function normalizeStatus(command: string, response: unknown): RefactorKitStatus {
   const record = requireRecord(command, response);
   const status: RefactorKitStatus = {
@@ -2866,7 +2877,16 @@ function normalizeStatus(command: string, response: unknown): RefactorKitStatus 
   }
   return status;
 }
-function normalizeCommandResult(command: string, response: unknown): RefactorKitCommandResult {
+/**
+ * Normalizes a real-engine structural command result (RealEngineCommandResult)
+ * into the provider-neutral RefactorKitCommandResult. The engine serializes
+ * `command` as a string array (not an object with executable/args) and also
+ * carries engine/engineVersion metadata that callers of the port contract do not
+ * read; those extra fields are dropped. RQR-RFK-ENGINE-004: this is the shape
+ * returned by the NEW run_refactorkit_engine_scan/symbols/definition/references/
+ * diagnostics commands.
+ */
+function normalizeEngineCommandResult(command: string, response: unknown): RefactorKitCommandResult {
   const record = requireRecord(command, response);
   return {
     stdout: requireString(command, response, record, "stdout"),
@@ -2877,7 +2897,7 @@ function normalizeCommandResult(command: string, response: unknown): RefactorKit
     timedOut: requireBoolean(command, response, record, "timedOut"),
     stdoutTruncated: requireBoolean(command, response, record, "stdoutTruncated"),
     stderrTruncated: requireBoolean(command, response, record, "stderrTruncated"),
-    command: normalizeCommand(command, response),
+    command: legacyStrings(command, response, record.command, "command"),
   };
 }
 
@@ -2941,7 +2961,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   }
 
   async scan(): Promise<RefactorKitCommandResult> {
-    return this.runAction("run_refactorkit_scan");
+    return this.runAction("run_refactorkit_engine_scan");
   }
   async diagnostics(request: TypeScriptDiagnosticsRequest): Promise<TypeScriptDiagnosticsResponse> {
     const command = "run_refactorkit_diagnostics";
@@ -2955,17 +2975,17 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     return decision.response;
   }
   async symbols(): Promise<RefactorKitCommandResult> {
-    return this.runAction("run_refactorkit_symbols");
+    return this.runAction("run_refactorkit_engine_symbols");
   }
 
   async definition(symbol: string): Promise<RefactorKitCommandResult> {
-    const command = "run_refactorkit_definition";
-    return normalizeCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
+    const command = "run_refactorkit_engine_definition";
+    return normalizeEngineCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
   }
 
   async references(symbol: string): Promise<RefactorKitCommandResult> {
-    const command = "run_refactorkit_references";
-    return normalizeCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
+    const command = "run_refactorkit_engine_references";
+    return normalizeEngineCommandResult(command, await invokeTauri<unknown>(command, { symbol }));
   }
 
   async startSavedSnapshotSemanticSession(
@@ -3261,6 +3281,6 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   }
 
   private async runAction(command: string): Promise<RefactorKitCommandResult> {
-    return normalizeCommandResult(command, await invokeTauri<unknown>(command));
+    return normalizeEngineCommandResult(command, await invokeTauri<unknown>(command));
   }
 }

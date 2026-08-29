@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tests/story/steps/refactorkit-engine-integration.steps.ts
 // Story BDD steps for REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001
-// (features/refactorkit/engine-integration.feature, 5 scenarios / 55 steps).
+// (features/refactorkit/engine-integration.feature, 5 scenarios / 48 Gherkin steps + 15 hooks = 63 observed).
 //
 // RED: real-engine delegation (engine discovery + real CLI preview/apply/rollback)
 // does NOT exist in the production daemon. These steps drive the REAL
