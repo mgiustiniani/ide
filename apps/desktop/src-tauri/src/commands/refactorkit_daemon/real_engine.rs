@@ -14,9 +14,13 @@
 //!
 //! Real CLI delegation:
 //! - preview is always read-only (no `--apply`) and grants no apply authority;
-//! - apply runs the real transformation with `--apply`, bound to the exact reviewed
-//!   plan (operation + target) under explicit approval; a changed or replaced plan
-//!   requires a fresh preview and review before any Apply;
+//! - apply re-derives the plan in READ-ONLY mode (no `--apply`) and compares it
+//!   against the retained preview artifact BEFORE any mutating invocation; a
+//!   divergent plan is refused with no write and requires a fresh preview + review;
+//! - only when the read-only re-preview is identical does apply run the real
+//!   transformation with `--apply`, bound to the exact reviewed plan (operation +
+//!   target) under explicit approval; a changed or replaced plan requires a fresh
+//!   preview and review before any Apply;
 //! - rollback is exposed only when the real engine advertises `patch rollback` and
 //!   is transaction-bound; no rollback success is inferred from a transaction id or
 //!   generic apply capability.
@@ -562,6 +566,22 @@ pub(super) fn apply_refactoring(
         manager.engine_plans.remove(&request.plan_id);
         return Err("Real-engine plan was not reviewed with usable preview evidence; a fresh preview and review are required.".to_string());
     }
+    // RQR-RFK-ENGINE-002-POST-WRITE: BEFORE any mutating CLI invocation, re-derive
+    // the plan in READ-ONLY mode (no --apply) and compare against the retained
+    // preview artifact. A divergent plan must NEVER be written — refuse with no
+    // write and require a fresh preview + review before any Apply.
+    let preview_args = build_refactor_args(guard.operation, &guard.target, guard.change_intent.as_ref(), false, &root)?;
+    let preview_output = run_capped_command(&probe.path, &preview_args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
+    if !preview_output.success {
+        manager.engine_plans.remove(&request.plan_id);
+        return Err("Real-engine re-preview failed; a fresh preview and review are required before any Apply.".to_string());
+    }
+    if !apply_outcome_matches_preview(&preview_output, &root, guard.operation, &guard.preview_artifact) {
+        manager.engine_plans.remove(&request.plan_id);
+        return Err("Real-engine re-preview diverges from the reviewed plan; the plan changed and requires a fresh preview and review before any Apply.".to_string());
+    }
+    // The read-only re-preview is identical to the reviewed plan; only now may the
+    // mutating --apply run, bound to the exact reviewed plan.
     let args = build_refactor_args(guard.operation, &guard.target, guard.change_intent.as_ref(), true, &root)?;
     let output = run_capped_command(&probe.path, &args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
     // RQR-RFK-ENGINE-002: before reporting applied, the CLI output patch,
@@ -1663,10 +1683,55 @@ mod tests {
         script
     }
 
+    /// Harness that proves no unreviewed write occurs on a divergent plan: the
+    /// FIRST read-only invocation (the preview) emits the matching preview, the
+    /// SECOND read-only invocation (the re-preview before Apply) emits a divergent
+    /// plan, and the mutating --apply path writes a marker file if it is ever
+    /// invoked.
+    fn install_divergent_reprieve_harness(
+        root: &Path,
+        preview_stdout: &str,
+        reprieve_stdout: &str,
+        apply_stdout: &str,
+    ) -> PathBuf {
+        let script = root.join(format!(
+            "engine-divergent-reprieve-{}.sh",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let caps_json = java_capabilities();
+        let marker = root.join("APPLIED_MARKER").display().to_string();
+        let counter = root.join("PREVIEW_COUNT").display().to_string();
+        let body = format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'RefactorKit 0.7.0-SNAPSHOT (API 0.2)' ;;\n  capabilities) printf '%s\\n' '{caps_json}' ;;\n  --help) echo 'refactorkit patch rollback <id>' ;;\n  rename) if echo \"$@\" | grep -q -- '--apply'; then touch '{marker}'; printf '%s' '{apply_stdout}'; elif [ -f '{counter}' ]; then printf '%s' '{reprieve_stdout}'; else touch '{counter}'; printf '%s' '{preview_stdout}'; fi ;;\n  *) echo 'unsupported' >&2; exit 1 ;;\nesac\n",
+            caps_json = caps_json,
+            marker = marker,
+            counter = counter,
+            apply_stdout = apply_stdout,
+            reprieve_stdout = reprieve_stdout,
+            preview_stdout = preview_stdout,
+        );
+        fs::write(&script, body).unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+        env::set_var("IDE_REFACTORKIT_ENGINE", &script);
+        script
+    }
+
     /// An apply output whose patch/affected-files differ from the reviewed preview
     /// artifact, proving the exact-plan binding refuses a diverging rerun.
     fn differing_apply_stdout() -> String {
         "Operation: renameClass\nStatus: APPLY\nRename A -> B\nEvidence: JDT_BINDING\nAffected files:\n- src/A.java\n- src/B.java\nPatch:\n--- a/src/A.java\n+++ b/src/A.java\n@@\n- old\n+ new2\nApplied. Transaction: transaction-abc123\nTo rollback: refactorkit patch rollback transaction-abc123\n".to_string()
+    }
+
+    /// A read-only re-preview output whose patch/affected-files differ from the
+    /// retained preview artifact, proving divergence is detected BEFORE any
+    /// mutating --apply invocation.
+    fn divergent_reprieve_stdout() -> String {
+        "Operation: renameClass\nStatus: PREVIEW\nRename A -> B\nEvidence: JDT_BINDING\nAffected files:\n- src/A.java\n- src/B.java\nPatch:\n--- a/src/A.java\n+++ b/src/A.java\n@@\n- old\n+ new2\n".to_string()
     }
 
     #[test]
@@ -1798,6 +1863,67 @@ mod tests {
         let error = apply_refactoring(apply, &state).unwrap_err();
         assert!(error.contains("differs from the reviewed plan"));
         // An uncorrelated apply is a write boundary: the guard must not survive.
+        assert!(state.0.lock().unwrap().engine_plans.is_empty());
+        remove_engine_override();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_apply_refuses_before_any_write_when_read_only_reprieve_diverges() {
+        let _lock = engine_env_lock();
+        let root = temp_workspace("apply-divergent-reprieve");
+        // The FIRST read-only call (preview) emits the matching plan; the SECOND
+        // read-only call (re-preview before Apply) diverges; the mutating --apply
+        // path writes APPLIED_MARKER if it is ever invoked.
+        install_divergent_reprieve_harness(&root, &complete_preview_stdout(), &divergent_reprieve_stdout(), &complete_preview_stdout());
+        let state = RefactorKitDaemonState::default();
+        let preview = EnginePreviewRequest {
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-divergent-reprieve-req".to_string(),
+        };
+        let previewed = preview_refactoring(preview, &state).unwrap();
+        let plan_id = previewed["planId"].as_str().unwrap().to_string();
+        let apply = EngineApplyRequest {
+            plan_id: plan_id.clone(),
+            operation: RefactoringOperation::RenameClass,
+            target: RefactoringTarget {
+                kind: "class".to_string(),
+                path: "src/A.java".to_string(),
+                identity: "example.A".to_string(),
+                selection: None,
+            },
+            change_intent: Some(rename_class_intent("B")),
+            authority: WorkspaceAuthority {
+                workspace_id: workspace_id(),
+                workspace_generation: 1,
+            },
+            selection_generation: 1,
+            request_id: "apply-divergent-reprieve-req".to_string(),
+            approval: ApprovalEvidence {
+                approval_id: "approval-divergent-reprieve".to_string(),
+                approved_plan_id: plan_id.clone(),
+                approved_at: "2026-08-27T00:00:00Z".to_string(),
+            },
+        };
+        let error = apply_refactoring(apply, &state).unwrap_err();
+        assert!(error.contains("diverges from the reviewed plan"));
+        // RQR-RFK-ENGINE-002-POST-WRITE: the mutating --apply command must NOT have
+        // been invoked — no unreviewed write may occur on a divergent plan.
+        assert!(!root.join("APPLIED_MARKER").exists());
+        // The divergent plan must not survive as applicable; a fresh preview is required.
         assert!(state.0.lock().unwrap().engine_plans.is_empty());
         remove_engine_override();
         fs::remove_dir_all(&root).unwrap();
