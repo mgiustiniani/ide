@@ -12,10 +12,10 @@
 //   packages/web-core/src/ports/refactorkit-port.ts (previewRefactoring / applyRefactoring /
 //                                                 rollbackRefactoring / discardRefactoring)
 //   packages/tauri-adapters/src/refactorkit-tauri.ts (TauriRefactorKitAdapter delegates to
-//                                                 preview_refactorkit_refactoring /
-//                                                 apply_refactorkit_refactoring /
-//                                                 rollback_refactorkit_refactoring /
-//                                                 discard_refactorkit_refactoring)
+//                                                 preview_refactorkit_engine_refactoring /
+//                                                 apply_refactorkit_engine_refactoring /
+//                                                 rollback_refactorkit_engine_refactoring /
+//                                                 discard_refactorkit_engine_refactoring)
 //   packages/browser-adapters/src/refactorkit-browser.ts (honest browser unavailable)
 //   apps/desktop/src-tauri/src/commands/refactorkit_daemon/*  (capability advertisement for
 //                                                 rename-class / rename-member /
@@ -70,6 +70,7 @@ import type {
   RefactorRollbackRequest,
   RefactorRollbackResult,
   RefactorKitCapabilities,
+  RefactorKitChangeIntent,
   RefactorWorkspaceAuthority,
 } from "../../../packages/contracts/src/refactorkit.js";
 
@@ -255,19 +256,44 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
         };
       case "get_refactorkit_capabilities":
         return this.#capabilities();
-      case "preview_refactorkit_refactoring":
+      case "get_refactorkit_engine_capabilities":
+        return this.#engineCapabilitiesWire();
+      case "preview_refactorkit_engine_refactoring":
         return this.#preview(args);
-      case "apply_refactorkit_refactoring":
+      case "apply_refactorkit_engine_refactoring":
         return this.#apply(args);
-      case "rollback_refactorkit_refactoring":
+      case "rollback_refactorkit_engine_refactoring":
         return this.#rollback(args);
-      case "discard_refactorkit_refactoring":
+      case "discard_refactorkit_engine_refactoring":
         return this.#discard(args);
       default:
         throw new Error(
           `The RefactorKit Java-refactoring Story boundary does not implement ${command}`,
         );
     }
+  }
+
+  /**
+   * Authoritative real-engine capability report for the merged getCapabilities.
+   * The adapter's getCapabilities() now reads get_refactorkit_engine_capabilities
+   * for the authoritative generalRefactoring advertisement. This boundary mirrors
+   * the engine-integration wire shape but advertises ONLY the six general
+   * refactoring operations this feature actually uses: it does not claim the
+   * engine's CLI operational surface (operationalSurface=[]) nor any Java
+   * navigation capability, keeping the feature's honest limits intact.
+   */
+  #engineCapabilitiesWire(): Record<string, unknown> {
+    return {
+      engineDiscovered: true,
+      path: "/opt/refactorkit/refactorkit",
+      version: "0.6.2",
+      workspaceId: WORKSPACE_ID,
+      operations: [...REFACTOR_OPERATIONS],
+      operationalSurface: [],
+      rollbackAdvertised: this.rollbackAdvertised(),
+      previewReadOnly: true,
+      reason: null,
+    };
   }
 
   /** Raw daemon capabilities: general refactoring advertised, methods listed. */
@@ -837,7 +863,7 @@ export class RefactorKitJavaRefactoringStorySession {
     assert.ok(request, `${REQUIREMENT} no refactoring request reached the adapter`);
     const plan = await this.#adapter!.previewRefactoring(request);
     const delegated = this.#boundary!.invocations.some(
-      (invocation) => invocation.command === "preview_refactorkit_refactoring",
+      (invocation) => invocation.command === "preview_refactorkit_engine_refactoring",
     );
     this.#adapterOutcome = {
       extracted: true,
@@ -1193,6 +1219,7 @@ export class RefactorKitJavaRefactoringStorySession {
       authority: { workspaceId: WORKSPACE_ID, workspaceGeneration: 1 },
       selectionGeneration: 1,
       requestId: `story-refactor-${Date.now()}`,
+      changeIntent: this.#changeIntentFor(operation),
     };
   }
 
@@ -1219,7 +1246,24 @@ export class RefactorKitJavaRefactoringStorySession {
         approvedPlanId: planId,
         approvedAt: new Date().toISOString(),
       },
+      changeIntent: this.#changeIntentFor(operation),
     };
+  }
+
+  /**
+   * Operation-specific change intent the real engine requires before a
+   * rename/move/signature preview or apply (RQR-RFK-ENGINE-001). The adapter
+   * honestly refuses an operation that requires intent but has none, so the
+   * Story supplies the exact intent for the operation it exercises. rename-class
+   * is the primary operation; the unsupported out-of-scope operation gets no
+   * intent and is honestly refused. safe-delete requires no intent and is passed
+   * without one.
+   */
+  #changeIntentFor(operation: RefactorOperation): RefactorKitChangeIntent | undefined {
+    if (operation === "rename-class") {
+      return { operation: "rename-class", newName: "OrderV2" };
+    }
+    return undefined;
   }
 
   /** Whether the preview/apply left the workspace target file unchanged. */
