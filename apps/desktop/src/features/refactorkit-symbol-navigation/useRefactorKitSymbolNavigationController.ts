@@ -10,6 +10,8 @@ import {
   normalizeSavedSnapshotSymbolSearchResult,
   type EditorPoint,
   type RefactorKitCapabilities,
+  type RefactorKitCommandResult,
+  type RefactorKitLocation,
   type RefactorKitStatus,
   type RelevantTypeScriptJavaScriptBuffer,
   type SavedSnapshotDefinitionResult,
@@ -38,6 +40,10 @@ const SEARCH_ERROR = "Semantic symbol search could not be completed.";
 const DEFINITION_ERROR = "The semantic definition could not be opened.";
 const UNAUTHORIZED_REASON = "Authorize a desktop workspace before using semantic search.";
 const CAPABILITY_REASON = "Accepted experimental language-server evidence is unavailable.";
+const JAVA_DEFINITION_ERROR = "The Java definition could not be resolved.";
+const JAVA_REFERENCES_ERROR = "The Java references could not be resolved.";
+const JAVA_UNAVAILABLE_REASON =
+  "Java symbol navigation is unavailable: the provider does not advertise the Java definition/references capability.";
 
 export interface SemanticNavigationWorkspaceContext {
   generation: number;
@@ -48,6 +54,15 @@ export interface SemanticNavigationWorkspaceContext {
 
 export interface SemanticNavigationEditorBuffer extends RelevantTypeScriptJavaScriptBuffer {
   languageId?: TypeScriptJavaScriptLanguageId;
+}
+
+export type JavaNavigationAvailability = "available" | "unavailable" | "error";
+export type JavaNavigationOperation = "definition" | "references";
+
+/** A resolved Java location presented for navigation. */
+export interface JavaSymbolLocation {
+  readonly filePath: string;
+  readonly point: Readonly<EditorPoint>;
 }
 
 export interface RefactorKitSymbolNavigationWorkspaceCollaborator {
@@ -93,6 +108,18 @@ export interface RefactorKitSymbolNavigationController {
   selectResult(result: SemanticSymbolSearchResult): Promise<void>;
   cancel(): void;
   stop(): Promise<void>;
+  /** Java symbol navigation surface (desktop composition). */
+  javaSymbol: string;
+  javaAvailability: JavaNavigationAvailability;
+  javaAvailabilityReason: string | null;
+  javaError: string | null;
+  javaResult: RefactorKitCommandResult | null;
+  javaLatestOperation: JavaNavigationOperation | null;
+  isJavaBusy: boolean;
+  setJavaSymbol(symbol: string): void;
+  resolveJavaDefinition(symbol: string): Promise<void>;
+  resolveJavaReferences(symbol: string): Promise<void>;
+  selectJavaReference(location: JavaSymbolLocation): Promise<void>;
   workspaceCollaborator: RefactorKitSymbolNavigationWorkspaceCollaborator;
 }
 
@@ -135,6 +162,29 @@ function refusalMessage(reason: string): string {
     default:
       return CAPABILITY_REASON;
   }
+}
+
+function javaNavigationAdvertised(
+  capabilities: RefactorKitCapabilities | null,
+  operation: JavaNavigationOperation,
+): boolean {
+  if (!capabilities) return false;
+  const engine = capabilities as RefactorKitCapabilities & {
+    operationalSurface?: readonly string[];
+    javaNavigation?: { readonly supported: boolean; readonly operations: readonly string[] };
+  };
+  const navigation = engine.javaNavigation;
+  if (navigation) {
+    return navigation.supported && navigation.operations.includes(operation);
+  }
+  return (engine.operationalSurface ?? []).includes(operation);
+}
+
+function javaLocationFrom(location: RefactorKitLocation): JavaSymbolLocation {
+  return {
+    filePath: location.path,
+    point: { lineNumber: location.line, column: location.column ?? 1 },
+  };
 }
 
 function extensionOf(path: string): string | null {
@@ -351,6 +401,11 @@ export function useRefactorKitSymbolNavigationController(
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [acceptedSession, setAcceptedSession] =
     useState<Readonly<SavedSnapshotSemanticSessionStartResult> | null>(null);
+  const [javaSymbol, setJavaSymbolState] = useState("");
+  const [javaError, setJavaError] = useState<string | null>(null);
+  const [javaResult, setJavaResult] = useState<RefactorKitCommandResult | null>(null);
+  const [javaLatestOperation, setJavaLatestOperation] = useState<JavaNavigationOperation | null>(null);
+  const [isJavaBusy, setIsJavaBusy] = useState(false);
 
   const enqueue = useCallback((operation: SessionOperation): Promise<void> => {
     const queued = operationQueueRef.current.then(operation, operation);
@@ -462,6 +517,14 @@ export function useRefactorKitSymbolNavigationController(
     },
     [replaceConfiguration],
   );
+
+  const setJavaSymbol = useCallback((nextSymbol: string): void => {
+    requestRef.current += 1;
+    setJavaSymbolState(nextSymbol);
+    setJavaError(null);
+    setJavaResult(null);
+    setIsJavaBusy(false);
+  }, []);
 
   const isRequestCurrent = useCallback(
     (
@@ -858,6 +921,141 @@ export function useRefactorKitSymbolNavigationController(
     ],
   );
 
+  const resolveJavaDefinition = useCallback(
+    async (symbol: string): Promise<void> => {
+      const requestId = requestRef.current + 1;
+      requestRef.current = requestId;
+      const selectedSymbol = symbol.trim();
+      setIsJavaBusy(true);
+      setJavaError(null);
+      setJavaResult(null);
+      setJavaLatestOperation("definition");
+
+      await enqueue(async () => {
+        const currentDependencies = dependenciesRef.current;
+        const workspace = currentDependencies.workspaceInfo;
+        const context = currentDependencies.getWorkspaceContext();
+        const capabilities = currentDependencies.capabilities;
+        if (
+          !workspace ||
+          !capabilities ||
+          context.isSwitching ||
+          context.isMetadataLoading ||
+          context.workspaceId !== workspace.id ||
+          context.generation !== currentDependencies.workspaceGeneration
+        ) {
+          if (mountedRef.current && requestRef.current === requestId) {
+            setJavaError(boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON));
+            setIsJavaBusy(false);
+          }
+          return;
+        }
+        if (!javaNavigationAdvertised(capabilities, "definition")) {
+          if (mountedRef.current && requestRef.current === requestId) {
+            setJavaError(JAVA_UNAVAILABLE_REASON);
+            setIsJavaBusy(false);
+          }
+          return;
+        }
+        try {
+          const result = await currentDependencies.refactorKit.definition(selectedSymbol);
+          if (!isRequestCurrent(requestId, workspace.id, context.generation)) return;
+          if (!result.success || result.locations.length === 0) {
+            setJavaResult(result);
+            setJavaError("The Java symbol could not be resolved.");
+            setIsJavaBusy(false);
+            return;
+          }
+          const location = javaLocationFrom(result.locations[0]!);
+          await currentDependencies.navigateToPoint(location.filePath, location.point);
+          if (isRequestCurrent(requestId, workspace.id, context.generation)) {
+            setIsJavaBusy(false);
+          }
+        } catch {
+          if (isRequestCurrent(requestId, workspace.id, context.generation)) {
+            setJavaError(JAVA_DEFINITION_ERROR);
+            setIsJavaBusy(false);
+          }
+        }
+      });
+    },
+    [enqueue, isRequestCurrent],
+  );
+
+  const resolveJavaReferences = useCallback(
+    async (symbol: string): Promise<void> => {
+      const requestId = requestRef.current + 1;
+      requestRef.current = requestId;
+      const selectedSymbol = symbol.trim();
+      setIsJavaBusy(true);
+      setJavaError(null);
+      setJavaResult(null);
+      setJavaLatestOperation("references");
+
+      await enqueue(async () => {
+        const currentDependencies = dependenciesRef.current;
+        const workspace = currentDependencies.workspaceInfo;
+        const context = currentDependencies.getWorkspaceContext();
+        const capabilities = currentDependencies.capabilities;
+        if (
+          !workspace ||
+          !capabilities ||
+          context.isSwitching ||
+          context.isMetadataLoading ||
+          context.workspaceId !== workspace.id ||
+          context.generation !== currentDependencies.workspaceGeneration
+        ) {
+          if (mountedRef.current && requestRef.current === requestId) {
+            setJavaError(boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON));
+            setIsJavaBusy(false);
+          }
+          return;
+        }
+        if (!javaNavigationAdvertised(capabilities, "references")) {
+          if (mountedRef.current && requestRef.current === requestId) {
+            setJavaError(JAVA_UNAVAILABLE_REASON);
+            setIsJavaBusy(false);
+          }
+          return;
+        }
+        try {
+          const result = await currentDependencies.refactorKit.references(selectedSymbol);
+          if (!isRequestCurrent(requestId, workspace.id, context.generation)) return;
+          setJavaResult(result);
+          if (!result.success) {
+            setJavaError(JAVA_REFERENCES_ERROR);
+          }
+          setIsJavaBusy(false);
+        } catch {
+          if (isRequestCurrent(requestId, workspace.id, context.generation)) {
+            setJavaError(JAVA_REFERENCES_ERROR);
+            setIsJavaBusy(false);
+          }
+        }
+      });
+    },
+    [enqueue, isRequestCurrent],
+  );
+
+  const selectJavaReference = useCallback(
+    async (location: JavaSymbolLocation): Promise<void> => {
+      const currentDependencies = dependenciesRef.current;
+      const workspace = currentDependencies.workspaceInfo;
+      const context = currentDependencies.getWorkspaceContext();
+      if (
+        !workspace ||
+        context.isSwitching ||
+        context.isMetadataLoading ||
+        context.workspaceId !== workspace.id ||
+        context.generation !== currentDependencies.workspaceGeneration
+      ) {
+        return;
+      }
+      await currentDependencies.navigateToPoint(location.filePath, location.point);
+    },
+    [],
+  );
+
   const resetSessionState = useCallback((): void => {
     requestRef.current += 1;
     setQueryState("");
@@ -943,6 +1141,21 @@ export function useRefactorKitSymbolNavigationController(
     approvedForSession &&
     query.trim().length > 0 &&
     !isBusy;
+  const javaCapabilityAvailable =
+    javaNavigationAdvertised(dependencies.capabilities, "definition") &&
+    javaNavigationAdvertised(dependencies.capabilities, "references");
+  const javaAvailability: JavaNavigationAvailability = javaError
+    ? "error"
+    : authorized && dependencies.status?.available && javaCapabilityAvailable
+      ? "available"
+      : "unavailable";
+  const javaAvailabilityReason = javaError
+    ? null
+    : !authorized
+      ? UNAUTHORIZED_REASON
+      : !dependencies.status?.available || !javaCapabilityAvailable
+        ? JAVA_UNAVAILABLE_REASON
+        : null;
 
   const workspaceCollaborator = useMemo<RefactorKitSymbolNavigationWorkspaceCollaborator>(
     () => ({ resetWorkspace }),
@@ -975,6 +1188,17 @@ export function useRefactorKitSymbolNavigationController(
       selectResult,
       cancel,
       stop,
+      javaSymbol,
+      javaAvailability,
+      javaAvailabilityReason,
+      javaError,
+      javaResult,
+      javaLatestOperation,
+      isJavaBusy,
+      setJavaSymbol,
+      resolveJavaDefinition,
+      resolveJavaReferences,
+      selectJavaReference,
       workspaceCollaborator,
     }),
     [
@@ -1001,6 +1225,17 @@ export function useRefactorKitSymbolNavigationController(
       stop,
       submit,
       toolchainPaths,
+      isJavaBusy,
+      javaAvailability,
+      javaAvailabilityReason,
+      javaError,
+      javaLatestOperation,
+      javaResult,
+      javaSymbol,
+      resolveJavaDefinition,
+      resolveJavaReferences,
+      selectJavaReference,
+      setJavaSymbol,
       workspaceCollaborator,
     ],
   );

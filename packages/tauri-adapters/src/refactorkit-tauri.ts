@@ -121,6 +121,7 @@ const REFACTORING_OPERATIONS = [
   "change-method-signature",
   "safe-delete",
 ] as const;
+const JAVA_NAVIGATION_OPERATIONS = ["definition", "references"] as const;
 const REFACTOR_TARGET_KINDS = ["class", "member", "local-binding"] as const;
 const REFACTOR_APPLY_OUTCOMES = ["applied", "refused", "stale", "failed", "indeterminate"] as const;
 const UTF8_ENCODER = new TextEncoder();
@@ -2223,11 +2224,11 @@ function normalizeEngineCapabilities(
   const record = protocolRecord(command, response);
   const engineDiscovered = protocolBoolean(command, record, "engineDiscovered");
   const operations = strings(command, record.operations, "operations").map((operation) => {
-    validateRefactoringOperation(operation, command);
-    return operation as RefactoringOperation;
+    validateEngineOperation(operation, command);
+    return operation;
   });
   if (new Set(operations).size !== operations.length) {
-    throw invalidProtocolShape(command, "duplicate engine refactoring operation");
+    throw invalidProtocolShape(command, "duplicate engine operation");
   }
   const operationalSurface = strings(command, record.operationalSurface, "operationalSurface");
   const rollbackAdvertised = protocolBoolean(command, record, "rollbackAdvertised");
@@ -2236,17 +2237,41 @@ function normalizeEngineCapabilities(
   const version = nullableString(command, record, "version");
   const workspaceId = protocolId(command, record, "workspaceId");
   const reason = nullableString(command, record, "reason");
-  const supported = engineDiscovered && operations.length > 0;
+
+  // The real engine advertises both the canonical Java refactoring operation set
+  // and, when present, the Java symbol-navigation operations (definition /
+  // references). These are distinct capability surfaces: general-refactoring
+  // operations stay typed RefactoringOperation[], while definition/references are
+  // advertised as a dedicated Java-navigation capability. An engine that advertises
+  // only definition/references is honestly unavailable for general refactoring.
+  const refactoringOperations = operations.filter(
+    (operation): operation is RefactoringOperation =>
+      (REFACTORING_OPERATIONS as readonly string[]).includes(operation),
+  );
+  const navigationOperations = operations.filter(
+    (operation): operation is TauriRefactorKitJavaNavigationOperation =>
+      (JAVA_NAVIGATION_OPERATIONS as readonly string[]).includes(operation),
+  );
+
+  const refactoringSupported = engineDiscovered && refactoringOperations.length > 0;
   const generalRefactoring: RefactorKitGeneralRefactoringCapability = {
-    supported,
-    operations,
-    preview: supported && previewReadOnly,
-    apply: supported,
-    rollback: supported && rollbackAdvertised,
-    discard: supported,
-    stability: supported ? "stable" : "experimental",
+    supported: refactoringSupported,
+    operations: refactoringOperations,
+    preview: refactoringSupported && previewReadOnly,
+    apply: refactoringSupported,
+    rollback: refactoringSupported && rollbackAdvertised,
+    discard: refactoringSupported,
+    stability: refactoringSupported ? "stable" : "experimental",
   };
-  if (!supported && reason !== null) generalRefactoring.reason = reason;
+  if (!refactoringSupported && reason !== null) generalRefactoring.reason = reason;
+
+  const navigationSupported = engineDiscovered && navigationOperations.length > 0;
+  const javaNavigation: TauriRefactorKitJavaNavigationCapability = {
+    supported: navigationSupported,
+    operations: navigationOperations,
+    stability: "experimental",
+  };
+  if (!navigationSupported && reason !== null) javaNavigation.reason = reason;
   const normalized: TauriRefactorKitEngineCapabilities = {
     api: "refactorkit",
     apiVersion: "0.2",
@@ -2267,6 +2292,9 @@ function normalizeEngineCapabilities(
     operationalSurface,
     workspaceId,
   };
+  if (navigationOperations.length > 0) {
+    normalized.javaNavigation = javaNavigation;
+  }
   return deepFreeze(normalized);
 }
 
@@ -2484,6 +2512,16 @@ function deepFreeze<T>(value: T): T {
 function validateRefactoringOperation(value: string, command: string): void {
   if (!(REFACTORING_OPERATIONS as readonly string[]).includes(value)) {
     throw new TauriAdapterError(command, "Invalid RefactorKit refactoring operation");
+  }
+}
+
+/** Accepts the canonical Java refactoring operations plus the Java navigation operations. */
+function validateEngineOperation(value: string, command: string): void {
+  if (
+    !(REFACTORING_OPERATIONS as readonly string[]).includes(value) &&
+    !(JAVA_NAVIGATION_OPERATIONS as readonly string[]).includes(value)
+  ) {
+    throw new TauriAdapterError(command, "Invalid RefactorKit engine operation");
   }
 }
 
@@ -2907,6 +2945,19 @@ function normalizeEngineCommandResult(command: string, response: unknown): Refac
  * presence/version and CLI operational-surface metadata. Backward-compatible
  * with callers that read only the base RefactorKitCapabilities shape.
  */
+/** The canonical Java symbol-navigation operation set the real engine advertises. */
+export type TauriRefactorKitJavaNavigationOperation = "definition" | "references";
+
+/** The real-engine Java symbol-navigation capability advertisement (capability-before-offer). */
+export interface TauriRefactorKitJavaNavigationCapability {
+  supported: boolean;
+  /** The canonical Java navigation operation set the engine authoritatively advertises. */
+  operations: TauriRefactorKitJavaNavigationOperation[];
+  stability: "experimental" | "preview" | "stable";
+  /** Honest unavailable reason when `supported` is false. */
+  reason?: string;
+}
+
 export interface TauriRefactorKitEngineCapabilities extends RefactorKitCapabilities {
   /** Whether a real engine was discovered through a wrapper PATH or installed path. */
   engineDiscovered: boolean;
@@ -2916,6 +2967,8 @@ export interface TauriRefactorKitEngineCapabilities extends RefactorKitCapabilit
   engineVersion: string | null;
   /** The CLI operational surface the real engine authoritatively advertises. */
   operationalSurface: string[];
+  /** The real-engine Java symbol-navigation capability advertisement, when advertised. */
+  javaNavigation?: TauriRefactorKitJavaNavigationCapability;
   /** The workspace the real-engine capability report is correlated to. */
   workspaceId: string;
 }
@@ -2957,6 +3010,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     if (base.methods !== undefined) merged.methods = base.methods;
     if (base.languageKernel !== undefined) merged.languageKernel = base.languageKernel;
     if (base.safety !== undefined) merged.safety = base.safety;
+    if (engine.javaNavigation !== undefined) merged.javaNavigation = engine.javaNavigation;
     return deepFreeze(merged);
   }
 

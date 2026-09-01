@@ -1,0 +1,63 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-JAVA-NAVIGATION-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Complete the Java navigation part of JetBrains-style IDE management: go-to-definition and references for Java, wired into the editor. The IDE already has navigation infrastructure (useRefactorKitSymbolNavigationController wired in App.tsx, documentNavigation.navigateToLocation as reveal driver, editor revealRequest) but it is TypeScript/JavaScript saved-snapshot focused; Java go-to-definition/references via the RefactorKit engine (real_engine.rs definition/references commands) or Java language service is not wired for Java. This slice makes Java navigation operational: resolve a Java symbol definition and references, present them, and navigate/reveal on selection, with honest-unavailable when the capability is absent.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE. Java TEST infra (JavaSpec/Maven/JUnit/dataset) and Java-only RefactorKit rules as workflow refactoring authority remain EXCLUDED.",
+      "evidence": "ADR 0015"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-JAVA-NAVIGATION-001",
+    "title": "Java go-to-definition and references wired in the IDE editor",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "Resolve a Java symbol definition (go-to-definition) and its references (find-references) via the RefactorKit engine (real_engine.rs definition/references commands) or the Java language service, present results, and navigate/reveal the selected location in the editor. Honest-unavailable when the capability is absent or the symbol is unresolvable. Reuses the existing navigation infrastructure (useRefactorKitSymbolNavigationController + documentNavigation.navigateToLocation + editor revealRequest).",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java symbol FQN, the IDE resolves its definition (go-to-definition) via the RefactorKit engine/java-language capability and reveals the location in the editor."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Given a Java symbol FQN, the IDE resolves its references (find-references) and presents them; selecting a reference navigates/reveals that location."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; absent capability or unresolvable symbol reports honest unavailable/error, never fabricated result."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri Java navigation implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Status is evidence-based with an explicit state, never inferred from shells; live Tauri-window navigation E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-domain-expert (domain research) + bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + tauri-rust-coder (engine definition/references) + tauri-adapter-coder + browser-adapter-coder + frontend-core-coder/frontend-app-coder (view-model + controller wiring)",
+    "scope": "Java go-to-definition + references wired in the editor, reusing existing navigation infrastructure. The existing TS saved-snapshot navigation stays as-is (no rework). Java build/run/debug and project model remain separate later slices.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "Java build/run/debug, project model (later slices)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Source: whether Java definition/references come from the RefactorKit engine (real_engine.rs definition/references) or the Java language service (java_language.rs) — confirm the primary source.",
+      "Editor wiring: whether Java navigation is proven wired into the live editor or a desktop-harness renderer is acceptable evidence.",
+      "Reuse: whether to extend the existing useRefactorKitSymbolNavigationController or add a Java-specific controller.",
+      "Reveal: confirm navigation uses documentNavigation.navigateToLocation + editor revealRequest (existing driver)."
+    ]
+  }
+}

@@ -1109,7 +1109,10 @@ vi.mock("@ide/ui", () => ({
     testHarness.latestPanelLayoutProps = {
       activeActivity,
       activityContributions: Object.freeze(
-        activityContributions.filter((candidate: any) => candidate.id !== "pi-agent"),
+        activityContributions.filter(
+          (candidate: any) =>
+            candidate.id !== "pi-agent" && candidate.id !== "java-intelligence",
+        ),
       ),
       allActivityContributions: activityContributions,
       hasSearchActivityContent: searchActivityContent !== undefined,

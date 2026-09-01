@@ -9,7 +9,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BottomPanelTab, PanelLayoutActivity, PanelLayoutActivityContribution } from "@ide/ui";
 
 // ── Contracts ────────────────────────────────────────────────────────────
-import { nextDocumentViewMode } from "@ide/contracts";
+import { nextDocumentViewMode, type RefactorKitStatus } from "@ide/contracts";
 
 // ── Store creation ──────────────────────────────────────────────────────
 import { createFileTreeStore } from "@ide/web-core/state";
@@ -80,6 +80,7 @@ import { SettingsPanel } from "@ide/ui";
 import { Icon } from "@ide/ui";
 import { ProblemsPanel } from "@ide/ui";
 import { ExternalJavaImportPreviewDialog } from "@ide/ui";
+import { JavaIntelligencePanel } from "@ide/ui";
 import { SemanticSymbolSearchPanel } from "@ide/ui";
 import { Xcom2ProjectRecognitionPanel } from "@ide/ui";
 import { Xcom2ProjectFoundryDialog } from "@ide/ui";
@@ -564,6 +565,21 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
   ]);
 
   const openWorkspaceFileFromAgent = desktopEditorController.openFileProgrammatically;
+  // JavaIntelligencePanel derives its availability badge from status.available /
+  // error / isChecking. Feed it a status that honestly reflects the Java
+  // navigation surface (capability-advertised + authorized) so the Definition /
+  // References controls and the badge match javaAvailability. No evidence is
+  // fabricated: available is true only when the Java navigation capability is
+  // genuinely available for the authorized workspace.
+  const javaNavigationPanelStatus: RefactorKitStatus =
+    refactorKitSymbolNavigation.javaAvailability === "available"
+      ? refactorKitStatus.status ?? { available: true }
+      : refactorKitSymbolNavigation.javaAvailability === "error"
+        ? { available: false, lastError: refactorKitSymbolNavigation.javaError ?? undefined }
+        : {
+            available: false,
+            lastError: refactorKitSymbolNavigation.javaAvailabilityReason ?? undefined,
+          };
   const activityContributions = useMemo<readonly Readonly<PanelLayoutActivityContribution>[]>(
     () =>
       Object.freeze([
@@ -609,12 +625,72 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
           ),
         } satisfies PanelLayoutActivityContribution),
         ...xcom2ProjectActivityContributions,
+        Object.freeze({
+          id: "java-intelligence",
+          label: "Java Intelligence",
+          title: "Java symbol navigation",
+          content: (
+            <JavaIntelligencePanel
+              presentationMode="project"
+              languageServiceStatus={javaLanguage.status}
+              isLanguageServiceRefreshing={javaLanguage.refreshing}
+              onStartLanguageService={javaLanguage.start}
+              onStopLanguageService={javaLanguage.stop}
+              onRestartLanguageService={javaLanguage.restart}
+              onRefreshLanguageService={javaLanguage.refresh}
+              status={javaNavigationPanelStatus}
+              capabilities={refactorKitStatus.capabilities}
+              isChecking={refactorKitStatus.isChecking}
+              error={refactorKitSymbolNavigation.javaError}
+              symbol={refactorKitSymbolNavigation.javaSymbol}
+              onSymbolChange={refactorKitSymbolNavigation.setJavaSymbol}
+              isRunning={refactorKitSymbolNavigation.isJavaBusy}
+              runningOperation={
+                refactorKitSymbolNavigation.isJavaBusy
+                  ? refactorKitSymbolNavigation.javaLatestOperation
+                  : null
+              }
+              latestOperation={refactorKitSymbolNavigation.javaLatestOperation}
+              result={refactorKitSymbolNavigation.javaResult}
+              onDefinition={refactorKitSymbolNavigation.resolveJavaDefinition}
+              onReferences={refactorKitSymbolNavigation.resolveJavaReferences}
+              onNavigateLocation={(location) => {
+                void refactorKitSymbolNavigation.selectJavaReference({
+                  filePath: location.path,
+                  point: { lineNumber: location.line, column: location.column ?? 1 },
+                });
+              }}
+              onRefresh={refactorKitStatus.refresh}
+            />
+          ),
+        } satisfies PanelLayoutActivityContribution),
       ]),
     [
       openWorkspaceFileFromAgent,
       workspaceInfo,
       xcom2ProjectActivityContributions,
       documentNavigation.navigateToLocation,
+      javaNavigationPanelStatus,
+      javaLanguage.refreshing,
+      javaLanguage.restart,
+      javaLanguage.start,
+      javaLanguage.status,
+      javaLanguage.stop,
+      javaLanguage.refresh,
+      refactorKitStatus.capabilities,
+      refactorKitStatus.isChecking,
+      refactorKitStatus.refresh,
+      refactorKitSymbolNavigation.javaAvailability,
+      refactorKitSymbolNavigation.javaAvailabilityReason,
+      refactorKitSymbolNavigation.javaError,
+      refactorKitSymbolNavigation.javaLatestOperation,
+      refactorKitSymbolNavigation.javaResult,
+      refactorKitSymbolNavigation.javaSymbol,
+      refactorKitSymbolNavigation.isJavaBusy,
+      refactorKitSymbolNavigation.resolveJavaDefinition,
+      refactorKitSymbolNavigation.resolveJavaReferences,
+      refactorKitSymbolNavigation.selectJavaReference,
+      refactorKitSymbolNavigation.setJavaSymbol,
     ],
   );
 

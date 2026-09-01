@@ -2515,6 +2515,107 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
   );
 });
 
+describe("TauriRefactorKitAdapter Java symbol-navigation advertisement", () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  it("advertises the real-engine Java definition/references capability as authoritative", async () => {
+    // A discovered engine that advertises definition/references yields an authoritative
+    // Java-navigation surface while remaining honestly unavailable for general refactoring.
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = ["definition", "references"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized.javaNavigation).toEqual({
+      supported: true,
+      operations: ["definition", "references"],
+      stability: "experimental",
+    });
+    expect(normalized.generalRefactoring).toEqual({
+      supported: false,
+      operations: [],
+      preview: false,
+      apply: false,
+      rollback: false,
+      discard: false,
+      stability: "experimental",
+    });
+    expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
+    expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
+  });
+
+  it("keeps general-refactoring and Java-navigation surfaces distinct", async () => {
+    // A nav-only engine (definition/references but no refactoring operations) is honestly
+    // unavailable for general refactoring; the two capability surfaces stay distinct.
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = ["definition", "references"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized.javaNavigation).toEqual({
+      supported: true,
+      operations: ["definition", "references"],
+      stability: "experimental",
+    });
+    expect(normalized.generalRefactoring).toEqual({
+      supported: false,
+      operations: [],
+      preview: false,
+      apply: false,
+      rollback: false,
+      discard: false,
+      stability: "experimental",
+    });
+  });
+
+  it("omits the Java-navigation advertisement when no navigation operations are advertised", async () => {
+    // The default engine wire advertises only the general-refactoring operation set, so
+    // no javaNavigation capability is attached and general refactoring stays authoritative.
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized).not.toHaveProperty("javaNavigation");
+    expect(normalized.generalRefactoring).toEqual(engineGeneralRefactoringAdvertised);
+  });
+
+  it("surfaces an honest unavailable advertisement when the real engine is not discovered", async () => {
+    invokeMock.mockResolvedValueOnce(unavailableEngineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(normalized).not.toHaveProperty("javaNavigation");
+    expect(normalized.generalRefactoring).toEqual(engineGeneralRefactoringUnavailable);
+  });
+
+  it("rejects an invalid engine operation string", async () => {
+    // validateEngineOperation accepts only the canonical refactoring and navigation
+    // operation sets; an unknown operation rejects the engine capability report.
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = ["definition", "bogus-operation"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const error = await new TauriRefactorKitAdapter()
+      .getCapabilities()
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_engine_capabilities",
+      cause: undefined,
+    });
+    expect(error).not.toHaveProperty("response");
+  });
+});
+
 describe("TauriRefactorKitAdapter saved-snapshot semantic lifecycle boundary", () => {
   beforeEach(() => invokeMock.mockReset());
 
