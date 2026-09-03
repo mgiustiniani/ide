@@ -90,6 +90,9 @@ function createHarness(
     javaRefactoring: {
       resetWorkspace: vi.fn(() => order.push("java-refactoring.reset")),
     },
+    javaProjectModel: {
+      resetWorkspace: vi.fn(() => order.push("java-project-model.reset")),
+    },
     refactorKitStatus: {
       beginWorkspaceSwitch: vi.fn((generation) => {
         order.push(`refactorkit-status.begin:${generation}`);

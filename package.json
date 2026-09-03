@@ -43,6 +43,7 @@
     "test:story:refactor-kit-java-refactoring": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile refactorKitJavaRefactoringTauriHarness",
     "test:story:refactor-kit-engine-integration": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile refactorKitEngineIntegrationTauriHarness",
     "test:story:refactor-kit-java-navigation": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile refactorKitJavaNavigationTauriHarness",
+    "test:story:refactor-kit-java-project-model": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile refactorKitJavaProjectModelTauriHarness",
     "test:story:req-ide-packaging-001": "IDE_STORY_TARGET=desktop/tauri-harness node --import tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.js --profile idePackagingTauriHarness",
     "test:story:req-pi-workspace-agent-001:native": "node scripts/run-native-desktop-story.mjs --profile piWorkspaceAgentNativeGui",
     "test:coverage:req-xcom2-project-build-recipe-001": "node scripts/run-req-xcom2-project-build-recipe-coverage.mjs",

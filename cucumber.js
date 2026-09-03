@@ -194,6 +194,21 @@ const refactorKitJavaNavigationTauriHarness = {
   worldParameters: targets.desktopTauriHarness,
 };
 
+// Focused RefactorKit Java project-model characterization profile (REQ-IDE-JAVA-PROJECT-MODEL-001).
+// Runner-neutral: paths limited to the single java-project-model.feature source, so no competing
+// feature source is exercised. Deterministic desktop/tauri-harness evidence mirrors the
+// refactorKitJavaNavigationTauriHarness pattern. Support drivers plus the full steps glob
+// (which includes shared-operational.steps.ts) are imported, and the focused tag scope
+// disambiguates shared step wording.
+const refactorKitJavaProjectModelTauriHarness = {
+  paths: ["features/refactorkit/java-project-model.feature"],
+  import: ["tests/story/support/**/*.ts", "tests/story/steps/**/*.ts"],
+  format: ["progress"],
+  strict: true,
+  tags: "@REQ-IDE-JAVA-PROJECT-MODEL-001",
+  worldParameters: targets.desktopTauriHarness,
+};
+
 const idePackagingTauriHarness = {
   ...common,
   tags: "@REQ-IDE-PACKAGING-001",
@@ -280,6 +295,7 @@ export {
   refactorKitJavaRefactoringTauriHarness,
   refactorKitEngineIntegrationTauriHarness,
   refactorKitJavaNavigationTauriHarness,
+  refactorKitJavaProjectModelTauriHarness,
   piWorkspaceAgentNativeGui,
   idePackagingTauriHarness,
   xcom2ProjectFoundryApplyTauriHarness,

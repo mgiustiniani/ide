@@ -3723,7 +3723,11 @@ describe("App", () => {
       expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1),
     );
     await waitFor(() => {
-      expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+      expect(
+        testHarness.latestPanelLayoutProps.activityContributions.map(
+          (candidate: any) => candidate.id,
+        ),
+      ).toEqual(["java-project-model"]);
     });
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
     expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
@@ -3750,9 +3754,13 @@ describe("App", () => {
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
 
     const contributions = testHarness.latestPanelLayoutProps.activityContributions;
-    expect(contributions).toHaveLength(1);
+    expect(contributions).toHaveLength(2);
     expect(Object.isFrozen(contributions)).toBe(true);
     expect(Object.isFrozen(contributions[0])).toBe(true);
+    expect(contributions.map((candidate: any) => candidate.id)).toEqual([
+      "xcom2-project",
+      "java-project-model",
+    ]);
     expect(contributions[0]).toMatchObject({
       id: "xcom2-project",
       label: "XCOM 2 Project",
@@ -3827,9 +3835,13 @@ describe("App", () => {
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
 
     const contributions = testHarness.latestPanelLayoutProps.activityContributions;
-    expect(contributions).toHaveLength(1);
+    expect(contributions).toHaveLength(2);
     expect(Object.isFrozen(contributions)).toBe(true);
     expect(Object.isFrozen(contributions[0])).toBe(true);
+    expect(contributions.map((candidate: any) => candidate.id)).toEqual([
+      "xcom2-project",
+      "java-project-model",
+    ]);
     expect(contributions[0]).toMatchObject({
       id: "xcom2-project",
       label: "XCOM 2 Project",
@@ -4016,7 +4028,11 @@ describe("App", () => {
       expect(testHarness.xcom2ModuleScannerAdapter.scan).toHaveBeenCalledTimes(1);
       expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(1);
     });
-    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    expect(
+      testHarness.latestPanelLayoutProps.activityContributions.map(
+        (candidate: any) => candidate.id,
+      ),
+    ).toEqual(["java-project-model"]);
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
     expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
 
@@ -4123,7 +4139,11 @@ describe("App", () => {
     expect(screen.getByText("Checking XCOM 2 project configuration…")).toBeDefined();
     expect(testHarness.latestSettingsPanelConfigurationChecking).toBe(true);
     expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
-    expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+    expect(
+      testHarness.latestPanelLayoutProps.activityContributions.map(
+        (candidate: any) => candidate.id,
+      ),
+    ).toEqual(["java-project-model"]);
 
     await act(async () => {
       gate.resolve();
@@ -4164,7 +4184,11 @@ describe("App", () => {
     expect(screen.getByTestId("PanelLayout").dataset.activeActivity).toBe("explorer");
     await waitFor(() => {
       expect(testHarness.xcom2ModuleConfigurationAdapter.read).toHaveBeenCalledTimes(2);
-      expect(testHarness.latestPanelLayoutProps.activityContributions).toEqual([]);
+      expect(
+        testHarness.latestPanelLayoutProps.activityContributions.map(
+          (candidate: any) => candidate.id,
+        ),
+      ).toEqual(["java-project-model"]);
     });
 
     testHarness.xcom2ModuleConfiguration = {

@@ -1,0 +1,69 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-JAVA-PROJECT-MODEL-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Complete the Java project model part of JetBrains-style IDE management: present the Java project structure in the IDE by consuming RefactorKit's project-model surface (scan + symbols commands in real_engine.rs run_engine_scan/run_engine_symbols + workspace_registry workspace_id_for_path), NOT a standalone project-model kit. Prior user decision (obs 2026-07-11): the Java project model remains an internal, modular RefactorKit component and is extracted later only if independent external consumers and a stable reusable contract emerge. The IDE consumes the RefactorKit project model: given a workspace root, present packages/classes/symbols from the engine symbols scan, with honest-unavailable when the engine is absent.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE. Java TEST infra (JavaSpec/Maven/JUnit/dataset) and Java-only RefactorKit rules as workflow refactoring authority remain EXCLUDED.",
+      "evidence": "ADR 0015"
+    },
+    {
+      "id": "APR-DECISION-JAVA-PROJECT-MODEL-INSIDE-REFACTORKIT-001",
+      "statement": "No standalone Java Project Model Kit. Project-model capabilities remain internal, modular RefactorKit components, extracted later only if independent external consumers and a stable reusable contract emerge.",
+      "evidence": "obs 2026-07-11"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-JAVA-PROJECT-MODEL-001",
+    "title": "Java project model presented in the IDE by consuming RefactorKit",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "Present the Java project structure in the IDE by consuming RefactorKit's project-model surface (scan + symbols commands, workspace registry). Given a workspace root, the IDE requests the engine symbols scan and presents packages/classes/symbols as the project model, with honest-unavailable when the engine is absent or the scan fails. Follows the prior decision: the project model stays inside RefactorKit (no standalone kit); the IDE is a consumer.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java workspace root, the IDE requests the RefactorKit engine symbols scan and presents the project model (packages/classes/symbols) from the engine result."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Given the engine is absent or the scan fails, the IDE reports honest unavailable/error and never fabricates a project model."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; the project model comes from RefactorKit (no standalone kit, no reimplementation of the model)."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri project-model implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Status is evidence-based with an explicit state, never inferred from shells; live Tauri-window project-model E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-domain-expert (domain research) + bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + tauri-rust-coder (engine scan/symbols) + tauri-adapter-coder + browser-adapter-coder + frontend-core-coder/frontend-app-coder (view-model + controller wiring)",
+    "scope": "Java project model presented in the IDE by consuming RefactorKit scan + symbols (engine + workspace registry). The existing Java language service, navigation, refactoring, engine-integration slices stay as-is. Java build/run/debug and packaging remain separate later slices.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "Standalone Java Project Model Kit (prior decision: stays inside RefactorKit)",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "Java build/run/debug, packaging (later slices)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Source: whether the project model comes from the engine symbols scan (run_engine_symbols) or a richer scan (run_engine_scan) — confirm the primary source.",
+      "Editor wiring: whether project-model presentation is proven wired into a live panel or a desktop-harness renderer is acceptable evidence.",
+      "Reuse: whether to reuse the existing useRefactorKitSymbolNavigationController or add a Java project-model controller.",
+      "Scope: whether project-model presentation includes navigation (click a class -> open) or is read-only structure listing."
+    ]
+  }
+}

@@ -34,6 +34,9 @@ export interface WorkspaceControllerCollaborators {
   javaRefactoring: {
     resetWorkspace(): void;
   };
+  javaProjectModel: {
+    resetWorkspace(): void;
+  };
   refactorKitStatus: RefactorKitStatusWorkspaceCollaborator;
   semanticSymbols?: {
     /** Stops and invalidates the old saved-snapshot session before authorization changes. */

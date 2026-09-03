@@ -52,6 +52,8 @@ import {
   type TypeScriptDiagnosticsEditorDocument,
 } from "./features/refactorkit-status/useRefactorKitDiagnosticsController";
 import { useRefactorKitSymbolNavigationController } from "./features/refactorkit-symbol-navigation/useRefactorKitSymbolNavigationController";
+import { useJavaProjectModelController } from "./features/refactorkit-java-project-model/useJavaProjectModelController";
+import { JavaProjectModelPanel } from "./features/refactorkit-java-project-model/JavaProjectModelPanel";
 import {
   useWorkspaceController,
   type WorkspaceControllerCollaborators,
@@ -348,6 +350,16 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
     getWorkspaceGeneration: workspace.getGeneration,
   });
 
+  const javaProjectModel = useJavaProjectModelController({
+    refactorKit: refactorKitAdapter,
+    status: refactorKitStatus.status,
+    capabilities: refactorKitStatus.capabilities,
+    isCheckingCapabilities: refactorKitStatus.isChecking,
+    workspaceInfo,
+    workspaceGeneration: workspace.generation,
+    getWorkspaceContext: workspace.getContext,
+  });
+
   const xcom2Setup = useXcom2SetupController({
     monitor: xcom2SetupMonitorAdapter,
     transactions: xcom2SetupAdapter,
@@ -502,6 +514,9 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
       },
       javaRefactoring: {
         resetWorkspace: javaRefactoring.resetWorkspace,
+      },
+      javaProjectModel: {
+        resetWorkspace: javaProjectModel.resetWorkspace,
       },
       refactorKitStatus: refactorKitStatus.workspaceCollaborator,
       semanticSymbols: refactorKitSymbolNavigation.workspaceCollaborator,
@@ -664,6 +679,12 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
             />
           ),
         } satisfies PanelLayoutActivityContribution),
+        Object.freeze({
+          id: "java-project-model",
+          label: "Java Project",
+          title: "Java project model from the RefactorKit engine",
+          content: <JavaProjectModelPanel controller={javaProjectModel} />,
+        } satisfies PanelLayoutActivityContribution),
       ]),
     [
       openWorkspaceFileFromAgent,
@@ -691,6 +712,7 @@ export function App({ projectFoundry }: AppProps = {}): JSX.Element {
       refactorKitSymbolNavigation.resolveJavaReferences,
       refactorKitSymbolNavigation.selectJavaReference,
       refactorKitSymbolNavigation.setJavaSymbol,
+      javaProjectModel,
     ],
   );
 

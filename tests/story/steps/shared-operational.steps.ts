@@ -40,6 +40,10 @@ import {
   REQUIREMENT as JAVA_NAVIGATION_REQUIREMENT,
   getRefactorKitJavaNavigationSession,
 } from "../support/refactorkit-java-navigation.js";
+import {
+  REQUIREMENT as JAVA_PROJECT_MODEL_REQUIREMENT,
+  getRefactorKitJavaProjectModelSession,
+} from "../support/refactorkit-java-project-model.js";
 import { getJavaLanguageServiceSession } from "./java-language-service.steps.js";
 import { getRefactorKitJavaRefactoringSession } from "../support/refactorkit-java-refactoring.js";
 import { getRefactorKitEngineIntegrationSession } from "./refactorkit-engine-integration.steps.js";
@@ -48,6 +52,7 @@ const JAVA_LANGUAGE_TAG = `@${JAVA_LANGUAGE_REQUIREMENT}`;
 const REFACTORING_TAG = `@${REFACTORING_REQUIREMENT}`;
 const ENGINE_INTEGRATION_TAG = `@${ENGINE_INTEGRATION_REQUIREMENT}`;
 const JAVA_NAVIGATION_TAG = `@${JAVA_NAVIGATION_REQUIREMENT}`;
+const JAVA_PROJECT_MODEL_TAG = `@${JAVA_PROJECT_MODEL_REQUIREMENT}`;
 
 /** The scenario's owning feature tag, captured by the Before hook below. */
 function featureTagOf(world: StoryWorld): string {
@@ -64,6 +69,10 @@ function isEngineIntegration(world: StoryWorld): boolean {
 
 function isJavaNavigation(world: StoryWorld): boolean {
   return featureTagOf(world) === JAVA_NAVIGATION_TAG;
+}
+
+function isJavaProjectModel(world: StoryWorld): boolean {
+  return featureTagOf(world) === JAVA_PROJECT_MODEL_TAG;
 }
 
 async function attachJavaEvidence(world: StoryWorld): Promise<void> {
@@ -86,6 +95,11 @@ async function attachJavaNavigationEvidence(world: StoryWorld): Promise<void> {
   await world.attach(JSON.stringify(session.evidence(), null, 2), "application/json");
 }
 
+async function attachJavaProjectModelEvidence(world: StoryWorld): Promise<void> {
+  const session = getRefactorKitJavaProjectModelSession(world);
+  await world.attach(JSON.stringify(session.evidence(), null, 2), "application/json");
+}
+
 // -----------------------------------------------------------------------------
 // Per-scenario tag capture: cucumber exposes the pickle (and its tags) only to
 // hooks. This unscoped Before hook records the owning feature tag on the World,
@@ -102,7 +116,9 @@ Before<StoryWorld>(function (this: StoryWorld, hookParam: ITestCaseHookParameter
         ? ENGINE_INTEGRATION_TAG
         : tags.includes(JAVA_NAVIGATION_TAG)
           ? JAVA_NAVIGATION_TAG
-          : "";
+          : tags.includes(JAVA_PROJECT_MODEL_TAG)
+            ? JAVA_PROJECT_MODEL_TAG
+            : "";
 });
 
 // -----------------------------------------------------------------------------
@@ -112,6 +128,12 @@ Before<StoryWorld>(function (this: StoryWorld, hookParam: ITestCaseHookParameter
 When<StoryWorld>(
   "the adapter receives the request",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      await session.receiveAdapterRequest();
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       await session.receiveAdapterRequest();
@@ -139,6 +161,18 @@ When<StoryWorld>(
 Then<StoryWorld>(
   "the adapter extracts only the request payload needed by the delegate",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      const adapter = session.adapterOutcome();
+      assert.ok(adapter, `${JAVA_PROJECT_MODEL_REQUIREMENT} adapter outcome is missing`);
+      assert.equal(
+        adapter.extracted,
+        true,
+        `${JAVA_PROJECT_MODEL_REQUIREMENT} the adapter did not extract the request payload needed by the delegate`,
+      );
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       const adapter = session.adapterOutcome();
@@ -568,6 +602,12 @@ Then<StoryWorld>(
 Given<StoryWorld>(
   "meaningful RED precedes new product behavior for this feature",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      await session.start();
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       await session.start();
@@ -655,6 +695,13 @@ Then<StoryWorld>(
 Given<StoryWorld>(
   "packages ui, web-core, and web are part of the standalone web frontend",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      await session.start();
+      session.scanWebFirstLayers();
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       await session.start();
@@ -687,6 +734,20 @@ Then<StoryWorld>(
   "no file under ui, web-core, or web imports {string}",
   async function (platformApi: string) {
     assert.equal(platformApi, "@tauri-apps/api", "boundary API token mismatch");
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      const scan = session.webFirstLayerScan();
+      assert.ok(scan && scan.length > 0, `${JAVA_PROJECT_MODEL_REQUIREMENT} web-first layer scan is missing`);
+      for (const result of scan) {
+        assert.equal(
+          result.platformApiImportCount,
+          0,
+          `${JAVA_PROJECT_MODEL_REQUIREMENT} ${result.layer} imports @tauri-apps/api ${result.platformApiImportCount} time(s)`,
+        );
+      }
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       const scan = session.webFirstLayerScan();
@@ -746,6 +807,29 @@ Then<StoryWorld>(
 Then<StoryWorld>(
   "the web frontend builds and runs without Tauri",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      // Structural Tauri-free guarantee: zero @tauri-apps/api imports across the
+      // web-first layers and zero platform imports on the RefactorKit port. The
+      // full web build is proven by the independent quality gate; this Story
+      // harness does not re-run it here.
+      const scan = session.webFirstLayerScan();
+      assert.ok(scan && scan.length > 0, `${JAVA_PROJECT_MODEL_REQUIREMENT} web-first layer scan is missing`);
+      for (const result of scan) {
+        assert.equal(
+          result.platformApiImportCount,
+          0,
+          `${JAVA_PROJECT_MODEL_REQUIREMENT} ${result.layer} imports a platform API`,
+        );
+      }
+      const ports = session.portCapabilityEvidence();
+      assert.ok(ports.length === 1, `${JAVA_PROJECT_MODEL_REQUIREMENT} port capability evidence is incomplete`);
+      for (const port of ports) {
+        assert.equal(port.tauriImports, 0, `${JAVA_PROJECT_MODEL_REQUIREMENT} ${port.port} imports a platform API`);
+      }
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       // Structural Tauri-free guarantee: zero @tauri-apps/api imports across the
@@ -828,6 +912,12 @@ Then<StoryWorld>(
 When<StoryWorld>(
   "the feature file is parsed for requirement and status reconciliation",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      session.reconcileFeatureStatus();
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       session.reconcileFeatureStatus();
@@ -855,6 +945,27 @@ When<StoryWorld>(
 Then<StoryWorld>(
   "the feature declares exactly one effective status \"@not-implemented\" at feature level",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      const reconciliation = session.featureReconciliation();
+      assert.ok(reconciliation, `${JAVA_PROJECT_MODEL_REQUIREMENT} reconciliation is missing`);
+      assert.equal(
+        new Set(reconciliation.featureStatusTags).size,
+        1,
+        `${JAVA_PROJECT_MODEL_REQUIREMENT} feature must declare exactly one effective status at feature level`,
+      );
+      assert.ok(
+        reconciliation.featureStatusTags.includes("@not-implemented"),
+        `${JAVA_PROJECT_MODEL_REQUIREMENT} feature does not declare @not-implemented`,
+      );
+      assert.equal(
+        reconciliation.scenarioStatusTags.length,
+        0,
+        `${JAVA_PROJECT_MODEL_REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
+      );
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       const reconciliation = session.featureReconciliation();
@@ -932,6 +1043,18 @@ Then<StoryWorld>(
 Then<StoryWorld>(
   "no scenario overrides that single effective status",
   async function () {
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      const reconciliation = session.featureReconciliation();
+      assert.ok(reconciliation, `${JAVA_PROJECT_MODEL_REQUIREMENT} reconciliation is missing`);
+      assert.equal(
+        reconciliation.scenarioStatusTags.length,
+        0,
+        `${JAVA_PROJECT_MODEL_REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
+      );
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
     if (isJavaNavigation(this)) {
       const session = getRefactorKitJavaNavigationSession(this);
       const reconciliation = session.featureReconciliation();
