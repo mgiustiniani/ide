@@ -48,6 +48,13 @@ function engineResult(overrides: Partial<RefactorKitCommandResult> = {}): Refact
   };
 }
 
+/** Engine symbols stdout whose parsed entry count exceeds the bounded presentation slice. */
+function oversizedSymbolsStdout(entryCount: number): string {
+  return Array.from({ length: entryCount }, (_, index) =>
+    `CLASS\tcom.example.Class${index}\t/workspace/sample/Class${index}.java:${index + 1}`,
+  ).join("\n");
+}
+
 const SYMBOLS_STDOUT = [
   "PACKAGE\tcom.example\t/workspace/sample/src/main/java/example/package-info.java:1",
   "CLASS\tcom.example.Widget\t/workspace/sample/src/main/java/example/Widget.java:3",
@@ -167,6 +174,27 @@ describe("buildProjectModel", () => {
     const model = buildProjectModel([{ kind: "CLASS", qualifiedName: "Foo", path: "Foo.java", line: 1 }]);
     expect(model.packages[0]).toMatchObject({ name: "(default)", classCount: 1, symbolCount: 1 });
   });
+
+  it("AC-001: exposes the full engine symbol count and honest truncation state for large engine results", () => {
+    const symbols = Array.from({ length: 520 }, (_, index) => ({
+      kind: "CLASS",
+      qualifiedName: `com.example.Class${index}`,
+      path: `/workspace/sample/Class${index}.java`,
+      line: index + 1,
+    }));
+    const model = buildProjectModel(symbols);
+    expect(model.symbols).toHaveLength(500);
+    expect(model.totalSymbolCount).toBe(520);
+    expect(model.presentedSymbolsTruncated).toBe(true);
+  });
+
+  it("AC-001: reports no truncation when the engine result fits the bounded presentation", () => {
+    const symbols = parseEngineSymbols(SYMBOLS_STDOUT);
+    const model = buildProjectModel(symbols);
+    expect(model.symbols).toHaveLength(5);
+    expect(model.totalSymbolCount).toBe(5);
+    expect(model.presentedSymbolsTruncated).toBe(false);
+  });
 });
 
 describe("useJavaProjectModelController", () => {
@@ -186,8 +214,70 @@ describe("useJavaProjectModelController", () => {
       qualifiedName: "com.example.Widget",
     });
     expect(controller.result.current.model?.symbols).toHaveLength(5);
+    expect(controller.result.current.model?.totalSymbolCount).toBe(5);
+    expect(controller.result.current.model?.presentedSymbolsTruncated).toBe(false);
+    expect(controller.result.current.totalSymbolCount).toBe(5);
+    expect(controller.result.current.presentedSymbolsTruncated).toBe(false);
     expect(controller.result.current.projectRoot).toBe("/workspace/sample");
     expect(controller.result.current.error).toBeNull();
+  });
+
+  it("AC-001: presents a bounded symbol slice with the full engine result count and an honest truncation state", async () => {
+    const harness = createHarness({ symbolsStdout: oversizedSymbolsStdout(520) });
+    const controller = renderController(harness);
+    await refreshAndSettle(controller);
+
+    expect(controller.result.current.availability).toBe("available");
+    expect(controller.result.current.model?.symbols).toHaveLength(500);
+    expect(controller.result.current.model?.totalSymbolCount).toBe(520);
+    expect(controller.result.current.model?.presentedSymbolsTruncated).toBe(true);
+    expect(controller.result.current.totalSymbolCount).toBe(520);
+    expect(controller.result.current.presentedSymbolsTruncated).toBe(true);
+  });
+
+  it("AC-001: clears the truncation state when no model is presented", async () => {
+    const harness = createHarness();
+    const deps: UseJavaProjectModelControllerDependencies = {
+      refactorKit: harness.refactorKit,
+      status,
+      capabilities,
+      isCheckingCapabilities: false,
+      workspaceInfo: workspace,
+      workspaceGeneration: 1,
+      getWorkspaceContext: () => ({
+        generation: 1,
+        workspaceId: workspace.id,
+        isSwitching: false,
+        isMetadataLoading: false,
+      }),
+    };
+    const controller = renderHook(
+      (current: UseJavaProjectModelControllerDependencies) => useJavaProjectModelController(current),
+      { initialProps: deps },
+    );
+    await refreshAndSettle(controller);
+    expect(controller.result.current.totalSymbolCount).toBe(5);
+
+    const nextWorkspace: WorkspaceInfo = {
+      id: "workspace-two",
+      name: "Other",
+      rootPath: "/workspace/other",
+    };
+    controller.rerender({
+      ...deps,
+      workspaceInfo: nextWorkspace,
+      workspaceGeneration: 2,
+      getWorkspaceContext: () => ({
+        generation: 2,
+        workspaceId: nextWorkspace.id,
+        isSwitching: false,
+        isMetadataLoading: false,
+      }),
+    });
+
+    expect(controller.result.current.model).toBeNull();
+    expect(controller.result.current.totalSymbolCount).toBeNull();
+    expect(controller.result.current.presentedSymbolsTruncated).toBeNull();
   });
 
   it("AC-002: reports honest unavailable when the engine is absent and never fabricates a model", async () => {

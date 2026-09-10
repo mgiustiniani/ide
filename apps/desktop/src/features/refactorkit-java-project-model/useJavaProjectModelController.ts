@@ -44,7 +44,12 @@ export interface JavaProjectModelPackage {
 export interface JavaProjectModel {
   readonly packages: readonly JavaProjectModelPackage[];
   readonly classes: readonly JavaProjectModelClass[];
+  /** The bounded presented slice of the engine symbol result. */
   readonly symbols: readonly JavaProjectModelSymbol[];
+  /** The full engine symbol result count, including entries outside the presented slice. */
+  readonly totalSymbolCount: number;
+  /** True when the presented symbol slice is smaller than the engine symbol result. */
+  readonly presentedSymbolsTruncated: boolean;
 }
 
 export interface JavaProjectModelWorkspaceContext {
@@ -73,6 +78,10 @@ export interface JavaProjectModelController {
   error: string | null;
   projectRoot: string | null;
   model: JavaProjectModel | null;
+  /** Full engine symbol result count (null when no model is presented). */
+  totalSymbolCount: number | null;
+  /** True when the presented symbol list is a truncated slice of the engine result (null when no model is presented). */
+  presentedSymbolsTruncated: boolean | null;
   /** Requests the engine scan/symbols for the current authorized workspace root. */
   refresh(): Promise<void>;
   cancel(): void;
@@ -175,6 +184,11 @@ export function buildProjectModel(
   const packages = [...packageMap.entries()]
     .map(([name, counts]) => ({ name, ...counts }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Bounded presentation is intentional for large engine results, but the
+  // truncation is never silent: the full result count and the truncation
+  // state are exposed alongside the presented slice.
+  const presentedSymbols = symbols.slice(0, MAX_PRESENTED_SYMBOLS);
+  const totalSymbolCount = symbols.length;
   return {
     packages,
     classes: classes.map((symbol) => ({
@@ -184,7 +198,9 @@ export function buildProjectModel(
       path: symbol.path,
       line: symbol.line,
     })),
-    symbols: symbols.slice(0, MAX_PRESENTED_SYMBOLS),
+    symbols: presentedSymbols,
+    totalSymbolCount,
+    presentedSymbolsTruncated: totalSymbolCount > presentedSymbols.length,
   };
 }
 
@@ -359,6 +375,8 @@ export function useJavaProjectModelController(
     error,
     projectRoot,
     model,
+    totalSymbolCount: model !== null ? model.totalSymbolCount : null,
+    presentedSymbolsTruncated: model !== null ? model.presentedSymbolsTruncated : null,
     refresh,
     cancel,
     resetWorkspace,

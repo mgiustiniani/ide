@@ -11,8 +11,17 @@ export function JavaProjectModelPanel({
 }: {
   controller: JavaProjectModelController;
 }): JSX.Element {
-  const { availability, availabilityReason, isBusy, error, projectRoot, model, refresh } =
-    controller;
+  const {
+    availability,
+    availabilityReason,
+    isBusy,
+    error,
+    projectRoot,
+    model,
+    totalSymbolCount,
+    presentedSymbolsTruncated,
+    refresh,
+  } = controller;
   const badge =
     availability === "available"
       ? "Available"
@@ -110,8 +119,19 @@ export function JavaProjectModelPanel({
 
           <section className="mt-4 space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-              Symbols ({model.symbols.length})
+              {presentedSymbolsTruncated
+                ? `Symbols (${model.symbols.length} of ${totalSymbolCount})`
+                : `Symbols (${model.symbols.length})`}
             </h3>
+            {presentedSymbolsTruncated ? (
+              <p
+                data-testid="java-project-model-symbols-truncation"
+                className="text-xs text-[var(--text-muted)]"
+              >
+                Showing {model.symbols.length} of {totalSymbolCount} symbols — the engine result is
+                larger than the bounded symbol list shown here.
+              </p>
+            ) : null}
             <ul className="space-y-1 text-xs">
               {model.symbols.length === 0 ? (
                 <li className="text-[var(--text-muted)]">No symbols reported.</li>
