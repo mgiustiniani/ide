@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import type { JavaLaunchConfiguration } from "@ide/contracts";
 import { JavaLaunchSettings } from "./JavaLaunchSettings";
-import { validateLaunchSettings } from "./javaLaunchSettings";
+import { validateLaunchSettings } from "./validateJavaLaunchSettings";
 
 const configuration: JavaLaunchConfiguration = {
   buildTool: "jdk",
