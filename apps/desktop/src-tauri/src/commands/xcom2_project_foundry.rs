@@ -7,10 +7,12 @@ use git2::{ErrorCode, ObjectType, Oid, Repository};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_os = "linux")]
 mod apply;
+mod apply_contract;
 mod renderer;
 
-pub use apply::{
+pub use apply_contract::{
     ApplyFoundryProjectRequest, ApplyFoundryProjectResult, FoundryApplyFailureReason,
     FoundryApplyRefusalReason,
 };
@@ -302,13 +304,18 @@ pub fn apply_xcom2_project_foundry(
     state: tauri::State<'_, Xcom2ProjectFoundryState>,
     request: ApplyFoundryProjectRequest,
 ) -> ApplyFoundryProjectResult {
-    if require_linux().is_err() {
-        return ApplyFoundryProjectResult::Refused {
-            phase: apply::FoundryApplyPhase::PreCommit,
-            reason: FoundryApplyRefusalReason::RenderedPlanInvalid,
-        };
+    #[cfg(target_os = "linux")]
+    {
+        apply::apply_foundry_project(&state, request)
     }
-    apply::apply_foundry_project(&state, request)
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, request);
+        ApplyFoundryProjectResult::Refused {
+            phase: apply_contract::FoundryApplyPhase::PreCommit,
+            reason: FoundryApplyRefusalReason::RenderedPlanInvalid,
+        }
+    }
 }
 
 /// Synchronously revokes only operation authority and its rendered-byte caches. Source and
