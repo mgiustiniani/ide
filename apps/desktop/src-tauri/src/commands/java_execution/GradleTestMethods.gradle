@@ -1,0 +1,299 @@
+def ideMethods = new groovy.json.JsonSlurper().parseText(new String(java.util.Base64.getDecoder().decode('IDE_TEST_METHOD_SETTINGS'), 'UTF-8'))
+// Do not load the new API on older Gradle versions or attach to nested builds.
+def ideSourceAccessor = org.gradle.api.tasks.testing.TestDescriptor.methods.find { it.name == 'getSource' && it.parameterCount == 0 }
+def ideMethodSource = null
+try {
+    if (ideSourceAccessor != null) ideMethodSource = org.gradle.api.tasks.testing.TestDescriptor.classLoader.loadClass('org.gradle.api.tasks.testing.source.MethodSource')
+} catch (ClassNotFoundException ignored) { }
+if (ideSourceAccessor != null && ideMethodSource != null && gradle.parent == null) {
+    // A Gradle-owned service closes after its consuming tasks, including failed tasks.
+    def ideLoader = new GroovyClassLoader(this.class.classLoader)
+    ideLoader.parseClass('''
+        import org.gradle.api.file.RegularFileProperty
+        import org.gradle.api.provider.Property
+        import org.gradle.api.services.BuildService
+        import org.gradle.api.services.BuildServiceParameters
+        interface IdeMethodParameters extends BuildServiceParameters {
+            RegularFileProperty getOutputFile()
+            Property<String> getRequestId()
+            RegularFileProperty getInspectorSource()
+        }
+        abstract class IdeMethodRecorder implements BuildService<IdeMethodParameters>, AutoCloseable {
+            private int entries = 0
+            private long bytes = 0
+            private boolean unavailable = false
+            private final Map<String, Map> deferred = [:]
+            private int deferredEntries = 0
+            private long deferredBytes = 0
+            private long deferredClasspathBytes = 0
+            private final Map<String, java.net.URLClassLoader> loaders = [:]
+            private final Map<List<String>, Map<String, String>> declarations = [:]
+            @groovy.transform.CompileStatic
+            private static Class<?> declaration(Class<?> type, String method) {
+                List<Class<?>> pending = new ArrayList<Class<?>>()
+                Set<Class<?>> seen = new HashSet<Class<?>>()
+                pending.add(type)
+                java.lang.reflect.Method soleDeclaration = null
+                int namedDeclarations = 0
+                boolean publicOnly = true
+                while (!pending.isEmpty()) {
+                    Class<?> current = pending.remove(pending.size() - 1)
+                    if (!seen.add(current)) continue
+                    if (seen.size() > 256) return null
+                    for (java.lang.reflect.Method candidate : current.getDeclaredMethods()) {
+                        if (candidate.getName().equals(method)) {
+                            if (candidate.isBridge() || candidate.isSynthetic()) return null
+                            if (++namedDeclarations > 1024) return null
+                            soleDeclaration = candidate
+                            if (!java.lang.reflect.Modifier.isPublic(candidate.getModifiers())) publicOnly = false
+                            if (!publicOnly && namedDeclarations > 1) return null
+                        }
+                    }
+                    Class<?> parent = current.getSuperclass()
+                    if (parent != null) pending.add(parent)
+                    for (Class<?> contract : current.getInterfaces()) pending.add(contract)
+                }
+                if (namedDeclarations == 1) return soleDeclaration.getDeclaringClass()
+                if (!publicOnly) return null
+                List<java.lang.reflect.Method> matches = new ArrayList<java.lang.reflect.Method>()
+                for (java.lang.reflect.Method candidate : type.getMethods()) {
+                    if (candidate.getName().equals(method)) {
+                        if (candidate.isBridge() || candidate.isSynthetic()) return null
+                        matches.add(candidate)
+                    }
+                }
+                if (matches.size() != 1) return null
+                return matches.get(0).getDeclaringClass()
+            }
+            @groovy.transform.CompileStatic
+            private static String supportedOwner(String owner) {
+                if (owner.isEmpty() || owner.getBytes('UTF-8').length > 512) return null
+                for (String part : owner.split('[.]', -1)) {
+                    if (part.isEmpty()) return null
+                    for (int offset = 0; offset < part.length();) {
+                        int point = part.codePointAt(offset)
+                        if (Character.isISOControl(point) || !(offset == 0 ? Character.isJavaIdentifierStart(point) : Character.isJavaIdentifierPart(point))) return null
+                        offset += Character.charCount(point)
+                    }
+                }
+                return owner
+            }
+            @groovy.transform.CompileStatic
+            private static String codeSource(Class<?> type) {
+                java.net.URL location = type.getProtectionDomain()?.getCodeSource()?.getLocation()
+                if (location == null || !location.getProtocol().equals('file')) return null
+                String path = new File(location.toURI()).getCanonicalPath()
+                return path.getBytes('UTF-8').length <= 4096 ? path : null
+            }
+            @groovy.transform.CompileStatic
+            private static Map<String, String> inspect(java.net.URLClassLoader loader, String runtimeClass, String method) {
+                Class<?> type = Class.forName(runtimeClass, false, loader)
+                Map<String, String> result = new LinkedHashMap<String, String>()
+                result.put('testOrigin', codeSource(type))
+                Class<?> owner = declaration(type, method)
+                if (owner != null && supportedOwner(owner.getName()) != null) {
+                    result.put('declaringClassName', owner.getName())
+                    result.put('declaringOrigin', codeSource(owner))
+                }
+                return result
+            }
+            synchronized Map compiledSources(String task, List files, String runtimeClass, String method) {
+                def key = [task, runtimeClass, method]
+                if (declarations.containsKey(key)) return declarations[key]
+                if (declarations.size() >= 10000) return null
+                Map declaration = null
+                try {
+                    def loader = loaders[task]
+                    if (loader == null) {
+                        if (loaders.size() >= 256 || files.size() > 4096) return null
+                        loader = new java.net.URLClassLoader(files.collect { it.toURI().toURL() } as java.net.URL[], ClassLoader.getPlatformClassLoader())
+                        loaders[task] = loader
+                    }
+                    // Static dispatch guarantees calls to JDK APIs, even if a
+                    // project type defines a static method with the same API name.
+                    declaration = inspect(loader, runtimeClass, method)
+                } catch (Exception ignored) { }
+                  catch (LinkageError ignored) { }
+                declarations[key] = declaration
+                return declaration
+            }
+            synchronized void defer(Map row, List names, String task, List files, File java, boolean preview) {
+                if (unavailable) return
+                try {
+                    def aliases = names.unique()
+                    long size = aliases.sum { name -> groovy.json.JsonOutput.toJson(row + [reportName:name, requestId:parameters.requestId.get(), version:2, kind:'method']).getBytes('UTF-8').length + 1 }
+                    if (entries + deferredEntries + aliases.size() > 10000 || bytes + deferredBytes + size > 2*1024*1024 - 1024) { unavailable = true; return }
+                    def batch = deferred[task]
+                    if (batch == null) {
+                        if (deferred.size() >= 256 || files.size() > 4096) { record(row, aliases); return }
+                        def paths = files.collect { it.canonicalPath }
+                        long pathBytes = 0
+                        for (String path : paths) {
+                            int length = path.getBytes('UTF-8').length
+                            if (length > 4096) { record(row, aliases); return }
+                            pathBytes += length
+                        }
+                        if (pathBytes > 1024*1024 || deferredClasspathBytes + pathBytes > 8*1024*1024) { record(row, aliases); return }
+                        deferredClasspathBytes += pathBytes
+                        batch = [java:java.canonicalPath, files:paths, preview:preview, rows:[], queries:new LinkedHashSet()]
+                        deferred[task] = batch
+                    }
+                    batch.rows.add([row:new LinkedHashMap(row), names:aliases])
+                    batch.queries.add([row.className, row.methodName])
+                    deferredEntries += aliases.size()
+                    deferredBytes += size
+                } catch (Exception ignored) { record(row, names) }
+            }
+            private File compileInspector() {
+                def compiler = javax.tools.ToolProvider.getSystemJavaCompiler()
+                if (compiler == null) return null
+                def source = parameters.inspectorSource.get().asFile
+                def classes = new File(source.parentFile, 'classes')
+                if (!classes.mkdir()) return null
+                def diagnostics = new ByteArrayOutputStream()
+                int status = compiler.run(null, diagnostics, diagnostics, '--release', '8', '-proc:none', '-d', classes.path, source.path)
+                return status == 0 ? classes : null
+            }
+            private Map inspectBatch(Map batch, File classes, int index, long deadline) {
+                if (classes == null || System.nanoTime() >= deadline) return [:]
+                def input = new File(classes.parentFile, 'request-' + index)
+                def output = new File(classes.parentFile, 'response-' + index)
+                def queries = batch.queries.toList()
+                def request = new ByteArrayOutputStream()
+                new DataOutputStream(request).withCloseable { stream ->
+                    stream.writeInt(batch.files.size())
+                    batch.files.each { path -> stream.writeUTF(path) }
+                    stream.writeInt(queries.size())
+                    queries.each { query -> stream.writeUTF(query[0]); stream.writeUTF(query[1]) }
+                }
+                if (request.size() > 2*1024*1024) return [:]
+                input.bytes = request.toByteArray()
+                def command = [batch.java, '-Xmx128m']
+                if (batch.preview) command.add('--enable-preview')
+                command.addAll(['-cp', classes.path, 'IdeTestMethodInspector', input.path, output.path])
+                def builder = new ProcessBuilder(command as String[])
+                ['JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS'].each { builder.environment().remove(it) }
+                builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                builder.redirectError(ProcessBuilder.Redirect.DISCARD)
+                def child = builder.start()
+                try {
+                    long remaining = Math.min(10000L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()))
+                    if (remaining <= 0 || !child.waitFor(remaining, java.util.concurrent.TimeUnit.MILLISECONDS) || child.exitValue() != 0) return [:]
+                    if (!output.isFile() || output.length() > 2*1024*1024) return [:]
+                    def found = [:]
+                    output.withDataInputStream { stream ->
+                        if (stream.readInt() != queries.size()) throw new IOException('Invalid inspection response')
+                        queries.each { query ->
+                            def origin = stream.readUTF(), owner = stream.readUTF(), declaring = stream.readUTF()
+                            def result = [:]
+                            if (origin) result.testOrigin = origin
+                            if (owner) result.declaringClassName = owner
+                            if (owner && declaring) result.declaringOrigin = declaring
+                            found[query] = result
+                        }
+                        if (stream.read() != -1) throw new IOException('Trailing inspection response')
+                    }
+                    return found
+                } finally {
+                    if (child.isAlive()) { child.destroyForcibly(); child.waitFor(1, java.util.concurrent.TimeUnit.SECONDS) }
+                }
+            }
+            synchronized void refuse() { unavailable = true }
+            synchronized void record(Map row, List names) {
+                if (unavailable) return
+                try {
+                    def lines = names.unique().collect { name ->
+                        def entry = new LinkedHashMap(row)
+                        entry.kind = 'method'
+                        entry.version = 2
+                        entry.requestId = parameters.requestId.get()
+                        entry.reportName = name
+                        groovy.json.JsonOutput.toJson(entry) + '\\n'
+                    }
+                    def size = lines.sum { line -> line.getBytes('UTF-8').length }
+                    if (entries + deferredEntries + lines.size() > 10000 || bytes + deferredBytes + size > 2*1024*1024 - 1024) { unavailable = true; return }
+                    parameters.outputFile.get().asFile.withWriterAppend('UTF-8') { writer -> lines.each { line -> writer.write(line) } }
+                    bytes += size
+                    entries += lines.size()
+                } catch (Exception ignored) { unavailable = true }
+            }
+            synchronized void close() {
+                File classes = null
+                // One helper per Test task, bounded by one shared enrichment deadline.
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30)
+                if (!deferred.isEmpty() && !unavailable) {
+                    try { classes = compileInspector() } catch (Exception ignored) { }
+                      catch (LinkageError ignored) { }
+                }
+                deferredEntries = 0
+                deferredBytes = 0
+                int index = 0
+                for (Map batch : deferred.values()) {
+                    Map found = [:]
+                    if (!unavailable) {
+                        try { found = inspectBatch(batch, classes, index++, deadline) } catch (Exception ignored) { }
+                          catch (LinkageError ignored) { }
+                    }
+                    for (Map pending : batch.rows) {
+                        def row = pending.row
+                        row.putAll(found[[row.className, row.methodName]] ?: [:])
+                        record(row, pending.names)
+                    }
+                }
+                deferred.clear()
+                loaders.values().each { loader -> try { loader.close() } catch (Exception ignored) { } }
+                loaders.clear()
+                declarations.clear()
+                try {
+                    def line = groovy.json.JsonOutput.toJson([kind:'complete', version:2, requestId:parameters.requestId.get(), entries:entries, unavailable:unavailable]) + '\\n'
+                    parameters.outputFile.get().asFile.withWriterAppend('UTF-8') { writer -> writer.write(line) }
+                } catch (Exception ignored) { }
+            }
+        }
+    ''')
+    def ideRecorder = gradle.sharedServices.registerIfAbsent('ideMethodSources_' + ideMethods.requestId, ideLoader.loadClass('IdeMethodRecorder')) {
+        parameters.outputFile.set(new File(ideMethods.output))
+        parameters.requestId.set(ideMethods.requestId)
+        parameters.inspectorSource.set(new File(ideMethods.inspectorSource))
+    }
+    gradle.projectsEvaluated {
+        gradle.rootProject.allprojects.each { project ->
+            project.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { testTask ->
+                usesService(ideRecorder)
+                afterTest { descriptor, result ->
+                    try {
+                        def source = ideSourceAccessor.invoke(descriptor)
+                        def known = ideMethodSource.isInstance(source)
+                        def row = [outcome:result.resultType.name().toLowerCase(java.util.Locale.ROOT), reportDirectory:testTask.reports.junitXml.outputLocation.get().asFile.canonicalPath,
+                            className:descriptor.className,
+                            sourceClassName:known ? ideMethodSource.getMethod('getClassName').invoke(source) : null,
+                            methodName:known ? ideMethodSource.getMethod('getMethodName').invoke(source) : null]
+                        row.declaringClassName = null
+                        def deferred = false
+                        // Inspect with the actual test JDK, without copying application JVM agents.
+                        try {
+                            def executable = testTask.executable
+                            def testJava = executable == null ? testTask.javaLauncher.get().executablePath.asFile : new File(executable)
+                            def javaName = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).startsWith('windows') ? 'bin/java.exe' : 'bin/java'
+                            def preview = testTask.allJvmArgs.contains('--enable-preview')
+                            if (known && !preview && testJava.canonicalFile == new File(System.getProperty('java.home'), javaName).canonicalFile) {
+                                def compiled = ideRecorder.get().compiledSources(testTask.path,
+                                    testTask.classpath.files.toList(), row.className, row.methodName)
+                                if (compiled != null) row.putAll(compiled)
+                            } else if (known) {
+                                ideRecorder.get().defer(row, [descriptor.name, descriptor.displayName], testTask.path,
+                                    testTask.classpath.files.toList(), testJava, preview)
+                                deferred = true
+                            }
+                        } catch (Exception ignored) { }
+                          catch (LinkageError ignored) { }
+                        // Reporters may use either public name. Conflicting aliases are refused by the reader.
+                        if (!deferred) ideRecorder.get().record(row, [descriptor.name, descriptor.displayName])
+                    } catch (Exception ignored) {
+                        try { ideRecorder.get().refuse() } catch (Exception unavailable) { }
+                    }
+                }
+            }
+        }
+    }
+}

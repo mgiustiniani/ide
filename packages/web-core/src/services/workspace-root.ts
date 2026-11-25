@@ -78,54 +78,46 @@ export function resolveWorkspaceRoot(): string {
   return memoizedWorkspaceRoot;
 }
 
-/** Run a read-only git command; throws when git is missing or the command fails. */
-function runGit(root: string, args: readonly string[]): string {
-  return execFileSync("git", args, {
-    cwd: root,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+const GIT_TIMEOUT_MS = 5_000;
+const GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
+const GIT_UNAVAILABLE = "Git changes are unavailable for this workspace or exceed the review limits.";
+
+/** Bound Git I/O and suppress executable workspace filters and implicit index writes. */
+function runGit(root: string, args: readonly string[], deadline: number): string {
+  const timeout = deadline - Date.now();
+  if (timeout <= 0) throw new Error(GIT_UNAVAILABLE);
+  const env = { ...process.env };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) delete env[key];
+  try {
+    const bytes = execFileSync("git", ["--no-pager", "--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false", ...args], {
+      cwd: root, env, timeout, maxBuffer: GIT_MAX_OUTPUT_BYTES, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "pipe"],
+    });
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch { throw new Error(GIT_UNAVAILABLE); }
 }
 
-/**
- * Parse `git status --porcelain=v1` output into modified/added tracked paths.
- *
- * Only paths whose status columns contain M (modified) or A (added) are kept;
- * untracked (??) and deleted (D) paths are excluded because they are not
- * diffable through the read-only `git diff -- <path>` delegation.
- */
-function parsePorcelainStatusPaths(status: string): readonly string[] {
+function parsePorcelainStatusPaths(status: string, prefix: string): readonly string[] {
+  if (status && !status.endsWith("\0")) throw new Error(GIT_UNAVAILABLE);
+  const records = status.split("\0"); records.pop();
   const paths: string[] = [];
-  for (const rawLine of status.split("\n")) {
-    const line = rawLine.trimEnd();
-    if (line.length < 3) {
-      continue;
-    }
-    const statusColumns = line.slice(0, 2);
-    if (!/[MA]/.test(statusColumns)) {
-      continue;
-    }
-    let path = line.slice(3).trim();
-    const renameSeparator = path.indexOf(" -> ");
-    if (renameSeparator !== -1) {
-      path = path.slice(renameSeparator + 4).trim();
-    }
-    if (path.length > 0) {
-      paths.push(path);
-    }
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index]!;
+    if (record.length < 4 || !/^[ MADRCU?!T]{2} /u.test(record)) throw new Error(GIT_UNAVAILABLE);
+    const code = record.slice(0, 2);
+    if (/[RC]/u.test(code) && records[++index] === undefined) throw new Error(GIT_UNAVAILABLE);
+    if (!/[MA]/u.test(code) || code.includes("D")) continue;
+    const path = record.slice(3);
+    if (!path.startsWith(prefix)) throw new Error(GIT_UNAVAILABLE);
+    const relative = path.slice(prefix.length);
+    if (relative) paths.push(relative);
   }
   return paths;
 }
 
-function listModifiedFilesAt(root: string): readonly string[] {
-  let status: string;
-  try {
-    status = runGit(root, ["status", "--porcelain=v1"]);
-  } catch {
-    // git absent, or the workspace is not a git repository: no modified files.
-    return [];
-  }
-  return parsePorcelainStatusPaths(status);
+function listModifiedFilesAt(root: string, deadline = Date.now() + GIT_TIMEOUT_MS): readonly string[] {
+  const prefix = runGit(root, ["rev-parse", "--show-prefix"], deadline).replace(/\n$/u, "");
+  const status = runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--", "."], deadline);
+  return parsePorcelainStatusPaths(status, prefix);
 }
 
 /** Unified diff hunk header: `@@ -oldStart[,oldLines] +newStart[,newLines] @@`. */
@@ -162,8 +154,8 @@ function computeDiffRange(path: string, hunks: readonly DiffHunk[]): DiffRange {
   let startLine = Number.POSITIVE_INFINITY;
   let endLine = 0;
   for (const hunk of hunks) {
-    const hunkStart = hunk.newStart;
-    const hunkEnd = hunk.newStart + hunk.newLines - 1;
+    const hunkStart = Math.max(1, hunk.newStart);
+    const hunkEnd = Math.max(1, hunk.newStart + Math.max(0, hunk.newLines - 1));
     if (hunkStart < startLine) {
       startLine = hunkStart;
     }
@@ -175,54 +167,18 @@ function computeDiffRange(path: string, hunks: readonly DiffHunk[]): DiffRange {
 }
 
 function produceDiffAt(root: string, filePath: string): DiffReviewOutcome {
-  // extract: only modified/added tracked paths are reviewable
-  const modifiedPaths = listModifiedFilesAt(root);
-  if (!modifiedPaths.includes(filePath)) {
-    return {
-      kind: "unavailable",
-      reason: `not a modified working-tree file: ${filePath}`,
-    };
-  }
-
-  // delegate: read-only git diff for one path
-  let diffText: string;
+  const deadline = Date.now() + GIT_TIMEOUT_MS;
   try {
-    diffText = runGit(root, ["diff", "--no-ext-diff", "--unified=3", "--", filePath]);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    return {
-      kind: "unavailable",
-      reason: `git diff failed for ${filePath}: ${detail}`,
-    };
-  }
-
-  // response: hunk-level diff with line-range metadata
-  const hunks = parseUnifiedDiffHunks(diffText);
-  if (hunks.length === 0) {
-    return {
-      kind: "unavailable",
-      reason: `git diff produced no hunk-level changes for ${filePath}`,
-    };
-  }
-
-  return {
-    kind: "ok",
-    diff: {
-      path: filePath,
-      hunks,
-      range: computeDiffRange(filePath, hunks),
-      readOnly: true,
-    },
-  };
+    if (!listModifiedFilesAt(root, deadline).includes(filePath))
+      return { kind: "unavailable", reason: "The selected file has no reviewable tracked changes." };
+    const diffText = runGit(root, ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", "--", filePath], deadline);
+    const hunks = parseUnifiedDiffHunks(diffText);
+    if (!hunks.length) return { kind: "unavailable", reason: "No unstaged text changes are available for this file." };
+    return { kind: "ok", diff: { path: filePath, hunks, range: computeDiffRange(filePath, hunks), readOnly: true } };
+  } catch { return { kind: "unavailable", reason: GIT_UNAVAILABLE }; }
 }
 
-/**
- * Create a read-only git diff-review source rooted at `root`.
- *
- * All git commands run with `cwd: root` and never mutate the working tree:
- * only `git status --porcelain` and `git diff --no-ext-diff --unified=3` are
- * used, both of which are strictly read-only.
- */
+/** Create a bounded working-tree review source; errors never imply a clean repository. */
 export function createReadOnlyGitDiffSource(root: string): ReadOnlyGitDiffSource {
   return {
     listModifiedFiles(): readonly string[] {

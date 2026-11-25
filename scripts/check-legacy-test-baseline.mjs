@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -25,35 +26,41 @@ for (const relativePath of missingFiles) {
 }
 
 const vitestEntry = path.join(repositoryRoot, "node_modules/vitest/vitest.mjs");
+const collectionDirectory = mkdtempSync(path.join(tmpdir(), "legacy-test-baseline-"));
+const collectionPath = path.join(collectionDirectory, "tests.json");
 const collection = spawnSync(
   process.execPath,
-  [vitestEntry, "list", "--config", "vitest.config.ts", "--json"],
+  [vitestEntry, "list", "--config", "vitest.config.ts", "--json", collectionPath],
   { cwd: repositoryRoot, encoding: "utf8" },
 );
 
-if (collection.status !== 0) {
-  process.stderr.write(collection.stdout);
-  process.stderr.write(collection.stderr);
-  failures.push(`Vitest collection failed with exit code ${collection.status ?? "unknown"}`);
-} else {
-  try {
-    const parsed = JSON.parse(collection.stdout);
-    const collected = Array.isArray(parsed) ? parsed : parsed.tests;
-    if (!Array.isArray(collected)) {
-      throw new TypeError("Vitest JSON did not contain a test array");
+try {
+  if (collection.status !== 0) {
+    process.stderr.write(collection.stdout);
+    process.stderr.write(collection.stderr);
+    failures.push(`Vitest collection failed with exit code ${collection.status ?? "unknown"}`);
+  } else {
+    try {
+      const parsed = JSON.parse(readFileSync(collectionPath, "utf8"));
+      const collected = Array.isArray(parsed) ? parsed : parsed.tests;
+      if (!Array.isArray(collected)) {
+        throw new TypeError("Vitest JSON did not contain a test array");
+      }
+      if (collected.length < manifest.collectedTests) {
+        failures.push(
+          `collected test count fell below the ${manifest.collectedTests}-test baseline: ${collected.length}`,
+        );
+      } else {
+        console.log(
+          `Legacy collection: ${collected.length} tests (baseline ${manifest.collectedTests}; additions allowed).`,
+        );
+      }
+    } catch (error) {
+      failures.push(`could not parse Vitest collection JSON: ${error.message}`);
     }
-    if (collected.length < manifest.collectedTests) {
-      failures.push(
-        `collected test count fell below the ${manifest.collectedTests}-test baseline: ${collected.length}`,
-      );
-    } else {
-      console.log(
-        `Legacy collection: ${collected.length} tests (baseline ${manifest.collectedTests}; additions allowed).`,
-      );
-    }
-  } catch (error) {
-    failures.push(`could not parse Vitest collection JSON: ${error.message}`);
   }
+} finally {
+  rmSync(collectionDirectory, { recursive: true, force: true });
 }
 
 if (failures.length > 0) {

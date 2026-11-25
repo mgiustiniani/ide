@@ -149,7 +149,7 @@ export function App(): JSX.Element {
     terminalViewModel.connect();
 
     // Start a simulated shell session.
-    terminalStore.getState().setSessionActive(true);
+    terminalStore.getState().setSessionActive(false);
     terminalStore.getState().setLoading(false);
     terminalAdapter.startSession();
 

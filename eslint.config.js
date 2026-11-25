@@ -30,6 +30,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/.turbo/**",
       "**/coverage/**",
+      "**/test-output/**",
       "**/test-results/**",
       "**/target/**",
       "**/*.d.ts",

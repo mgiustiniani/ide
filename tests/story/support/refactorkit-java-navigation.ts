@@ -48,16 +48,15 @@
 //     navigation capability is absent (TRUE) -> PASS.
 //   - AC-004: web-first layers stay Tauri-free and capability access is through
 //     ports (TRUE) -> PASS (static).
-//   - AC-005: feature stays @not-implemented (live Tauri-window navigation E2E is
-//     unvalidated headless), requirement unique/reconciled, and production presence
-//     (controllerJavaPathWired=true) does not silently promote the status (TRUE) ->
-//     PASS (static).
+//   - AC-005: qualified native navigation supports @partial, while browser
+//     availability and clean-provider/platform acceptance remain limited; this
+//     harness does not change the declared status (TRUE) -> PASS (static).
 //
 // Evidence boundaries: this GREEN is driven through a deterministic in-process
 // boundary behind the REAL adapter and the REAL controller — it exercises the
-// controller/adapter/port/engine wiring but NOT a live external engine CLI, no
-// native GUI, no E2E, and no packaging. Those are reported separately and the
-// feature stays @not-implemented until live E2E validation.
+// controller/adapter/port/engine wiring but NOT a live external engine CLI, a
+// native GUI, or packaging. Separate native acceptance qualifies only the local
+// source-built provider and does not close browser or release coverage.
 // -----------------------------------------------------------------------------
 
 import assert from "node:assert/strict";
@@ -174,6 +173,10 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(MODULE_DIR, "../../..");
 const WEB_FIRST_LAYERS = ["packages/ui", "packages/web-core", "apps/web"] as const;
 const FEATURE_PATH = join(REPO_ROOT, "features/refactorkit/java-navigation.feature");
+const NATIVE_CURSOR_FEATURE_PATH = join(
+  REPO_ROOT,
+  "features/refactorkit/native-java-cursor-navigation.feature",
+);
 const PORT_PATH = join(REPO_ROOT, "packages/web-core/src/ports/refactorkit-port.ts");
 const ADAPTER_PATH = join(REPO_ROOT, "packages/tauri-adapters/src/refactorkit-tauri.ts");
 const REAL_ENGINE_PATH = join(
@@ -269,7 +272,8 @@ type EngineMode = "advertised" | "unavailable";
 class JavaNavigationEngineBoundary implements TauriInternals {
   #mode: EngineMode = "advertised";
   #sequence = 0;
-  readonly invocations: { sequence: number; command: string; args?: Record<string, unknown> }[] = [];
+  readonly invocations: { sequence: number; command: string; args?: Record<string, unknown> }[] =
+    [];
 
   /** Switch the boundary between advertised / unavailable engine states. */
   setMode(mode: EngineMode): void {
@@ -278,11 +282,7 @@ class JavaNavigationEngineBoundary implements TauriInternals {
 
   async invoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
     const sequence = ++this.#sequence;
-    this.invocations.push(
-      args === undefined
-        ? { sequence, command }
-        : { sequence, command, args },
-    );
+    this.invocations.push(args === undefined ? { sequence, command } : { sequence, command, args });
     switch (command) {
       case "get_refactorkit_status":
         return this.#statusWire();
@@ -449,10 +449,6 @@ function walkFeatureFiles(dir: string): string[] {
     else if (entry.name.endsWith(".feature")) results.push(full);
   }
   return results;
-}
-
-async function flushMicrotasks(rounds = 30): Promise<void> {
-  for (let index = 0; index < rounds; index += 1) await Promise.resolve();
 }
 
 /**
@@ -738,7 +734,8 @@ export class RefactorKitJavaNavigationStorySession {
       controller.javaError !== null ||
       controller.javaAvailability === "unavailable" ||
       controller.javaAvailability === "error";
-    this.#fabricatedDefinition = controller.javaResult !== null && controller.javaResult.success === true;
+    this.#fabricatedDefinition =
+      controller.javaResult !== null && controller.javaResult.success === true;
     this.#fabricatedReferenceList = false;
     this.#fabricatedSuccess = controller.javaResult?.success === true;
     this.#fallbackRewrite = false;
@@ -866,6 +863,18 @@ export class RefactorKitJavaNavigationStorySession {
     return { unique: filesWithRequirement === 1, occurrences };
   }
 
+  /** AC-005: the separately scoped native cursor requirement remains partial. */
+  nativeCursorRequirementIsPartial(): boolean {
+    this.#assertStarted();
+    const text = readFileSync(NATIVE_CURSOR_FEATURE_PATH, "utf8");
+    const header = text.split(/^\s*Feature:/mu, 1)[0] ?? "";
+    const tagLines = header.split("\n").filter((line) => /^\s*@/u.test(line));
+    return tagLines.some((line) =>
+      line.split(/\s+/u).includes("@REQ-IDE-JAVA-CURSOR-NAVIGATION-NATIVE-001") &&
+      line.split(/\s+/u).includes("@partial"),
+    );
+  }
+
   /**
    * AC-005: honest production-presence evidence. The engine defines
    * run_engine_definition / run_engine_references, the real adapter delegates
@@ -873,13 +882,11 @@ export class RefactorKitJavaNavigationStorySession {
    * WIRED — useRefactorKitSymbolNavigationController routes engine definition/
    * references results through navigateToPoint -> documentNavigation.navigateToLocation
    * + editor.revealRequest. Presence does not promote the declared status; AC-005
-   * reconciles @not-implemented because live Tauri-window navigation E2E is
-   * unvalidated headless.
+   * reconciles @partial based on the separately scoped native cursor acceptance.
    */
   productionGap(): ProductionGap {
     const realEngineText = readFileSync(REAL_ENGINE_PATH, "utf8");
     const adapterText = readFileSync(ADAPTER_PATH, "utf8");
-    const portText = readFileSync(PORT_PATH, "utf8");
 
     const engineDefinesDefinitionReferencesCommands =
       /run_engine_definition/u.test(realEngineText) &&
@@ -927,8 +934,7 @@ export class RefactorKitJavaNavigationStorySession {
       return (
         /resolveJavaDefinition|resolveJavaReferences|\.definition\(|\.references\(|run_refactorkit_engine_definition|run_refactorkit_engine_references/u.test(
           text,
-        ) &&
-        /navigateToLocation|revealRequest|revealPositionInCenter/u.test(text)
+        ) && /navigateToLocation|revealRequest|revealPositionInCenter/u.test(text)
       );
     });
   }
@@ -993,7 +999,7 @@ export class RefactorKitJavaNavigationStorySession {
     return {
       requirement: REQUIREMENT,
       phase: "story-green",
-      declaredStatus: "@not-implemented",
+      declaredStatus: "@partial",
       evidenceKind: "tauri-harness",
       nativeGui: false,
       e2e: false,
@@ -1079,7 +1085,12 @@ export class RefactorKitJavaNavigationStorySession {
   #referencesPresented(): boolean {
     const controller = this.#controller();
     const result = controller?.javaResult;
-    return result !== null && result !== undefined && result.success === true && result.locations.length > 0;
+    return (
+      result !== null &&
+      result !== undefined &&
+      result.success === true &&
+      result.locations.length > 0
+    );
   }
 
   #controller(): RefactorKitSymbolNavigationController | undefined {
@@ -1197,7 +1208,10 @@ export class RefactorKitJavaNavigationStorySession {
       ["Event", window.Event],
       ["CustomEvent", window.CustomEvent],
       ["getComputedStyle", window.getComputedStyle.bind(window)],
-      ["requestAnimationFrame", (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0)],
+      [
+        "requestAnimationFrame",
+        (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0),
+      ],
       ["cancelAnimationFrame", () => undefined],
       [
         "ResizeObserver",

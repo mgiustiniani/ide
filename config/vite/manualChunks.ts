@@ -63,6 +63,7 @@ export function manualChunks(id: string): string | undefined {
 
   if (
     normalizedId.endsWith("/packages/ui/src/components/Editor/MonacoCodeEditor.tsx") ||
+    normalizedId.endsWith("/packages/ui/src/components/Editor/javaNavigation.ts") ||
     normalizedId.endsWith("/packages/ui/src/components/Editor/monacoLanguage.ts") ||
     normalizedId.includes("/packages/ui/src/monaco/")
   ) {

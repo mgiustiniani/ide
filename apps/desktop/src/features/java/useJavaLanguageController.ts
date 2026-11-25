@@ -1,6 +1,36 @@
 import type {
+  JavaFormatterProfile,
+  JavaGradleSettings,
   JavaCompletionRequest,
   JavaCompletionResponse,
+  JavaFormattingRequest,
+  JavaFormattingResponse,
+  JavaRangeFormattingRequest,
+  JavaOnTypeFormattingRequest,
+  JavaRangeFormattingResponse,
+  JavaCodeActionsRequest,
+  JavaCodeActionApplyRequest,
+  JavaCodeActionsResponse,
+  JavaRenameRequest,
+  JavaRenameResponse,
+  JavaRenameDocumentEdits,
+  JavaDocumentSymbolsResponse,
+  JavaDocumentHighlightsRequest,
+  JavaDocumentHighlightsResponse,
+  JavaDefinitionsRequest,
+  JavaDefinitionsResponse,
+  JavaImplementationsRequest,
+  JavaImplementationsResponse,
+  JavaCallHierarchyRequest,
+  JavaCallHierarchyResponse,
+  JavaReferencesRequest,
+  JavaReferencesResponse,
+  JavaSemanticTokensRequest,
+  JavaSemanticTokensResponse,
+  JavaInlayHintsRequest,
+  JavaInlayHintsResponse,
+  JavaWorkspaceSymbolsRequest,
+  JavaWorkspaceSymbolsResponse,
   JavaHoverRequest,
   JavaHoverResponse,
   JavaSignatureHelpRequest,
@@ -19,6 +49,37 @@ import type {
 } from "@ide/web-core/ports";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+function copyCodeActionsRequest(request: JavaCodeActionsRequest): JavaCodeActionsRequest {
+  return {
+    workspaceId: request.workspaceId,
+    generation: request.generation,
+    document: { ...request.document },
+    position: { ...request.position },
+    range: { start: { ...request.range.start }, end: { ...request.range.end } },
+    diagnostics: request.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      range: { start: { ...diagnostic.range.start }, end: { ...diagnostic.range.end } },
+    })),
+    ...(request.generationSelection
+      ? {
+          generationSelection: {
+            kind: request.generationSelection.kind,
+            selectedFieldBindingKeys: [...request.generationSelection.selectedFieldBindingKeys],
+            selectedConstructorBindingKeys: [
+              ...request.generationSelection.selectedConstructorBindingKeys,
+            ],
+            selectedOverridableMethodKeys: [
+              ...request.generationSelection.selectedOverridableMethodKeys,
+            ],
+            selectedDelegateMethodKeys: [...request.generationSelection.selectedDelegateMethodKeys],
+          },
+        }
+      : {}),
+    requestId: request.requestId,
+    cancellationId: request.cancellationId,
+  };
+}
+
 const JAVA_CHANGE_DEBOUNCE_MS = 200;
 const INITIAL_DOCUMENT_VERSION = 1;
 const READY_SESSION_STATES = new Set(["ready", "indexing", "degraded"]);
@@ -31,8 +92,15 @@ const EMPTY_CAPABILITIES: LanguageServiceCapabilities = Object.freeze({
   definition: false,
   references: false,
   symbols: false,
+  documentSymbols: false,
+  documentHighlights: false,
+  implementation: false,
+  workspaceSymbols: false,
+  semanticTokens: false,
+  inlayHints: false,
   codeActions: false,
   formatting: false,
+  rangeFormatting: false,
   rename: false,
   hierarchy: false,
 });
@@ -51,11 +119,36 @@ export interface UseJavaLanguageControllerDependencies {
   languageSession: LanguageSessionPort;
   documentSync: DocumentSyncPort;
   javaIntelligence: JavaIntelligencePort;
+  /** Atomically commit validated semantic workspace edits into current draft buffers. */
+  applySemanticWorkspaceEdit?(
+    edits: readonly JavaRenameDocumentEdits[],
+    capturedDocuments: ReadonlyMap<string, { uri: string; version: number; text: string }>,
+  ): boolean | Promise<boolean>;
+  /** Open an affected file without moving focus or saving any draft. */
+  openSemanticDocument?(path: string, isCurrent: () => boolean): Promise<boolean>;
   workspaceInfo: WorkspaceInfo | null;
   workspaceGeneration: number;
   getEditorState: () => JavaLanguageEditorState;
   /** Only a document accepted as ready by the editor-open controller may receive semantics. */
   readyActiveDocument: ReadyJavaEditorDocument | null;
+  /** Selected project JDK, independent of the language-server process runtime. */
+  projectJdkHome?: string;
+  /** Optional global JDK home used to launch JDT LS, independent of the project JDK. */
+  serverJdkHome?: string;
+  /** Session-only user authorization for the JDT LS Gradle importer. */
+  gradleImportEnabled: boolean;
+  /** Selected Gradle settings to apply when the importer is explicitly authorized. */
+  gradle?: JavaGradleSettings;
+  /** Workspace-relative project selected in the Java Project panel. */
+  projectPath: string;
+  /** Selected Maven local repository used by builds and JDT LS project import. */
+  mavenRepository: string;
+  /** Maven profiles selected in the current RefactorKit project settings. */
+  activeMavenProfiles: string[];
+  /** Maven profiles excluded in the current RefactorKit project settings. */
+  inactiveMavenProfiles: string[];
+  /** Optional workspace Eclipse formatter profile configured in Editor settings. */
+  javaFormatterProfile?: JavaFormatterProfile;
 }
 
 type SynchronizedJavaDocument = {
@@ -100,22 +193,29 @@ export interface JavaLanguageController {
   activate(path: string, text: string): Promise<void>;
   queueChange(path: string, text: string): void;
   flush(path: string): Promise<void>;
+  synchronizeEditorDocument(path: string): Promise<void>;
   notifySaved(path: string): Promise<void>;
   closeDocument(path: string): Promise<void>;
   activeDiagnostics: readonly LanguageDiagnostic[];
+  diagnosticUnavailableMessage?: string;
   activeDiagnosticDocument: LanguageServiceDiagnosticsEvent["document"] | undefined;
   activeDiagnosticOwner: string;
   problemItems: readonly ProblemItem[];
   javaSemantics: JavaEditorSemantics | undefined;
   hasJavaContext: boolean;
   capabilities: LanguageServiceCapabilities;
+  searchWorkspaceSymbols(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<JavaWorkspaceSymbolsResponse>;
+  cancelWorkspaceSymbolSearch(): void;
 }
 
 function isJavaPath(path: string | null | undefined): path is string {
   return Boolean(path && path.toLowerCase().endsWith(".java"));
 }
 
-function createWorkspaceFileUri(rootPath: string, relativePath: string): string {
+export function createWorkspaceFileUri(rootPath: string, relativePath: string): string {
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
   const normalizedRelative = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
   const absolutePath = `${normalizedRoot}/${normalizedRelative}`;
@@ -141,10 +241,63 @@ function failedStatus(
     provider: "jdt-ls",
     workspaceId,
     generation,
+    gradleImportEnabled: false,
+    gradleSettingsConfigured: false,
+    activeMavenProfiles: [],
+    inactiveMavenProfiles: [],
     capabilities: EMPTY_CAPABILITIES,
     lastError: message,
     checkedAt: new Date().toISOString(),
   };
+}
+
+function sameMavenProfiles(
+  status: LanguageServiceStatus,
+  active: readonly string[],
+  inactive: readonly string[],
+): boolean {
+  return (
+    JSON.stringify(status.activeMavenProfiles) === JSON.stringify(active) &&
+    JSON.stringify(status.inactiveMavenProfiles) === JSON.stringify(inactive)
+  );
+}
+
+function sameProjectPath(status: LanguageServiceStatus, projectPath: string): boolean {
+  return status.projectPath === projectPath;
+}
+
+function sameMavenRepository(status: LanguageServiceStatus, repository: string): boolean {
+  return (status.mavenRepository ?? "") === repository;
+}
+
+function formatterProfileSignature(profile?: JavaFormatterProfile): string {
+  return JSON.stringify(profile ?? null);
+}
+
+function sameFormatterProfile(
+  status: LanguageServiceStatus,
+  profile?: JavaFormatterProfile,
+): boolean {
+  return (
+    formatterProfileSignature(status.javaFormatterProfile) === formatterProfileSignature(profile)
+  );
+}
+
+function gradleSettingsSignature(settings?: JavaGradleSettings): string {
+  if (!settings) return "";
+  const projectProperties = Object.fromEntries(
+    Object.entries(settings.projectProperties).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return JSON.stringify({
+    executable: settings.executable,
+    userHome: settings.userHome,
+    gradleRuntimeHome: settings.gradleRuntimeHome ?? "",
+    projectProperties,
+  });
+}
+
+function mavenProfileSignature(active: readonly string[], inactive: readonly string[]): string {
+  return JSON.stringify([active, inactive]);
 }
 
 function staleSemanticFailure(requestId: string) {
@@ -184,11 +337,23 @@ export function useJavaLanguageController(
   const workspaceIdRef = useRef<string | null>(null);
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
   const statusRef = useRef<LanguageServiceStatus | null>(null);
+  const sessionGradleSettingsSignatureRef = useRef<string | null>(dependencies.gradle ? null : "");
   const diagnosticsRef = useRef<Map<string, LanguageServiceDiagnosticsEvent>>(new Map());
   const documentsRef = useRef<Map<string, SynchronizedJavaDocument>>(new Map());
+  const activeWorkspaceEditsRef = useRef(new Map<string, { cancelled: boolean }>());
   const startupsRef = useRef<Map<string, JavaDocumentStartup>>(new Map());
   const syncEpochRef = useRef(0);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const workspaceSymbolRequestSequenceRef = useRef(0);
+  const workspaceSymbolCancellationIdRef = useRef<string | null>(null);
+
+  const cancelWorkspaceSymbolSearch = useCallback((): void => {
+    const cancellationId = workspaceSymbolCancellationIdRef.current;
+    workspaceSymbolCancellationIdRef.current = null;
+    if (cancellationId) {
+      void dependenciesRef.current.javaIntelligence.cancel(cancellationId).catch(() => undefined);
+    }
+  }, []);
 
   const [status, setStatus] = useState<LanguageServiceStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +377,7 @@ export function useJavaLanguageController(
   }, []);
 
   const invalidateDocuments = useCallback((): void => {
+    cancelWorkspaceSymbolSearch();
     for (const document of documentsRef.current.values()) {
       if (document.changeTimer) clearTimeout(document.changeTimer);
       document.open = false;
@@ -221,7 +387,7 @@ export function useJavaLanguageController(
     startupsRef.current.clear();
     publishSemanticRevision();
     clearDiagnostics();
-  }, [clearDiagnostics, publishSemanticRevision]);
+  }, [cancelWorkspaceSymbolSearch, clearDiagnostics, publishSemanticRevision]);
 
   const flushCurrentDocument = useCallback(async (path: string): Promise<void> => {
     const document = documentsRef.current.get(path);
@@ -265,6 +431,15 @@ export function useJavaLanguageController(
               }
               throw syncError;
             }
+            if (
+              documentsRef.current.get(path) === document && document.open && !document.closing &&
+              document.version === version && document.pendingText === undefined
+            ) {
+              await dependenciesRef.current.documentSync.revalidate?.({
+                document: { workspaceId: document.workspaceId, path: document.path,
+                  uri: document.uri, version },
+              });
+            }
           });
         document.changeQueue = send;
       }
@@ -305,6 +480,155 @@ export function useJavaLanguageController(
     [flushCurrentDocument, waitForCurrentStartup],
   );
 
+  const searchWorkspaceSymbols = useCallback(
+    async (query: string, signal?: AbortSignal): Promise<JavaWorkspaceSymbolsResponse> => {
+      cancelWorkspaceSymbolSearch();
+      const workspace = workspaceInfoRef.current;
+      const status = statusRef.current;
+      const normalizedQuery = query.trim();
+      if (
+        !workspace?.id ||
+        !status ||
+        status.workspaceId !== workspace.id ||
+        !READY_SESSION_STATES.has(status.state) ||
+        status.projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+        (status.serverJdkHome ?? "") !== (dependenciesRef.current.serverJdkHome ?? "") ||
+        status.gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+        status.gradleSettingsConfigured !== Boolean(dependenciesRef.current.gradle) ||
+        !sameMavenProfiles(
+          status,
+          dependenciesRef.current.activeMavenProfiles,
+          dependenciesRef.current.inactiveMavenProfiles,
+        ) ||
+        !sameProjectPath(status, dependenciesRef.current.projectPath) ||
+        !sameMavenRepository(status, dependenciesRef.current.mavenRepository) ||
+        !sameFormatterProfile(status, dependenciesRef.current.javaFormatterProfile) ||
+        sessionGradleSettingsSignatureRef.current !==
+          gradleSettingsSignature(dependenciesRef.current.gradle) ||
+        !status.capabilities.workspaceSymbols ||
+        !normalizedQuery ||
+        normalizedQuery.length > 256 ||
+        /[\u0000-\u001f\u007f]/.test(query)
+      ) {
+        return unavailableSemanticFailure(`workspace-symbol-${Date.now().toString(36)}`);
+      }
+
+      workspaceSymbolRequestSequenceRef.current += 1;
+      const sequence = workspaceSymbolRequestSequenceRef.current;
+      const requestId = `desktop-java-workspace-symbols-${Date.now().toString(36)}-${sequence}`;
+      const cancellationId = `desktop-java-workspace-symbols-cancel-${Date.now().toString(36)}-${sequence}`;
+      const request: JavaWorkspaceSymbolsRequest = {
+        workspaceId: workspace.id,
+        generation: status.generation,
+        query: normalizedQuery,
+        requestId,
+        cancellationId,
+      };
+      workspaceSymbolCancellationIdRef.current = cancellationId;
+      const workspaceGeneration = workspaceGenerationRef.current;
+      const current = () =>
+        mountedRef.current &&
+        workspaceIdRef.current === workspace.id &&
+        workspaceGenerationRef.current === workspaceGeneration &&
+        workspaceSymbolCancellationIdRef.current === cancellationId &&
+        statusRef.current?.workspaceId === workspace.id &&
+        statusRef.current?.generation === status.generation &&
+        statusRef.current.projectJdkHome === dependenciesRef.current.projectJdkHome &&
+        (statusRef.current.serverJdkHome ?? "") === (dependenciesRef.current.serverJdkHome ?? "") &&
+        statusRef.current?.gradleImportEnabled === dependenciesRef.current.gradleImportEnabled &&
+        statusRef.current?.gradleSettingsConfigured === Boolean(dependenciesRef.current.gradle) &&
+        sameMavenProfiles(
+          statusRef.current,
+          dependenciesRef.current.activeMavenProfiles,
+          dependenciesRef.current.inactiveMavenProfiles,
+        ) &&
+        sameProjectPath(statusRef.current, dependenciesRef.current.projectPath) &&
+        sameMavenRepository(statusRef.current, dependenciesRef.current.mavenRepository) &&
+        sameFormatterProfile(statusRef.current, dependenciesRef.current.javaFormatterProfile) &&
+        sessionGradleSettingsSignatureRef.current ===
+          gradleSettingsSignature(dependenciesRef.current.gradle) &&
+        statusRef.current.capabilities.workspaceSymbols === true;
+
+      const cancelIfCurrent = () => {
+        if (workspaceSymbolCancellationIdRef.current === cancellationId)
+          cancelWorkspaceSymbolSearch();
+      };
+      signal?.addEventListener("abort", cancelIfCurrent, { once: true });
+      if (signal?.aborted) cancelIfCurrent();
+
+      const documentSnapshot = () =>
+        [...documentsRef.current.values()]
+          .filter(
+            (document) =>
+              document.open &&
+              !document.closing &&
+              document.workspaceId === workspace.id &&
+              document.generation === status.generation,
+          )
+          .map((document) => ({
+            path: document.path,
+            version: document.version,
+            syncEpoch: document.syncEpoch,
+          }))
+          .sort((left, right) => left.path.localeCompare(right.path));
+
+      try {
+        if (signal?.aborted) return staleSemanticFailure(requestId);
+        let flushedDocuments: ReturnType<typeof documentSnapshot> = [];
+        let synchronized = false;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const beforeFlush = documentSnapshot();
+          await Promise.all(beforeFlush.map(({ path }) => flushCurrentDocument(path)));
+          if (!current()) return staleSemanticFailure(requestId);
+          flushedDocuments = documentSnapshot();
+          if (JSON.stringify(beforeFlush) === JSON.stringify(flushedDocuments)) {
+            synchronized = true;
+            break;
+          }
+        }
+        if (!synchronized) return staleSemanticFailure(requestId);
+        const sameDocuments = () =>
+          JSON.stringify(documentSnapshot()) === JSON.stringify(flushedDocuments);
+        if (!current() || !sameDocuments()) return staleSemanticFailure(requestId);
+
+        const response = await dependenciesRef.current.javaIntelligence.workspaceSymbols(request);
+        if (!current() || !sameDocuments()) return staleSemanticFailure(requestId);
+        if (response.requestId !== requestId) {
+          return {
+            ok: false,
+            requestId,
+            error: {
+              kind: "malformed-result",
+              summary: "Java workspace-symbol provider returned a mismatched request ID",
+            },
+          };
+        }
+        if (
+          response.ok &&
+          (response.result.workspaceId !== request.workspaceId ||
+            response.result.generation !== request.generation)
+        ) {
+          return {
+            ok: false,
+            requestId,
+            error: {
+              kind: "malformed-result",
+              summary: "Java workspace-symbol provider returned mismatched workspace metadata",
+            },
+          };
+        }
+        return response;
+      } catch {
+        return current() ? unavailableSemanticFailure(requestId) : staleSemanticFailure(requestId);
+      } finally {
+        signal?.removeEventListener("abort", cancelIfCurrent);
+        if (workspaceSymbolCancellationIdRef.current === cancellationId)
+          workspaceSymbolCancellationIdRef.current = null;
+      }
+    },
+    [cancelWorkspaceSymbolSearch, flushCurrentDocument],
+  );
+
   const closeCurrentDocument = useCallback(
     async (path: string): Promise<void> => {
       const document = documentsRef.current.get(path);
@@ -322,7 +646,8 @@ export function useJavaLanguageController(
           console.warn("[App] Java document change flush failed during cleanup", { path });
         }
         if (document.open) {
-          await flushCurrentDocument(path);
+          if (document.pendingText !== undefined || document.sentVersion !== document.version)
+            await flushCurrentDocument(path);
           document.open = false;
           await dependenciesRef.current.documentSync.didClose({
             document: {
@@ -354,15 +679,21 @@ export function useJavaLanguageController(
   );
 
   const closeAll = useCallback(async (): Promise<void> => {
+    cancelWorkspaceSymbolSearch();
     // Invalidate unresolved status/start/didOpen work before taking the cleanup snapshot. A stale
     // didOpen completion performs its own best-effort close and cannot repopulate this map.
     syncEpochRef.current += 1;
     startupsRef.current.clear();
     publishSemanticRevision();
+    clearDiagnostics();
     const paths = [...documentsRef.current.keys()];
     await Promise.all(paths.map(closeCurrentDocument));
-    clearDiagnostics();
-  }, [clearDiagnostics, closeCurrentDocument, publishSemanticRevision]);
+  }, [
+    cancelWorkspaceSymbolSearch,
+    clearDiagnostics,
+    closeCurrentDocument,
+    publishSemanticRevision,
+  ]);
 
   const applyStatus = useCallback(
     (next: LanguageServiceStatus, workspaceId: string, workspaceGeneration: number): boolean => {
@@ -373,6 +704,24 @@ export function useJavaLanguageController(
       ) {
         return false;
       }
+      if (
+        READY_SESSION_STATES.has(next.state) &&
+        (next.projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+          (next.serverJdkHome ?? "") !== (dependenciesRef.current.serverJdkHome ?? "") ||
+          next.gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+          next.gradleSettingsConfigured !== Boolean(dependenciesRef.current.gradle) ||
+          !sameMavenProfiles(
+            next,
+            dependenciesRef.current.activeMavenProfiles,
+            dependenciesRef.current.inactiveMavenProfiles,
+          ) ||
+          !sameProjectPath(next, dependenciesRef.current.projectPath) ||
+          !sameMavenRepository(next, dependenciesRef.current.mavenRepository) ||
+          !sameFormatterProfile(next, dependenciesRef.current.javaFormatterProfile) ||
+          sessionGradleSettingsSignatureRef.current !==
+            gradleSettingsSignature(dependenciesRef.current.gradle))
+      )
+        return false;
 
       const current = statusRef.current;
       if (current?.workspaceId === workspaceId && next.generation < current.generation)
@@ -380,9 +729,10 @@ export function useJavaLanguageController(
       if (
         current?.workspaceId === workspaceId &&
         (next.generation !== current.generation ||
-          next.state === "stopped" ||
-          next.state === "unavailable")
+          (next.state !== current.state &&
+            (next.state === "stopped" || next.state === "unavailable")))
       ) {
+        // Repeated reports of the stopped generation must not cancel its pending startup.
         invalidateDocuments();
       }
       statusRef.current = next;
@@ -504,7 +854,8 @@ export function useJavaLanguageController(
             document.syncEpoch !== syncEpochRef.current ||
             event.document.workspaceId !== document.workspaceId ||
             event.document.path !== document.path ||
-            event.document.uri !== document.uri
+            event.document.uri !== document.uri ||
+            event.document.version !== document.version
           ) {
             return;
           }
@@ -537,11 +888,24 @@ export function useJavaLanguageController(
         existing.generation === statusRef.current?.generation &&
         existing.syncEpoch === syncEpoch
       ) {
+        // Buffer replacement (for example, an explicit discard in the editor) can change
+        // the text while the language document remains open. Keep the existing LSP document
+        // synchronized instead of treating activation as a no-op.
+        if (existing.text !== text) {
+          existing.version += 1;
+          existing.text = text;
+          existing.pendingText = text;
+          existing.pendingVersion = existing.version;
+          publishSemanticRevision();
+          await flushCurrentDocument(path);
+        }
         return;
       }
-      const startupKey = JSON.stringify([workspace.id, initialSessionGeneration, path, syncEpoch]);
+      // A pending open still owns the path after the first session status arrives.
+      // Session retirement invalidates the synchronization epoch and clears these entries.
+      const startupKey = JSON.stringify([workspace.id, path]);
       const pending = startupsRef.current.get(startupKey);
-      if (pending) return pending.promise;
+      if (pending?.syncEpoch === syncEpoch) return pending.promise;
 
       let sessionGeneration = initialSessionGeneration;
       const tokenIsCurrent = (): boolean =>
@@ -550,27 +914,84 @@ export function useJavaLanguageController(
         syncEpochRef.current === syncEpoch &&
         (sessionGeneration === 0 || statusRef.current?.generation === sessionGeneration);
 
-      const startupPromise = (async () => {
+      const openDocument = async () => {
+        if (!tokenIsCurrent()) return;
         let nextStatus = await dependenciesRef.current.languageSession.getStatus({
           workspaceId: workspace.id,
         });
         if (!tokenIsCurrent()) return;
+        if (
+          nextStatus.state === "stopped" ||
+          (READY_SESSION_STATES.has(nextStatus.state) &&
+            (nextStatus.projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+              (nextStatus.serverJdkHome ?? "") !== (dependenciesRef.current.serverJdkHome ?? "") ||
+              nextStatus.gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+              nextStatus.gradleSettingsConfigured !== Boolean(dependenciesRef.current.gradle) ||
+              !sameMavenProfiles(
+                nextStatus,
+                dependenciesRef.current.activeMavenProfiles,
+                dependenciesRef.current.inactiveMavenProfiles,
+              ) ||
+              !sameProjectPath(nextStatus, dependenciesRef.current.projectPath) ||
+              !sameMavenRepository(nextStatus, dependenciesRef.current.mavenRepository) ||
+              !sameFormatterProfile(nextStatus, dependenciesRef.current.javaFormatterProfile) ||
+              sessionGradleSettingsSignatureRef.current !==
+                gradleSettingsSignature(dependenciesRef.current.gradle)))
+        ) {
+          const requestId = ++lifecycleRequestRef.current;
+          const projectJdkHome = dependenciesRef.current.projectJdkHome;
+          const serverJdkHome = dependenciesRef.current.serverJdkHome;
+          const gradleImportEnabled = dependenciesRef.current.gradleImportEnabled;
+          const gradle = dependenciesRef.current.gradle
+            ? structuredClone(dependenciesRef.current.gradle)
+            : undefined;
+          const gradleSignature = gradleSettingsSignature(gradle);
+          const projectPath = dependenciesRef.current.projectPath;
+          const mavenRepository = dependenciesRef.current.mavenRepository;
+          const javaFormatterProfile = dependenciesRef.current.javaFormatterProfile
+            ? { ...dependenciesRef.current.javaFormatterProfile }
+            : undefined;
+          const javaFormatterProfileSignature = formatterProfileSignature(javaFormatterProfile);
+          const activeMavenProfiles = [...dependenciesRef.current.activeMavenProfiles];
+          const inactiveMavenProfiles = [...dependenciesRef.current.inactiveMavenProfiles];
+          nextStatus = await dependenciesRef.current.languageSession.start({
+            workspaceId: workspace.id,
+            requestId: `desktop-java-activation-${requestId}`,
+            ...(projectJdkHome !== undefined ? { projectJdkHome } : {}),
+            ...(serverJdkHome ? { serverJdkHome } : {}),
+            gradleImportEnabled,
+            projectPath,
+            mavenRepository,
+            activeMavenProfiles,
+            inactiveMavenProfiles,
+            ...(gradle ? { gradle } : {}),
+            ...(javaFormatterProfile ? { javaFormatterProfile } : {}),
+          });
+          if (
+            !tokenIsCurrent() ||
+            projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+            serverJdkHome !== dependenciesRef.current.serverJdkHome ||
+            gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+            gradleSignature !== gradleSettingsSignature(dependenciesRef.current.gradle) ||
+            projectPath !== dependenciesRef.current.projectPath ||
+            mavenRepository !== dependenciesRef.current.mavenRepository ||
+            javaFormatterProfileSignature !==
+              formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) ||
+            mavenProfileSignature(activeMavenProfiles, inactiveMavenProfiles) !==
+              mavenProfileSignature(
+                dependenciesRef.current.activeMavenProfiles,
+                dependenciesRef.current.inactiveMavenProfiles,
+              )
+          )
+            return;
+        }
+        sessionGradleSettingsSignatureRef.current = gradleSettingsSignature(
+          dependenciesRef.current.gradle,
+        );
         if (!applyStatus(nextStatus, workspace.id, workspaceGeneration)) return;
         sessionGeneration = nextStatus.generation;
         syncEpoch = syncEpochRef.current;
         if (!tokenIsCurrent()) return;
-        if (nextStatus.state === "stopped") {
-          const requestId = ++lifecycleRequestRef.current;
-          nextStatus = await dependenciesRef.current.languageSession.start({
-            workspaceId: workspace.id,
-            requestId: `desktop-java-activation-${requestId}`,
-          });
-          if (!tokenIsCurrent()) return;
-          if (!applyStatus(nextStatus, workspace.id, workspaceGeneration)) return;
-          sessionGeneration = nextStatus.generation;
-          syncEpoch = syncEpochRef.current;
-          if (!tokenIsCurrent()) return;
-        }
         if (!READY_SESSION_STATES.has(nextStatus.state) || !nextStatus.capabilities.documentSync) {
           return;
         }
@@ -582,7 +1003,12 @@ export function useJavaLanguageController(
         ) {
           return;
         }
+        if (startup.syncEpoch !== documentEpoch) {
+          startup.syncEpoch = documentEpoch;
+          startupsRef.current.set(startupKey, startup);
+        }
 
+        const currentText = dependenciesRef.current.getEditorState().contents[path] ?? text;
         const document: SynchronizedJavaDocument = {
           workspaceId: workspace.id,
           generation: nextStatus.generation,
@@ -590,7 +1016,7 @@ export function useJavaLanguageController(
           path,
           uri: createWorkspaceFileUri(workspace.rootPath, path),
           version: INITIAL_DOCUMENT_VERSION,
-          text,
+          text: currentText,
           sentVersion: INITIAL_DOCUMENT_VERSION,
           open: false,
           changeQueue: Promise.resolve(),
@@ -603,7 +1029,7 @@ export function useJavaLanguageController(
               path: document.path,
               uri: document.uri,
               languageId: "java",
-              text,
+              text: document.text,
               version: document.version,
             },
           });
@@ -636,6 +1062,13 @@ export function useJavaLanguageController(
           }
           document.open = true;
           publishSemanticRevision();
+          try {
+            await dependenciesRef.current.documentSync.revalidate?.({
+              document: { workspaceId: document.workspaceId, path, uri: document.uri, version: document.sentVersion },
+            });
+          } catch {
+            console.warn("[App] Initial Java document validation failed", { path });
+          }
           if (document.pendingText !== undefined) {
             document.changeTimer = setTimeout(() => {
               document.changeTimer = undefined;
@@ -648,17 +1081,17 @@ export function useJavaLanguageController(
           if (documentsRef.current.get(path) === document) documentsRef.current.delete(path);
           throw openError;
         }
-      })();
+      };
 
       const startup: JavaDocumentStartup = {
         workspaceId: workspace.id,
         path,
         syncEpoch,
-        promise: startupPromise,
+        promise: Promise.resolve().then(openDocument),
       };
       startupsRef.current.set(startupKey, startup);
       try {
-        await startupPromise;
+        await startup.promise;
       } catch {
         // Activation remains retryable and source text is deliberately redacted.
         console.warn("[App] Java document activation failed", { path });
@@ -678,6 +1111,7 @@ export function useJavaLanguageController(
       document.text = text;
       document.pendingText = text;
       document.pendingVersion = document.version;
+      clearDiagnostics(path);
       publishSemanticRevision();
       if (!document.open) return;
       if (document.changeTimer) clearTimeout(document.changeTimer);
@@ -688,12 +1122,43 @@ export function useJavaLanguageController(
         });
       }, JAVA_CHANGE_DEBOUNCE_MS);
     },
-    [flushCurrentDocument, publishSemanticRevision],
+    [clearDiagnostics, flushCurrentDocument, publishSemanticRevision],
   );
+
+  const synchronizeEditorDocument = useCallback(async (path: string): Promise<void> => {
+    if (!isJavaPath(path)) return;
+    const workspaceId = workspaceIdRef.current;
+    if (!workspaceId) return;
+    const workspaceGeneration = workspaceGenerationRef.current;
+    const text = dependenciesRef.current.getEditorState().contents[path];
+    if (text === undefined) return;
+    if (documentsRef.current.get(path)?.text !== text) queueChange(path, text);
+    await flush(path);
+    if (!mountedRef.current || workspaceIdRef.current !== workspaceId || workspaceGenerationRef.current !== workspaceGeneration)
+      return;
+    const currentText = dependenciesRef.current.getEditorState().contents[path];
+    const currentDocument = documentsRef.current.get(path);
+    if (currentText !== undefined && (!currentDocument || (currentDocument.open && !currentDocument.closing)))
+      await activate(path, currentText);
+  }, [activate, flush, queueChange]);
 
   const notifySaved = useCallback(
     async (path: string): Promise<void> => {
-      if (!isJavaPath(path)) return;
+      if (!isJavaPath(path)) {
+        const workspace = workspaceInfoRef.current;
+        const current = statusRef.current;
+        if (workspace && current?.workspaceId === workspace.id && READY_SESSION_STATES.has(current.state)) {
+          try {
+            await dependenciesRef.current.documentSync.didSaveWorkspaceFile?.({
+              document: { workspaceId: workspace.id, path, uri: createWorkspaceFileUri(workspace.rootPath, path) },
+            });
+          } catch {
+            if (mountedRef.current && workspaceIdRef.current === workspace.id && statusRef.current?.generation === current.generation)
+              setError("The file was saved, but its change could not be sent to the Java language service. Refresh or restart the service.");
+          }
+        }
+        return;
+      }
       await waitForCurrentStartup(path);
       const document = documentsRef.current.get(path);
       if (!document?.open || document.closing) return;
@@ -723,6 +1188,22 @@ export function useJavaLanguageController(
       const workspaceGeneration = workspaceGenerationRef.current;
       if (!workspaceId) return;
       const requestId = ++lifecycleRequestRef.current;
+      const projectJdkHome = dependenciesRef.current.projectJdkHome;
+      const serverJdkHome = dependenciesRef.current.serverJdkHome;
+      const gradleImportEnabled = dependenciesRef.current.gradleImportEnabled;
+      const gradle = dependenciesRef.current.gradle
+        ? structuredClone(dependenciesRef.current.gradle)
+        : undefined;
+      const gradleSignature = gradleSettingsSignature(gradle);
+      const projectPath = dependenciesRef.current.projectPath;
+      const mavenRepository = dependenciesRef.current.mavenRepository;
+      const javaFormatterProfile = dependenciesRef.current.javaFormatterProfile
+        ? { ...dependenciesRef.current.javaFormatterProfile }
+        : undefined;
+      const javaFormatterProfileSignature = formatterProfileSignature(javaFormatterProfile);
+      const activeMavenProfiles = [...dependenciesRef.current.activeMavenProfiles];
+      const inactiveMavenProfiles = [...dependenciesRef.current.inactiveMavenProfiles];
+      const profileSignature = mavenProfileSignature(activeMavenProfiles, inactiveMavenProfiles);
       const current = statusRef.current;
       if ((action === "stop" || action === "restart") && !current) return;
 
@@ -742,11 +1223,39 @@ export function useJavaLanguageController(
 
       try {
         if (action === "stop" || action === "restart") await closeAll();
+        if (
+          lifecycleRequestRef.current !== requestId ||
+          workspaceIdRef.current !== workspaceId ||
+          workspaceGenerationRef.current !== workspaceGeneration ||
+          projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+          serverJdkHome !== dependenciesRef.current.serverJdkHome ||
+          gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+          gradleSignature !== gradleSettingsSignature(dependenciesRef.current.gradle) ||
+          projectPath !== dependenciesRef.current.projectPath ||
+          mavenRepository !== dependenciesRef.current.mavenRepository ||
+          javaFormatterProfileSignature !==
+            formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) ||
+          profileSignature !==
+            mavenProfileSignature(
+              dependenciesRef.current.activeMavenProfiles,
+              dependenciesRef.current.inactiveMavenProfiles,
+            )
+        )
+          return;
         const next =
           action === "start"
             ? await dependenciesRef.current.languageSession.start({
                 workspaceId,
                 requestId: `desktop-${requestId}`,
+                ...(projectJdkHome !== undefined ? { projectJdkHome } : {}),
+                ...(serverJdkHome ? { serverJdkHome } : {}),
+                gradleImportEnabled,
+                projectPath,
+                mavenRepository,
+                activeMavenProfiles,
+                inactiveMavenProfiles,
+                ...(gradle ? { gradle } : {}),
+                ...(javaFormatterProfile ? { javaFormatterProfile } : {}),
               })
             : action === "stop"
               ? await dependenciesRef.current.languageSession.stop({
@@ -758,10 +1267,46 @@ export function useJavaLanguageController(
                   workspaceId,
                   generation: current!.generation,
                   requestId: `desktop-${requestId}`,
+                  ...(projectJdkHome !== undefined ? { projectJdkHome } : {}),
+                  ...(serverJdkHome ? { serverJdkHome } : {}),
+                  gradleImportEnabled,
+                  projectPath,
+                  mavenRepository,
+                  activeMavenProfiles,
+                  inactiveMavenProfiles,
+                  ...(gradle ? { gradle } : {}),
+                  ...(javaFormatterProfile ? { javaFormatterProfile } : {}),
                 });
-        if (lifecycleRequestRef.current !== requestId) return;
+        if (
+          lifecycleRequestRef.current !== requestId ||
+          projectJdkHome !== dependenciesRef.current.projectJdkHome ||
+          serverJdkHome !== dependenciesRef.current.serverJdkHome ||
+          gradleImportEnabled !== dependenciesRef.current.gradleImportEnabled ||
+          gradleSignature !== gradleSettingsSignature(dependenciesRef.current.gradle) ||
+          projectPath !== dependenciesRef.current.projectPath ||
+          mavenRepository !== dependenciesRef.current.mavenRepository ||
+          javaFormatterProfileSignature !==
+            formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) ||
+          profileSignature !==
+            mavenProfileSignature(
+              dependenciesRef.current.activeMavenProfiles,
+              dependenciesRef.current.inactiveMavenProfiles,
+            )
+        )
+          return;
+        sessionGradleSettingsSignatureRef.current = action === "stop" ? null : gradleSignature;
         if (!applyStatus(next, workspaceId, workspaceGeneration)) return;
         await load(workspaceId, workspaceGeneration);
+        if (action === "start" || action === "restart") {
+          const editor = dependenciesRef.current.getEditorState();
+          const ready = dependenciesRef.current.readyActiveDocument;
+          const paths = new Set(Object.keys(editor.contents).filter(isJavaPath));
+          if (ready && isJavaPath(ready.path)) paths.add(ready.path);
+          for (const path of paths) {
+            const text = editor.contents[path] ?? (ready?.path === path ? ready.text : undefined);
+            if (text !== undefined) await activate(path, text);
+          }
+        }
       } catch (lifecycleError) {
         if (
           lifecycleRequestRef.current !== requestId ||
@@ -787,7 +1332,7 @@ export function useJavaLanguageController(
         console.error(`[App] Language service ${action} failed:`, lifecycleError);
       }
     },
-    [applyStatus, closeAll, load],
+    [activate, applyStatus, closeAll, load],
   );
 
   const detach = useCallback(
@@ -803,6 +1348,7 @@ export function useJavaLanguageController(
       workspaceInfoRef.current = null;
       workspaceGenerationRef.current = nextWorkspaceGeneration;
       statusRef.current = null;
+      sessionGradleSettingsSignatureRef.current = dependenciesRef.current.gradle ? null : "";
       diagnosticsRef.current.clear();
       if (mountedRef.current) {
         setStatus(null);
@@ -839,13 +1385,35 @@ export function useJavaLanguageController(
   );
 
   const currentDocumentMatches = useCallback(
-    (request: JavaCompletionRequest | JavaHoverRequest | JavaSignatureHelpRequest): boolean => {
+    (
+      request:
+        | JavaCompletionRequest
+        | JavaHoverRequest
+        | JavaSignatureHelpRequest
+        | JavaFormattingRequest
+        | JavaRenameRequest,
+    ): boolean => {
       const current = documentsRef.current.get(request.document.path);
       const editor = dependenciesRef.current.getEditorState();
       const ready = dependenciesRef.current.readyActiveDocument;
       return Boolean(
         current &&
         current.open &&
+        statusRef.current?.projectJdkHome === dependenciesRef.current.projectJdkHome &&
+        (statusRef.current?.serverJdkHome ?? "") ===
+          (dependenciesRef.current.serverJdkHome ?? "") &&
+        statusRef.current?.gradleImportEnabled === dependenciesRef.current.gradleImportEnabled &&
+        statusRef.current &&
+        sameMavenProfiles(
+          statusRef.current,
+          dependenciesRef.current.activeMavenProfiles,
+          dependenciesRef.current.inactiveMavenProfiles,
+        ) &&
+        sameProjectPath(statusRef.current, dependenciesRef.current.projectPath) &&
+        sameMavenRepository(statusRef.current, dependenciesRef.current.mavenRepository) &&
+        sameFormatterProfile(statusRef.current, dependenciesRef.current.javaFormatterProfile) &&
+        sessionGradleSettingsSignatureRef.current ===
+          gradleSettingsSignature(dependenciesRef.current.gradle) &&
         !current.closing &&
         ready?.path === request.document.path &&
         ready.text === current.text &&
@@ -868,7 +1436,8 @@ export function useJavaLanguageController(
 
   const prepareSemanticRequest = useCallback(
     async (
-      request: JavaCompletionRequest | JavaHoverRequest | JavaSignatureHelpRequest,
+      request:
+        JavaCompletionRequest | JavaHoverRequest | JavaSignatureHelpRequest | JavaFormattingRequest,
     ): Promise<"ready" | "stale" | "unavailable"> => {
       if (!currentDocumentMatches(request)) return "stale";
       try {
@@ -881,6 +1450,142 @@ export function useJavaLanguageController(
     [currentDocumentMatches, flushCurrentDocument],
   );
 
+  const prepareSemanticWorkspaceRequest = useCallback(
+    async (
+      request: JavaRenameRequest | JavaCodeActionsRequest,
+    ): Promise<
+      | { state: "ready"; documents: Map<string, { uri: string; version: number; text: string }> }
+      | { state: "stale" | "unavailable" }
+    > => {
+      if (!currentDocumentMatches(request)) return { state: "stale" };
+      const openDocuments = [...documentsRef.current.values()].filter(
+        (document) =>
+          document.workspaceId === request.workspaceId &&
+          document.generation === request.generation &&
+          document.syncEpoch === syncEpochRef.current &&
+          !document.closing,
+      );
+      try {
+        await Promise.all(openDocuments.map((document) => flush(document.path)));
+      } catch {
+        return { state: "unavailable" };
+      }
+      if (!currentDocumentMatches(request)) return { state: "stale" };
+      const editor = dependenciesRef.current.getEditorState();
+      const documents = new Map<string, { uri: string; version: number; text: string }>();
+      for (const document of documentsRef.current.values()) {
+        if (
+          document.workspaceId !== request.workspaceId ||
+          document.generation !== request.generation ||
+          document.syncEpoch !== syncEpochRef.current ||
+          document.closing
+        )
+          continue;
+        if (
+          !document.open ||
+          document.pendingText !== undefined ||
+          document.sentVersion !== document.version ||
+          !Object.prototype.hasOwnProperty.call(editor.contents, document.path) ||
+          editor.contents[document.path] !== document.text
+        )
+          return { state: "stale" };
+        documents.set(document.path, {
+          uri: document.uri,
+          version: document.version,
+          text: document.text,
+        });
+      }
+      return { state: "ready", documents };
+    },
+    [currentDocumentMatches, flush],
+  );
+
+  const semanticWorkspaceFrameMatches = useCallback(
+    (
+      request: JavaRenameRequest | JavaCodeActionsRequest,
+      documents: ReadonlyMap<string, { uri: string; version: number; text: string }>,
+    ): boolean => {
+      const editor = dependenciesRef.current.getEditorState();
+      return (
+        currentDocumentMatches(request) &&
+        [...documents].every(([path, captured]) => {
+          const document = documentsRef.current.get(path);
+          return Boolean(
+            document?.open &&
+            !document.closing &&
+            document.workspaceId === request.workspaceId &&
+            document.generation === request.generation &&
+            document.syncEpoch === syncEpochRef.current &&
+            document.uri === captured.uri &&
+            document.version === captured.version &&
+            document.sentVersion === captured.version &&
+            document.pendingText === undefined &&
+            document.text === captured.text &&
+            editor.contents[path] === captured.text,
+          );
+        })
+      );
+    },
+    [currentDocumentMatches],
+  );
+
+  const synchronizeCommittedDrafts = useCallback(
+    async (
+      request: JavaRenameRequest | JavaCodeActionsRequest,
+      paths: Iterable<string>,
+    ): Promise<void> => {
+      const epoch = syncEpochRef.current;
+      const current = (document: SynchronizedJavaDocument) =>
+        document.open &&
+        !document.closing &&
+        document.workspaceId === request.workspaceId &&
+        document.generation === request.generation &&
+        document.syncEpoch === epoch &&
+        syncEpochRef.current === epoch;
+      const changed = [...new Set(paths)];
+      try {
+        for (const path of changed) {
+          const document = documentsRef.current.get(path);
+          const text = dependenciesRef.current.getEditorState().contents[path];
+          if (document && current(document) && typeof text === "string") queueChange(path, text);
+        }
+        for (const path of changed) {
+          const document = documentsRef.current.get(path);
+          if (document && current(document)) await flush(path);
+        }
+        const port = dependenciesRef.current.documentSync;
+        if (!port.revalidate) return;
+        for (const document of [...documentsRef.current.values()]) {
+          if (
+            !current(document) ||
+            document.pendingText !== undefined ||
+            document.sentVersion !== document.version ||
+            dependenciesRef.current.getEditorState().contents[document.path] !== document.text
+          )
+            continue;
+          await port.revalidate({
+            document: {
+              workspaceId: document.workspaceId,
+              path: document.path,
+              uri: document.uri,
+              version: document.version,
+            },
+          });
+        }
+      } catch {
+        if (
+          mountedRef.current &&
+          workspaceIdRef.current === request.workspaceId &&
+          syncEpochRef.current === epoch
+        )
+          setError(
+            "Java draft edits were applied, but their diagnostics could not be refreshed. Restart the language service before further semantic edits.",
+          );
+      }
+    },
+    [queueChange, flush],
+  );
+
   const readyActiveDocument = dependencies.readyActiveDocument;
   const hasJavaContext = isJavaPath(readyActiveDocument?.path);
   const capabilities = status?.capabilities ?? EMPTY_CAPABILITIES;
@@ -890,12 +1595,40 @@ export function useJavaLanguageController(
   const semanticSessionReady = Boolean(
     status &&
     READY_SESSION_STATES.has(status.state) &&
+    status.projectJdkHome === dependencies.projectJdkHome &&
+    (status.serverJdkHome ?? "") === (dependencies.serverJdkHome ?? "") &&
+    status.gradleImportEnabled === dependencies.gradleImportEnabled &&
+    sameProjectPath(status, dependencies.projectPath) &&
+    sameMavenRepository(status, dependencies.mavenRepository) &&
+    sameFormatterProfile(status, dependencies.javaFormatterProfile) &&
+    sessionGradleSettingsSignatureRef.current === gradleSettingsSignature(dependencies.gradle) &&
+    sameMavenProfiles(
+      status,
+      dependencies.activeMavenProfiles,
+      dependencies.inactiveMavenProfiles,
+    ) &&
     status.workspaceId === dependencies.workspaceInfo?.id,
   );
-  const hasSemanticCapability =
-    capabilities.completion || capabilities.hover || capabilities.signature;
+  const hasSemanticCapability = Boolean(
+    capabilities.completion ||
+    capabilities.hover ||
+    capabilities.signature ||
+    capabilities.documentSymbols ||
+    capabilities.documentHighlights ||
+    capabilities.definition ||
+    capabilities.typeDefinition ||
+    capabilities.implementation ||
+    capabilities.callHierarchy ||
+    capabilities.semanticTokens ||
+    capabilities.inlayHints ||
+    capabilities.codeActions ||
+    capabilities.formatting ||
+    capabilities.onTypeFormattingTriggers?.length ||
+    capabilities.rename,
+  );
 
-  // The revision makes ref-only version/open/close transitions observable without exposing refs.
+  // Ref-only transitions trigger rendering. Only changes to the active document
+  // replace its providers; opening a companion must not cancel an in-flight rename.
   void semanticRevision;
   const javaSemantics = useMemo<JavaEditorSemantics | undefined>(() => {
     if (
@@ -922,8 +1655,64 @@ export function useJavaLanguageController(
         version: semanticDocument.version,
       },
     };
+    const requestDefinition = async (request: JavaDefinitionsRequest, kind: "definition" | "typeDefinition"): Promise<JavaDefinitionsResponse> => {
+      const port = dependenciesRef.current.javaIntelligence;
+      const provider = kind === "typeDefinition" ? port.typeDefinitions : port.definitions;
+      if (!statusRef.current?.capabilities[kind] || !provider) {
+        return unavailableSemanticFailure(request.requestId);
+      }
+      const prepared = await prepareSemanticRequest(request);
+      if (prepared !== "ready") {
+        return prepared === "stale"
+          ? staleSemanticFailure(request.requestId)
+          : unavailableSemanticFailure(request.requestId);
+      }
+      const response = await provider.call(port, {
+        workspaceId: request.workspaceId,
+        generation: request.generation,
+        document: { ...request.document },
+        position: { ...request.position },
+        requestId: request.requestId,
+        cancellationId: request.cancellationId,
+      });
+      return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+    };
+
     return {
       context,
+      documentText: semanticDocument.text,
+      semanticTokensEnabled: capabilities.semanticTokens === true,
+      inlayHints:
+        capabilities.inlayHints && dependenciesRef.current.javaIntelligence.inlayHints
+          ? async (request: JavaInlayHintsRequest): Promise<JavaInlayHintsResponse> => {
+              if (!statusRef.current?.capabilities.inlayHints) {
+                return unavailableSemanticFailure(request.requestId);
+              }
+              const semanticRequest = { ...request, position: request.range.start };
+              const prepared = await prepareSemanticRequest(semanticRequest);
+              if (prepared !== "ready") {
+                return prepared === "stale"
+                  ? staleSemanticFailure(request.requestId)
+                  : unavailableSemanticFailure(request.requestId);
+              }
+              const provider = dependenciesRef.current.javaIntelligence.inlayHints;
+              if (!provider) return unavailableSemanticFailure(request.requestId);
+              const response = await provider.call(dependenciesRef.current.javaIntelligence, {
+                workspaceId: request.workspaceId,
+                generation: request.generation,
+                document: { ...request.document },
+                range: { start: { ...request.range.start }, end: { ...request.range.end } },
+                requestId: request.requestId,
+                cancellationId: request.cancellationId,
+              });
+              return currentDocumentMatches(semanticRequest)
+                ? response
+                : staleSemanticFailure(request.requestId);
+            }
+          : undefined,
+      formattingEnabled: capabilities.formatting === true,
+      rangeFormattingEnabled: capabilities.rangeFormatting === true,
+      onTypeFormattingTriggers: capabilities.onTypeFormattingTriggers ?? [],
       async completion(request): Promise<JavaCompletionResponse> {
         if (!statusRef.current?.capabilities.completion) {
           return unavailableSemanticFailure(request.requestId);
@@ -985,7 +1774,423 @@ export function useJavaLanguageController(
         });
         return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
       },
+      async documentSymbols(request): Promise<JavaDocumentSymbolsResponse> {
+        if (!statusRef.current?.capabilities.documentSymbols) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const currentRequest = { ...request, position: { line: 0, character: 0 } };
+        const prepared = await prepareSemanticRequest(currentRequest);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.documentSymbols({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(currentRequest)
+          ? response
+          : staleSemanticFailure(request.requestId);
+      },
+      async documentHighlights(
+        request: JavaDocumentHighlightsRequest,
+      ): Promise<JavaDocumentHighlightsResponse> {
+        if (!statusRef.current?.capabilities.documentHighlights) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.documentHighlights({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          position: { ...request.position },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+      },
+      definitions: (request) => requestDefinition(request, "definition"),
+      ...(capabilities.typeDefinition ? {
+        typeDefinitions: (request: JavaDefinitionsRequest) => requestDefinition(request, "typeDefinition"),
+      } : {}),
+      async implementations(
+        request: JavaImplementationsRequest,
+      ): Promise<JavaImplementationsResponse> {
+        if (!statusRef.current?.capabilities.implementation) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.implementations({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          position: { ...request.position },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+      },
+      async callHierarchy(request: JavaCallHierarchyRequest): Promise<JavaCallHierarchyResponse> {
+        const provider = dependenciesRef.current.javaIntelligence.callHierarchy;
+        if (!statusRef.current?.capabilities.callHierarchy || !provider) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await provider.call(dependenciesRef.current.javaIntelligence, {
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          position: { ...request.position },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+          direction: request.direction,
+        });
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+      },
+      async references(request: JavaReferencesRequest): Promise<JavaReferencesResponse> {
+        if (!statusRef.current?.capabilities.references) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.references({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          position: { ...request.position },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+          includeDeclaration: request.includeDeclaration,
+        });
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+      },
+      async semanticTokens(
+        request: JavaSemanticTokensRequest,
+      ): Promise<JavaSemanticTokensResponse> {
+        if (!statusRef.current?.capabilities.semanticTokens) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const currentRequest = { ...request, position: { line: 0, character: 0 } };
+        const prepared = await prepareSemanticRequest(currentRequest);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.semanticTokens({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(currentRequest)
+          ? response
+          : staleSemanticFailure(request.requestId);
+      },
+      async formatDocument(request: JavaFormattingRequest): Promise<JavaFormattingResponse> {
+        if (!statusRef.current?.capabilities.formatting) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.formatDocument({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          options: { ...request.options },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(request) ? response : staleSemanticFailure(request.requestId);
+      },
+      async formatRange(request: JavaRangeFormattingRequest): Promise<JavaRangeFormattingResponse> {
+        if (!statusRef.current?.capabilities.rangeFormatting) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const semanticRequest = { ...request, position: request.range.start };
+        const prepared = await prepareSemanticRequest(semanticRequest);
+        if (prepared !== "ready") {
+          return prepared === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        }
+        const response = await dependenciesRef.current.javaIntelligence.formatRange({
+          workspaceId: request.workspaceId,
+          generation: request.generation,
+          document: { ...request.document },
+          range: {
+            start: { ...request.range.start },
+            end: { ...request.range.end },
+          },
+          options: { ...request.options },
+          requestId: request.requestId,
+          cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(semanticRequest)
+          ? response
+          : staleSemanticFailure(request.requestId);
+      },
+      async formatOnType(request: JavaOnTypeFormattingRequest): Promise<JavaFormattingResponse> {
+        const port = dependenciesRef.current.javaIntelligence;
+        if (!port.formatOnType || !statusRef.current?.capabilities.onTypeFormattingTriggers?.includes(request.character))
+          return unavailableSemanticFailure(request.requestId);
+        const prepared = await prepareSemanticRequest(request);
+        if (prepared !== "ready") return prepared === "stale"
+          ? staleSemanticFailure(request.requestId) : unavailableSemanticFailure(request.requestId);
+        if (dependenciesRef.current.javaIntelligence !== port ||
+          !statusRef.current?.capabilities.onTypeFormattingTriggers?.includes(request.character))
+          return staleSemanticFailure(request.requestId);
+        const response = await port.formatOnType({
+          workspaceId: request.workspaceId, generation: request.generation,
+          document: { ...request.document }, position: { ...request.position },
+          character: request.character, options: { ...request.options },
+          requestId: request.requestId, cancellationId: request.cancellationId,
+        });
+        return currentDocumentMatches(request) && statusRef.current?.capabilities.onTypeFormattingTriggers?.includes(request.character)
+          ? response : staleSemanticFailure(request.requestId);
+      },
+      async codeActions(request: JavaCodeActionsRequest): Promise<JavaCodeActionsResponse> {
+        if (!statusRef.current?.capabilities.codeActions)
+          return unavailableSemanticFailure(request.requestId);
+        const prepared = await prepareSemanticWorkspaceRequest(request);
+        if (prepared.state !== "ready")
+          return prepared.state === "stale"
+            ? staleSemanticFailure(request.requestId)
+            : unavailableSemanticFailure(request.requestId);
+        const response = await dependenciesRef.current.javaIntelligence.codeActions(
+          copyCodeActionsRequest(request),
+        );
+        return semanticWorkspaceFrameMatches(request, prepared.documents)
+          ? response
+          : staleSemanticFailure(request.requestId);
+      },
+      async applyCodeAction(request: JavaCodeActionApplyRequest): Promise<boolean> {
+        const { action } = request;
+        const open = dependenciesRef.current.openSemanticDocument;
+        const apply = dependenciesRef.current.applySemanticWorkspaceEdit;
+        if (
+          !statusRef.current?.capabilities.codeActions ||
+          !open ||
+          !apply ||
+          activeWorkspaceEditsRef.current.has(request.cancellationId) ||
+          !action.documentsToOpen?.length ||
+          action.documentsToOpen.length > 128 ||
+          new Set(action.documentsToOpen).size !== action.documentsToOpen.length ||
+          !action.editPlanSha256 ||
+          !action.sourceDocuments?.length ||
+          action.memberSelection ||
+          action.edits.length ||
+          action.additionalEdits?.length
+        )
+          return false;
+        const token = { cancelled: false };
+        activeWorkspaceEditsRef.current.set(request.cancellationId, token);
+        try {
+          const initial = await prepareSemanticWorkspaceRequest(request);
+          if (initial.state !== "ready") return false;
+          const current = () =>
+            !token.cancelled && semanticWorkspaceFrameMatches(request, initial.documents);
+          for (const path of action.documentsToOpen) {
+            if (!current()) return false;
+            if (initial.documents.has(path)) continue;
+            if (!(await open(path, current)) || !current()) return false;
+            const text = dependenciesRef.current.getEditorState().contents[path];
+            if (typeof text !== "string") return false;
+            await activate(path, text);
+            if (!current()) return false;
+          }
+          const prepared = await prepareSemanticWorkspaceRequest(request);
+          if (prepared.state !== "ready" || !current()) return false;
+          const response = await dependenciesRef.current.javaIntelligence.codeActions(
+            copyCodeActionsRequest(request),
+          );
+          if (
+            !response.ok ||
+            !current() ||
+            !semanticWorkspaceFrameMatches(request, prepared.documents)
+          )
+            return false;
+          const selected = response.result.actions.find(
+            (candidate) =>
+              candidate.editPlanSha256 === action.editPlanSha256 &&
+              !candidate.documentsToOpen &&
+              !candidate.memberSelection,
+          );
+          if (
+            !selected?.sourceDocuments ||
+            selected.sourceDocuments.length !== action.sourceDocuments.length ||
+            selected.sourceDocuments.some(
+              (source) =>
+                !action.sourceDocuments!.some(
+                  (original) =>
+                    original.path === source.path &&
+                    original.contentSha256 === source.contentSha256,
+                ),
+            )
+          )
+            return false;
+          const edits = new Map<string, JavaRenameDocumentEdits>();
+          if (selected.edits.length)
+            edits.set(request.document.path, { document: request.document, edits: selected.edits });
+          for (const additional of selected.additionalEdits ?? []) {
+            const captured = prepared.documents.get(additional.document.path);
+            if (
+              captured?.uri !== additional.document.uri ||
+              captured.version !== additional.document.version
+            )
+              return false;
+            const existing = edits.get(additional.document.path);
+            if (existing) existing.edits.push(additional.edit);
+            else
+              edits.set(additional.document.path, {
+                document: additional.document,
+                edits: [additional.edit],
+              });
+          }
+          if (
+            !edits.size ||
+            ![...edits.values()].every(({ document }) => {
+              const captured = prepared.documents.get(document.path);
+              return captured?.uri === document.uri && captured.version === document.version;
+            })
+          )
+            return false;
+          const applied = await apply([...edits.values()], prepared.documents);
+          if (applied) await synchronizeCommittedDrafts(request, edits.keys());
+          return applied;
+        } catch {
+          return false;
+        } finally {
+          if (activeWorkspaceEditsRef.current.get(request.cancellationId) === token)
+            activeWorkspaceEditsRef.current.delete(request.cancellationId);
+        }
+      },
+      async rename(request: JavaRenameRequest): Promise<JavaRenameResponse> {
+        if (
+          !statusRef.current?.capabilities.rename ||
+          activeWorkspaceEditsRef.current.has(request.cancellationId)
+        ) {
+          return unavailableSemanticFailure(request.requestId);
+        }
+        const token = { cancelled: false };
+        activeWorkspaceEditsRef.current.set(request.cancellationId, token);
+        const current = () => !token.cancelled && currentDocumentMatches(request);
+        const frameCurrent = (
+          documents: ReadonlyMap<string, { uri: string; version: number; text: string }>,
+        ) => !token.cancelled && semanticWorkspaceFrameMatches(request, documents);
+        try {
+          let prepared = await prepareSemanticWorkspaceRequest(request);
+          if (prepared.state !== "ready") {
+            return prepared.state === "stale"
+              ? staleSemanticFailure(request.requestId)
+              : unavailableSemanticFailure(request.requestId);
+          }
+          const baseline = prepared.documents;
+          const opened = new Set<string>();
+          for (;;) {
+            const documents = prepared.documents;
+            if (!frameCurrent(baseline) || !frameCurrent(documents))
+              return staleSemanticFailure(request.requestId);
+            const response = await dependenciesRef.current.javaIntelligence.rename({
+              workspaceId: request.workspaceId,
+              generation: request.generation,
+              document: { ...request.document },
+              position: { ...request.position },
+              newName: request.newName,
+              requestId: request.requestId,
+              cancellationId: request.cancellationId,
+            });
+            if (!frameCurrent(baseline) || !frameCurrent(documents))
+              return staleSemanticFailure(request.requestId);
+            if (!response.ok) return response;
+            const required = response.result.documentsToOpen;
+            if (required !== undefined) {
+              const open = dependenciesRef.current.openSemanticDocument;
+              if (
+                !open ||
+                !required.length ||
+                response.result.documentEdits.length ||
+                required.some((path) => opened.has(path) || documents.has(path)) ||
+                new Set(required).size !== required.length ||
+                opened.size + required.length > 128
+              ) {
+                return unavailableSemanticFailure(request.requestId);
+              }
+              for (const path of required) {
+                opened.add(path);
+                if (!frameCurrent(baseline) || !current())
+                  return staleSemanticFailure(request.requestId);
+                if (!(await open(path, () => frameCurrent(baseline))))
+                  return staleSemanticFailure(request.requestId);
+                if (!frameCurrent(baseline)) return staleSemanticFailure(request.requestId);
+                const text = dependenciesRef.current.getEditorState().contents[path];
+                if (typeof text !== "string") return unavailableSemanticFailure(request.requestId);
+                await activate(path, text);
+                if (!frameCurrent(baseline)) return staleSemanticFailure(request.requestId);
+              }
+              // Discard the first response entirely. Only edits computed after didOpen
+              // and a fresh captured document frame may reach the editor transaction.
+              prepared = await prepareSemanticWorkspaceRequest(request);
+              if (prepared.state !== "ready") return staleSemanticFailure(request.requestId);
+              continue;
+            }
+            if (
+              !response.result.documentEdits.every(({ document }) => {
+                const captured = documents.get(document.path);
+                return captured?.uri === document.uri && captured.version === document.version;
+              })
+            )
+              return staleSemanticFailure(request.requestId);
+            const apply = dependenciesRef.current.applySemanticWorkspaceEdit;
+            if (apply) {
+              if (!(await apply(response.result.documentEdits, documents)))
+                return staleSemanticFailure(request.requestId);
+              await synchronizeCommittedDrafts(
+                request,
+                response.result.documentEdits.map((entry) => entry.document.path),
+              );
+              return { ...response, result: { ...response.result, appliedToEditor: true } };
+            }
+            return response;
+          }
+        } catch {
+          return unavailableSemanticFailure(request.requestId);
+        } finally {
+          if (activeWorkspaceEditsRef.current.get(request.cancellationId) === token)
+            activeWorkspaceEditsRef.current.delete(request.cancellationId);
+        }
+      },
       cancel(cancellationId): void {
+        const rename = activeWorkspaceEditsRef.current.get(cancellationId);
+        if (rename) rename.cancelled = true;
         void dependenciesRef.current.javaIntelligence.cancel(cancellationId).catch(() => undefined);
       },
     };
@@ -993,14 +2198,35 @@ export function useJavaLanguageController(
     capabilities.completion,
     capabilities.hover,
     capabilities.signature,
+    capabilities.documentSymbols,
+    capabilities.documentHighlights,
+    capabilities.definition,
+    capabilities.typeDefinition,
+    capabilities.implementation,
+    capabilities.callHierarchy,
+    capabilities.semanticTokens,
+    capabilities.inlayHints,
+    capabilities.codeActions,
+    capabilities.formatting,
+    capabilities.rangeFormatting,
+    capabilities.onTypeFormattingTriggers,
+    capabilities.rename,
     currentDocumentMatches,
     dependencies.workspaceInfo?.id,
     hasJavaContext,
     hasSemanticCapability,
     prepareSemanticRequest,
+    prepareSemanticWorkspaceRequest,
+    semanticWorkspaceFrameMatches,
+    synchronizeCommittedDrafts,
+    activate,
     readyActiveDocument,
     semanticDocument,
-    semanticRevision,
+    semanticDocument?.version,
+    semanticDocument?.open,
+    semanticDocument?.closing,
+    semanticDocument?.text,
+    semanticDocument?.syncEpoch,
     semanticSessionReady,
     status?.generation,
   ]);
@@ -1030,6 +2256,7 @@ export function useJavaLanguageController(
       : [];
     return {
       activeDiagnostics: activeEvents.flatMap((event) => event.diagnostics),
+      diagnosticUnavailableMessage: activeEvents.find((event) => event.unavailableReason)?.unavailableReason,
       activeDiagnosticDocument: activeEvents[0]?.document,
       activeDiagnosticOwner:
         activeEvents.length === 1 ? activeEvents[0].provider : "language-services",
@@ -1042,10 +2269,165 @@ export function useJavaLanguageController(
     status?.generation,
   ]);
 
-  const refresh = useCallback(() => load(), [load]);
+  const refresh = useCallback(async () => {
+    await load();
+    const path = dependenciesRef.current.readyActiveDocument?.path;
+    if (!path) return;
+    const epoch = syncEpochRef.current;
+    try {
+      await flushCurrentDocument(path);
+      const document = documentsRef.current.get(path);
+      if (document?.open && document.generation === statusRef.current?.generation && document.workspaceId === workspaceIdRef.current)
+        await dependenciesRef.current.documentSync.revalidate?.({ document: { workspaceId: document.workspaceId, path, uri: document.uri, version: document.sentVersion } });
+    } catch {
+      if (mountedRef.current && epoch === syncEpochRef.current)
+        setError("Java diagnostics could not be refreshed. Check the language service and retry.");
+    }
+  }, [load, flushCurrentDocument]);
   const start = useCallback(() => runLifecycle("start"), [runLifecycle]);
   const stop = useCallback(() => runLifecycle("stop"), [runLifecycle]);
   const restart = useCallback(() => runLifecycle("restart"), [runLifecycle]);
+
+  const previousSessionConfigurationRef = useRef({
+    projectJdkHome: dependencies.projectJdkHome,
+    serverJdkHome: dependencies.serverJdkHome,
+    gradleImportEnabled: dependencies.gradleImportEnabled,
+    gradleSignature: gradleSettingsSignature(dependencies.gradle),
+    projectPath: dependencies.projectPath,
+    mavenRepository: dependencies.mavenRepository,
+    javaFormatterProfileSignature: formatterProfileSignature(dependencies.javaFormatterProfile),
+    mavenProfileSignature: mavenProfileSignature(
+      dependencies.activeMavenProfiles,
+      dependencies.inactiveMavenProfiles,
+    ),
+  });
+  useEffect(() => {
+    const activeMavenProfiles = [...dependencies.activeMavenProfiles];
+    const inactiveMavenProfiles = [...dependencies.inactiveMavenProfiles];
+    const profileSignature = mavenProfileSignature(activeMavenProfiles, inactiveMavenProfiles);
+    const gradleSignature = gradleSettingsSignature(dependencies.gradle);
+    if (
+      previousSessionConfigurationRef.current.projectJdkHome === dependencies.projectJdkHome &&
+      previousSessionConfigurationRef.current.serverJdkHome === dependencies.serverJdkHome &&
+      previousSessionConfigurationRef.current.gradleImportEnabled ===
+        dependencies.gradleImportEnabled &&
+      previousSessionConfigurationRef.current.gradleSignature === gradleSignature &&
+      previousSessionConfigurationRef.current.projectPath === dependencies.projectPath &&
+      previousSessionConfigurationRef.current.mavenRepository === dependencies.mavenRepository &&
+      previousSessionConfigurationRef.current.javaFormatterProfileSignature ===
+        formatterProfileSignature(dependencies.javaFormatterProfile) &&
+      previousSessionConfigurationRef.current.mavenProfileSignature === profileSignature
+    )
+      return;
+    previousSessionConfigurationRef.current = {
+      projectJdkHome: dependencies.projectJdkHome,
+      serverJdkHome: dependencies.serverJdkHome,
+      gradleImportEnabled: dependencies.gradleImportEnabled,
+      gradleSignature,
+      projectPath: dependencies.projectPath,
+      mavenRepository: dependencies.mavenRepository,
+      javaFormatterProfileSignature: formatterProfileSignature(dependencies.javaFormatterProfile),
+      mavenProfileSignature: profileSignature,
+    };
+    statusRequestRef.current += 1;
+    const scheduledLifecycleRevision = ++lifecycleRequestRef.current;
+    const paths = [...documentsRef.current.keys()];
+    const workspaceId = workspaceIdRef.current;
+    const workspaceGeneration = workspaceGenerationRef.current;
+    const projectJdkHome = dependencies.projectJdkHome;
+    const serverJdkHome = dependencies.serverJdkHome;
+    const gradleImportEnabled = dependencies.gradleImportEnabled;
+    const projectPath = dependencies.projectPath;
+    const mavenRepository = dependencies.mavenRepository;
+    const javaFormatterProfileSignature = formatterProfileSignature(
+      dependencies.javaFormatterProfile,
+    );
+    const closed = closeAll();
+    // Java Project fields are editable drafts. Retire old semantics immediately and allow
+    // a short pause in typing before validating and applying the replacement JDK.
+    const timer = setTimeout(() => {
+      void (async () => {
+        await closed;
+        if (
+          lifecycleRequestRef.current !== scheduledLifecycleRevision ||
+          !workspaceId ||
+          workspaceIdRef.current !== workspaceId ||
+          workspaceGenerationRef.current !== workspaceGeneration ||
+          dependenciesRef.current.projectJdkHome !== projectJdkHome ||
+          dependenciesRef.current.serverJdkHome !== serverJdkHome ||
+          dependenciesRef.current.gradleImportEnabled !== gradleImportEnabled ||
+          gradleSettingsSignature(dependenciesRef.current.gradle) !== gradleSignature ||
+          dependenciesRef.current.projectPath !== projectPath ||
+          dependenciesRef.current.mavenRepository !== mavenRepository ||
+          formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) !==
+            javaFormatterProfileSignature ||
+          mavenProfileSignature(
+            dependenciesRef.current.activeMavenProfiles,
+            dependenciesRef.current.inactiveMavenProfiles,
+          ) !== profileSignature
+        )
+          return;
+        const current = statusRef.current;
+        if (!current || current.state === "stopped" || current.state === "unavailable") return;
+        await runLifecycle("start");
+        if (
+          dependenciesRef.current.projectJdkHome !== projectJdkHome ||
+          dependenciesRef.current.serverJdkHome !== serverJdkHome ||
+          dependenciesRef.current.gradleImportEnabled !== gradleImportEnabled ||
+          gradleSettingsSignature(dependenciesRef.current.gradle) !== gradleSignature ||
+          dependenciesRef.current.projectPath !== projectPath ||
+          dependenciesRef.current.mavenRepository !== mavenRepository ||
+          formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) !==
+            javaFormatterProfileSignature ||
+          mavenProfileSignature(
+            dependenciesRef.current.activeMavenProfiles,
+            dependenciesRef.current.inactiveMavenProfiles,
+          ) !== profileSignature ||
+          workspaceIdRef.current !== workspaceId ||
+          workspaceGenerationRef.current !== workspaceGeneration
+        )
+          return;
+        const ready = dependenciesRef.current.readyActiveDocument;
+        if (ready && !paths.includes(ready.path)) paths.push(ready.path);
+        for (const path of paths) {
+          const text = dependenciesRef.current.getEditorState().contents[path];
+          if (text !== undefined) await activate(path, text);
+        }
+      })().catch((failure) => {
+        if (
+          mountedRef.current &&
+          workspaceIdRef.current === workspaceId &&
+          dependenciesRef.current.projectJdkHome === projectJdkHome &&
+          dependenciesRef.current.serverJdkHome === serverJdkHome &&
+          dependenciesRef.current.gradleImportEnabled === gradleImportEnabled &&
+          gradleSettingsSignature(dependenciesRef.current.gradle) === gradleSignature &&
+          dependenciesRef.current.projectPath === projectPath &&
+          dependenciesRef.current.mavenRepository === mavenRepository &&
+          formatterProfileSignature(dependenciesRef.current.javaFormatterProfile) ===
+            javaFormatterProfileSignature &&
+          mavenProfileSignature(
+            dependenciesRef.current.activeMavenProfiles,
+            dependenciesRef.current.inactiveMavenProfiles,
+          ) === profileSignature
+        )
+          setError(errorMessage(failure));
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    activate,
+    closeAll,
+    dependencies.gradle,
+    dependencies.gradleImportEnabled,
+    dependencies.projectJdkHome,
+    dependencies.serverJdkHome,
+    dependencies.projectPath,
+    dependencies.mavenRepository,
+    dependencies.javaFormatterProfile,
+    dependencies.activeMavenProfiles,
+    dependencies.inactiveMavenProfiles,
+    runLifecycle,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1075,9 +2457,13 @@ export function useJavaLanguageController(
       activate,
       queueChange,
       flush,
+      synchronizeEditorDocument,
       notifySaved,
       closeDocument,
+      searchWorkspaceSymbols,
+      cancelWorkspaceSymbolSearch,
       activeDiagnostics: diagnostics.activeDiagnostics,
+      diagnosticUnavailableMessage: diagnostics.diagnosticUnavailableMessage,
       activeDiagnosticDocument: diagnostics.activeDiagnosticDocument,
       activeDiagnosticOwner: diagnostics.activeDiagnosticOwner,
       problemItems: diagnostics.problemItems,
@@ -1091,6 +2477,8 @@ export function useJavaLanguageController(
       capabilities,
       closeAll,
       closeDocument,
+      searchWorkspaceSymbols,
+      cancelWorkspaceSymbolSearch,
       detach,
       diagnostics,
       error,
@@ -1107,6 +2495,7 @@ export function useJavaLanguageController(
       start,
       status,
       stop,
+      synchronizeEditorDocument,
     ],
   );
 }

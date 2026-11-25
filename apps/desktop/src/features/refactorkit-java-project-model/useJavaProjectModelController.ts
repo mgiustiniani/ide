@@ -6,6 +6,7 @@ import type {
 } from "@ide/contracts";
 import type { RefactorKitPort } from "@ide/web-core/ports";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefactorKitStatusSnapshot } from "../refactorkit-status/useRefactorKitStatusController";
 
 const MAX_PRESENTED_SYMBOLS = 500;
 const SCAN_ERROR = "The Java project-model scan could not be completed.";
@@ -14,6 +15,7 @@ const UNAUTHORIZED_REASON = "Authorize a desktop workspace before loading the Ja
 const CAPABILITY_REASON =
   "The RefactorKit engine does not advertise the Java project-model surface (scan/symbols).";
 const ENGINE_ABSENT_REASON = "The RefactorKit engine is unavailable for this workspace.";
+const CAPABILITY_REFRESH_ERROR = "RefactorKit capability discovery could not be refreshed.";
 
 export type JavaProjectModelAvailability = "available" | "unavailable" | "error";
 
@@ -37,6 +39,10 @@ export interface JavaProjectModelClass {
 /** A package derived from the engine symbol qualified names, presented as a read-only grouping. */
 export interface JavaProjectModelPackage {
   readonly name: string;
+  /** Representative RefactorKit source path used to bind package actions to the selected project. */
+  readonly path: string;
+  /** All distinct RefactorKit source paths contributing symbols to this package. */
+  readonly sourcePaths: readonly string[];
   readonly classCount: number;
   readonly symbolCount: number;
 }
@@ -66,6 +72,8 @@ export interface UseJavaProjectModelControllerDependencies {
   /** Authoritative engine capability advertisement (operational surface includes scan/symbols). */
   capabilities: RefactorKitCapabilities | null;
   isCheckingCapabilities: boolean;
+  /** Refreshes stale shared capability discovery and returns the resulting snapshot. */
+  refreshCapabilities?(): Promise<RefactorKitStatusSnapshot>;
   workspaceInfo: WorkspaceInfo | null;
   workspaceGeneration: number;
   getWorkspaceContext(): JavaProjectModelWorkspaceContext;
@@ -169,20 +177,34 @@ export function parseEngineSymbols(stdout: string): readonly JavaProjectModelSym
  * the package of their owner class. The model is never produced by the IDE
  * itself.
  */
-export function buildProjectModel(
-  symbols: readonly JavaProjectModelSymbol[],
-): JavaProjectModel {
+export function buildProjectModel(symbols: readonly JavaProjectModelSymbol[]): JavaProjectModel {
   const classes = symbols.filter((symbol) => isTypeDeclaration(symbol.kind));
-  const packageMap = new Map<string, { classCount: number; symbolCount: number }>();
+  const packageMap = new Map<
+    string,
+    { classCount: number; symbolCount: number; path: string; sourcePaths: Set<string> }
+  >();
   for (const symbol of symbols) {
     const packageName = packageNameOf(symbol);
-    const entry = packageMap.get(packageName) ?? { classCount: 0, symbolCount: 0 };
+    const entry = packageMap.get(packageName) ?? {
+      classCount: 0,
+      symbolCount: 0,
+      path: symbol.path,
+      sourcePaths: new Set<string>(),
+    };
+    if (symbol.path.localeCompare(entry.path) < 0) entry.path = symbol.path;
+    entry.sourcePaths.add(symbol.path);
     entry.symbolCount += 1;
     if (isTypeDeclaration(symbol.kind)) entry.classCount += 1;
     packageMap.set(packageName, entry);
   }
   const packages = [...packageMap.entries()]
-    .map(([name, counts]) => ({ name, ...counts }))
+    .map(([name, counts]) => ({
+      name,
+      path: counts.path,
+      sourcePaths: [...counts.sourcePaths].sort((a, b) => a.localeCompare(b)),
+      classCount: counts.classCount,
+      symbolCount: counts.symbolCount,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
   // Bounded presentation is intentional for large engine results, but the
   // truncation is never silent: the full result count and the truncation
@@ -213,6 +235,16 @@ function engineSurfaceAdvertised(capabilities: RefactorKitCapabilities | null): 
   return surface.includes("symbols") && surface.includes("scan");
 }
 
+function engineAvailable(
+  status: RefactorKitStatus | null,
+  capabilities: RefactorKitCapabilities | null,
+): boolean {
+  const engine = capabilities as (RefactorKitCapabilities & { engineDiscovered?: unknown }) | null;
+  return typeof engine?.engineDiscovered === "boolean"
+    ? engine.engineDiscovered
+    : status?.available === true;
+}
+
 function boundedReason(reason: string): string {
   return reason.slice(0, 180);
 }
@@ -232,6 +264,7 @@ export function useJavaProjectModelController(
   const dependenciesRef = useRef(dependencies);
   dependenciesRef.current = dependencies;
   const requestRef = useRef(0);
+  const refreshPendingForCapabilitiesRef = useRef(false);
   const mountedRef = useRef(true);
   const workspaceGenerationRef = useRef(dependencies.workspaceGeneration);
 
@@ -248,8 +281,9 @@ export function useJavaProjectModelController(
     const currentDependencies = dependenciesRef.current;
     const workspace = currentDependencies.workspaceInfo;
     const context = currentDependencies.getWorkspaceContext();
-    const capabilities = currentDependencies.capabilities;
-    const status = currentDependencies.status;
+    let capabilities = currentDependencies.capabilities;
+    let status = currentDependencies.status;
+    let hasEngine = engineAvailable(status, capabilities);
 
     setIsBusy(true);
     setError(null);
@@ -272,14 +306,93 @@ export function useJavaProjectModelController(
       return;
     }
 
+    // Do not turn an in-flight global capability check into a false
+    // unavailable result. Keep this refresh pending and retry once the
+    // authoritative status and capability snapshot has settled.
+    if (currentDependencies.isCheckingCapabilities) {
+      refreshPendingForCapabilitiesRef.current = true;
+      setAvailability("unavailable");
+      setAvailabilityReason("RefactorKit capability discovery is still loading.");
+      return;
+    }
+    refreshPendingForCapabilitiesRef.current = false;
+
+    // Capability discovery can fail transiently during startup. A user-initiated
+    // refresh retries the shared authoritative probe before concluding that the
+    // engine or its project-model surface is unavailable.
+    if (
+      currentDependencies.refreshCapabilities &&
+      (!hasEngine || !engineSurfaceAdvertised(capabilities))
+    ) {
+      let snapshot: RefactorKitStatusSnapshot;
+      try {
+        snapshot = await currentDependencies.refreshCapabilities();
+      } catch {
+        if (mountedRef.current && requestRef.current === requestId) {
+          setAvailability("error");
+          setAvailabilityReason(null);
+          setError(CAPABILITY_REFRESH_ERROR);
+          setIsBusy(false);
+        }
+        return;
+      }
+
+      if (!mountedRef.current || requestRef.current !== requestId) return;
+
+      const latestDependencies = dependenciesRef.current;
+      const latestWorkspace = latestDependencies.workspaceInfo;
+      const latestContext = latestDependencies.getWorkspaceContext();
+      if (
+        !latestWorkspace ||
+        latestContext.isSwitching ||
+        latestContext.isMetadataLoading ||
+        latestContext.workspaceId !== latestWorkspace.id ||
+        latestContext.generation !== latestDependencies.workspaceGeneration
+      ) {
+        setAvailability("unavailable");
+        setAvailabilityReason(
+          boundedReason(!latestWorkspace ? UNAUTHORIZED_REASON : CAPABILITY_REASON),
+        );
+        setIsBusy(false);
+        return;
+      }
+
+      // A superseded shared refresh returns an empty snapshot. In that case,
+      // use the newest props that have already committed; a genuine capability
+      // read failure returns a status with no capability object and must not be
+      // misreported as an authoritative refusal by the engine.
+      if (snapshot.status === null && snapshot.capabilities === null) {
+        if (latestDependencies.isCheckingCapabilities) {
+          refreshPendingForCapabilitiesRef.current = true;
+          setAvailability("unavailable");
+          setAvailabilityReason("RefactorKit capability discovery is still loading.");
+          setIsBusy(false);
+          return;
+        }
+        status = latestDependencies.status;
+        capabilities = latestDependencies.capabilities;
+      } else {
+        status = snapshot.status;
+        capabilities = snapshot.capabilities;
+      }
+      if (!capabilities) {
+        setAvailability("error");
+        setAvailabilityReason(null);
+        setError(snapshot.capabilitiesError ?? CAPABILITY_REFRESH_ERROR);
+        setIsBusy(false);
+        return;
+      }
+      hasEngine = engineAvailable(status, capabilities);
+    }
+
     // Engine presence + capability-before-offer: the engine must be available
     // and advertise the scan/symbols surface before any native command.
-    if (!status?.available || !engineSurfaceAdvertised(capabilities)) {
+    if (!hasEngine || !engineSurfaceAdvertised(capabilities)) {
       if (mountedRef.current && requestRef.current === requestId) {
         setAvailability("unavailable");
         setAvailabilityReason(
           boundedReason(
-            !status?.available
+            !hasEngine
               ? ENGINE_ABSENT_REASON
               : currentDependencies.isCheckingCapabilities
                 ? "RefactorKit capability discovery is still loading."
@@ -330,12 +443,14 @@ export function useJavaProjectModelController(
 
   const cancel = useCallback((): void => {
     requestRef.current += 1;
+    refreshPendingForCapabilitiesRef.current = false;
     setIsBusy(false);
     setError(null);
   }, []);
 
   const resetWorkspace = useCallback((): void => {
     requestRef.current += 1;
+    refreshPendingForCapabilitiesRef.current = false;
     setIsBusy(false);
     setError(null);
     setModel(null);
@@ -367,6 +482,12 @@ export function useJavaProjectModelController(
       resetWorkspace();
     }
   }, [dependencies.workspaceGeneration, resetWorkspace]);
+
+  useEffect(() => {
+    if (!dependencies.isCheckingCapabilities && refreshPendingForCapabilitiesRef.current) {
+      void refresh();
+    }
+  }, [dependencies.isCheckingCapabilities, refresh]);
 
   return {
     availability,

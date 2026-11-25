@@ -86,9 +86,17 @@ describe("useDesktopShellController", () => {
     expect(result.current.activeBottomTab).toBe("problems");
     expect(dependencies.loadAiAgentCommands).toHaveBeenCalledOnce();
 
+    act(() => result.current.activateBottomTab("http-client"));
+    expect(result.current.activeBottomTab).toBe("http-client");
+    expect(dependencies.actions.setActivePanel).toHaveBeenCalledTimes(3);
+
+    act(() => result.current.activateBottomTab("database"));
+    expect(result.current.activeBottomTab).toBe("database");
+    expect(dependencies.actions.setActivePanel).toHaveBeenCalledTimes(4);
+
     act(() => result.current.activateBottomTab("unsupported"));
-    expect(result.current.activeBottomTab).toBe("problems");
-    expect(dependencies.actions.setActivePanel).toHaveBeenCalledTimes(2);
+    expect(result.current.activeBottomTab).toBe("database");
+    expect(dependencies.actions.setActivePanel).toHaveBeenCalledTimes(4);
   });
 
   it("shows Problems for Java context or supplied items and falls back when context disappears", async () => {

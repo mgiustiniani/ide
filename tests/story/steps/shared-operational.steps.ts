@@ -44,6 +44,10 @@ import {
   REQUIREMENT as JAVA_PROJECT_MODEL_REQUIREMENT,
   getRefactorKitJavaProjectModelSession,
 } from "../support/refactorkit-java-project-model.js";
+import {
+  REQUIREMENT as JAVA_BUILD_RUN_REQUIREMENT,
+  getRefactorKitJavaBuildRunSession,
+} from "../support/refactorkit-java-build-run.js";
 import { getJavaLanguageServiceSession } from "./java-language-service.steps.js";
 import { getRefactorKitJavaRefactoringSession } from "../support/refactorkit-java-refactoring.js";
 import { getRefactorKitEngineIntegrationSession } from "./refactorkit-engine-integration.steps.js";
@@ -53,6 +57,7 @@ const REFACTORING_TAG = `@${REFACTORING_REQUIREMENT}`;
 const ENGINE_INTEGRATION_TAG = `@${ENGINE_INTEGRATION_REQUIREMENT}`;
 const JAVA_NAVIGATION_TAG = `@${JAVA_NAVIGATION_REQUIREMENT}`;
 const JAVA_PROJECT_MODEL_TAG = `@${JAVA_PROJECT_MODEL_REQUIREMENT}`;
+const JAVA_BUILD_RUN_TAG = `@${JAVA_BUILD_RUN_REQUIREMENT}`;
 
 /** The scenario's owning feature tag, captured by the Before hook below. */
 function featureTagOf(world: StoryWorld): string {
@@ -73,6 +78,10 @@ function isJavaNavigation(world: StoryWorld): boolean {
 
 function isJavaProjectModel(world: StoryWorld): boolean {
   return featureTagOf(world) === JAVA_PROJECT_MODEL_TAG;
+}
+
+function isJavaBuildRun(world: StoryWorld): boolean {
+  return featureTagOf(world) === JAVA_BUILD_RUN_TAG;
 }
 
 async function attachJavaEvidence(world: StoryWorld): Promise<void> {
@@ -100,6 +109,11 @@ async function attachJavaProjectModelEvidence(world: StoryWorld): Promise<void> 
   await world.attach(JSON.stringify(session.evidence(), null, 2), "application/json");
 }
 
+async function attachJavaBuildRunEvidence(world: StoryWorld): Promise<void> {
+  const session = getRefactorKitJavaBuildRunSession(world);
+  await world.attach(JSON.stringify(session.evidence(), null, 2), "application/json");
+}
+
 // -----------------------------------------------------------------------------
 // Per-scenario tag capture: cucumber exposes the pickle (and its tags) only to
 // hooks. This unscoped Before hook records the owning feature tag on the World,
@@ -118,7 +132,9 @@ Before<StoryWorld>(function (this: StoryWorld, hookParam: ITestCaseHookParameter
           ? JAVA_NAVIGATION_TAG
           : tags.includes(JAVA_PROJECT_MODEL_TAG)
             ? JAVA_PROJECT_MODEL_TAG
-            : "";
+            : tags.includes(JAVA_BUILD_RUN_TAG)
+              ? JAVA_BUILD_RUN_TAG
+              : "";
 });
 
 // -----------------------------------------------------------------------------
@@ -602,6 +618,12 @@ Then<StoryWorld>(
 Given<StoryWorld>(
   "meaningful RED precedes new product behavior for this feature",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      await session.start();
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       await session.start();
@@ -689,12 +711,50 @@ Then<StoryWorld>(
 );
 
 // -----------------------------------------------------------------------------
+// Workspace authorization (shared by java-project-model + java-build-run)
+//
+// The step text below appears in both features, so it is defined exactly ONCE
+// here and dispatched by the scenario's requirement tag: project-model
+// scenarios start the project-model session, build-run scenarios start the
+// build-run session. Defining the same text in both feature step files makes
+// the focused run ambiguous under strict:true.
+// -----------------------------------------------------------------------------
+
+Given<StoryWorld>(
+  "an authorized Java workspace with a workspace root is presented in the IDE",
+  async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      await session.start();
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
+    if (isJavaProjectModel(this)) {
+      const session = getRefactorKitJavaProjectModelSession(this);
+      await session.start();
+      await attachJavaProjectModelEvidence(this);
+      return;
+    }
+    assert.fail(
+      `shared step "an authorized Java workspace with a workspace root is presented in the IDE" has no dispatch branch for feature tag ${featureTagOf(this) || "(none)"}`,
+    );
+  },
+);
+
+// -----------------------------------------------------------------------------
 // Web-first, Tauri-free invariant
 // -----------------------------------------------------------------------------
 
 Given<StoryWorld>(
   "packages ui, web-core, and web are part of the standalone web frontend",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      await session.start();
+      session.scanWebFirstLayers();
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       await session.start();
@@ -734,6 +794,20 @@ Then<StoryWorld>(
   "no file under ui, web-core, or web imports {string}",
   async function (platformApi: string) {
     assert.equal(platformApi, "@tauri-apps/api", "boundary API token mismatch");
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      const scan = session.webFirstLayerScan();
+      assert.ok(scan && scan.length > 0, `${JAVA_BUILD_RUN_REQUIREMENT} web-first layer scan is missing`);
+      for (const result of scan) {
+        assert.equal(
+          result.platformApiImportCount,
+          0,
+          `${JAVA_BUILD_RUN_REQUIREMENT} ${result.layer} imports @tauri-apps/api ${result.platformApiImportCount} time(s)`,
+        );
+      }
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       const scan = session.webFirstLayerScan();
@@ -807,6 +881,29 @@ Then<StoryWorld>(
 Then<StoryWorld>(
   "the web frontend builds and runs without Tauri",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      // Structural Tauri-free guarantee: zero @tauri-apps/api imports across the
+      // web-first layers and zero platform imports on the RefactorKit port. The
+      // full web build is proven by the independent quality gate; this Story
+      // harness does not re-run it here.
+      const scan = session.webFirstLayerScan();
+      assert.ok(scan && scan.length > 0, `${JAVA_BUILD_RUN_REQUIREMENT} web-first layer scan is missing`);
+      for (const result of scan) {
+        assert.equal(
+          result.platformApiImportCount,
+          0,
+          `${JAVA_BUILD_RUN_REQUIREMENT} ${result.layer} imports a platform API`,
+        );
+      }
+      const ports = session.portCapabilityEvidence();
+      assert.ok(ports.length === 1, `${JAVA_BUILD_RUN_REQUIREMENT} port capability evidence is incomplete`);
+      for (const port of ports) {
+        assert.equal(port.tauriImports, 0, `${JAVA_BUILD_RUN_REQUIREMENT} ${port.port} imports a platform API`);
+      }
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       // Structural Tauri-free guarantee: zero @tauri-apps/api imports across the
@@ -912,6 +1009,12 @@ Then<StoryWorld>(
 When<StoryWorld>(
   "the feature file is parsed for requirement and status reconciliation",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      session.reconcileFeatureStatus();
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       session.reconcileFeatureStatus();
@@ -945,6 +1048,27 @@ When<StoryWorld>(
 Then<StoryWorld>(
   "the feature declares exactly one effective status \"@not-implemented\" at feature level",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      const reconciliation = session.featureReconciliation();
+      assert.ok(reconciliation, `${JAVA_BUILD_RUN_REQUIREMENT} reconciliation is missing`);
+      assert.equal(
+        new Set(reconciliation.featureStatusTags).size,
+        1,
+        `${JAVA_BUILD_RUN_REQUIREMENT} feature must declare exactly one effective status at feature level`,
+      );
+      assert.ok(
+        reconciliation.featureStatusTags.includes("@not-implemented"),
+        `${JAVA_BUILD_RUN_REQUIREMENT} feature does not declare @not-implemented`,
+      );
+      assert.equal(
+        reconciliation.scenarioStatusTags.length,
+        0,
+        `${JAVA_BUILD_RUN_REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
+      );
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       const reconciliation = session.featureReconciliation();
@@ -1043,6 +1167,18 @@ Then<StoryWorld>(
 Then<StoryWorld>(
   "no scenario overrides that single effective status",
   async function () {
+    if (isJavaBuildRun(this)) {
+      const session = getRefactorKitJavaBuildRunSession(this);
+      const reconciliation = session.featureReconciliation();
+      assert.ok(reconciliation, `${JAVA_BUILD_RUN_REQUIREMENT} reconciliation is missing`);
+      assert.equal(
+        reconciliation.scenarioStatusTags.length,
+        0,
+        `${JAVA_BUILD_RUN_REQUIREMENT} scenarios declare status tags at scenario level instead of feature level`,
+      );
+      await attachJavaBuildRunEvidence(this);
+      return;
+    }
     if (isJavaProjectModel(this)) {
       const session = getRefactorKitJavaProjectModelSession(this);
       const reconciliation = session.featureReconciliation();

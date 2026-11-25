@@ -35,7 +35,11 @@ export interface FileTreeFolderProps {
   focusedDirectoryPath?: string | null;
   onSelectDirectory?: (node: FileNode) => void;
   onFocusDirectory?: (node: FileNode) => void;
-  onOpenPasteMenu?: (node: FileNode, row: HTMLElement, point?: { x: number; y: number }) => void;
+  onOpenDirectoryMenu?: (
+    node: FileNode,
+    row: HTMLElement,
+    point?: { x: number; y: number },
+  ) => void;
 }
 
 const semanticStyles = {
@@ -70,7 +74,7 @@ export function FileTreeFolder({
   focusedDirectoryPath = null,
   onSelectDirectory,
   onFocusDirectory,
-  onOpenPasteMenu,
+  onOpenDirectoryMenu,
 }: FileTreeFolderProps): JSX.Element {
   const presentation = presentJavaPackageFolder(node, isJavaPackageContext);
   const realNode = presentation.node;
@@ -99,17 +103,20 @@ export function FileTreeFolder({
         }}
         onFocus={() => onFocusDirectory?.(realNode)}
         onContextMenu={(event) => {
-          if (!onOpenPasteMenu) return;
+          if (!onOpenDirectoryMenu) return;
           event.preventDefault();
           onSelectDirectory?.(realNode);
-          onOpenPasteMenu(realNode, event.currentTarget, { x: event.clientX, y: event.clientY });
+          onOpenDirectoryMenu(realNode, event.currentTarget, {
+            x: event.clientX,
+            y: event.clientY,
+          });
         }}
         onKeyDown={(event) => {
           if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
-            if (onOpenPasteMenu) {
+            if (onOpenDirectoryMenu) {
               event.preventDefault();
               onSelectDirectory?.(realNode);
-              onOpenPasteMenu(realNode, event.currentTarget);
+              onOpenDirectoryMenu(realNode, event.currentTarget);
             }
           } else if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -179,7 +186,7 @@ export function FileTreeFolder({
                   focusedDirectoryPath={focusedDirectoryPath}
                   onSelectDirectory={onSelectDirectory}
                   onFocusDirectory={onFocusDirectory}
-                  onOpenPasteMenu={onOpenPasteMenu}
+                  onOpenDirectoryMenu={onOpenDirectoryMenu}
                 />
               ) : (
                 <FileTreeItem

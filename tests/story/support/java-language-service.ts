@@ -79,12 +79,7 @@ public final class App {
 `;
 
 /** The native lifecycle states reported by the fake Rust backend. */
-type NativeLifecycle =
-  | "stopped"
-  | "starting"
-  | "ready"
-  | "stopping"
-  | "unavailable";
+type NativeLifecycle = "stopped" | "starting" | "ready" | "stopping" | "unavailable";
 
 interface BoundaryInvocation {
   readonly sequence: number;
@@ -103,6 +98,10 @@ interface NativeStatusPayload {
   workspaceId: string;
   workspaceRoot: string;
   generation: number;
+  gradleImportEnabled: boolean;
+  gradleSettingsConfigured: boolean;
+  activeMavenProfiles: string[];
+  inactiveMavenProfiles: string[];
   capabilities?: Record<string, boolean>;
   jdtlsVersion?: string;
   jdtlsHome?: string;
@@ -141,10 +140,14 @@ function readyCapabilities(): Record<string, boolean> {
     definition: false,
     references: false,
     documentSymbols: false,
+    documentHighlights: false,
+    implementation: false,
     workspaceSymbols: false,
+    semanticTokens: false,
     rename: false,
     codeActions: false,
     formatting: false,
+    rangeFormatting: false,
     signatureHelp: true,
   };
 }
@@ -205,6 +208,10 @@ function statusPayload(
     workspaceId: WORKSPACE_ID,
     workspaceRoot: "/workspace-java",
     generation,
+    gradleImportEnabled: false,
+    gradleSettingsConfigured: false,
+    activeMavenProfiles: [],
+    inactiveMavenProfiles: [],
     ...(capabilities !== undefined ? { capabilities } : {}),
     ...(available
       ? {
@@ -231,7 +238,14 @@ class JavaLanguageNativeBoundary implements TauriInternals {
   #available = true;
   #events: NativeEvent[] = [];
   #latestSequence = 0;
-  #semanticDeferred: { kind: SemanticKind; request: Record<string, unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void } | undefined;
+  #semanticDeferred:
+    | {
+        kind: SemanticKind;
+        request: Record<string, unknown>;
+        resolve: (v: unknown) => void;
+        reject: (e: unknown) => void;
+      }
+    | undefined;
   #cancelPending = false;
   #deferNextCompletion = false;
   readonly invocations: BoundaryInvocation[] = [];
@@ -268,7 +282,9 @@ class JavaLanguageNativeBoundary implements TauriInternals {
       case "poll_java_language_service_events": {
         const afterSequence = Number(args?.afterSequence ?? 0);
         const limit = Math.min(this.pollLimit, Number(args?.limit ?? this.pollLimit));
-        const pending = this.#events.filter((event) => event.sequence > afterSequence).slice(0, limit);
+        const pending = this.#events
+          .filter((event) => event.sequence > afterSequence)
+          .slice(0, limit);
         this.#events = this.#events.filter((event) => event.sequence <= afterSequence);
         this.#latestSequence = Math.max(this.#latestSequence, afterSequence);
         return { events: pending, latestSequence: this.#latestSequence };
@@ -375,7 +391,8 @@ class JavaLanguageNativeBoundary implements TauriInternals {
   }
 
   #status(): NativeStatusPayload {
-    const ready = this.#available && (this.#lifecycle === "ready" || this.#lifecycle === "starting");
+    const ready =
+      this.#available && (this.#lifecycle === "ready" || this.#lifecycle === "starting");
     return statusPayload(
       this.#lifecycle,
       this.#generation,
@@ -438,10 +455,7 @@ class JavaLanguageNativeBoundary implements TauriInternals {
         signatures: [
           {
             label: "helper(String value, int count)",
-            parameters: [
-              { label: "String value" },
-              { label: "int count" },
-            ],
+            parameters: [{ label: "String value" }, { label: "int count" }],
           },
         ],
         isTruncated: false,
@@ -505,7 +519,10 @@ class JavaLanguageNativeBoundary implements TauriInternals {
     };
   }
 
-  #semanticUnavailable(_kind: SemanticKind, request: Record<string, unknown>): Record<string, unknown> {
+  #semanticUnavailable(
+    _kind: SemanticKind,
+    request: Record<string, unknown>,
+  ): Record<string, unknown> {
     return {
       provider: "jdtls",
       providerVersion: null,
@@ -517,12 +534,19 @@ class JavaLanguageNativeBoundary implements TauriInternals {
       requestId: String(request.requestId),
       cancelled: false,
       timeout: false,
-      error: { kind: "unavailable", summary: "Java semantic provider is unavailable", retryable: true },
+      error: {
+        kind: "unavailable",
+        summary: "Java semantic provider is unavailable",
+        retryable: true,
+      },
       result: null,
     };
   }
 
-  #semanticCancelled(_kind: SemanticKind, request: Record<string, unknown>): Record<string, unknown> {
+  #semanticCancelled(
+    _kind: SemanticKind,
+    request: Record<string, unknown>,
+  ): Record<string, unknown> {
     return {
       provider: "jdtls",
       providerVersion: null,
@@ -600,7 +624,11 @@ export class JavaLanguageServiceStorySession {
    */
   async startReadySession(): Promise<LanguageServiceStatus> {
     this.#assertStarted();
-    const status = await this.#languageSession!.start({ workspaceId: WORKSPACE_ID, requestId: "story-start-1" });
+    const status = await this.#languageSession!.start({
+      workspaceId: WORKSPACE_ID,
+      gradleImportEnabled: false,
+      requestId: "story-start-1",
+    });
     this.#documentStatus = status;
     assert.equal(status.state, "ready");
     return status;
@@ -614,7 +642,11 @@ export class JavaLanguageServiceStorySession {
 
   async startService(): Promise<LanguageServiceStatus> {
     this.#assertStarted();
-    this.#status = await this.#languageSession!.start({ workspaceId: WORKSPACE_ID, requestId: "story-start-2" });
+    this.#status = await this.#languageSession!.start({
+      workspaceId: WORKSPACE_ID,
+      gradleImportEnabled: false,
+      requestId: "story-start-2",
+    });
     return this.#status;
   }
 
@@ -623,6 +655,7 @@ export class JavaLanguageServiceStorySession {
     this.#status = await this.#languageSession!.restart({
       workspaceId: WORKSPACE_ID,
       generation: this.#status!.generation,
+      gradleImportEnabled: false,
       requestId: "story-restart-1",
     });
     return this.#status;
@@ -824,7 +857,9 @@ export class JavaLanguageServiceStorySession {
       cancellationId: "story-cancel-cancel-1",
     });
     await this.#javaIntelligence!.cancel("story-cancel-cancel-1");
-    await this.#waitFor(() => this.#boundary!.invocations.some((i) => i.command === "cancel_java_semantic_request"));
+    await this.#waitFor(() =>
+      this.#boundary!.invocations.some((i) => i.command === "cancel_java_semantic_request"),
+    );
     this.#boundary!.settleCancelledCompletion();
     const response = await pending;
     this.#cancelledResponse = response;
@@ -868,7 +903,8 @@ export class JavaLanguageServiceStorySession {
     ] as const;
     return ports.map((port) => {
       const text = readFileSync(join(REPO_ROOT, port), "utf8");
-      const declaresInterface = /interface\s+(LanguageSessionPort|DocumentSyncPort|JavaIntelligencePort)/u.test(text);
+      const declaresInterface =
+        /interface\s+(LanguageSessionPort|DocumentSyncPort|JavaIntelligencePort)/u.test(text);
       const tauriImports = /@tauri-apps\/api/u.test(text) ? 1 : 0;
       return { port, declaresInterface, tauriImports };
     });
@@ -955,13 +991,23 @@ export class JavaLanguageServiceStorySession {
   async proveSpawnPath(): Promise<void> {
     this.#assertStarted();
     try {
-      execFileSync("cargo", ["test", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml", "commands::java_language"], {
-        cwd: REPO_ROOT,
-        timeout: 240_000,
-        maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      execFileSync(
+        "cargo",
+        [
+          "test",
+          "--lib",
+          "--manifest-path",
+          "apps/desktop/src-tauri/Cargo.toml",
+          "commands::java_language",
+        ],
+        {
+          cwd: REPO_ROOT,
+          timeout: 240_000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       this.#cargoTestProof = "passed";
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -1047,14 +1093,17 @@ export class JavaLanguageServiceStorySession {
     return {
       requirement: REQUIREMENT,
       phase: "characterization-green",
-      declaredStatus: "@not-implemented",
+      declaredStatus: "@partial",
       evidenceKind: "tauri-harness",
       nativeGui: false,
       e2e: false,
       packagedApplication: false,
       honestUnavailablePath: this.#status?.state === "unavailable" ? this.#status : undefined,
       readyPath: this.#documentStatus?.state === "ready" ? this.#documentStatus : undefined,
-      lifecycleEvents: this.#lifecycleEvents.map((s) => ({ state: s.state, generation: s.generation })),
+      lifecycleEvents: this.#lifecycleEvents.map((s) => ({
+        state: s.state,
+        generation: s.generation,
+      })),
       spawnPathEvidence: this.#cargoTestProof,
       webBuildEvidence: this.#webBuildProof,
       webFirstLayerScan: this.#webFirstLayerScan,
@@ -1086,7 +1135,11 @@ export class JavaLanguageServiceStorySession {
     const javaFile = join(root, JAVA_DOCUMENT_PATH);
     mkdirSync(dirname(javaFile), { recursive: true });
     writeFileSync(javaFile, JAVA_SOURCE, "utf8");
-    writeFileSync(join(root, "pom.xml"), "<project><modelVersion>4.0.0</modelVersion><artifactId>app</artifactId></project>\n", "utf8");
+    writeFileSync(
+      join(root, "pom.xml"),
+      "<project><modelVersion>4.0.0</modelVersion><artifactId>app</artifactId></project>\n",
+      "utf8",
+    );
     return root;
   }
 

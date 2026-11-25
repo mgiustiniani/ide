@@ -5,32 +5,114 @@ pub mod xcom2_setup_cli;
 
 use tauri::Manager;
 
+fn native_lifecycle_trace(event: &str) {
+    commands::refactorkit_daemon::trace_java_application_lifecycle(event);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let java_project_context = commands::refactorkit_daemon::JavaProjectContextState::default();
+    let java_navigation =
+        commands::refactorkit_daemon::JavaNavigationState::new(&java_project_context);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::java_language::JavaLanguageServiceState::default())
+        .manage(commands::java_execution::JavaExecutionState::new(&java_project_context))
+        .manage(commands::terminal::WorkspaceTerminalState::default())
+        .manage(commands::java_database::session::JavaDatabaseSessionState::default())
+        .manage(commands::editor_recovery::EditorRecoveryState::default())
+        .manage(commands::editor_disk::EditorDiskInspectionState::default())
         .manage(commands::pi_workspace_agent::PiWorkspaceAgentState::default())
         .manage(commands::refactorkit_daemon::RefactorKitDaemonState::default())
+        .manage(commands::refactorkit_lsp::RefactorKitLspState::default())
         .manage(commands::refactorkit_daemon::SavedSnapshotSemanticState::default())
+        .manage(java_navigation)
+        .manage(commands::refactorkit_daemon::JavaEntryPointState::default())
+        .manage(java_project_context)
         .manage(commands::xcom2_setup_monitor::Xcom2SetupMonitorState::default())
         .manage(commands::xcom2_setup_transaction::Xcom2SetupTransactionState::default())
         .manage(commands::xcom2_native_activation::Xcom2NativeActivationState::default())
         .manage(commands::xcom2_project_foundry::Xcom2ProjectFoundryState::default())
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
+                webview.state::<commands::java_language::JavaLanguageServiceState>()
+                    .main_document_changed();
+            }
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        native_lifecycle_trace("main-window-close-requested");
+                        if commands::git_workspace::mutation_in_progress() || window.app_handle().state::<commands::java_database::session::JavaDatabaseSessionState>()
+                            .transition_allowed().is_err() {
+                            api.prevent_close();
+                        }
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        native_lifecycle_trace("main-window-destroyed");
+                        window.app_handle().state::<commands::java_database::session::JavaDatabaseSessionState>().shutdown_all();
+                        window.app_handle().exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::file_tree::list_directory,
+            commands::file_tree::search_workspace_files,
             commands::file_tree::create_file,
             commands::git_diff_review::git_status_modified,
+            commands::git_workspace::git_workspace_status,
+            commands::git_workspace::git_workspace_review,
+            commands::git_workspace::blame::git_workspace_blame,
+            commands::git_workspace::history::git_workspace_history,
+            commands::git_workspace::branch_delete::git_workspace_branch_delete_plan,
+            commands::git_workspace::history::git_workspace_commit_review,
+            commands::git_workspace::rebase::git_workspace_rebase_plan,
+            commands::git_workspace::git_workspace_mutate,
             commands::git_diff_review::git_diff_hunks,
             commands::git_diff_review::editor_open_range,
             commands::file_tree::create_directory,
             commands::file_tree::delete_path,
             commands::file_tree::rename_path,
+            commands::java_project_text_search::search_java_project_text,
+            commands::http_client::send_http_request,
+            commands::http_client::oauth::request_oauth_client_credentials_token,
+            commands::http_client::oauth::authorization::begin_oauth_authorization,
+            commands::http_client::oauth::authorization::complete_oauth_authorization,
+            commands::http_client::oauth::authorization::cancel_oauth_authorization,
+            commands::http_client::library::load_http_library,
+            commands::http_client::library::save_http_library,
+            commands::http_client::library::export_http_library,
+            commands::http_client::library::export_http_library_as,
+            commands::java_database::inspect_java_database,
+            commands::java_database::execute_java_database,
+            commands::java_database::result_export::export_java_database_result,
+            commands::java_database::session::connect_java_database_session,
+            commands::java_database::session::inspect_java_database_session,
+            commands::java_database::session::execute_java_database_session,
+            commands::java_database::session::explain_java_database_session,
+            commands::java_database::session::control_java_database_session,
+            commands::java_database::session::close_java_database_session,
+            commands::java_database::session::cancel_java_database_session,
             commands::clipboard::read_clipboard_text,
             commands::editor::read_file,
             commands::editor::write_file,
-            commands::terminal::execute_command,
-            commands::terminal::resize_pty,
+            commands::editor_disk::inspect_editor_disk_status,
+            commands::editor_recovery::start_editor_recovery,
+            commands::editor_recovery::checkpoint_editor_recovery,
+            commands::editor_recovery::list_editor_recovery,
+            commands::editor_recovery::read_editor_recovery,
+            commands::editor_recovery::remove_editor_recovery,
+            commands::editor_recovery::stop_editor_recovery,
+            commands::terminal::get_workspace_terminal_capabilities,
+            commands::terminal::start_workspace_terminal,
+            commands::terminal::read_workspace_terminal,
+            commands::terminal::write_workspace_terminal,
+            commands::terminal::resize_workspace_terminal,
+            commands::terminal::stop_workspace_terminal,
+            commands::terminal::close_workspace_terminal,
             commands::pi_workspace_agent::attach_pi_workspace_agent,
             commands::pi_workspace_agent::detach_pi_workspace_agent,
             commands::pi_workspace_agent::write_pi_workspace_agent,
@@ -43,6 +125,12 @@ pub fn run() {
             commands::pi_workspace_agent::get_pi_workspace_agent_detached_binding,
             commands::refactorkit::get_refactorkit_status,
             commands::refactorkit_daemon::get_refactorkit_capabilities,
+            commands::refactorkit_lsp::get_refactorkit_lsp_capabilities,
+            commands::refactorkit_lsp::preview_refactorkit_lsp_java_refactoring,
+            commands::refactorkit_daemon::preview_refactorkit_maven_module_rename,
+            commands::refactorkit_daemon::apply_refactorkit_maven_module_rename,
+            commands::refactorkit_daemon::rollback_refactorkit_maven_module_rename,
+            commands::refactorkit_daemon::discard_refactorkit_maven_module_rename_preview,
             commands::refactorkit_daemon::preview_refactorkit_external_java_import,
             commands::refactorkit_daemon::apply_refactorkit_plan,
             commands::refactorkit_daemon::discard_refactorkit_plan,
@@ -53,6 +141,26 @@ pub fn run() {
             commands::refactorkit_daemon::discard_refactorkit_refactoring,
             commands::refactorkit_daemon::shutdown_refactorkit_daemon,
             commands::refactorkit_daemon::start_refactorkit_saved_snapshot_semantic_session,
+            commands::refactorkit_daemon::java_context_commands::query_refactorkit_java_navigation,
+            commands::refactorkit_daemon::java_context_commands::query_refactorkit_java_editor_diagnostics,
+            commands::refactorkit_daemon::java_context_commands::cancel_refactorkit_java_navigation_query,
+            commands::refactorkit_daemon::java_source_commands::lookup_java_dependency_source,
+            commands::refactorkit_daemon::java_source_commands::read_java_dependency_source,
+            commands::refactorkit_daemon::java_source_commands::resolve_java_dependency_source_declaration,
+            commands::refactorkit_daemon::java_source_commands::lookup_java_platform_source,
+            commands::refactorkit_daemon::java_source_commands::read_java_platform_source,
+            commands::refactorkit_daemon::java_source_commands::resolve_java_platform_source_declaration,
+            commands::refactorkit_daemon::java_context_commands::stop_refactorkit_java_navigation,
+            commands::refactorkit_daemon::java_context_commands::query_refactorkit_java_project_context,
+            commands::refactorkit_daemon::java_context_commands::recover_refactorkit_java_saved_sources,
+            commands::refactorkit_daemon::java_context_commands::query_refactorkit_java_entry_points,
+            commands::refactorkit_daemon::java_context_commands::cancel_refactorkit_java_entry_points,
+            commands::refactorkit_daemon::java_context_commands::apply_refactorkit_java_project_language_settings,
+            commands::refactorkit_daemon::java_context_commands::refactorkit_java_editor_transaction,
+            commands::refactorkit_daemon::java_context_commands::stop_refactorkit_java_project_context,
+            commands::refactorkit_daemon::java_context_commands::clear_refactorkit_java_project_language_settings,
+            commands::refactorkit_daemon::java_context_commands::watch_refactorkit_java_project_inputs,
+            commands::refactorkit_daemon::java_context_commands::stop_refactorkit_java_project_watch,
             commands::refactorkit_daemon::stop_refactorkit_saved_snapshot_semantic_session,
             commands::refactorkit_daemon::search_refactorkit_saved_snapshot_symbols,
             commands::refactorkit_daemon::resolve_refactorkit_saved_snapshot_definition,
@@ -71,6 +179,26 @@ pub fn run() {
             commands::refactorkit_daemon::run_refactorkit_engine_definition,
             commands::refactorkit_daemon::run_refactorkit_engine_references,
             commands::refactorkit_daemon::run_refactorkit_engine_diagnostics,
+            commands::java_execution::get_java_execution_capabilities,
+            commands::java_project_scaffold::create_java_project,
+            commands::java_project_declaration::create_java_project_declaration,
+            commands::java_execution::start_java_execution,
+            commands::java_execution::start_java_project_execution,
+            commands::java_execution::get_java_execution_snapshot,
+            commands::java_execution::analyze_java_flight_recording,
+            commands::java_execution::read_java_flight_recording_timeline,
+            commands::java_execution::stop_java_execution,
+            commands::java_execution::rerun_java_failed_tests,
+            commands::java_execution::restart_java_execution,
+            commands::java_execution::send_java_debug_command,
+            commands::java_execution::send_java_application_input,
+            commands::java_execution::send_java_debug_action,
+            commands::java_execution::reload_java_classes,
+            commands::java_execution::build_java_for_class_reload,
+            commands::java_execution::get_java_debug_source,
+            commands::java_execution::toggle_java_source_breakpoint,
+            commands::java_execution::run_java_to_cursor,
+            commands::java_language::list_java_formatter_profiles,
             commands::java_language::get_java_language_service_status,
             commands::java_language::start_java_language_service,
             commands::java_language::stop_java_language_service,
@@ -80,9 +208,24 @@ pub fn run() {
             commands::java_language::change_java_language_document,
             commands::java_language::save_java_language_document,
             commands::java_language::close_java_language_document,
+            commands::java_language::revalidate_java_language_document,
+            commands::java_language::notify_java_language_workspace_file_saved,
             commands::java_language::request_java_completion,
             commands::java_language::request_java_hover,
             commands::java_language::request_java_signature_help,
+            commands::java_language::request_java_document_symbols,
+            commands::java_language::request_java_workspace_symbols,
+            commands::java_language::request_java_document_highlights,
+            commands::java_language::request_java_definitions,
+            commands::java_language::request_java_type_definitions,
+            commands::java_language::request_java_implementations,
+            commands::java_language::request_java_call_hierarchy,
+            commands::java_language::request_java_references,
+            commands::java_language::request_java_semantic_tokens,
+            commands::java_language::request_java_inlay_hints,
+            commands::java_language::request_java_formatting,
+            commands::java_language::request_java_code_actions,
+            commands::java_language::request_java_rename,
             commands::java_language::cancel_java_semantic_request,
             commands::workspace_registry::ensure_current_workspace,
             commands::workspace_registry::list_workspaces,
@@ -127,26 +270,59 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            if app_handle.state::<commands::java_database::session::JavaDatabaseSessionState>()
+                .transition_allowed().is_err() {
+                api.prevent_exit();
+            }
+        }
         if matches!(event, tauri::RunEvent::Exit) {
+            native_lifecycle_trace("exit-begin");
+            app_handle
+                .state::<commands::java_language::JavaLanguageServiceState>()
+                .begin_application_exit();
+            app_handle.state::<commands::java_database::session::JavaDatabaseSessionState>().shutdown_all();
+            app_handle
+                .state::<commands::refactorkit_daemon::JavaProjectContextState>()
+                .shutdown_all();
+            native_lifecycle_trace("exit-after-java-project-context");
+            app_handle
+                .state::<commands::terminal::WorkspaceTerminalState>()
+                .shutdown_all();
+            native_lifecycle_trace("exit-after-terminal");
+            app_handle
+                .state::<commands::editor_recovery::EditorRecoveryState>()
+                .shutdown_all();
+            native_lifecycle_trace("exit-after-editor-recovery");
+            app_handle
+                .state::<commands::java_execution::JavaExecutionState>()
+                .shutdown_all();
+            native_lifecycle_trace("exit-after-java-execution");
             app_handle
                 .state::<commands::xcom2_native_activation::Xcom2NativeActivationState>()
                 .revoke(commands::xcom2_native_activation::ActivationRevocationCode::AppExit);
             app_handle
                 .state::<commands::java_language::JavaLanguageServiceState>()
                 .shutdown_all();
+            native_lifecycle_trace("exit-after-java-language");
             app_handle
                 .state::<commands::pi_workspace_agent::PiWorkspaceAgentState>()
                 .shutdown_all();
             app_handle
                 .state::<commands::refactorkit_daemon::RefactorKitDaemonState>()
                 .shutdown_all();
+            native_lifecycle_trace("exit-after-refactorkit");
             app_handle
                 .state::<commands::refactorkit_daemon::SavedSnapshotSemanticState>()
+                .shutdown_all();
+            app_handle
+                .state::<commands::refactorkit_daemon::JavaNavigationState>()
                 .shutdown_all();
             commands::xcom2_setup_transaction::flush_xcom2_setup_transactions(
                 &app_handle
                     .state::<commands::xcom2_setup_transaction::Xcom2SetupTransactionState>(),
             );
+            native_lifecycle_trace("exit-complete");
         }
     });
 }

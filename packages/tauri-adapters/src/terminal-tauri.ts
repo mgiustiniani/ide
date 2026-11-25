@@ -1,163 +1,144 @@
-// ---------------------------------------------------------------------------
-// @ide/tauri-adapters – TauriTerminalAdapter
-// ---------------------------------------------------------------------------
-// Implements TerminalPort by invoking Tauri Rust commands:
-//   execute_command, resize_pty
-// Also uses @tauri-apps/plugin-shell for PTY session management.
-// ---------------------------------------------------------------------------
-
-import { invokeTauri, toTauriAdapterError } from "./errors";
-import type { TerminalOutput } from "@ide/contracts";
-import type { TerminalPort } from "@ide/web-core/ports";
-
-export class TauriTerminalAdapter implements TerminalPort {
-  /** Callback list for new output lines. */
-  private outputCallbacks: Array<(output: TerminalOutput) => void> = [];
-
-  /** Callback list for session exit events. */
-  private exitCallbacks: Array<(code: number | null) => void> = [];
-
-  /** Execute a single command via the Rust shell command. */
-  async executeCommand(command: string): Promise<void> {
-    const trimmed = command.trim();
-
-    // Echo the input as an "input" type output line.
-    this.emitOutput({
-      text: `$ ${trimmed}`,
-      type: "input",
-      timestamp: Date.now(),
-    });
-
-    if (!trimmed) {
-      return;
-    }
-
-    // Handle clear locally (Rust side doesn't have a clear concept).
-    if (trimmed === "clear" || trimmed === "cls") {
-      this.emitOutput({
-        text: "",
-        type: "system",
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    // Handle exit locally.
-    if (trimmed === "exit") {
-      this.emitOutput({
-        text: "Session terminated.",
-        type: "system",
-        timestamp: Date.now(),
-      });
-      this.emitExit(0);
-      return;
-    }
-
-    try {
-      const result = await invokeTauri<Record<string, unknown>>("execute_command", {
-        command: trimmed,
-      });
-
-      const stdout = (result.stdout as string) ?? "";
-      const stderr = (result.stderr as string) ?? "";
-      const success = (result.success as boolean) ?? false;
-      const code = (result.code as number) ?? 0;
-
-      if (stdout) {
-        this.emitOutput({
-          text: stdout,
-          type: "stdout",
-          timestamp: Date.now(),
-        });
-      }
-
-      if (stderr) {
-        this.emitOutput({
-          text: stderr,
-          type: "stderr",
-          timestamp: Date.now(),
-        });
-      }
-
-      // If the command failed, emit the exit code as a system message.
-      if (!success) {
-        this.emitOutput({
-          text: `process exited with code ${code}`,
-          type: "system",
-          timestamp: Date.now(),
-        });
-      }
-    } catch (err: unknown) {
-      const message = toTauriAdapterError("execute_command", err).message;
-      this.emitOutput({
-        text: `[tauri] ${message}`,
-        type: "stderr",
-        timestamp: Date.now(),
-      });
-    }
+import type {
+  WorkspaceTerminalCapabilities,
+  WorkspaceTerminalContext,
+  WorkspaceTerminalSession,
+  WorkspaceTerminalSnapshot,
+  WorkspaceTerminalStart,
+  WorkspaceTerminalWriteResult,
+} from "@ide/contracts";
+import type { WorkspaceTerminalPort } from "@ide/web-core/ports";
+import { invokeTauri } from "./errors";
+function object(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Invalid terminal response.");
+  return value as Record<string, unknown>;
+}
+function correlated(value: unknown, request: WorkspaceTerminalContext & { sessionId?: string }) {
+  const data = object(value);
+  if (
+    data.workspaceId !== request.workspaceId ||
+    data.generation !== request.generation ||
+    data.clientId !== request.clientId ||
+    (request.sessionId !== undefined && data.sessionId !== request.sessionId)
+  )
+    throw new Error("Stale terminal response.");
+  return data;
+}
+function integer(value: unknown, min: number, max: number): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
+}
+function nullableText(value: unknown, max: number) {
+  return value === null || (typeof value === "string" && value.length <= max);
+}
+function snapshot(
+  value: unknown,
+  request: WorkspaceTerminalContext & { sessionId?: string },
+): WorkspaceTerminalSnapshot {
+  const data = correlated(value, request);
+  if (
+    typeof data.sessionId !== "string" ||
+    !data.sessionId ||
+    data.sessionId.length > 128 ||
+    !["running", "exited", "stopped", "failed"].includes(String(data.state)) ||
+    !integer(data.pid, 1, 2_147_483_647) ||
+    typeof data.shell !== "string" ||
+    !data.shell ||
+    data.shell.length > 4096 ||
+    typeof data.cwd !== "string" ||
+    !data.cwd ||
+    data.cwd.length > 4096 ||
+    !integer(data.cols, 2, 1000) ||
+    !integer(data.rows, 1, 1000) ||
+    typeof data.dataBase64 !== "string" ||
+    data.dataBase64.length > 87_384 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.dataBase64) ||
+    !integer(data.firstCursor, 0, Number.MAX_SAFE_INTEGER) ||
+    !integer(data.nextCursor, Number(data.firstCursor), Number.MAX_SAFE_INTEGER) ||
+    !integer(data.endCursor, Number(data.nextCursor), Number.MAX_SAFE_INTEGER) ||
+    typeof data.reset !== "boolean" ||
+    !(data.exitCode === null || integer(data.exitCode, 0, 4_294_967_295)) ||
+    !nullableText(data.error, 4096)
+  )
+    throw new Error("Invalid terminal snapshot.");
+  const length = atob(data.dataBase64).length;
+  if (data.nextCursor - data.firstCursor !== length || length > 65_536)
+    throw new Error("Invalid terminal output range.");
+  return { ...data, cursor: data.nextCursor } as unknown as WorkspaceTerminalSnapshot;
+}
+function nativeSession(request: WorkspaceTerminalSession) {
+  return {
+    context: {
+      workspaceId: request.workspaceId,
+      generation: request.generation,
+      clientId: request.clientId,
+    },
+    sessionId: request.sessionId,
+    cursor: request.cursor,
+  };
+}
+export class TauriTerminalAdapter implements WorkspaceTerminalPort {
+  async capabilities(request: WorkspaceTerminalContext): Promise<WorkspaceTerminalCapabilities> {
+    const data = correlated(
+      await invokeTauri("get_workspace_terminal_capabilities", { request }),
+      request,
+    );
+    if (
+      typeof data.available !== "boolean" ||
+      !nullableText(data.defaultShell, 4096) ||
+      !nullableText(data.reason, 4096) ||
+      (data.available && (typeof data.defaultShell !== "string" || !data.defaultShell))
+    )
+      throw new Error("Invalid terminal capabilities.");
+    return data as unknown as WorkspaceTerminalCapabilities;
   }
-
-  /** Mark a desktop terminal session as ready. */
-  startSession(): void {
-    this.emitOutput({
-      text: "Tauri terminal ready.",
-      type: "system",
-      timestamp: Date.now(),
-    });
+  async start(request: WorkspaceTerminalStart) {
+    const { workspaceId, generation, clientId, ...settings } = request;
+    return snapshot(
+      await invokeTauri("start_workspace_terminal", {
+        request: {
+          context: { workspaceId, generation, clientId },
+          ...settings,
+          shell: settings.shell ?? null,
+        },
+      }),
+      request,
+    );
   }
-
-  /** Stop the desktop terminal session. */
-  stopSession(): void {
-    // Command execution is one-shot through Rust, so there is no PTY to tear down yet.
+  async read(request: WorkspaceTerminalSession) {
+    return snapshot(
+      await invokeTauri("read_workspace_terminal", { request: nativeSession(request) }),
+      request,
+    );
   }
-
-  /** Resize the terminal emulator dimensions. */
-  async resize(cols: number, rows: number): Promise<void> {
-    await invokeTauri<Record<string, unknown>>("resize_pty", {
-      cols,
-      rows,
-    });
+  async write(
+    request: WorkspaceTerminalSession & { dataBase64: string },
+  ): Promise<WorkspaceTerminalWriteResult> {
+    const data = correlated(
+      await invokeTauri("write_workspace_terminal", {
+        request: { session: nativeSession(request), dataBase64: request.dataBase64 },
+      }),
+      request,
+    );
+    const count = atob(request.dataBase64).length;
+    if (!integer(data.acceptedBytes, 0, count))
+      throw new Error("Invalid terminal input acknowledgement.");
+    return data as unknown as WorkspaceTerminalWriteResult;
   }
-
-  /**
-   * Subscribe to new output lines.
-   * Returns an unsubscribe function.
-   */
-  onOutput(callback: (output: TerminalOutput) => void): () => void {
-    this.outputCallbacks.push(callback);
-    return () => {
-      const idx = this.outputCallbacks.indexOf(callback);
-      if (idx >= 0) {
-        this.outputCallbacks.splice(idx, 1);
-      }
-    };
+  async resize(request: WorkspaceTerminalSession & { cols: number; rows: number }) {
+    return snapshot(
+      await invokeTauri("resize_workspace_terminal", {
+        request: { session: nativeSession(request), cols: request.cols, rows: request.rows },
+      }),
+      request,
+    );
   }
-
-  /**
-   * Subscribe to session exit events.
-   * Returns an unsubscribe function.
-   */
-  onExit(callback: (code: number | null) => void): () => void {
-    this.exitCallbacks.push(callback);
-    return () => {
-      const idx = this.exitCallbacks.indexOf(callback);
-      if (idx >= 0) {
-        this.exitCallbacks.splice(idx, 1);
-      }
-    };
+  async stop(request: WorkspaceTerminalSession) {
+    return snapshot(
+      await invokeTauri("stop_workspace_terminal", { request: nativeSession(request) }),
+      request,
+    );
   }
-
-  // ── Emit helpers ───────────────────────────────────────────────────
-
-  private emitOutput(output: TerminalOutput): void {
-    for (const cb of this.outputCallbacks) {
-      cb(output);
-    }
-  }
-
-  private emitExit(code: number | null): void {
-    for (const cb of this.exitCallbacks) {
-      cb(code);
-    }
+  async close(request: WorkspaceTerminalSession) {
+    await invokeTauri("close_workspace_terminal", { request: nativeSession(request) });
   }
 }

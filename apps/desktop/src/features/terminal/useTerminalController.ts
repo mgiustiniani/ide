@@ -1,79 +1,23 @@
-import { useCallback, useEffect } from "react";
-
-export interface TerminalControllerViewModel {
-  connect(): void;
-  disconnect(): void;
-  executeCommand(command: string): Promise<void>;
-  updateCurrentInput(value: string): void;
-  clearOutput(): void;
-}
-
-export interface TerminalControllerSession {
-  startSession(): void;
-  stopSession(): void;
-}
-
-export interface TerminalControllerStore {
-  setSessionActive(active: boolean): void;
-  setLoading(loading: boolean): void;
-}
-
-export interface UseTerminalControllerDependencies {
-  viewModel: TerminalControllerViewModel;
-  session: TerminalControllerSession;
-  getStore: () => TerminalControllerStore;
-}
-
-/** Owns the desktop terminal lifecycle and input/command coordination. */
+import { useEffect, useMemo, useSyncExternalStore, useCallback } from "react";
+import type { WorkspaceTerminalPort } from "@ide/web-core/ports";
+import { WorkspaceTerminalController } from "@ide/web-core/terminal/WorkspaceTerminalController";
 export function useTerminalController({
-  viewModel,
-  session,
-  getStore,
-}: UseTerminalControllerDependencies) {
+  port,
+  workspaceId,
+  generation,
+  ready,
+}: {
+  port: WorkspaceTerminalPort;
+  workspaceId: string | null;
+  generation: number;
+  ready: boolean;
+}) {
+  const controller = useMemo(() => new WorkspaceTerminalController(port), [port]);
+  const state = useSyncExternalStore(controller.subscribe, controller.getState);
   useEffect(() => {
-    // The command terminal is workspace-independent and can start while workspace access resolves.
-    viewModel.connect();
-    getStore().setSessionActive(true);
-    getStore().setLoading(false);
-    session.startSession();
-
-    return () => {
-      viewModel.disconnect();
-      session.stopSession();
-      getStore().setSessionActive(false);
-    };
-  }, [getStore, session, viewModel]);
-
-  const executeCommand = useCallback(
-    async (command: string): Promise<void> => {
-      try {
-        await viewModel.executeCommand(command);
-      } catch (error) {
-        console.error("[Terminal] Command execution failed", {
-          errorType: error instanceof Error ? error.name : typeof error,
-        });
-      } finally {
-        viewModel.updateCurrentInput("");
-      }
-    },
-    [viewModel],
-  );
-
-  const updateInput = useCallback(
-    (value: string): void => {
-      viewModel.updateCurrentInput(value);
-    },
-    [viewModel],
-  );
-
-  const clear = useCallback((): void => {
-    viewModel.clearOutput();
-  }, [viewModel]);
-
-  const resetWorkspace = useCallback((): void => {
-    viewModel.clearOutput();
-    viewModel.updateCurrentInput("");
-  }, [viewModel]);
-
-  return { executeCommand, updateInput, clear, resetWorkspace };
+    controller.setContext(ready && workspaceId ? { workspaceId, generation } : null);
+    return () => controller.dispose();
+  }, [controller, workspaceId, generation, ready]);
+  const resetWorkspace = useCallback(() => controller.setContext(null), [controller]);
+  return { state, controller, resetWorkspace };
 }

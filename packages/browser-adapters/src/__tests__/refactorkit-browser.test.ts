@@ -336,6 +336,31 @@ describe("BrowserRefactorKitAdapter", () => {
       (adapter: BrowserRefactorKitAdapter) => adapter.previewRefactoring(previewRefactoringRequest),
     ],
     [
+      "previewMavenModuleRename",
+      (adapter: BrowserRefactorKitAdapter) =>
+        adapter.previewMavenModuleRename({
+          oldModuleDir: "catalog-model",
+          newModuleDir: "catalog-domain",
+          expectedSnapshotHash: "a".repeat(64),
+          expectedContextHash: "b".repeat(64),
+          workspaceId: "workspace-one",
+          workspaceGeneration: 1,
+          selectionGeneration: 1,
+          requestId: "module-rename-1",
+        }),
+    ],
+    [
+      "discardMavenModuleRenamePreview",
+      (adapter: BrowserRefactorKitAdapter) =>
+        adapter.discardMavenModuleRenamePreview({
+          planId: "module-plan-1",
+          workspaceId: "workspace-one",
+          workspaceGeneration: 1,
+          selectionGeneration: 1,
+          requestId: "module-rename-1",
+        }),
+    ],
+    [
       "applyRefactoring",
       (adapter: BrowserRefactorKitAdapter) => adapter.applyRefactoring(applyRefactoringRequest),
     ],

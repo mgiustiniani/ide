@@ -15,7 +15,12 @@ const nativeCapabilities = {
   definition: true,
   references: false,
   documentSymbols: true,
-  workspaceSymbols: false,
+  documentHighlights: true,
+  implementation: true,
+  callHierarchy: true,
+  workspaceSymbols: true,
+  semanticTokens: true,
+  inlayHints: true,
   rename: true,
   codeActions: true,
   formatting: false,
@@ -34,6 +39,12 @@ function nativeStatus(overrides: Record<string, unknown> = {}) {
     jdtlsVersion: "1.42.0",
     javaExecutable: "/jdk/bin/java",
     javaVersion: "21.0.5",
+    gradleImportEnabled: false,
+    gradleSettingsConfigured: false,
+    projectPath: "",
+    mavenRepository: "",
+    activeMavenProfiles: [],
+    inactiveMavenProfiles: [],
     capabilities: nativeCapabilities,
     detail: null,
     ...overrides,
@@ -51,21 +62,329 @@ async function firstPoll(): Promise<void> {
 describe("TauriLanguageSessionAdapter lifecycle", () => {
   beforeEach(() => invokeMock.mockReset());
 
-  it("maps status/start/stop/restart to the exact no-argument Rust commands", async () => {
+  it("retains bounded on-type trigger characters and rejects malformed advertisements", async () => {
+    const adapter = new TauriLanguageSessionAdapter();
+    invokeMock.mockResolvedValueOnce(nativeStatus({ capabilities: { ...nativeCapabilities, onTypeFormattingTriggers: [";", "\n", "}"] } }));
+    expect((await adapter.getStatus({ workspaceId: "workspace-1" })).capabilities.onTypeFormattingTriggers)
+      .toEqual([";", "\n", "}"]);
+    for (const triggers of [[";;"], [";", ";"], ["\0"], ["\ud800"], Array(17).fill(";"), true]) {
+      invokeMock.mockResolvedValueOnce(nativeStatus({ capabilities: { ...nativeCapabilities, onTypeFormattingTriggers: triggers } }));
+      await expect(adapter.getStatus({ workspaceId: "workspace-1" })).rejects.toBeInstanceOf(TauriAdapterError);
+    }
+  });
+
+  it("passes workspace and generation authority to lifecycle commands", async () => {
     invokeMock.mockResolvedValue(nativeStatus());
     const adapter = new TauriLanguageSessionAdapter();
 
     await adapter.getStatus({ workspaceId: "workspace-1" });
-    await adapter.start({ workspaceId: "workspace-1", requestId: "ignored-at-native-edge" });
+    await adapter.start({
+      workspaceId: "workspace-1",
+      requestId: "ignored-at-native-edge",
+      gradleImportEnabled: false,
+    });
     await adapter.stop({ workspaceId: "workspace-1", generation: 7 });
-    await adapter.restart({ workspaceId: "workspace-1", generation: 7 });
+    await adapter.restart({
+      workspaceId: "workspace-1",
+      generation: 7,
+      gradleImportEnabled: false,
+    });
 
     expect(invokeMock.mock.calls).toEqual([
       ["get_java_language_service_status", undefined],
-      ["start_java_language_service", undefined],
-      ["stop_java_language_service", undefined],
-      ["restart_java_language_service", undefined],
+      [
+        "start_java_language_service",
+        { request: { workspaceId: "workspace-1", gradleImportEnabled: false } },
+      ],
+      ["stop_java_language_service", { request: { workspaceId: "workspace-1", generation: 7 } }],
+      [
+        "restart_java_language_service",
+        { request: { workspaceId: "workspace-1", generation: 7, gradleImportEnabled: false } },
+      ],
     ]);
+  });
+
+  it("applies and confirms the project JDK separately from the server runtime", async () => {
+    invokeMock.mockResolvedValue(
+      nativeStatus({ projectJdkHome: "/jdk-25", projectJdkVersion: "25" }),
+    );
+    const adapter = new TauriLanguageSessionAdapter();
+    const status = await adapter.start({
+      workspaceId: "workspace-1",
+      projectJdkHome: "/jdk-25",
+      gradleImportEnabled: false,
+    });
+    expect(status).toMatchObject({
+      javaExecutable: "/jdk/bin/java",
+      javaVersion: "21.0.5",
+      projectJdkHome: "/jdk-25",
+      projectJdkVersion: "25",
+    });
+    await adapter.restart({
+      workspaceId: "workspace-1",
+      generation: 7,
+      projectJdkHome: "/jdk-25",
+      gradleImportEnabled: false,
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith("restart_java_language_service", {
+      request: {
+        workspaceId: "workspace-1",
+        generation: 7,
+        projectJdkHome: "/jdk-25",
+        gradleImportEnabled: false,
+      },
+    });
+  });
+
+  it("applies and confirms the JDT LS runtime JDK independently of the project JDK", async () => {
+    invokeMock.mockResolvedValue(nativeStatus({ serverJdkHome: "/jdk-25" }));
+    const adapter = new TauriLanguageSessionAdapter();
+    const status = await adapter.start({
+      workspaceId: "workspace-1",
+      serverJdkHome: "/jdk-25",
+      gradleImportEnabled: false,
+    });
+    expect(status).toMatchObject({
+      javaExecutable: "/jdk/bin/java",
+      serverJdkHome: "/jdk-25",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("start_java_language_service", {
+      request: {
+        workspaceId: "workspace-1",
+        serverJdkHome: "/jdk-25",
+        gradleImportEnabled: false,
+      },
+    });
+
+    await adapter.restart({
+      workspaceId: "workspace-1",
+      generation: 7,
+      serverJdkHome: "/jdk-25",
+      gradleImportEnabled: false,
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith("restart_java_language_service", {
+      request: {
+        workspaceId: "workspace-1",
+        generation: 7,
+        serverJdkHome: "/jdk-25",
+        gradleImportEnabled: false,
+      },
+    });
+  });
+
+  it("applies and confirms explicit Gradle import authorization", async () => {
+    invokeMock.mockResolvedValue(nativeStatus({ gradleImportEnabled: true }));
+    const adapter = new TauriLanguageSessionAdapter();
+    const status = await adapter.start({
+      workspaceId: "workspace-1",
+      gradleImportEnabled: true,
+    });
+    expect(status.gradleImportEnabled).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("start_java_language_service", {
+      request: { workspaceId: "workspace-1", gradleImportEnabled: true },
+    });
+  });
+
+  it("passes and confirms Maven profile selections", async () => {
+    const projectPath = "services/api";
+    const mavenRepository = "/repository/cache";
+    const activeMavenProfiles = ["alternate"];
+    const inactiveMavenProfiles = ["legacy"];
+    invokeMock.mockResolvedValue(
+      nativeStatus({ projectPath, mavenRepository, activeMavenProfiles, inactiveMavenProfiles }),
+    );
+    const adapter = new TauriLanguageSessionAdapter();
+    const status = await adapter.start({
+      workspaceId: "workspace-1",
+      gradleImportEnabled: false,
+      projectPath,
+      mavenRepository,
+      activeMavenProfiles,
+      inactiveMavenProfiles,
+    });
+
+    expect(status).toMatchObject({
+      projectPath,
+      mavenRepository,
+      activeMavenProfiles,
+      inactiveMavenProfiles,
+    });
+    expect(invokeMock).toHaveBeenCalledWith("start_java_language_service", {
+      request: {
+        workspaceId: "workspace-1",
+        gradleImportEnabled: false,
+        projectPath,
+        mavenRepository,
+        activeMavenProfiles,
+        inactiveMavenProfiles,
+      },
+    });
+  });
+
+  it("forwards selected Gradle tool and project settings to the native session", async () => {
+    const gradle = {
+      executable: "/tools/gradle/bin/gradle",
+      userHome: "/cache/gradle",
+      projectProperties: { release: "25" },
+    };
+    invokeMock.mockResolvedValue(
+      nativeStatus({ gradleImportEnabled: true, gradleSettingsConfigured: true }),
+    );
+    const adapter = new TauriLanguageSessionAdapter();
+    await adapter.start({
+      workspaceId: "workspace-1",
+      gradleImportEnabled: true,
+      gradle,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_java_language_service", {
+      request: { workspaceId: "workspace-1", gradleImportEnabled: true, gradle },
+    });
+  });
+
+  it("passes and confirms a workspace Eclipse formatter profile", async () => {
+    const javaFormatterProfile = {
+      path: "config/java-formatter.xml",
+      profileName: "Team Java",
+    };
+    invokeMock.mockResolvedValue(nativeStatus({ javaFormatterProfile }));
+    const adapter = new TauriLanguageSessionAdapter();
+    const status = await adapter.start({
+      workspaceId: "workspace-1",
+      gradleImportEnabled: false,
+      javaFormatterProfile,
+    });
+
+    expect(status.javaFormatterProfile).toEqual(javaFormatterProfile);
+    expect(invokeMock).toHaveBeenCalledWith("start_java_language_service", {
+      request: {
+        workspaceId: "workspace-1",
+        gradleImportEnabled: false,
+        javaFormatterProfile,
+      },
+    });
+  });
+
+  it("rejects unsafe Eclipse formatter paths before invoking the native service", async () => {
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        gradleImportEnabled: false,
+        javaFormatterProfile: { path: "../outside.xml", profileName: "Team Java" },
+      }),
+    ).rejects.toThrow("invalid workspace Eclipse formatter profile");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid selected Gradle settings before native invocation", async () => {
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        gradleImportEnabled: true,
+        gradle: {
+          executable: "gradle",
+          userHome: "relative/cache",
+          projectProperties: {},
+        },
+      }),
+    ).rejects.toThrow("invalid Gradle project settings");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a provider that reports a different Maven profile selection", async () => {
+    invokeMock.mockResolvedValue(nativeStatus());
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        gradleImportEnabled: false,
+        activeMavenProfiles: ["alternate"],
+        inactiveMavenProfiles: [],
+      }),
+    ).rejects.toThrow("Maven profile selection was not applied");
+  });
+
+  it("rejects a provider that reports a different selected Maven repository", async () => {
+    invokeMock.mockResolvedValue(nativeStatus());
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        gradleImportEnabled: false,
+        mavenRepository: "/repository/cache",
+      }),
+    ).rejects.toThrow("selected Maven local repository was not applied");
+  });
+
+  it("rejects a provider that does not apply the Gradle import authorization", async () => {
+    invokeMock.mockResolvedValue(nativeStatus());
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        gradleImportEnabled: true,
+      }),
+    ).rejects.toThrow("Gradle import authorization was not applied");
+  });
+
+  it("rejects a provider that reports ready without applying the selected JDK", async () => {
+    invokeMock.mockResolvedValue(nativeStatus());
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        projectJdkHome: "/jdk-25",
+        gradleImportEnabled: false,
+      }),
+    ).rejects.toThrow("project JDK selection was not applied");
+  });
+
+  it("rejects an invalid JDK path before native dispatch", async () => {
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        projectJdkHome: "/jdk\0other",
+        gradleImportEnabled: false,
+      }),
+    ).rejects.toThrow("invalid project JDK home");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a relative JDT LS runtime JDK path before native dispatch", async () => {
+    await expect(
+      new TauriLanguageSessionAdapter().start({
+        workspaceId: "workspace-1",
+        serverJdkHome: "jdk-25",
+        gradleImportEnabled: false,
+      }),
+    ).rejects.toThrow("invalid JDT LS runtime JDK home");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("serializes SDK replacements and still applies a newer choice after failure", async () => {
+    let fail!: (error: Error) => void;
+    invokeMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(
+      nativeStatus({ projectJdkHome: "/jdk-25", projectJdkVersion: "25" }),
+    );
+    const adapter = new TauriLanguageSessionAdapter();
+    const first = adapter.start({
+      workspaceId: "workspace-1",
+      projectJdkHome: "/broken-jdk",
+      gradleImportEnabled: false,
+    });
+    const failure = expect(first).rejects.toThrow();
+    const second = adapter.start({
+      workspaceId: "workspace-1",
+      projectJdkHome: "/jdk-25",
+      gradleImportEnabled: false,
+    });
+    await Promise.resolve();
+    expect(invokeMock).toHaveBeenCalledOnce();
+    fail(new Error("invalid full JDK"));
+    await failure;
+    await expect(second).resolves.toMatchObject({ projectJdkHome: "/jdk-25" });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
   });
 
   it("normalizes provider, tool, JDK, generation, timestamp, and confirmed capabilities", async () => {
@@ -93,6 +412,13 @@ describe("TauriLanguageSessionAdapter lifecycle", () => {
         definition: true,
         references: false,
         symbols: true,
+        documentSymbols: true,
+        documentHighlights: true,
+        implementation: true,
+        callHierarchy: true,
+        workspaceSymbols: true,
+        semanticTokens: true,
+        inlayHints: true,
         codeActions: true,
         formatting: false,
         rename: true,
@@ -131,7 +457,7 @@ describe("TauriLanguageSessionAdapter lifecycle", () => {
       workspaceId: "workspace-1",
     });
     expect(status.state).toBe("unavailable");
-    expect(Object.values(status.capabilities)).toEqual(Array(12).fill(false));
+    expect(Object.values(status.capabilities)).toEqual(Array(20).fill(false));
     expect(status.lastError).toBe("JDK not found");
   });
 
@@ -204,6 +530,53 @@ describe("TauriLanguageSessionAdapter document synchronization", () => {
         },
       ],
     ]);
+  });
+
+  it("revalidates only the current open version and forwards no source text", async () => {
+    const adapter = await readyAdapter();
+    invokeMock.mockResolvedValue(undefined);
+    await adapter.didOpen({ document: openDocument });
+    await expect(
+      adapter.revalidate({ document: { ...openDocument, version: 99 } }),
+    ).rejects.toThrow("current version");
+    const before = invokeMock.mock.calls.length;
+    await adapter.revalidate({
+      document: { ...openDocument, requestSecret: "not forwarded" } as typeof openDocument,
+      requestId: "not forwarded",
+    });
+    expect(invokeMock.mock.calls.slice(before)).toEqual([
+      [
+        "revalidate_java_language_document",
+        {
+          document: {
+            workspaceId: openDocument.workspaceId,
+            generation: 7,
+            path: openDocument.path,
+            uri: openDocument.uri,
+            version: openDocument.version,
+          },
+        },
+      ],
+    ]);
+    await adapter.didChange({ document: { ...openDocument, version: 1 } });
+    await adapter.didClose({ document: { ...openDocument, version: 1 } });
+  });
+
+  it("does not revive a closed document after a pending diagnostics refresh", async () => {
+    const adapter = await readyAdapter();
+    invokeMock.mockResolvedValue(undefined);
+    await adapter.didOpen({ document: openDocument });
+    let finish!: () => void;
+    invokeMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const validation = adapter.revalidate({ document: openDocument });
+    await adapter.didClose({ document: openDocument });
+    finish();
+    await validation;
+    await expect(adapter.revalidate({ document: openDocument })).rejects.toThrow("current version");
   });
 
   it("propagates backend rejection without leaking source text and permits retry", async () => {
@@ -423,7 +796,22 @@ describe("TauriLanguageSessionAdapter polling", () => {
     unsubscribe();
   });
 
-  it("accepts empty diagnostics as a clear and drops stale diagnostic generations", async () => {
+  it.each(["pom.xml", ".settings/org.eclipse.jdt.core.prefs"])("notifies a saved workspace file with exact URI and current session ownership: %s", async (path) => {
+    invokeMock.mockResolvedValueOnce(nativeStatus()).mockResolvedValue(undefined);
+    const adapter = new TauriLanguageSessionAdapter();
+    const document = { workspaceId: "workspace-1", path, uri: `file:///workspace/project/${path}` };
+    await expect(adapter.didSaveWorkspaceFile({ document })).rejects.toThrow("initialized session");
+    await adapter.getStatus({ workspaceId: document.workspaceId });
+    await adapter.didSaveWorkspaceFile({ document });
+    expect(invokeMock).toHaveBeenLastCalledWith("notify_java_language_workspace_file_saved", {
+      document: { ...document, generation: 7 },
+    });
+    await expect(adapter.didSaveWorkspaceFile({ document: { ...document, uri: "file:///outside/pom.xml" } })).rejects.toThrow();
+    await expect(adapter.didSaveWorkspaceFile({ document: { ...document, path: "../pom.xml" } })).rejects.toThrow();
+    await expect(adapter.didSaveWorkspaceFile({ document: { ...document, uri: "file:///workspace/project/other.xml" } })).rejects.toThrow();
+  });
+
+  it.each([undefined, "Java preview is incompatible with this compiler"])("normalizes diagnostic clears and unavailability with generation guards: %s", async (unavailableReason) => {
     invokeMock.mockResolvedValueOnce(nativeStatus()).mockResolvedValueOnce({
       events: [
         {
@@ -443,7 +831,7 @@ describe("TauriLanguageSessionAdapter polling", () => {
           payload: {
             workspaceId: "workspace-1",
             generation: 7,
-            params: { uri: "file:///workspace/project/src/Main.java", version: 3, diagnostics: [] },
+            params: { uri: "file:///workspace/project/src/Main.java", version: 3, diagnostics: [], unavailableReason },
           },
         },
       ],
@@ -467,6 +855,7 @@ describe("TauriLanguageSessionAdapter polling", () => {
         version: 3,
       },
       diagnostics: [],
+      ...(unavailableReason ? { unavailableReason } : {}),
     });
     unsubscribe();
   });
@@ -716,7 +1105,11 @@ describe("TauriLanguageSessionAdapter polling", () => {
       },
     });
     invokeMock.mockResolvedValueOnce(nativeStatus({ generation: 8 }));
-    await adapter.restart({ workspaceId: "workspace-1", generation: 7 });
+    await adapter.restart({
+      workspaceId: "workspace-1",
+      generation: 7,
+      gradleImportEnabled: false,
+    });
     invokeMock.mockResolvedValueOnce({
       events: [
         {
@@ -762,7 +1155,11 @@ describe("TauriLanguageSessionAdapter polling", () => {
       },
     });
     invokeMock.mockResolvedValueOnce(nativeStatus({ generation: 8 }));
-    await adapter.restart({ workspaceId: "workspace-1", generation: 7 });
+    await adapter.restart({
+      workspaceId: "workspace-1",
+      generation: 7,
+      gradleImportEnabled: false,
+    });
     resolveOpen();
     await open;
     invokeMock.mockResolvedValueOnce({

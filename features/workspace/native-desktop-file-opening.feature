@@ -2,8 +2,8 @@ Business Need: Trustworthy native desktop opening of an existing workspace file
   To prove essential desktop interaction independently of postponed packaging
   People evaluating the desktop IDE need direct file opening to become usable without leaked user state or an unresponsive editor.
 
-  This requirement covers only opening one existing deterministic file at the authorized workspace root.
-  Saving, editing, nested navigation, workspace switching, optional tooling, installer or package behavior, and performance benchmarking are outside its scope.
+  This requirement covers opening one existing deterministic root file and one deeply nested Java file through Quick Open.
+  Saving, editing, workspace switching, optional tooling, installer or package behavior, and performance benchmarking are outside its scope.
 
   @REQ-DESKTOP-FILE-OPEN-001 @desktop @native-gui @functional-requirement @non-functional-requirement @resilience @accessibility @implemented-and-validated
   Scenario: Open a deterministic root file through the real native desktop interface
@@ -22,6 +22,28 @@ Business Need: Trustworthy native desktop opening of an existing workspace file
     And within the same 15 seconds Monaco is ready with the unique exact logical content of "native-open-proof.ts"
     And the editor shows neither an opening placeholder nor a file-open failure
     And the native window remains responsive without hanging
+    When the person closes the native window
+    Then the executable exits cleanly
+    And no state has been written outside the temporary sandbox
+
+  @REQ-DESKTOP-FILE-OPEN-001 @desktop @native-gui @functional-requirement @accessibility @implemented-and-validated
+  Scenario: Open a deeply nested Java source file through workspace Quick Open
+    Given an isolated temporary sandbox contains the authorized workspace and all desktop user state
+    And the workspace contains a nested Java file named "src/main/java/example/deep/MainController.java"
+    And its unique exact logical content is:
+      """
+      package example.deep;
+
+      public final class MainController {}
+      """
+    When the real production release/no-bundle Tauri executable is launched directly instead of a CachyOS package
+    Then the authorized File Explorer becomes ready
+    When the person opens Go to File with Ctrl+P
+    When the person searches Quick Open for "MainController" and expects "src/main/java/example/deep/MainController.java"
+    When the person opens the Quick Open result "src/main/java/example/deep/MainController.java"
+    Then within the same 15 seconds the active editor tab is exactly "src/main/java/example/deep/MainController.java" and exposes its selected state
+    And within the same 15 seconds Monaco is ready with the unique exact logical content of "src/main/java/example/deep/MainController.java"
+    And the editor shows neither an opening placeholder nor a file-open failure
     When the person closes the native window
     Then the executable exits cleanly
     And no state has been written outside the temporary sandbox

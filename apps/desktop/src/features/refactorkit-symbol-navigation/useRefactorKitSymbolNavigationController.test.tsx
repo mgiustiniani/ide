@@ -269,6 +269,7 @@ function createHarness(options: HarnessOptions = {}) {
   const legacyReferences = vi.fn();
   const navigateToPoint = vi.fn(async () => {
     order.push("navigate");
+    return true;
   });
   const refactorKit = {
     startSavedSnapshotSemanticSession,
@@ -343,6 +344,92 @@ afterEach(() => {
 });
 
 describe("useRefactorKitSymbolNavigationController", () => {
+  it("preserves workspace-relative Java model paths for editor navigation", async () => {
+    const harness = createHarness();
+
+    await act(() =>
+      harness.result.current.selectJavaReference({
+        filePath: "maven/app/src/main/java/pkg/Runner.java",
+        point: { lineNumber: 6, column: 1 },
+      }),
+    );
+
+    expect(harness.mocks.navigateToPoint).toHaveBeenCalledWith(
+      "maven/app/src/main/java/pkg/Runner.java",
+      { lineNumber: 6, column: 1 },
+    );
+  });
+
+  it("reports when a resolved Java definition cannot be opened in the editor", async () => {
+    const harness = createHarness();
+    harness.dependencies.capabilities = {
+      ...capabilities(),
+      operationalSurface: ["definition", "references"],
+    } as RefactorKitCapabilities & { operationalSurface: string[] };
+    harness.mocks.legacyDefinition.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "",
+      locations: [{ path: "src/Runner.java", line: 12, column: 9 }],
+      success: true,
+      code: 0,
+      timedOut: false,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      command: ["refactorkit", "definition"],
+    });
+    harness.mocks.navigateToPoint.mockResolvedValueOnce(false);
+    harness.rerender();
+
+    await act(() => harness.result.current.resolveJavaDefinition("pkg.Runner#run()"));
+
+    expect(harness.mocks.navigateToPoint).toHaveBeenCalledWith("src/Runner.java", {
+      lineNumber: 12,
+      column: 9,
+    });
+    expect(harness.result.current.javaError).toBe(
+      "The resolved Java definition could not be opened in the editor.",
+    );
+    expect(harness.result.current.isJavaBusy).toBe(false);
+  });
+
+  it("disables RefactorKit Java navigation when project source analysis is unqualified", async () => {
+    const harness = createHarness();
+    harness.dependencies.capabilities = {
+      ...capabilities(),
+      operationalSurface: ["definition", "references"],
+    } as RefactorKitCapabilities & { operationalSurface: string[] };
+    harness.dependencies.javaSourceAnalysisAvailable = false;
+    harness.rerender();
+
+    expect(harness.result.current.javaAvailability).toBe("unavailable");
+    expect(harness.result.current.javaAvailabilityReason).toMatch(
+      /source analysis is not qualified/,
+    );
+    await act(() => harness.result.current.resolveJavaDefinition("pkg.Runner#run()"));
+
+    expect(harness.mocks.legacyDefinition).not.toHaveBeenCalled();
+    expect(harness.result.current.javaError).toMatch(/source analysis is not qualified/);
+    expect(harness.result.current.isJavaBusy).toBe(false);
+  });
+
+  it("reports a refused or rejected Java reference navigation without leaking a rejection", async () => {
+    const harness = createHarness();
+    harness.mocks.navigateToPoint.mockRejectedValueOnce(new Error("target became stale"));
+
+    let opened: boolean | undefined;
+    await act(async () => {
+      opened = await harness.result.current.selectJavaReference({
+        filePath: "src/Runner.java",
+        point: { lineNumber: 12, column: 9 },
+      });
+    });
+
+    expect(opened).toBe(false);
+    expect(harness.result.current.javaError).toBe(
+      "The selected Java reference could not be opened in the editor.",
+    );
+  });
+
   it("runs approved start → search → definition → exact point reveal → stop without discovery or fallback", async () => {
     const consoleSpies = [
       vi.spyOn(console, "log").mockImplementation(() => undefined),

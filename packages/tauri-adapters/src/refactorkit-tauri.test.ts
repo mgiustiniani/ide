@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TauriAdapterError } from "./errors";
-import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
+import { normalizeRefactorPreview, TauriRefactorKitAdapter } from "./refactorkit-tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -47,6 +47,8 @@ const javaCapabilities = [
   ["changeSignature.reorderParameters", "experimental", "compiler", "proposal-only"],
   ["extractMethod", "experimental", "compiler", "proposal-only"],
   ["formatFile", "stable", "structural-parse", "managed-stable"],
+  ["inlineConstant", "stable", "compiler", "managed-stable"],
+  ["inlineVariable", "stable", "compiler", "managed-stable"],
   ["moveClass", "stable", "compiler", "managed-stable"],
   ["moveSourceRoot", "stable", "structural-parse", "managed-stable"],
   ["organizeImports", "stable", "structural-parse", "managed-stable"],
@@ -118,7 +120,12 @@ const GENERAL_REFACTORING_OPERATIONS = [
   "rename-member",
   "rename-local-variable",
   "move-class",
+  "move-member",
   "change-method-signature",
+  "extract-constant",
+  "inline-variable",
+  "inline-constant",
+  "encapsulate-field",
   "safe-delete",
 ] as const;
 
@@ -186,6 +193,7 @@ function engineSurfaceFields(): Record<string, unknown> {
     engineVersion: "0.7.0-SNAPSHOT",
     operationalSurface: [...ENGINE_OPERATIONAL_SURFACE],
     workspaceId: "workspace:authorized",
+    managedJavaMutationOperations: [],
   };
 }
 
@@ -195,6 +203,7 @@ function engineCapabilitiesWire(overrides: (record: any) => void = () => undefin
   const record: any = {
     engineDiscovered: true,
     operations: [...GENERAL_REFACTORING_OPERATIONS],
+    managedOperations: [],
     operationalSurface: [...ENGINE_OPERATIONAL_SURFACE],
     rollbackAdvertised: true,
     previewReadOnly: true,
@@ -213,6 +222,7 @@ function unavailableEngineCapabilitiesWire(): any {
   return {
     engineDiscovered: false,
     operations: [],
+    managedOperations: [],
     operationalSurface: [],
     rollbackAdvertised: false,
     previewReadOnly: false,
@@ -1127,6 +1137,46 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
         stability: "experimental",
       },
       generalRefactoring: generalRefactoringUnavailable,
+      javaContextRefactoring: {
+        schemaVersion: 1,
+        operations: ["moveClass", "changeSignature.addParameter", "batchCleanup"],
+        requiresExplicitContext: true,
+        sourceAuthority: "saved-snapshot",
+        rollbackAuthority: true,
+        renderedDiff: true,
+        operationCapabilities: [
+          {
+            operation: "moveClass",
+            targetModuleSelection: {
+              schemaVersion: "java-move-class-target-module-v1",
+              argument: "targetModuleId",
+              identity: "module-id-within-source-provider",
+              requiresAvailableContext: true,
+              sourceSetKind: "main",
+              requiresUniqueNonGeneratedRoot: true,
+            },
+          },
+          {
+            operation: "safeDelete",
+            referenceAnalysis: {
+              schemaVersion: "java-safe-delete-reference-analysis-v1",
+              scope: "workspace-text-v1",
+              resultField: "referenceAnalysis",
+              statusValues: ["complete", "incomplete"],
+              managedApplyAuthority: "none",
+              completeProject: false,
+            },
+          },
+          {
+            operation: "changeSignature.addParameter",
+            features: { thisMethodReferenceMigration: true },
+          },
+          {
+            operation: "batchCleanup",
+            features: { formatterProfile: true },
+          },
+        ],
+      },
     };
     invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
     invokeMock.mockResolvedValueOnce(capabilities);
@@ -1137,6 +1187,50 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     });
     expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
     expect(invokeMock.mock.calls[0]).toEqual(["get_refactorkit_engine_capabilities", undefined]);
+  });
+
+  it("drops a malformed move-class destination-module attestation", async () => {
+    const capabilities = {
+      api: "refactorkit",
+      apiVersion: "0.2",
+      provider: "refactorkit",
+      providerVersion: "0.8.0",
+      javaImportExternalClass: {
+        supported: false,
+        targetDirectory: false,
+        preview: false,
+        apply: false,
+        rollback: false,
+        stability: "experimental",
+      },
+      generalRefactoring: generalRefactoringUnavailable,
+      javaContextRefactoring: {
+        schemaVersion: 1,
+        operations: ["moveClass"],
+        requiresExplicitContext: true,
+        sourceAuthority: "saved-snapshot",
+        rollbackAuthority: true,
+        operationCapabilities: [
+          {
+            operation: "moveClass",
+            targetModuleSelection: {
+              schemaVersion: "java-move-class-target-module-v1",
+              argument: "targetPath",
+              identity: "module-id-within-source-provider",
+              requiresAvailableContext: true,
+              sourceSetKind: "main",
+              requiresUniqueNonGeneratedRoot: true,
+            },
+          },
+        ],
+      },
+    };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(capabilities);
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.javaContextRefactoring).not.toHaveProperty("operationCapabilities");
   });
 
   it("normalizes actual schema-v1 Java, JavaScript, and TypeScript discovery with exact safety flags", async () => {
@@ -1522,6 +1616,21 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
     expect(invokeMock.mock.calls[1]).toEqual(["get_refactorkit_capabilities", undefined]);
   });
 
+  it("preserves a provider's supported subset without adding other operations", async () => {
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((value) => {
+        value.operations = ["format-file"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+    const capabilities = await new TauriRefactorKitAdapter().getCapabilities();
+    expect(capabilities.generalRefactoring).toMatchObject({
+      supported: true,
+      preview: true,
+      operations: ["format-file"],
+    });
+  });
+
   it.each([
     [
       "invalid operation string",
@@ -1536,10 +1645,10 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
       },
     ],
     [
-      "incomplete operation set when supported",
+      "empty operation set when supported",
       (value: any) => {
         value.generalRefactoring.supported = true;
-        value.generalRefactoring.operations = ["rename-class"];
+        value.generalRefactoring.operations = [];
       },
     ],
     [
@@ -2257,6 +2366,211 @@ describe("TauriRefactorKitAdapter managed external import protocol", () => {
 });
 
 describe("TauriRefactorKitAdapter general refactoring capability-before-offer gate", () => {
+  it.each(["java-project-context-v6", "java-project-context-v7"] as const)(
+    "normalizes saved-plan attestations for %s",
+    (contextSchemaVersion) => {
+      const projectContext = {
+        projectPath: "",
+        contextHash: "b".repeat(64),
+        contextSchemaVersion,
+        platformIdentities: ["c".repeat(64)],
+      };
+      const result = normalizeRefactorPreview("preview_refactorkit_engine_refactoring", {
+        planId: "plan-v7",
+        operation: "rename-class",
+        target: {
+          kind: "class",
+          path: "src/main/java/example/Widget.java",
+          identity: "example.Widget",
+        },
+        status: "ready",
+        summary: "Rename Widget",
+        confidence: 1,
+        riskLevel: "low",
+        risks: [],
+        evidence: [],
+        affectedFiles: [],
+        renderedDiff: "",
+        structuredDiff: [],
+        warnings: [],
+        diagnosticsAfterPreview: [],
+        conflicts: [],
+        refusalReasons: [],
+        applyEligibility: { eligible: true, blockers: [] },
+        staleness: { stale: false, reasons: [] },
+        grantsApplyAuthority: false,
+        authority: { workspaceId: "workspace:1", workspaceGeneration: 7 },
+        selectionGeneration: 9,
+        requestId: "preview-v7",
+        provider: "refactorkit",
+        providerVersion: "0.8.0",
+        projectContext,
+      });
+
+      expect(result.projectContext).toEqual(projectContext);
+    },
+  );
+
+  it("preserves incomplete typed JPQL references and rejects managed Apply eligibility", async () => {
+    const request = {
+      ...previewRefactorRequest,
+      operation: "rename-member" as const,
+      target: {
+        kind: "member" as const,
+        path: "maven/src/main/java/com/example/User.java",
+        identity: "com.example.User#amount",
+      },
+      changeIntent: { operation: "rename-member" as const, newName: "total" },
+      projectContext: {
+        projectPath: "maven",
+        sdkHome: "/jdk",
+        mavenRepository: "",
+        activeMavenProfiles: [],
+        inactiveMavenProfiles: [],
+        contextSchemaVersion: "java-project-context-v1" as const,
+        snapshotHash: "a".repeat(64),
+        contextHash: "b".repeat(64),
+        platformIdentities: ["c".repeat(64)],
+      },
+    };
+    const capabilities = advertisedCapabilities();
+    capabilities.javaContextRefactoring = {
+      schemaVersion: 1,
+      operations: ["renameMember"],
+      requiresExplicitContext: true,
+      sourceAuthority: "saved-snapshot",
+      rollbackAuthority: true,
+      renderedDiff: true,
+    };
+    capabilities.methods = [
+      {
+        name: "project.context",
+        stability: "stable",
+        requiresProject: true,
+        writesWorkspace: false,
+        features: { javaRefactoringsUseContextAuthority: true, managedMutationAuthority: true },
+      },
+      { name: "refactor.preview", stability: "stable", requiresProject: true, writesWorkspace: false },
+      { name: "refactor.apply", stability: "stable", requiresProject: true, writesWorkspace: true },
+    ];
+    const response = {
+      planId: "plan-jpql-1",
+      operation: "rename-member",
+      target: request.target,
+      status: "ready",
+      summary: "Rename User.amount and the detected JPQL property paths",
+      confidence: 0.95,
+      riskLevel: "high",
+      risks: [],
+      evidence: [],
+      affectedFiles: [
+        { change: "edit", path: "maven/src/main/java/com/example/User.java", primary: true },
+        {
+          change: "edit",
+          path: "maven/src/main/java/com/example/UserRepository.java",
+          primary: false,
+        },
+      ],
+      renderedDiff: "--- a/UserRepository.java\n+++ b/UserRepository.java\n",
+      structuredDiff: [],
+      warnings: [],
+      diagnosticsAfterPreview: [],
+      conflicts: [],
+      refusalReasons: [],
+      applyEligibility: {
+        eligible: false,
+        blockers: ["The provider reports incomplete typed reference analysis; managed Apply is unavailable."],
+      },
+      staleness: { stale: false, reasons: [] },
+      grantsApplyAuthority: false,
+      authority: request.authority,
+      selectionGeneration: request.selectionGeneration,
+      requestId: request.requestId,
+      provider: "refactorkit-java",
+      providerVersion: "0.7.0",
+      diffTruncated: false,
+      diffTruncationReasons: [],
+      projectContext: {
+        projectPath: "maven",
+        contextHash: request.projectContext.contextHash,
+        contextSchemaVersion: "java-project-context-v1",
+        platformIdentities: request.projectContext.platformIdentities,
+      },
+      referenceAnalysis: {
+        schemaVersion: "refactorkit-reference-analysis-v1",
+        scope: "java-spring-data-jpql-static-property-path-v1",
+        completeness: "INCOMPLETE",
+        completeProject: false,
+        managedWriteAuthority: "none",
+        warnings: ["Only direct static Spring Data @Query JPQL property paths are inspected."],
+        references: [
+          {
+            languageId: "java",
+            kind: "framework.entity-property",
+            targetOwner: "com.example.User",
+            targetMember: "amount",
+            resourceKind: "java.annotation-string",
+            provenance: "spring-data.query-jpql",
+            completeness: "COMPLETE",
+            location: {
+              path: "maven/src/main/java/com/example/UserRepository.java",
+              range: {
+                start: { line: 2, character: 74 },
+                end: { line: 2, character: 80 },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(capabilities);
+    invokeMock.mockResolvedValueOnce(response);
+    const result = await new TauriRefactorKitAdapter().previewRefactoring(request);
+    expect(result.referenceAnalysis).toMatchObject({
+      schemaVersion: "refactorkit-reference-analysis-v1",
+      completeness: "INCOMPLETE",
+      completeProject: false,
+      managedWriteAuthority: "none",
+      references: [
+        {
+          kind: "framework.entity-property",
+          targetMember: "amount",
+          provenance: "spring-data.query-jpql",
+        },
+      ],
+    });
+    expect(result.applyEligibility.eligible).toBe(false);
+
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(capabilities);
+    invokeMock.mockResolvedValueOnce({
+      ...response,
+      applyEligibility: { eligible: true, blockers: [] },
+    });
+    await expect(new TauriRefactorKitAdapter().previewRefactoring(request)).rejects.toThrow(
+      "incomplete typed reference analysis cannot advertise managed Apply",
+    );
+
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(capabilities);
+    invokeMock.mockResolvedValueOnce({
+      ...response,
+      applyEligibility: { eligible: true, blockers: [] },
+      referenceAnalysis: {
+        ...response.referenceAnalysis,
+        completeProject: true,
+        completeness: "COMPLETE",
+        managedWriteAuthority: "managed-stable",
+        references: [{ ...response.referenceAnalysis.references[0], completeness: "UNRESOLVED" }],
+      },
+    });
+    await expect(new TauriRefactorKitAdapter().previewRefactoring(request)).rejects.toThrow(
+      "incomplete typed reference analysis cannot advertise managed Apply",
+    );
+  });
+
   const previewRefactorRequest = {
     operation: "rename-class" as const,
     target: {
@@ -2378,8 +2692,7 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
       feature: "apply" as const,
       operation: "rename-class" as const,
       engineFeatureOff: () => unavailableEngineCapabilitiesWire(),
-      invoke: (adapter: TauriRefactorKitAdapter) =>
-        adapter.applyRefactoring(applyRefactorRequest),
+      invoke: (adapter: TauriRefactorKitAdapter) => adapter.applyRefactoring(applyRefactorRequest),
       wire: {
         planId: "plan-g-1",
         operation: "rename-class",
@@ -2458,9 +2771,7 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
 
   beforeEach(() => invokeMock.mockReset());
 
-  function advertisedCapabilities(
-    overrides: (general: any) => void = () => undefined,
-  ): any {
+  function advertisedCapabilities(overrides: (general: any) => void = () => undefined): any {
     const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
     const general = capabilities.generalRefactoring;
     general.supported = true;
@@ -2472,6 +2783,36 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
     overrides(general);
     return capabilities;
   }
+
+  it.each(["format-file", "organize-imports"] as const)(
+    "refuses %s when an older engine advertises only semantic operations",
+    async (operation) => {
+      invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+      invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+      const error = await new TauriRefactorKitAdapter()
+        .previewRefactoring({
+          operation,
+          target: {
+            kind: "file",
+            path: "src/main/java/example/Widget.java",
+            identity: "src/main/java/example/Widget.java",
+          },
+          authority: previewRefactorRequest.authority,
+          selectionGeneration: 9,
+          requestId: "file-preview-unavailable",
+        })
+        .catch((value: unknown) => value);
+      expect(error).toMatchObject({
+        name: "TauriAdapterError",
+        command: "preview_refactorkit_engine_refactoring",
+        cause: undefined,
+      });
+      expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+        "get_refactorkit_engine_capabilities",
+        "get_refactorkit_capabilities",
+      ]);
+    },
+  );
 
   it.each(gatingCommands)(
     "refuses $name and does not invoke $command when general refactoring is unsupported",
@@ -2513,10 +2854,312 @@ describe("TauriRefactorKitAdapter general refactoring capability-before-offer ga
       expect(invokeMock.mock.calls[2]).toEqual([command, { request: wire }]);
     },
   );
+
+  it("explains a saved-context preview attestation failure without exposing provider details", async () => {
+    const privatePath = "/private/workspace/project";
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      `RefactorKit did not return a managed plan for the selected saved Java context: ${privatePath}`,
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriRefactorKitManagedCommandError",
+      code: "REFACTORKIT_PREVIEW_CONTEXT_UNATTESTED",
+      command: "preview_refactorkit_engine_refactoring",
+      cause: undefined,
+    });
+    expect(String(error)).toContain("current saved Java project context");
+    expect(String(error)).not.toContain(privatePath);
+  });
+
+  it("sends Remove Parameter through the advertised saved-project route with explicit intent", async () => {
+    const capabilities = structuredClone(actualSchemaV1Capabilities) as any;
+    capabilities.javaContextRefactoring = {
+      schemaVersion: 1,
+      operations: ["changeSignature.removeParameter"],
+      requiresExplicitContext: true,
+      sourceAuthority: "saved-snapshot",
+      rollbackAuthority: true,
+      renderedDiff: true,
+      selectionQueryKind: "mutationSelection",
+      selectionSchemaVersion: "java-mutation-selection-v1",
+    };
+    capabilities.methods = [
+      {
+        name: "project.context",
+        stability: "stable",
+        requiresProject: true,
+        writesWorkspace: false,
+        features: { javaRefactoringsUseContextAuthority: true, managedMutationAuthority: true },
+      },
+      {
+        name: "intelligence.query",
+        stability: "stable",
+        requiresProject: true,
+        writesWorkspace: false,
+      },
+      {
+        name: "refactor.preview",
+        stability: "stable",
+        requiresProject: true,
+        writesWorkspace: false,
+      },
+      {
+        name: "refactor.apply",
+        stability: "stable",
+        requiresProject: true,
+        writesWorkspace: true,
+      },
+    ];
+    const javaAdapter = capabilities.languageKernel.schema.adapters.find(
+      (adapter: any) => adapter.languageId === "java",
+    );
+    const removeParameter = javaAdapter.capabilities.find(
+      (entry: any) => entry.operation === "changeSignature.removeParameter",
+    );
+    Object.assign(removeParameter, {
+      stability: "stable",
+      evidence: "compiler",
+      mutationAuthority: "managed-stable",
+    });
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(capabilities);
+    invokeMock.mockRejectedValueOnce(
+      "[tauri:preview_refactorkit_engine_refactoring] RefactorKit refused this Java operation. The selected parameter is used in the method body. No source changes were made.",
+    );
+
+    const request = {
+      ...previewRefactorRequest,
+      operation: "remove-method-parameter" as const,
+      target: {
+        kind: "member" as const,
+        path: "src/main/java/example/Widget.java",
+        identity: "@cursor",
+        selection: { start: 17, end: 17 },
+      },
+      changeIntent: { operation: "remove-method-parameter" as const, parameterName: "unused" },
+      projectContext: {
+        projectPath: "",
+        sdkHome: "/jdk",
+        mavenRepository: "",
+        activeMavenProfiles: [],
+        inactiveMavenProfiles: [],
+        contextSchemaVersion: "java-project-context-v1" as const,
+        snapshotHash: "a".repeat(64),
+        contextHash: "b".repeat(64),
+        platformIdentities: ["c".repeat(64)],
+      },
+    };
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(request)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      code: "REFACTORKIT_PREVIEW_REFUSED",
+      command: "preview_refactorkit_engine_refactoring",
+    });
+    expect(invokeMock.mock.calls[2]).toEqual([
+      "preview_refactorkit_engine_refactoring",
+      {
+        request: {
+          operation: "remove-method-parameter",
+          target: request.target,
+          authority: request.authority,
+          selectionGeneration: request.selectionGeneration,
+          requestId: request.requestId,
+          changeIntent: request.changeIntent,
+          projectContext: request.projectContext,
+        },
+      },
+    ]);
+    expect(String(error)).toContain("used in the method body");
+    expect(String(error)).toContain("No source changes were made");
+  });
+
+  it("explains a stale Java project snapshot and asks for synchronization", async () => {
+    const privatePath = "/private/workspace/project";
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      `Project inputs changed; synchronize and preview again: ${privatePath}`,
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriRefactorKitManagedCommandError",
+      code: "REFACTORKIT_PREVIEW_STALE_CONTEXT",
+      command: "preview_refactorkit_engine_refactoring",
+      cause: undefined,
+    });
+    expect(String(error)).toContain("Synchronize the project and preview again");
+    expect(String(error)).not.toContain(privatePath);
+  });
+
+  it("preserves the safe constructor-selection limitation without implying a new plan", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      "[tauri:preview_refactorkit_engine_refactoring] RefactorKit refused this Java operation. The provider does not support constructor targets through this saved-cursor route. No refactoring plan was created. No source changes were made.",
+    );
+    const error = await new TauriRefactorKitAdapter().previewRefactoring(previewRefactorRequest).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: "REFACTORKIT_PREVIEW_REFUSED", cause: undefined });
+    expect(String(error)).toContain("does not support constructor targets through this saved-cursor route");
+    expect(String(error)).toContain("No refactoring plan was created");
+  });
+
+  it("shows a bounded safe provider reason for a refused Java preview", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      "[tauri:preview_refactorkit_engine_refactoring] RefactorKit refused this Java operation. changeSignature.reorderParameters refuses public method or protected method until external-consumer risk and hierarchy evidence are complete. No source changes were made.",
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriRefactorKitManagedCommandError",
+      code: "REFACTORKIT_PREVIEW_REFUSED",
+      command: "preview_refactorkit_engine_refactoring",
+      cause: undefined,
+    });
+    expect(String(error)).toContain("public method or protected method");
+    expect(String(error)).toContain("external-consumer risk and hierarchy evidence");
+    expect(String(error)).toContain("No source changes were made");
+  });
+
+  it("shows a safe provider refusal reason when the daemon includes its JSON-RPC code", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      "[tauri:preview_refactorkit_engine_refactoring] RefactorKit refused this Java operation (JSON-RPC error -32013). The selected statements have unsupported control flow. No source changes were made.",
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriRefactorKitManagedCommandError",
+      code: "REFACTORKIT_PREVIEW_REFUSED",
+      command: "preview_refactorkit_engine_refactoring",
+      cause: undefined,
+    });
+    expect(String(error)).toContain("unsupported control flow");
+    expect(String(error)).toContain("No source changes were made");
+  });
+
+  it("continues to parse provider refusals from daemons using the retry suffix", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      "[tauri:preview_refactorkit_engine_refactoring] RefactorKit refused this Java operation. Provider cannot prove the requested binding. Synchronize and review a new plan.",
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(String(error)).toContain("Provider cannot prove the requested binding");
+    expect(String(error)).toContain("No source changes were made");
+  });
+
+  it("does not show path-bearing Java preview refusal details", async () => {
+    const privatePath = "/private/workspace/project";
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(advertisedCapabilities());
+    invokeMock.mockRejectedValueOnce(
+      `RefactorKit refused this Java operation. The target is in ${privatePath}. Synchronize and review a new plan.`,
+    );
+
+    const error = await new TauriRefactorKitAdapter()
+      .previewRefactoring(previewRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      code: "REFACTORKIT_PREVIEW_REFUSED",
+      command: "preview_refactorkit_engine_refactoring",
+    });
+    expect(String(error)).not.toContain(privatePath);
+    expect(error).toHaveProperty(
+      "message",
+      "RefactorKit refused to preview this real-engine Java refactoring. No source changes were made.",
+    );
+  });
+
+  it("refuses Apply when aggregate support remains true but the exact operation is proposal-only", async () => {
+    const base = structuredClone(actualSchemaV1Capabilities) as any;
+    const renameClass = base.languageKernel.schema.adapters[0].capabilities.find(
+      (capability: { operation: string }) => capability.operation === "renameClass",
+    );
+    renameClass.stability = "experimental";
+    renameClass.mutationAuthority = "proposal-only";
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(base);
+
+    const error = await new TauriRefactorKitAdapter()
+      .applyRefactoring(applyRefactorRequest)
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      name: "TauriAdapterError",
+      command: "apply_refactorkit_engine_refactoring",
+      cause: undefined,
+    });
+    expect(String(error)).toContain("managed mutation authority");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "apply_refactorkit_engine_refactoring",
+      expect.anything(),
+    );
+  });
 });
 
 describe("TauriRefactorKitAdapter Java symbol-navigation advertisement", () => {
   beforeEach(() => invokeMock.mockReset());
+
+  it("preserves daemon method capabilities alongside the real-engine report", async () => {
+    const base = structuredClone(actualSchemaV1Capabilities) as any;
+    base.methods = [
+      {
+        name: "project.context.v5",
+        stability: "beta-contract",
+        requiresProject: true,
+        writesWorkspace: false,
+        features: {
+          typedSchemaV5: true,
+          providerQualifiedSourceAssociation: true,
+        },
+      },
+    ];
+    base.javaContextRefactoring = {
+      schemaVersion: 1,
+      operations: ["extract-method"],
+      requiresExplicitContext: true,
+      sourceAuthority: "saved-snapshot",
+      rollbackAuthority: true,
+    };
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce(base);
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.methods).toEqual(base.methods);
+    expect(normalized.javaContextRefactoring).toEqual({
+      ...base.javaContextRefactoring,
+      renderedDiff: false,
+    });
+    expect(normalized.languageKernel).toEqual(base.languageKernel);
+    expect(normalized.safety).toEqual(base.safety);
+  });
 
   it("advertises the real-engine Java definition/references capability as authoritative", async () => {
     // A discovered engine that advertises definition/references yields an authoritative
@@ -2592,6 +3235,121 @@ describe("TauriRefactorKitAdapter Java symbol-navigation advertisement", () => {
     const normalized = await new TauriRefactorKitAdapter().getCapabilities();
     expect(normalized).not.toHaveProperty("javaNavigation");
     expect(normalized.generalRefactoring).toEqual(engineGeneralRefactoringUnavailable);
+  });
+
+  it("preserves the real engine's per-operation managed mutation authority", async () => {
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = [
+          ...record.operations,
+          "pull-up-member",
+          "push-down-member",
+          "format-file",
+          "organize-imports",
+        ];
+        record.managedOperations = [
+          "move-member",
+          "pull-up-member",
+          "push-down-member",
+          "format-file",
+          "organize-imports",
+        ];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.managedJavaMutationOperations).toEqual([
+      "move-member",
+      "pull-up-member",
+      "push-down-member",
+      "format-file",
+      "organize-imports",
+    ]);
+    expect(normalized.generalRefactoring?.operations).toContain("format-file");
+    expect(normalized.generalRefactoring?.operations).toContain("pull-up-member");
+    expect(normalized.generalRefactoring?.operations).toContain("push-down-member");
+  });
+
+  it("accepts the Encapsulate Field operation advertised by the native engine command", async () => {
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = ["encapsulate-field"];
+        record.managedOperations = ["encapsulate-field"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.generalRefactoring).toMatchObject({
+      supported: true,
+      operations: ["encapsulate-field"],
+      preview: true,
+      apply: true,
+      rollback: true,
+    });
+    expect(normalized.managedJavaMutationOperations).toEqual(["encapsulate-field"]);
+  });
+
+  it("preserves the explicit safe-delete project reference analysis scope", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce({
+      ...structuredClone(actualSchemaV1Capabilities),
+      safeDeleteReferenceAnalysis: "complete-project",
+    });
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.safeDeleteReferenceAnalysis).toBe("complete-project");
+  });
+
+  it("rejects unknown safe-delete reference analysis scopes", async () => {
+    invokeMock.mockResolvedValueOnce(engineCapabilitiesWire());
+    invokeMock.mockResolvedValueOnce({
+      ...structuredClone(actualSchemaV1Capabilities),
+      safeDeleteReferenceAnalysis: "java-sources-only",
+    });
+
+    await expect(new TauriRefactorKitAdapter().getCapabilities()).rejects.toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_capabilities",
+    });
+  });
+
+  it("accepts extract parameter and extract field in the real engine capability report", async () => {
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.operations = [...record.operations, "extract-parameter", "extract-field"];
+        record.managedOperations = ["extract-parameter", "extract-field"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    const normalized = await new TauriRefactorKitAdapter().getCapabilities();
+
+    expect(normalized.engineDiscovered).toBe(true);
+    expect(normalized.generalRefactoring?.operations).toContain("extract-parameter");
+    expect(normalized.generalRefactoring?.operations).toContain("extract-field");
+    expect(normalized.managedJavaMutationOperations).toEqual([
+      "extract-parameter",
+      "extract-field",
+    ]);
+  });
+
+  it("rejects managed mutation authority for an operation the engine did not advertise", async () => {
+    invokeMock.mockResolvedValueOnce(
+      engineCapabilitiesWire((record) => {
+        record.managedOperations = ["format-file"];
+      }),
+    );
+    invokeMock.mockResolvedValueOnce(structuredClone(actualSchemaV1Capabilities));
+
+    await expect(new TauriRefactorKitAdapter().getCapabilities()).rejects.toMatchObject({
+      name: "TauriAdapterError",
+      command: "get_refactorkit_engine_capabilities",
+    });
   });
 
   it("rejects an invalid engine operation string", async () => {

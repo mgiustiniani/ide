@@ -48,9 +48,11 @@ export const GIT_DIFF_REVIEW_COMMANDS = Object.freeze({
  * added tracked paths. See the ASYNC ADAPTATION NOTICE above.
  */
 export class TauriWorkspaceChangesAdapter implements WorkspaceChangesPort {
+  constructor(private readonly workspacePath?: string) {}
   /** Implements WorkspaceChangesPort.listModifiedFiles(). */
   async listModifiedFiles(): Promise<readonly string[]> {
-    return invokeTauri<string[]>(GIT_DIFF_REVIEW_COMMANDS.listModifiedFiles);
+    return invokeTauri<string[]>(GIT_DIFF_REVIEW_COMMANDS.listModifiedFiles,
+      this.workspacePath === undefined ? undefined : { workspacePath: this.workspacePath });
   }
 }
 
@@ -64,9 +66,17 @@ export class TauriWorkspaceChangesAdapter implements WorkspaceChangesPort {
  * cannot produce hunks. See the ASYNC ADAPTATION NOTICE above.
  */
 export class TauriReadOnlyDiffAdapter implements ReadOnlyDiffPort {
+  constructor(private readonly workspacePath?: string) {}
   /** Implements ReadOnlyDiffPort.produceDiff(). */
   async produceDiff(filePath: string): Promise<DiffReviewOutcome> {
-    return invokeTauri<DiffReviewOutcome>(GIT_DIFF_REVIEW_COMMANDS.produceDiff, { filePath });
+    try {
+      return await invokeTauri<DiffReviewOutcome>(GIT_DIFF_REVIEW_COMMANDS.produceDiff, {
+        filePath,
+        ...(this.workspacePath === undefined ? {} : { workspacePath: this.workspacePath }),
+      });
+    } catch {
+      return { kind: "unavailable", reason: "Git changes are unavailable for this workspace. Refresh and try again." };
+    }
   }
 }
 
@@ -126,27 +136,29 @@ function extractUnavailableReason(value: unknown): string | null {
  * the native `editor_open_range` command and wraps the native response as a
  * `RangeOpenOutcome`:
  *
- * - The native command reports the range it ACTUALLY opened as a bare
+ * - The native command validates and resolves the requested range as a bare
  *   `DiffRange`; that opened range is wrapped as `{ kind: "ok", opened }`.
- *   The requested identity range is NEVER used as proof of opening.
+ *   The UI must navigate the editor separately; this response does not prove navigation.
  * - When the native command reports an unavailable/honest-failure shape, the
  *   reason is returned as `{ kind: "unavailable", reason }`.
  *
  * See the ASYNC ADAPTATION NOTICE above.
  */
 export class TauriEditorOpenRangeAdapter implements EditorOpenRangePort {
+  constructor(private readonly workspacePath?: string) {}
   /** Implements EditorOpenRangePort.openRange(). */
   async openRange(range: DiffRange): Promise<RangeOpenOutcome> {
     const native = await invokeTauri<NativeOpenRangeResponse>(
       GIT_DIFF_REVIEW_COMMANDS.openRange,
       {
+        ...(this.workspacePath === undefined ? {} : { workspacePath: this.workspacePath }),
         path: range.path,
         startLine: range.startLine,
         endLine: range.endLine,
       },
     );
 
-    // Success: the native command returned the range it actually opened.
+    // Success: the native command returned the range it validated.
     // Wrap it as the ok outcome; the input `range` is never the opened range.
     if (isDiffRange(native)) {
       return { kind: "ok", opened: native };

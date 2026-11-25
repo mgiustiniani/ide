@@ -54,6 +54,7 @@ describe("desktop main", () => {
     expect(harness.createRendererComposition).toHaveBeenCalledOnce();
     expect(harness.createRoot).toHaveBeenCalledWith(document.getElementById("root"));
     expect(harness.render).toHaveBeenCalledOnce();
+    expect(document.documentElement.dataset.ideBootstrap).toBe("render-requested");
     const strictModeElement = harness.render.mock.calls[0]?.[0] as {
       readonly props?: {
         readonly children?: { readonly props?: { readonly projectFoundry?: unknown } };

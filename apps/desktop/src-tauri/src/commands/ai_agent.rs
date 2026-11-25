@@ -196,7 +196,11 @@ pub fn update_pi_agent_settings(update: PiAgentSettingsUpdate) -> Result<PiAgent
 }
 
 #[tauri::command]
-pub fn get_pi_agent_status() -> Result<PiAgentStatus, String> {
+pub async fn get_pi_agent_status() -> Result<PiAgentStatus, String> {
+    super::blocking::run(probe_pi_agent_status).await
+}
+
+fn probe_pi_agent_status() -> Result<PiAgentStatus, String> {
     let settings = get_pi_agent_settings()?;
     let cli = detect_pi_cli(settings.cli_path.as_deref());
     let sdk = detect_pi_sdk();
@@ -265,7 +269,11 @@ pub fn get_pi_agent_session_messages() -> Result<Value, String> {
 /// detectable `pi` CLI on PATH but does not require the optional Pi agent
 /// integration to be enabled in app settings.
 #[tauri::command]
-pub fn list_pi_agent_commands() -> Result<Value, String> {
+pub async fn list_pi_agent_commands() -> Result<Value, String> {
+    super::blocking::run(probe_pi_agent_commands).await
+}
+
+fn probe_pi_agent_commands() -> Result<Value, String> {
     let root = workspace_root()?;
     list_pi_agent_commands_impl(
         root,

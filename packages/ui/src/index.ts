@@ -19,6 +19,8 @@ export * from "./components/DocumentPreviewPanel";
 export * from "./components/DocumentSplitPane/DocumentSplitPane";
 export * from "./components/Editor/documentLanguages";
 export * from "./components/JavaIntelligencePanel";
+export * from "./components/JavaProjectTextSearchPanel";
+export * from "./components/CommandPalette";
 export * from "./components/RefactorKitLanguageLab";
 export * from "./components/ProblemsPanel";
 export * from "./components/Xcom2SetupPanel";
@@ -55,3 +57,5 @@ export type {
 // Styles
 import "./styles/globals.css";
 import "./components/DocumentSplitPane/DocumentSplitPane.css";
+
+export { RawTerminal } from "./components/Terminal/RawTerminal";

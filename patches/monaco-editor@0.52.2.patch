@@ -1,0 +1,14 @@
+diff --git a/esm/vs/editor/contrib/codeAction/browser/codeActionModel.js b/esm/vs/editor/contrib/codeAction/browser/codeActionModel.js
+--- a/esm/vs/editor/contrib/codeAction/browser/codeActionModel.js
++++ b/esm/vs/editor/contrib/codeAction/browser/codeActionModel.js
+@@ -30,6 +30,10 @@
+         this._register(this._editor.onDidChangeCursorPosition(() => this._tryAutoTrigger()));
+     }
+     trigger(trigger) {
++        if (trigger.type === 1 /* CodeActionTriggerType.Invoke */) {
++            // The explicit request already covers the pending cursor or marker update.
++            this._autoTriggerTimer.cancel();
++        }
+         const selection = this._getRangeOfSelectionUnlessWhitespaceEnclosed(trigger);
+         this._signalChange(selection ? { trigger, selection } : undefined);
+     }

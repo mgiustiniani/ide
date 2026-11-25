@@ -57,6 +57,11 @@ const DIAGNOSTICS_V2_SNAPSHOT_MODES: [&str; 2] = ["immutable-editor-overlay", "s
 const DIAGNOSTICS_V2_RANGE_CAPABILITY: &str = "exact-utf16-or-explicit-partial";
 const DIAGNOSTICS_V2_BACKEND: &str = "typescript-compiler-exact-v1";
 
+pub(super) fn evidence_blocks_managed_mutation(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
+    normalized == "none" || normalized.starts_with("lexical")
+}
+
 pub(super) const GENERAL_REFACTORING_OPERATIONS: [&str; 6] = [
     "rename-class",
     "rename-member",
@@ -83,6 +88,8 @@ pub struct RefactorKitCapabilities {
     pub(super) provider_version: Option<String>,
     pub(super) java_import_external_class: ExternalImportCapability,
     pub(super) general_refactoring: GeneralRefactoringCapability,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) java_context_refactoring: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
@@ -222,6 +229,7 @@ pub(super) struct ManagedCapabilityMetadata {
     pub(super) provider_version: String,
     pub(super) java_import_external_class: ExternalImportCapability,
     pub(super) general_refactoring: GeneralRefactoringCapability,
+    pub(super) java_context_refactoring: Option<Value>,
     pub(super) methods: Option<Vec<MethodCapability>>,
     pub(super) language_kernel: LanguageKernelStatus,
     pub(super) safety: Option<SafetyCapabilities>,
@@ -308,6 +316,9 @@ pub(super) fn normalize_server_capabilities(
             update_guidance: None,
         },
         general_refactoring,
+        java_context_refactoring: normalize_java_context_refactoring(
+            object.get("javaContextRefactoring"),
+        )?,
         methods: normalized_methods,
         language_kernel,
         safety,
@@ -613,7 +624,7 @@ pub(super) fn normalize_language_kernel(value: &Value) -> Result<LanguageKernelS
                 &MUTATION_VOCABULARY,
             )?;
             if mutation_authority == "managed-stable"
-                && (stability != "stable" || matches!(evidence, "lexical" | "none"))
+                && (stability != "stable" || evidence_blocks_managed_mutation(evidence))
             {
                 return Err(PROTOCOL_FAILED.to_string());
             }
@@ -813,9 +824,7 @@ pub(super) fn normalize_general_refactoring(
     let Some(value) = value else {
         return Ok(unavailable_general_refactoring());
     };
-    let object = value
-        .as_object()
-        .ok_or_else(|| UNAVAILABLE.to_string())?;
+    let object = value.as_object().ok_or_else(|| UNAVAILABLE.to_string())?;
     for required in GENERAL_REFACTORING_METHODS {
         if !methods
             .iter()
@@ -1002,6 +1011,204 @@ pub(super) fn unavailable_language_kernel() -> LanguageKernelStatus {
     }
 }
 
+pub(super) fn normalize_java_context_refactoring(
+    value: Option<&Value>,
+) -> Result<Option<Value>, String> {
+    let Some(value) = value.filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let operations = value["operations"]
+        .as_array()
+        .filter(|v| v.len() <= 64)
+        .ok_or(PROTOCOL_FAILED)?;
+    if value["schemaVersion"] != 1
+        || value["requiresExplicitContext"] != true
+        || value["sourceAuthority"] != "saved-snapshot"
+        || value["rollbackAuthority"].as_bool().is_none()
+        || operations.iter().any(|v| {
+            v.as_str()
+                .is_none_or(|s| s.is_empty() || s.len() > 128 || s.chars().any(char::is_control))
+        })
+        || operations.iter().collect::<HashSet<_>>().len() != operations.len()
+    {
+        return Err(PROTOCOL_FAILED.into());
+    }
+    if value.get("renderedDiff").is_some_and(|v| !v.is_boolean()) {
+        return Err(PROTOCOL_FAILED.into());
+    }
+    let mut normalized = serde_json::json!({"schemaVersion": 1, "operations": operations,
+        "requiresExplicitContext": true, "sourceAuthority": "saved-snapshot",
+        "rollbackAuthority": value["rollbackAuthority"], "renderedDiff": value["renderedDiff"] == true});
+    if let Some(schema) = value.get("editorSelectionSchemaVersion") {
+        if schema
+            .as_str()
+            .is_none_or(|v| v.is_empty() || v.len() > 128)
+        {
+            return Err(PROTOCOL_FAILED.into());
+        }
+        normalized["editorSelectionSchemaVersion"] = schema.clone();
+    }
+    for key in ["selectionQueryKind", "selectionSchemaVersion"] {
+        if let Some(field) = value.get(key) {
+            if field.as_str().is_none_or(|v| v.is_empty() || v.len() > 128) {
+                return Err(PROTOCOL_FAILED.into());
+            }
+            normalized[key] = field.clone();
+        }
+    }
+    for key in [
+        "editorPreviewMethod",
+        "editorPreviewSchemaVersion",
+        "editorTransactionSchemaVersion",
+    ] {
+        if let Some(field) = value.get(key) {
+            if field.as_str().is_none_or(|v| v.is_empty() || v.len() > 128) {
+                return Err(PROTOCOL_FAILED.into());
+            }
+            normalized[key] = field.clone();
+        }
+    }
+    for key in [
+        "dirtyEditorPreview",
+        "dirtyEditorMutationAuthority",
+        "durableEditorRecovery",
+    ] {
+        if let Some(flag) = value.get(key) {
+            if !flag.is_boolean() {
+                return Err(PROTOCOL_FAILED.into());
+            }
+            normalized[key] = flag.clone();
+        }
+    }
+    for key in ["editorPreviewOperations", "editorMutationOperations"] {
+        if let Some(ops) = value.get(key) {
+            if ops.as_array().is_none_or(|v| {
+                v.len() > 64
+                    || v.iter()
+                        .any(|s| s.as_str().is_none_or(|s| s.is_empty() || s.len() > 128))
+            }) {
+                return Err(PROTOCOL_FAILED.into());
+            }
+            normalized[key] = ops.clone();
+        }
+    }
+    if let Some(operation_capabilities) = normalize_operation_capabilities(Some(value)) {
+        normalized["operationCapabilities"] = operation_capabilities;
+    }
+    Ok(Some(normalized))
+}
+
+pub(super) fn move_class_target_module_selection_offered(capabilities: &Value) -> bool {
+    let Some(operation_capabilities) = capabilities["javaContextRefactoring"]["operationCapabilities"]
+        .as_array()
+    else {
+        return false;
+    };
+    let matches = operation_capabilities
+        .iter()
+        .filter(|capability| capability["operation"] == "moveClass")
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return false;
+    }
+    let selection = &matches[0]["targetModuleSelection"];
+    selection["schemaVersion"] == "java-move-class-target-module-v1"
+        && selection["argument"] == "targetModuleId"
+        && selection["identity"] == "module-id-within-source-provider"
+        && selection["requiresAvailableContext"] == true
+        && selection["sourceSetKind"] == "main"
+        && selection["requiresUniqueNonGeneratedRoot"] == true
+}
+
+fn batch_formatter_profile_advertised(java_context: &Value) -> bool {
+    let Some(rows) = java_context["operationCapabilities"]
+        .as_array()
+        .filter(|rows| rows.len() <= 64)
+    else {
+        return false;
+    };
+    let mut matching = rows.iter().filter(|row| row["operation"] == "batchCleanup");
+    matches!((matching.next(), matching.next()), (Some(row), None) if row["features"]["formatterProfile"] == true)
+}
+
+pub(super) fn batch_formatter_profile_offered(capabilities: &Value) -> bool {
+    batch_formatter_profile_advertised(&capabilities["javaContextRefactoring"])
+}
+
+pub(super) fn safe_delete_reference_analysis_offered(capabilities: &Value) -> bool {
+    let Some(operation_capabilities) =
+        capabilities["javaContextRefactoring"]["operationCapabilities"].as_array()
+    else {
+        return false;
+    };
+    let matches = operation_capabilities
+        .iter()
+        .filter(|capability| capability["operation"] == "safeDelete")
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return false;
+    }
+    let analysis = &matches[0]["referenceAnalysis"];
+    analysis["schemaVersion"] == "java-safe-delete-reference-analysis-v1"
+        && analysis["scope"] == "workspace-text-v1"
+        && analysis["resultField"] == "referenceAnalysis"
+        && analysis["statusValues"] == serde_json::json!(["complete", "incomplete"])
+        && analysis["managedApplyAuthority"] == "none"
+        && analysis["completeProject"] == false
+}
+
+pub(super) fn normalize_operation_capabilities(value: Option<&Value>) -> Option<Value> {
+    let value = value?;
+    let capabilities = serde_json::json!({"javaContextRefactoring": value});
+    let mut normalized = Vec::new();
+    if move_class_target_module_selection_offered(&capabilities) {
+        normalized.push(serde_json::json!({
+            "operation": "moveClass",
+            "targetModuleSelection": {
+                "schemaVersion": "java-move-class-target-module-v1",
+                "argument": "targetModuleId",
+                "identity": "module-id-within-source-provider",
+                "requiresAvailableContext": true,
+                "sourceSetKind": "main",
+                "requiresUniqueNonGeneratedRoot": true
+            }
+        }));
+    }
+    if safe_delete_reference_analysis_offered(&capabilities) {
+        normalized.push(serde_json::json!({
+            "operation": "safeDelete",
+            "referenceAnalysis": {
+                "schemaVersion": "java-safe-delete-reference-analysis-v1",
+                "scope": "workspace-text-v1",
+                "resultField": "referenceAnalysis",
+                "statusValues": ["complete", "incomplete"],
+                "managedApplyAuthority": "none",
+                "completeProject": false
+            }
+        }));
+    }
+    if let Some(rows) = value["operationCapabilities"].as_array().filter(|rows| rows.len() <= 64) {
+        let mut matching = rows
+            .iter()
+            .filter(|row| row["operation"] == "changeSignature.addParameter");
+        if let (Some(row), None) = (matching.next(), matching.next()) {
+            if row["features"]["thisMethodReferenceMigration"] == true {
+                normalized.push(serde_json::json!({
+                    "operation": "changeSignature.addParameter",
+                    "features": {"thisMethodReferenceMigration": true}
+                }));
+            }
+        }
+    }
+    if batch_formatter_profile_advertised(value) {
+        normalized.push(serde_json::json!({
+            "operation": "batchCleanup",
+            "features": {"formatterProfile": true}
+        }));
+    }
+    (!normalized.is_empty()).then(|| serde_json::Value::Array(normalized))
+}
+
 pub(super) fn available_managed_capabilities(
     capabilities: ManagedCapabilityMetadata,
 ) -> RefactorKitCapabilities {
@@ -1012,6 +1219,7 @@ pub(super) fn available_managed_capabilities(
         provider_version: Some(capabilities.provider_version),
         java_import_external_class: capabilities.java_import_external_class,
         general_refactoring: capabilities.general_refactoring,
+        java_context_refactoring: capabilities.java_context_refactoring,
         methods: capabilities.methods,
         language_kernel: capabilities.language_kernel,
         safety: capabilities.safety,
@@ -1041,6 +1249,7 @@ pub(super) fn available_capabilities(version: Option<String>) -> RefactorKitCapa
             update_guidance: None,
         },
         general_refactoring: unavailable_general_refactoring(),
+        java_context_refactoring: None,
         methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,
@@ -1064,6 +1273,7 @@ pub(super) fn unavailable_capabilities() -> RefactorKitCapabilities {
             update_guidance: Some(UPDATE_GUIDANCE.to_string()),
         },
         general_refactoring: unavailable_general_refactoring(),
+        java_context_refactoring: None,
         methods: None,
         language_kernel: unavailable_language_kernel(),
         safety: None,

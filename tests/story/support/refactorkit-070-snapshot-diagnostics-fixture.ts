@@ -971,9 +971,13 @@ export class RefactorKit070SnapshotDiagnosticsFixture {
     assert.equal(DIAGNOSTICS_V2_METHOD.writesWorkspace, false);
     assert.equal(ACCEPTED_SNAPSHOT_EVIDENCE.process.prohibitedInvocationCount, 0);
     assert.equal(ACCEPTED_SNAPSHOT_EVIDENCE.process.packageScriptCanaryMarkerAbsent, true);
-    assert.equal(
-      this.#invocations.some(({ command }) => /(?:apply|write|script|terminal)/iu.test(command)),
-      false,
+    assert.deepEqual(
+      this.#invocations.filter(
+        ({ command }) =>
+          command !== "get_workspace_terminal_capabilities" &&
+          /(?:apply|write|script|terminal)/iu.test(command),
+      ),
+      [],
     );
   }
 
@@ -1183,6 +1187,10 @@ export class RefactorKit070SnapshotDiagnosticsFixture {
           workspaceId: AUTHORITY.workspaceId,
           workspaceRoot: "/workspace/authorized",
           generation: AUTHORITY.workspaceGeneration,
+          gradleImportEnabled: false,
+          gradleSettingsConfigured: false,
+          activeMavenProfiles: [],
+          inactiveMavenProfiles: [],
           capabilities: {
             documentSync: true,
             diagnostics: false,
@@ -1191,7 +1199,10 @@ export class RefactorKit070SnapshotDiagnosticsFixture {
             definition: false,
             references: false,
             documentSymbols: false,
+            documentHighlights: false,
+            implementation: false,
             workspaceSymbols: false,
+            semanticTokens: false,
             rename: false,
             codeActions: false,
             formatting: false,
@@ -1201,6 +1212,19 @@ export class RefactorKit070SnapshotDiagnosticsFixture {
         };
       case "get_refactorkit_status":
         return structuredClone(READY_REFACTORKIT_STATUS);
+      case "get_refactorkit_engine_capabilities":
+        return {
+          engineDiscovered: false,
+          path: null,
+          version: null,
+          workspaceId: AUTHORITY.workspaceId,
+          operations: [],
+          managedOperations: [],
+          operationalSurface: [],
+          rollbackAdvertised: false,
+          previewReadOnly: true,
+          reason: "No real RefactorKit engine is installed in this deterministic harness.",
+        };
       case "get_refactorkit_capabilities":
         return structuredClone(CURRENT_IDE_CAPABILITIES);
       case "start_refactorkit_saved_snapshot_semantic_session": {

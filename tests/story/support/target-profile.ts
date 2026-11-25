@@ -55,15 +55,19 @@ export function resolveTargetProfile(parameters: StoryWorldParameters): TargetPr
     if (configuredTarget.name === profile.name && configuredTarget.driver === profile.driver) {
       if (profile === TARGET_PROFILES.desktopTauriWebdriver) {
         const evidence = parameters.evidence;
+        const releaseNoBundle =
+          evidence?.packagedApplication === false &&
+          evidence?.artifactKind === "release-no-bundle";
+        const appImage =
+          evidence?.packagedApplication === true && evidence?.artifactKind === "appimage";
         if (
           evidence?.kind !== "tauri-webdriver" ||
-          evidence.nativeGui !== true ||
-          evidence.e2e !== true ||
-          evidence.packagedApplication !== false ||
-          evidence.artifactKind !== "release-no-bundle"
+          evidence?.nativeGui !== true ||
+          evidence?.e2e !== true ||
+          (!releaseNoBundle && !appImage)
         ) {
           throw new TypeError(
-            "desktop/tauri-webdriver requires explicit nativeGui/e2e release-no-bundle evidence",
+            "desktop/tauri-webdriver requires explicit nativeGui/e2e release-no-bundle or AppImage evidence",
           );
         }
       }

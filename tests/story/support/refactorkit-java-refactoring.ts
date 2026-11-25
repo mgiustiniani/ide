@@ -64,14 +64,12 @@ import { TauriRefactorKitAdapter } from "../../../packages/tauri-adapters/src/re
 import { BrowserRefactorKitAdapter } from "../../../packages/browser-adapters/src/refactorkit-browser.js";
 import type {
   RefactorApplyRequest,
-  RefactorApplyResult,
   RefactorPreviewRequest,
   RefactorPreviewResult,
   RefactorRollbackRequest,
   RefactorRollbackResult,
   RefactorKitCapabilities,
   RefactorKitChangeIntent,
-  RefactorWorkspaceAuthority,
 } from "../../../packages/contracts/src/refactorkit.js";
 
 export const REQUIREMENT = "REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001";
@@ -106,10 +104,6 @@ const WEB_FIRST_LAYERS = ["packages/ui", "packages/web-core", "apps/web"] as con
 const FEATURE_PATH = join(REPO_ROOT, "features/refactorkit/java-refactoring.feature");
 const PORT_PATH = join(REPO_ROOT, "packages/web-core/src/ports/refactorkit-port.ts");
 const ADAPTER_PATH = join(REPO_ROOT, "packages/tauri-adapters/src/refactorkit-tauri.ts");
-const DAEMON_CONTRACT_PATH = join(
-  REPO_ROOT,
-  "apps/desktop/src-tauri/src/commands/refactorkit_daemon/contract.rs",
-);
 const DAEMON_CAPABILITY_PATH = join(
   REPO_ROOT,
   "apps/desktop/src-tauri/src/commands/refactorkit_daemon/capability_policy.rs",
@@ -241,11 +235,7 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
 
   async invoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
     const sequence = ++this.#sequence;
-    this.invocations.push(
-      args === undefined
-        ? { sequence, command }
-        : { sequence, command, args },
-    );
+    this.invocations.push(args === undefined ? { sequence, command } : { sequence, command, args });
     switch (command) {
       case "get_refactorkit_status":
         return {
@@ -289,6 +279,9 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
       version: "0.6.2",
       workspaceId: WORKSPACE_ID,
       operations: [...REFACTOR_OPERATIONS],
+      // Only the primary operation in this Story has managed mutation authority;
+      // advertising the other operations proves discovery without authorizing Apply.
+      managedOperations: ["rename-class"],
       operationalSurface: [],
       rollbackAdvertised: this.rollbackAdvertised(),
       previewReadOnly: true,
@@ -321,10 +314,30 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
         stability: "experimental",
       },
       methods: [
-        { name: "java.refactor.preview", stability: "experimental", requiresProject: true, writesWorkspace: false },
-        { name: "java.refactor.apply", stability: "experimental", requiresProject: true, writesWorkspace: true },
-        { name: "java.refactor.rollback", stability: "experimental", requiresProject: true, writesWorkspace: true },
-        { name: "java.refactor.discard", stability: "experimental", requiresProject: true, writesWorkspace: false },
+        {
+          name: "java.refactor.preview",
+          stability: "experimental",
+          requiresProject: true,
+          writesWorkspace: false,
+        },
+        {
+          name: "java.refactor.apply",
+          stability: "experimental",
+          requiresProject: true,
+          writesWorkspace: true,
+        },
+        {
+          name: "java.refactor.rollback",
+          stability: "experimental",
+          requiresProject: true,
+          writesWorkspace: true,
+        },
+        {
+          name: "java.refactor.discard",
+          stability: "experimental",
+          requiresProject: true,
+          writesWorkspace: false,
+        },
       ],
       languageKernel: {
         available: false,
@@ -351,10 +364,7 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
     const authority = request.authority as Record<string, unknown>;
     const plan = this.#makePlan(operation, target, authority, request);
     if (plan.status === "ready" && (plan.applyEligibility as { eligible: boolean }).eligible) {
-      this.#plans.set(
-        plan.planId as string,
-        this.#guardFrom(request),
-      );
+      this.#plans.set(plan.planId as string, this.#guardFrom(request));
     } else {
       this.#consumed.add(plan.planId as string);
     }
@@ -388,9 +398,7 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
       planId,
       operation,
       outcome: "applied",
-      changedFiles: [
-        { change: "edit", path: target.path as string, primary: true },
-      ],
+      changedFiles: [{ change: "edit", path: target.path as string, primary: true }],
       primaryFile: target.path as string,
       diagnostics: [],
       transactionId,
@@ -408,9 +416,11 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
       throw new Error("RefactorKit transaction is stale or unknown.");
     }
     const authority = request.authority as Record<string, unknown>;
-    if (guard.workspaceId !== authority.workspaceId ||
-        guard.workspaceGeneration !== authority.workspaceGeneration ||
-        guard.operation !== request.operation) {
+    if (
+      guard.workspaceId !== authority.workspaceId ||
+      guard.workspaceGeneration !== authority.workspaceGeneration ||
+      guard.operation !== request.operation
+    ) {
       throw new Error("RefactorKit transaction ownership mismatch.");
     }
     this.#transactions.delete(transactionId);
@@ -481,22 +491,29 @@ class RefactorKitJavaNativeBoundary implements TauriInternals {
       summary: `Preview ${operation} of ${target.identity as string}`,
       confidence: 0.9,
       riskLevel: "medium",
-      risks: [
-        `${operation} may affect call sites outside the selected target`,
-      ],
+      risks: [`${operation} may affect call sites outside the selected target`],
       evidence: [
-        { kind: "semantic", summary: `Resolved ${operation} target ${target.identity as string}`, path: targetPath },
+        {
+          kind: "semantic",
+          summary: `Resolved ${operation} target ${target.identity as string}`,
+          path: targetPath,
+        },
       ],
-      affectedFiles: [
-        { change: "edit", path: targetPath, primary: true },
-      ],
-      renderedDiff: "--- a/Order.java\n+++ b/Order.java\n@@ -1,5 +1,5 @@\n-public final class Order {\n+public final class OrderRenamed {",
+      affectedFiles: [{ change: "edit", path: targetPath, primary: true }],
+      renderedDiff:
+        "--- a/Order.java\n+++ b/Order.java\n@@ -1,5 +1,5 @@\n-public final class Order {\n+public final class OrderRenamed {",
       structuredDiff: [
         {
           path: targetPath,
           change: "edit",
           hunks: [
-            { oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: ["-public final class Order {", "+public final class OrderRenamed {"] },
+            {
+              oldStart: 1,
+              oldLines: 2,
+              newStart: 1,
+              newLines: 2,
+              lines: ["-public final class Order {", "+public final class OrderRenamed {"],
+            },
           ],
         },
       ],
@@ -596,7 +613,11 @@ export class RefactorKitJavaRefactoringStorySession {
 
   /** AC-001/AC-002/AC-003 precondition: an authorized isolated Java workspace. */
   start(): void {
-    assert.equal(this.#started, false, "The RefactorKit Java-refactoring Story session already started");
+    assert.equal(
+      this.#started,
+      false,
+      "The RefactorKit Java-refactoring Story session already started",
+    );
     this.#started = true;
     this.#workspaceRoot = this.#createWorkspace();
     this.#installTauriBoundary();
@@ -709,11 +730,17 @@ export class RefactorKitJavaRefactoringStorySession {
     const plan = await this.#ensureCurrentPlan(operation);
     // Apply must bind the SAME request identity that produced the retained plan so
     // the daemon guard matches: the exact reviewed plan and current context.
-    const applyRequest = this.#buildApplyRequest(operation, plan.planId, plan.target.path, plan.requestId);
+    const applyRequest = this.#buildApplyRequest(
+      operation,
+      plan.planId,
+      plan.target.path,
+      plan.requestId,
+    );
     try {
       const result = await this.#adapter!.applyRefactoring(applyRequest);
       this.#receivedPlanAuthority = true;
-      this.#appliedExactPlan = result.outcome === "applied" && result.planId === applyRequest.planId;
+      this.#appliedExactPlan =
+        result.outcome === "applied" && result.planId === applyRequest.planId;
       this.#reportedOutcome = result.outcome;
       if (result.outcome === "applied" && result.transactionId !== undefined) {
         this.#transaction = {
@@ -753,11 +780,7 @@ export class RefactorKitJavaRefactoringStorySession {
     await this.observeCapability();
     // Probe: Apply against a changed/replaced plan identity that is NOT current.
     const changedPlanId = `replaced-plan-${Date.now()}`;
-    const applyRequest = this.#buildApplyRequest(
-      "rename-class",
-      changedPlanId,
-      TARGET_FILE,
-    );
+    const applyRequest = this.#buildApplyRequest("rename-class", changedPlanId, TARGET_FILE);
     let refused = false;
     try {
       await this.#adapter!.applyRefactoring(applyRequest);
@@ -800,9 +823,8 @@ export class RefactorKitJavaRefactoringStorySession {
       authority: { workspaceId: WORKSPACE_ID, workspaceGeneration: 1 },
       requestId: `story-rollback-${Date.now()}`,
     };
-    const result: RefactorRollbackResult = await this.#adapter!.rollbackRefactoring(
-      rollbackRequest,
-    );
+    const result: RefactorRollbackResult =
+      await this.#adapter!.rollbackRefactoring(rollbackRequest);
     this.#advertisedRollbackOutcome = {
       advertised: true,
       offered: true,
@@ -1034,12 +1056,12 @@ export class RefactorKitJavaRefactoringStorySession {
     const portText = readFileSync(PORT_PATH, "utf8");
     const adapterText = readFileSync(ADAPTER_PATH, "utf8");
     const capabilityText = readFileSync(DAEMON_CAPABILITY_PATH, "utf8");
-    const portHasGeneralRefactoringPreview = /previewRefactoring|applyRefactoring|rollbackRefactoring|discardRefactoring/u.test(
-      portText,
-    );
-    const adapterHasGeneralRefactoringPreview = /previewRefactoring|applyRefactoring|rollbackRefactoring|discardRefactoring/u.test(
-      adapterText,
-    );
+    const portHasGeneralRefactoringPreview =
+      /previewRefactoring|applyRefactoring|rollbackRefactoring|discardRefactoring/u.test(portText);
+    const adapterHasGeneralRefactoringPreview =
+      /previewRefactoring|applyRefactoring|rollbackRefactoring|discardRefactoring/u.test(
+        adapterText,
+      );
     const daemonAdvertises = REFACTOR_OPERATIONS.every((operation) =>
       capabilityText.includes(`"${operation}"`),
     );
@@ -1169,7 +1191,8 @@ export class RefactorKitJavaRefactoringStorySession {
       portCapabilityEvidence: this.#portCapabilityEvidence,
       featureReconciliation: this.#featureReconciliation,
       honestUnavailable: {
-        unsupportedOperationRefused: this.#unsupportedOperationObserved && this.#reportsCapabilityUnavailable,
+        unsupportedOperationRefused:
+          this.#unsupportedOperationObserved && this.#reportsCapabilityUnavailable,
         browserReportsUnavailable: this.#browserProviderReportsUnavailable,
         noFabricatedPlan: this.#fabricatedPlan === false,
         noFabricatedSuccess: this.#fabricatedSuccess === false,

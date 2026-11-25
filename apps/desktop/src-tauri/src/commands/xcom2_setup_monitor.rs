@@ -993,12 +993,15 @@ mod tests {
 
     fn temp_dir() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(1);
+        let mut random = [0_u8; 16];
+        getrandom::fill(&mut random).unwrap();
+        let token: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
         let path = env::temp_dir().join(format!(
-            "xcom-monitor-test-{}-{}",
+            "xcom-monitor-test-{}-{}-{token}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir(&path).unwrap();
         path.canonicalize().unwrap()
     }
     fn manifest(appid: u32, extra: &str) -> String {

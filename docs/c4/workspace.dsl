@@ -10,14 +10,18 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
             }
 
             desktopApp = container "Desktop App" "Tauri WebView IDE with non-owning Pi renderers, current attachment guards, guarded Java, XCOM boundaries, and Project Foundry." "React, Vite, Tauri WebView" {
-                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes the shell, feature controllers, and docked Agent activity while feature lifecycles remain behind ports." "React, Monaco, Zustand" "Current"
+                desktopUi = component "Desktop Composition Root and IDE UI State" "Composes the shell, active-model Monaco layout readiness, feature controllers and docked Agent activity; records bounded bootstrap stage and fault observations; feature lifecycles remain behind ports." "React, Monaco, Zustand" "Current"
                 workspaceController = component "Workspace Controller" "Owns registry, authorized-root transitions, and monotonic WorkspaceGeneration; coordinates activation revocation/start and setup correlation." "TypeScript, React" "Current"
+                gitWorkspaceController = component "Local Git Workspace Controller" "Scopes explicit trust, saved/index reviews, authored commits, local branch actions and guarded editor reconciliation to one workspace activation without implicitly saving buffers." "TypeScript, React" "Current"
+                tauriGitWorkspaceAdapter = component "Tauri Local Git Adapter" "Validates workspace snapshots and review correlations for separate local Git inspection and mutation commands." "TypeScript, Tauri API" "Current"
                 desktopEditorController = component "Desktop Editor Controller" "Coordinates guarded file open/create, tab lifecycle, authorized restore/reset, and readiness; rejects completions from stale workspace generations." "TypeScript, React" "Current"
                 settingsController = component "Settings Controller" "Owns Settings visibility and section refresh coordination. It delegates machine monitor and transaction lifecycles to XCOM Setup while open." "TypeScript, React" "Current"
-                terminalController = component "Terminal Controller" "Owns workspace-independent terminal connection and session lifecycle, command/input coordination, output clearing, and reset presentation." "TypeScript, React" "Current"
+                terminalController = component "Terminal Controller" "Coordinates trusted workspace PTYs, bounded raw output replay, acknowledgements of accepted input bytes, resize ordering and workspace/renderer/session identity checks." "TypeScript, React" "Current"
                 fileExplorerController = component "File Explorer Controller" "Coordinates folder expansion and empty-editor file creation through file-tree and editor boundaries within the authorized workspace." "TypeScript, React" "Current"
                 documentNavigationController = component "Document Navigation Controller" "Owns document-preview visibility and diagnostic navigation; opens through the Desktop Editor Controller before bounded reveal requests." "TypeScript, React" "Current"
-                editorCommandController = component "Editor Command Controller" "Coordinates buffer changes, saves, tab activation/close, and Java document flush/save/close ordering." "TypeScript, React" "Current"
+                editorExternalChangeMonitor = component "Passive Active-file Disk Monitor" "Serializes visible active-file revision checks and presents guarded warnings; never reloads, saves or adopts a save baseline." "TypeScript, React" "Current"
+                editorRecoveryController = component "Editor Recovery Controller and Review" "Schedules acknowledged dirty-buffer checkpoints, keeps inventory reads separate from failed draft writes, and supports explicit guarded restoration/retry; never writes project sources during recovery." "TypeScript, React" "Current"
+                editorCommandController = component "Editor Command Controller" "Coordinates buffer changes, saves, tab activation/close and Java document ordering with workspace/effect and buffer-lifetime guards and retained-document resynchronization." "TypeScript, React" "Current"
                 desktopShellController = component "Desktop Shell Controller" "Routes sidebar and bottom-panel resize/toggle requests to layout state, preserving dimensions; owns bottom-tab state and guarded Problems policy." "TypeScript, React" "Current"
                 aiAgentController = component "Pi Runtime Configuration Controller" "Owns Pi settings, status, installation, and read-only command discovery; conversation remains in the native Pi TUI." "TypeScript, React" "Current"
                 piWorkspaceAgentScreen = component "Workspace Pi Agent Screen" "Hosts raw Pi transport, caller-authorized session detail, rootless retained-session summaries, and bounded read-only accessories." "React" "Current"
@@ -28,17 +32,34 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 refactorKitStatusController = component "RefactorKit Status Controller" "Discovers provider-neutral diagnostic status and capabilities after authorization; normalizes independent outcomes and rejects stale generations." "TypeScript, React" "Current"
                 javaClipboardPasteSurface = component "Java Clipboard Import UI" "Directory-tree action plus preview, conditional acknowledgement, exact-plan Apply, and Cancel. It exposes no rollback action." "React" "Current"
                 refactorKitImportController = component "RefactorKit Import Controller" "Probes capability before clipboard access, guards selection and plan identity, discards invalid work, and opens backend-authoritative results." "TypeScript, React" "Current"
-                refactorKitSymbolNavigationSupport = component "RefactorKit Symbol Navigation Support" "Provides saved-snapshot TypeScript and JavaScript search and definition support behind a workspace-write policy boundary." "TypeScript, React" "Frozen"
+                refactorKitSymbolNavigationSupport = component "RefactorKit Symbol Navigation Support" "Provides saved-snapshot TypeScript/JavaScript navigation and capability-qualified Java symbol selection." "TypeScript, React" "Current"
+                javaFileActions = component "Monaco Java File Actions" "Offers capability-qualified saved-file formatting and import review through current workspace and editor-buffer guards." "TypeScript, Monaco" "Current"
+                javaRefactoringReview = component "Saved Java Refactoring Review" "Captures reviewed targets and parameters, applies exact engine plans, holds editor write protection and reconciles confirmed Apply and Rollback files." "TypeScript, React" "Current"
+                javaProjectContextController = component "Java Project Context Controller" "Presents provider-owned modules, source sets, ordered classpaths and source ownership with explicit SDK settings and saved-context identity; preserves editor drafts and revokes obsolete results." "TypeScript, React" "Current"
+                javaCursorNavigationController = component "Java Cursor Navigation Controller" "Reviews saved editor buffers and carries the selected SDK and project context into cursor requests; revokes locations when buffers, workspace or configuration change." "TypeScript, React" "Current"
                 tauriRefactorKitAdapter = component "RefactorKit and Clipboard Tauri Adapters" "Provides typed capability, preview, exact-plan Apply, discard, backend rollback, and clipboard ports." "TypeScript, Tauri API" "Current"
                 desktopSidebar = component "Desktop Left Sidebar Accordion" "Shows File Explorer above Workspace Explorer as independent sections; lists registered workspaces with switch, refresh, loading, and error states." "React" "Current"
-                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "Hosts the core Terminal and guarded project Problems with accessible contribution metadata and keyboard behavior." "React" "Current"
+                desktopBottomPanel = component "Desktop Bottom Tool-window Host" "Hosts the core Terminal, guarded project Problems, manual HTTP Client and Java Database with accessible contribution metadata and keyboard behavior." "React" "Current"
+                httpClientPanel = component "HTTP Client Panel" "Collects manually submitted method, URL, headers and body; presents bounded response data without saving drafts." "React" "Current"
+                oauthBrowserHelper = component "OAuth Browser Authorization Helper" "Starts explicit native PKCE, cancels retired sessions and separates token review/use from API Send." "TypeScript, React" "Current"
+                httpClientController = component "HTTP Client Feature Controller" "Imports bounded OpenAPI definitions, prepares reviewed parameter values without sending, and sends only explicit requests through a provider-neutral port with workspace generation guards." "TypeScript, React" "Current"
+                tauriHttpClientAdapter = component "Tauri HTTP Client Adapter" "Implements the HTTP client port and validates request/result correlation at the native boundary." "TypeScript, Tauri API" "Current"
+                javaDatabasePanel = component "Java Database Panel" "Collects an explicitly trusted workspace driver, JDBC URL, credentials, schema inspection and reviewed SQL statements; keeps connection drafts in memory." "React" "Current"
+                sqlSchemaSuggestions = component "SQL Schema Suggestions" "Projects the captured JDBC schema into bounded driver-quoted table and column insertions; rejects stale selections and never executes SQL." "TypeScript, React" "Current"
+                javaDatabaseController = component "Java Database Feature Controller" "Binds JDBC inspection and SQL results to the active workspace generation and clears credentials when its authority changes." "TypeScript, React" "Current"
+                tauriJavaDatabaseAdapter = component "Tauri Java Database Adapter" "Implements the provider-neutral JDBC port and validates request correlation, schema metadata, result shape and display bounds." "TypeScript, Tauri API" "Current"
                 languageContracts = component "Provider-neutral Language Contracts" "Defines normalized lifecycle, document sync, diagnostics, semantics, cancellation, capabilities, results, and events behind provider-neutral types." "TypeScript" "Current"
                 languageLifecyclePanel = component "Global Java Tooling Settings" "Manages global JDK/JDT LS lifecycle and RefactorKit discovery without project scan, navigation, refactoring, or activation actions." "React" "Current"
                 tauriAdapters = component "Tauri Adapters" "Typed desktop adapters for workspace, editor, terminal, Pi configuration, Java, RefactorKit, and XCOM boundaries." "TypeScript, Tauri API" "Current"
                 tauriLanguageAdapter = component "Tauri Language Session and Document Adapter" "Implements language session and document sync ports with identity validation, bounded event polling, and versioned document notifications." "TypeScript, Tauri API" "Current"
-                tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "Implements completion, hover, signature-help, and cancellation calls; rejects malformed, mismatched, or stale native payloads." "TypeScript, Tauri API" "Current"
+                tauriJavaIntelligenceAdapter = component "Tauri Java Intelligence Adapter" "Implements completion, hover, signature-help, semantic-token, and cancellation calls; rejects malformed, mismatched, or stale native payloads." "TypeScript, Tauri API" "Current"
+                workspaceTerminalRenderer = component "Raw Workspace Terminal" "Renders ANSI and accessible shell output and forwards raw input and geometry without a prompt or command parser." "React, xterm.js" "Current"
+                javaExecutionController = component "Java Execution Controller and Panel" "Coordinates named workspace launch settings, explicit trust, save-before-execution, build/run/unit-test/Maven integration-test status, measured coverage, structured test results, failed-test reruns, tool output, jdb console controls, JDI runtime inspection, external JVM attachment and explicit compiled-class reload without source-save preparation." "TypeScript, React" "Current"
+                javaDebuggerSourceController = component "Java Debugger Source Controller and Monaco Presentation" "Binds source-margin breakpoints and selected-frame lines to the active session, exact model text/version and buffer lifetime; revokes changed sources and serializes inspections." "TypeScript, React, Monaco" "Current"
+                javaSourceBreakpointSettings = component "Saved Java Source Breakpoint Preferences" "Keeps bounded workspace-relative source choices and text fingerprints in local application storage; supports explicit review/rebinding without saving sources." "TypeScript, React, Web Crypto, localStorage" "Current"
+                javaExecutionAdapter = component "Java Execution Tauri Adapter" "Translates execution-port requests and validates workspace and session identity on returned tool results." "TypeScript, Tauri API" "Current"
                 javaLanguageController = component "Java Language Controller" "Owns Java sessions, versioned document sync, diagnostics, Problems projection, semantics, and cancellation with comprehensive identity guards." "TypeScript, React" "Current"
-                javaMonacoSemantics = component "Guarded Monaco Java Providers" "Registers guarded Java semantics for the exact synchronized model; limits completion edits and renders untrusted Markdown without HTML." "React, Monaco" "Current"
+                javaMonacoSemantics = component "Guarded Monaco Java Providers" "Registers guarded Java semantics, including negotiated full-document semantic tokens, for the exact synchronized model; limits completion edits and renders untrusted Markdown without HTML." "React, Monaco" "Current"
                 xcomFeatureContracts = component "Fixed XCOM 2 Feature Descriptor and Contracts" "Defines first-party machine setup and project activation data without creating a plugin runtime or execution grant." "TypeScript" "Current"
                 xcomMonitorPanel = component "XCOM 2 Machine Settings Monitor" "Presents accessible machine evidence, including the exact safe missing-Steam state, without activating a project." "React" "Current"
                 xcomDryRunPlanner = component "Pure XCOM 2 Setup Planner" "Returns export-safe descriptive steps without execution or mutation authority." "TypeScript" "Current"
@@ -71,16 +92,31 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 xcomOptionalProvisioning = component "Optional Steam and Prefix Provisioning" "Describes separately authorized Steam, compatibility-prefix, package-manager, and interactive setup work." "TypeScript" "Target"
                 xcomLanguageBuildAdapters = component "XCOM 2 Language and Build Adapters" "Provides bounded project language and build interactions only after their own activation and authorization policy." "TypeScript" "Target"
 
-                javaActivationEvaluator = component "Java Module Activation Evaluator" "Evaluates bounded Java module roots, state, confidence, and reasons from explicit or evidence-based inputs." "TypeScript" "Frozen"
-                javaContributionCoordinator = component "Contextual Java Contribution Coordinator" "Scopes Problems, Build, Tests, Logs, and Java tools to a bounded Java module lifecycle, separate from guarded diagnostic projection." "TypeScript, React" "Frozen"
-                javaAdvancedPresentation = component "Broader Java Monaco Workflows" "Groups Monaco definition, references, symbols, hierarchy, code actions, formatting, rename, and broader IntelliSense workflows." "React, Monaco" "Frozen"
-                javaAdvancedCoordinator = component "Broader Java Intelligence Coordinator" "Coordinates navigation, reviewed workspace mutation, formatting, rename previews, hierarchy, and contribution lifetime with stale guards." "TypeScript" "Frozen"
-                refactoringPort = component "General Java Refactoring Port" "Defines provider-neutral refactoring discovery, reviewed preview, validation, application, and cancellation separately from managed Java import." "TypeScript" "Frozen"
-                externalProviderAdapters = component "Additional Provider Adapters" "Adapts bounded build, framework, remote, search, or semantic providers through strict typed machine-readable contracts; human stdout is not a protocol." "TypeScript" "Frozen"
+                javaActivationEvaluator = component "Java Module Activation Evaluator" "Evaluates bounded Java module roots, state, confidence, and reasons from explicit or evidence-based inputs." "TypeScript" "Target"
+                javaContributionCoordinator = component "Contextual Java Contribution Coordinator" "Scopes broader project-aware Java contributions and module lifecycle beyond current execution controls." "TypeScript, React" "Target"
+                javaAdvancedPresentation = component "Broader Java Monaco Workflows" "Groups Monaco definition, references, symbols, hierarchy, code actions, formatting, rename, and broader IntelliSense workflows." "React, Monaco" "Target"
+                javaAdvancedCoordinator = component "Broader Java Intelligence Coordinator" "Coordinates broader cursor-based semantic actions and hierarchy beyond current symbol-selection workflows." "TypeScript" "Target"
+                refactorKitChangeCoordinator = component "Shared RefactorKit Change Coordinator" "Planned semantic-target selection, snapshot-bound review, exact-plan application and editor reconciliation across IDE refactoring entry points." "TypeScript" "Target"
+                refactoringPort = component "General Java Refactoring Port" "Defines provider-neutral reviewed preview, application, discard and capability-qualified rollback separately from Java import." "TypeScript" "Current"
+                externalProviderAdapters = component "Additional Provider Adapters" "Adapts additional framework, remote, search, or semantic providers through typed contracts." "TypeScript" "Target"
             }
 
             rustBackend = container "Rust Backend" "Owns workspace and renderer authority, per-workspace Pi PTYs, managed language services, RefactorKit, and bounded XCOM operations." "Rust, Tauri" {
+                workspaceShellSessions = component "Workspace Shell PTY Manager" "Owns trusted Linux shell sessions, nonblocking I/O, bounded byte cursors and captured OS-session cleanup; revokes old roots and renderer identities." "Rust, portable-pty, Linux procfs" "Current"
+                oauthCommand = component "Native OAuth Authorization" "Owns S256 verifier, bounded loopback callback, issuer/state and workspace checks, OS browser launch and single code exchange." "Rust" "Current"
+                httpClientCommand = component "Bounded HTTP Request Command" "Validates manually submitted HTTP/HTTPS requests, applies time and size limits, and returns capped text or base64 responses." "Rust, reqwest" "Current"
+                httpCollectionCommand = component "HTTP Collection Commands" "Owns workspace-scoped library storage and create-only JSON exports, revalidating library revision and workspace activation." "Rust" "Current"
+                httpCollectionSaveDialog = component "HTTP Collection Save Dialog" "Lets the person choose one external export destination in the main window without granting general renderer filesystem access." "Rust, tauri-plugin-dialog" "Current"
+        javaExecutor = component "Java Execution Process Manager" "Owns asynchronous JDK and build-tool sessions, bounded output, fresh JUnit XML inspection, JaCoCo agent/report lifetimes, captured failed-test reruns, typed JDI state validation, suspension guards, cancellation and Unix debugger process groups." "Rust" "Current"
+                javaDatabaseCommand = component "Bounded JDBC Command" "Confines the user-selected driver to the active workspace, compiles a private Java bridge with the selected JDK, and runs bounded per-operation metadata and SQL requests." "Rust" "Current"
+                javaDebuggerSourceBinding = component "Java Debugger Source Binding" "Captures bounded source fingerprints before compilation and checks unchanged editor/disk text against unique JDI source paths; refuses ambiguity without parsing a semantic project model." "Rust" "Current"
+                javaClassReload = component "JDI Compiled Class Reload" "Captures bounded workspace class files into owned transfer storage, retires source binding, and correlates actual JVM redefinition results without a semantic source model." "Rust" "Current"
+                javaCoverageReports = component "Java Coverage Report Import" "Reads bounded JaCoCo counters and source-line measurements correlated to the owned test execution; refuses older or unavailable reports without guessing editor bindings." "Rust, XML" "Current"
+                editorFileIo = component "Editor Source File Workers" "Captures canonical roots and runs bounded worker-thread source reads and serialized revision-checked atomic saves without blocking the window event loop." "Rust" "Current"
+                editorDiskReader = component "Bounded Disk Revision Reader" "Main-window and registered-root status-only inspection; single worker, streaming hashing and Unix descriptor-relative containment." "Rust" "Current"
+                editorRecoveryJournal = component "Editor Recovery Journal" "Native-issued main-workspace sessions and worker-thread file-locked atomic journals; bounded private checkpoints and local history, not source-write authority." "Rust, JSON" "Current"
                 workspaceCommands = component "Workspace Registry and Command Handlers" "Owns canonical workspace bindings, registry metadata, the application marker, and bounded one-shot commands." "Rust" "Current"
+                gitWorkspaceService = component "Local Git Workspace Service" "Runs bounded literal-path Git commands, checks reviewed state, serializes mutations with activation, and blocks native close until writes settle." "Rust" "Current"
                 piWorkspaceAgentFacade = component "Pi Workspace Agent Tauri Facade" "Derives authority from the actual WebView label and fixed view ID, rechecks registry or pin plus attachment, and targets events." "Rust, Tauri" "Current"
                 piWorkspaceAgentRuntime = component "Per-workspace Pi PTY Runtime" "Owns workspace roots, Pi processes, PTYs, generations, attachments, transport tails, current snapshots, and rootless retained summaries." "Rust, portable-pty" "Current" {
                     properties {
@@ -89,10 +125,14 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 }
                 piWorkspaceAgentAccessories = component "Pi Read-only Accessory Reader" "Discovers bounded Git changes and Pi package and command metadata without reading conversation history." "Rust, git2" "Current"
                 refactorKitHandlers = component "RefactorKit Status Handlers" "Bounded diagnostic status only; managed capability and import commands use the separate daemon facade." "Rust" "Current"
-                refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
+                refactorKitDaemonFacade = component "RefactorKit Daemon Tauri Facade" "Inbound commands for capability, read-only Java navigation and project context, import preview, exact-plan Apply, discard, backend rollback, and shutdown." "Rust, Tauri" "Current"
                 refactorKitCapabilityPolicy = component "RefactorKit Capability and Metadata Policy" "Requires the advertised API and exact Java-import methods; retains other provider metadata as evidence and fails closed on incomplete methods." "Rust" "Current"
                 refactorKitBoundaryPolicy = component "RefactorKit Contract and Path Policy" "Defines bounded RefactorKit DTOs, normalization, identity guards, canonical-workspace policy, and authorized import result paths." "Rust" "Current"
                 refactorKitTransport = component "RefactorKit NDJSON Transport" "Owns the fixed-argv daemon process, capped NDJSON request/response transport, timeouts, and fail-closed process termination." "Rust, NDJSON" "Current"
+                refactorKitJavaCli = component "RefactorKit Java Command and CLI Bridge" "Runs workspace-qualified scan, symbols, navigation and reviewed exact-plan Java refactoring operations." "Rust, CLI" "Current"
+                refactorKitJavaProjectContext = component "RefactorKit Java Project Context Service" "Acquires typed read-only project context through an owned daemon session; validates workspace, SDK, provider policies and snapshot/context correlation." "Rust" "Current"
+                refactorKitJavaContextRefactoring = component "SDK-bound Java Refactoring Service" "Retains provider plans with exact project settings and saved context, requires reviewed provider text diffs and correlates SDK-bound Apply outcomes without CLI fallback." "Rust" "Current"
+                refactorKitJavaNavigation = component "RefactorKit Java Position Navigation Service" "Queries compiler-backed saved-source locations with project and SDK attestation, checked source previews and workspace-relative editor paths." "Rust" "Current"
                 clipboardHandler = component "Explicit Clipboard Read Handler" "Reads clipboard text only after capability approval; exposes no background, editor-paste, raw-copy, or Pi path." "Rust" "Current"
                 javaLanguageFacade = component "Java Language Tauri Facade" "Exposes bounded Tauri commands and delegates lifecycle, events, document sync, semantics, and cancellation to the application service." "Rust, Tauri" "Current"
                 javaLanguageBoundaryPolicy = component "Java Language Contract and Path Policy" "Defines language DTOs and validates workspace, path, URI, generation, version, request, and cancellation identity." "Rust" "Current"
@@ -111,26 +151,90 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 // Local destination publication does not pass the separate XCOM module extraction and license/notice publication gate.
                 xcomLanguageBuildBridge = component "XCOM 2 Language and Build Bridge" "Provides bounded and cancellable integration with separately approved tools." "Rust" "Target"
                 javaSemanticBridge = component "Java Protocol, Semantic, Toolchain, and Support Modules" "Encodes bounded LSP sync, diagnostics, semantics and cancellation; discovers fixed-argv tools and supplies fail-closed synchronization helpers." "Rust, JSON-RPC/LSP" "Current"
-                javaAdvancedBridge = component "Broader Java Semantic Bridge" "Transports definition, references, symbols, hierarchy, code actions, formatting, and rename over bounded LSP requests." "Rust, JSON-RPC/LSP" "Frozen"
+                javaAdvancedBridge = component "Broader Java Semantic Bridge" "Transports broader editor-context semantic operations over bounded LSP requests." "Rust, JSON-RPC/LSP" "Target"
                 refactorPreviewEngine = component "RefactorKit Daemon Application Service" "Owns one workspace-generation daemon for capability, project-content-safe preview, exact-plan Apply, discard, and backend rollback." "Rust" "Current"
-                externalRuntimeAdapters = component "Additional Runtime Adapters" "Adapts approved provider integrations through workspace, resource, and protocol policies." "Rust" "Frozen"
+                externalRuntimeAdapters = component "Additional Runtime Adapters" "Adapts additional provider integrations through workspace, resource, and protocol policies." "Rust" "Target"
             }
+            javaDebuggerBridge = container "JDI Debugger Helper" "Private source-launched process using the selected full JDK; owns launched debuggees, disposes attachment connections without terminating external targets, redefines captured compiled classes through JDI, evaluates bounded read-only breakpoint conditions and returns typed runtime state." "Java, JDI" "Current"
         }
 
-        browser = softwareSystem "Web Browser" "Runs the web SPA and provides localStorage." "External"
+        javaDebuggee = softwareSystem "Java Application under Debug" "Trusted workspace application launched suspended by the owned JDI helper." "External"
+        javaAttachedTarget = softwareSystem "Externally Started Java VM" "An independently started JVM exposing a JDWP socket; the IDE owns its debugger connection, not the target process or application output." "External"
+        browser = softwareSystem "Web Browser" "Runs the web SPA or supplies external OAuth login and consent for the desktop; owns its browser session." "External"
         filesystem = softwareSystem "OS File System" "Stores authorized workspaces, service data, RefactorKit metadata, and bounded XCOM transaction state." "External"
         osClipboard = softwareSystem "OS Clipboard" "Provides text for an explicit directory-tree Java import only after the advertised API and exact required methods pass." "External"
         osPrograms = softwareSystem "OS Programs" "Executables launched directly from PATH by bounded one-shot commands outside the Pi runtime." "External"
+        gitExecutable = softwareSystem "Installed Git" "Owns working-tree status, index, local commits and branches, checkout, configuration and trusted hooks or filters." "External"
         piRuntime = softwareSystem "Pi Interactive Runtime" "Runs the real native terminal UI and exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry." "External"
+        javaBuildTools = softwareSystem "Maven and Gradle" "Compile and test trusted project code and resolve dependencies using installed tools or project wrappers." "External"
         jdk = softwareSystem "Full Java JDK" "External non-bundled JDK capability-probed through java and javac; licensing is determined by the user's chosen distribution." "External"
         jdtLs = softwareSystem "Eclipse JDT LS" "External non-bundled EPL-2.0 language server with checksum-verified installation of a pinned snapshot." "External"
-        refactorKit = softwareSystem "RefactorKit Engine" "Discovers capability and owns Java-import preview, Apply, discard, rollback, and provider metadata. The import UI exposes no rollback action." "External"
+        refactorKit = softwareSystem "RefactorKit Engine" "Supplies capability-qualified analysis, symbols, navigation, imports and reviewed refactoring. Import and general engine commands have separate adapters." "External"
         steamMetadata = softwareSystem "Local Steam Installation Metadata" "Desktop-only Steam library and appmanifest evidence accessed through bounded, read-only AppID allowlisting and redacted exports." "External"
         xcomToolchain = softwareSystem "Installed WOTC Game and Vanilla SDK" "Allowlisted external installation whose setup fingerprint and approved changes exclude proprietary paths and content." "External"
         xcomApproval = softwareSystem "External SDK Write Approval" "Least-privilege authority granting one transaction only when its reviewed digest matches exactly." "External"
         xcomProvisioningServices = softwareSystem "Optional Steam and Prefix Provisioning" "Separately authorized Steam, compatibility-prefix, package-manager, and interactive setup services." "External,Target"
-        externalProviders = softwareSystem "Additional Provider Runtimes" "Separately approved build, framework, remote, search, or semantic provider runtimes behind bounded protocols." "External,Frozen"
+        externalProviders = softwareSystem "Additional Provider Runtimes" "Additional framework, remote, search, or semantic provider runtimes behind bounded protocols." "External,Target"
+        oauthIssuer = softwareSystem "User-selected Authorization Server" "Owns OAuth login, consent, code issuance and token validity." "External"
+        httpService = softwareSystem "User-selected HTTP Service" "An HTTP or HTTPS service addressed explicitly by the person using the desktop HTTP client." "External"
+        jdbcDriver = softwareSystem "User-selected JDBC Driver JAR" "Workspace-contained Java code loaded only after explicit trust; it runs with the user's operating-system privileges." "External"
+        jdbcDatabase = softwareSystem "User-selected JDBC Database" "A local or server database addressed explicitly by a JDBC URL." "External"
 
+        desktopUi -> gitWorkspaceController "Hosts explicit local Git interaction"
+        gitWorkspaceController -> workspaceController "Blocks transitions while a mutation is pending"
+        gitWorkspaceController -> desktopEditorController "Opens selected sources without saving buffers"
+        gitWorkspaceController -> javaLanguageController "Reconciles open Java documents after branch switches"
+        gitWorkspaceController -> javaProjectContextController "Retires semantic context around branch switches"
+        gitWorkspaceController -> tauriGitWorkspaceAdapter "Requests typed inspection, review and local actions" "GitWorkspacePort"
+        tauriGitWorkspaceAdapter -> gitWorkspaceService "Invokes correlated local Git commands" "Tauri IPC"
+        gitWorkspaceService -> workspaceCommands "Validates root and activation; serializes writes"
+        gitWorkspaceService -> gitExecutable "Runs bounded owned commands with literal paths"
+        gitExecutable -> filesystem "Reads and checks out saved files; updates Git index, objects and references"
+        gitExecutable -> osPrograms "Runs explicitly trusted configured hooks, filters and signing tools"
+        desktopUi -> editorExternalChangeMonitor "Presents passive warnings for the active file"
+        editorExternalChangeMonitor -> workspaceController "Guards workspace generation and active-file lifetime"
+        editorExternalChangeMonitor -> tauriAdapters "Requests revision-only status without adopting a save baseline"
+        tauriAdapters -> editorFileIo "Reads source buffers and saves captured content" "Tauri IPC"
+        editorFileIo -> workspaceCommands "Resolves paths against captured canonical roots"
+        editorFileIo -> filesystem "Reads source revisions and publishes revision-checked atomic saves"
+        tauriAdapters -> editorDiskReader "Invokes correlated read-only disk status"
+        editorDiskReader -> workspaceCommands "Rechecks current main-workspace authority before and after reading"
+        desktopUi -> editorRecoveryController "Hosts recovery/history status, inventory and before/after review"
+        editorRecoveryController -> editorRecoveryJournal "Checkpoints and reads workspace-bound buffer versions" "Recovery port / Tauri IPC"
+        editorRecoveryJournal -> workspaceCommands "Rechecks registered root and main-window authority"
+        editorRecoveryJournal -> filesystem "Writes private atomic checkpoint journals, not project source files"
+        workspaceCommands -> editorRecoveryJournal "Revokes sessions before workspace switching"
+        editorRecoveryController -> desktopEditorController "Opens a source file before explicit buffer replacement"
+        editorCommandController -> editorRecoveryController "Attempts a checkpoint before source save"
+        terminalController -> workspaceTerminalRenderer "Feeds bounded raw output and receives keyboard and geometry" "Terminal feed"
+        terminalController -> tauriAdapters "Invokes the provider-neutral workspace terminal port"
+        tauriAdapters -> workspaceShellSessions "Starts, reads, writes, resizes and stops correlated shell sessions" "Tauri IPC"
+        desktopUi -> javaExecutionController "Hosts the Java Run activity"
+        javaExecutionController -> javaExecutionAdapter "Requests build, run, test, coverage, failed-test rerun, debug, attach and stop/detach" "Java execution port"
+        javaExecutionController -> javaDebuggerSourceController "Supplies the active typed JDI session"
+        desktopEditorController -> javaDebuggerSourceController "Supplies the active source text and buffer lifetime"
+        javaDebuggerSourceController -> javaExecutionAdapter "Requests correlated source inspection and guarded breakpoints" "Java execution port"
+        javaDebuggerSourceController -> javaSourceBreakpointSettings "Reads pending choices and saves current source intentions"
+        javaExecutionController -> javaSourceBreakpointSettings "Captures enabled choices before save and launch"
+        javaExecutionAdapter -> javaDebuggerSourceBinding "Invokes off-window source inspection and breakpoint operations" "Tauri IPC"
+        javaExecutor -> javaDebuggerSourceBinding "Owns the captured sources for the debug session"
+        javaExecutor -> javaClassReload "Owns reload preparation and connection retirement"
+        javaClassReload -> filesystem "Reads explicit regular workspace class files; preserves source bytes"
+        javaClassReload -> javaDebuggerBridge "Sends owned captured bytes with integrity and suspension checks" "Private transfer and typed result"
+        javaDebuggerSourceBinding -> filesystem "Reads bounded saved source and checks fingerprints; performs no source writes"
+        javaDebuggerSourceBinding -> javaExecutor "Sends suspension/frame-bound source breakpoint input"
+        javaExecutionAdapter -> javaExecutor "Invokes correlated native commands" "Tauri IPC"
+        javaExecutor -> jdk "Compiles, launches and debugs with one selected JDK" "Process argv/stdin/stdout"
+        javaExecutor -> javaDebuggerBridge "Owns the process and sends suspension-bound actions" "Process stdin and typed state"
+        javaDebuggerBridge -> javaExecutor "Returns actual runtime state; forwards application output for launched targets" "Bounded typed state"
+        javaDebuggerBridge -> javaDebuggee "Launches, suspends, inspects and controls the debuggee" "JDI/JDWP"
+        javaDebuggerBridge -> javaAttachedTarget "Attaches, inspects and disposes its connection; leaves the external JVM running" "JDI SocketAttach/JDWP"
+        javaExecutor -> javaBuildTools "Delegates project build, run, tests and JaCoCo measurement" "Process argv/stdout"
+        javaExecutor -> javaCoverageReports "Collects coverage after the owned test execution"
+        javaCoverageReports -> filesystem "Reads execution-correlated regular XML reports without source writes"
+        tauriAdapters -> refactorKitJavaCli "Invokes Java engine commands" "Tauri IPC"
+        refactorKitJavaCli -> refactorKit "Runs bounded analysis and refactoring commands" "CLI argv and output"
+        workspaceCommands -> javaExecutor "Stops owned execution before switching workspaces"
         developer -> desktopUi "Uses the editor and persistent shell controls"
         developer -> webUi "Uses the browser IDE"
         tauriPiWorkspaceAgentAdapter -> piWorkspaceAgentFacade "Invokes commands from the current Tauri WebView" "Tauri invoke/events"
@@ -151,7 +255,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         workspaceController -> xcomSetupController "Passes workspace correlation; closed Settings starts no XCOM work"
         desktopUi -> desktopEditorController "Composes guarded file, tab, restore, and readiness coordination"
         desktopUi -> settingsController "Composes Settings visibility and independent refresh coordination"
-        desktopUi -> terminalController "Composes workspace-independent terminal lifecycle and commands"
+        desktopUi -> terminalController "Composes trusted workspace shell sessions and raw byte transport"
         desktopUi -> fileExplorerController "Composes folder expansion and file creation"
         desktopUi -> documentNavigationController "Composes preview visibility and diagnostic navigation"
         desktopUi -> editorCommandController "Composes edit, save, activation, and close ordering"
@@ -165,7 +269,36 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         desktopUi -> xcomFoundryDialog "Renders the global New XCOM 2 Project dialog"
         desktopEditorController -> tauriAdapters "Uses injected editor and file-tree ports within the authorized workspace"
         desktopEditorController -> javaLanguageController "Supplies a ready document and workspace-safe lifecycle signals"
-        desktopShellController -> desktopBottomPanel "Hosts the core Terminal and guarded project Problems"
+        desktopShellController -> desktopBottomPanel "Hosts the core Terminal, guarded project Problems, HTTP Client and Java Database"
+        httpClientPanel -> oauthBrowserHelper "Hosts explicit browser sign-in and token review"
+        oauthBrowserHelper -> tauriHttpClientAdapter "Uses scoped start, complete and cancel actions" "HttpClientPort"
+        tauriHttpClientAdapter -> oauthCommand "Invokes native OAuth operations" "Tauri IPC"
+        oauthCommand -> browser "Requests the system browser through the OS URL handler"
+        browser -> oauthIssuer "Reviews login and consent" "HTTPS"
+        browser -> oauthCommand "Delivers state, issuer and code to the temporary loopback listener" "Loopback HTTP"
+        oauthCommand -> oauthIssuer "Exchanges one captured code with the native verifier" "HTTPS"
+        oauthCommand -> workspaceCommands "Rechecks native activation and workspace ownership"
+        desktopBottomPanel -> httpClientPanel "Renders the manual HTTP Client feature"
+        desktopBottomPanel -> javaDatabasePanel "Renders the Java Database feature"
+        desktopUi -> javaDatabaseController "Composes JDBC inspection and explicit SQL execution"
+        javaDatabaseController -> javaDatabasePanel "Provides correlated connection, schema, result and error state"
+        javaDatabasePanel -> javaDatabaseController "Submits connection drafts and reviewed SQL statements only after explicit action"
+        javaDatabasePanel -> sqlSchemaSuggestions "Supplies captured metadata and SQL selection"
+        sqlSchemaSuggestions -> javaDatabasePanel "Returns a quoted identifier for an unchanged draft"
+        javaDatabaseController -> tauriJavaDatabaseAdapter "Uses the provider-neutral Java database port"
+        tauriJavaDatabaseAdapter -> javaDatabaseCommand "Invokes correlated schema and SQL operations" "Tauri IPC"
+        javaDatabaseCommand -> jdk "Compiles and runs the private JDBC bridge" "Direct argv and stdin"
+        javaDatabaseCommand -> jdbcDriver "Loads the selected driver from the workspace class path" "JDBC ServiceLoader"
+        javaDatabaseCommand -> jdbcDatabase "Uses the owned JDBC session for explicit statements and transactions" "JDBC"
+        desktopUi -> httpClientController "Composes the manually invoked HTTP client feature"
+        httpClientController -> httpClientPanel "Provides request state and an explicit send callback"
+        httpClientPanel -> httpClientController "Submits the entered request only after Send"
+        httpClientController -> tauriHttpClientAdapter "Uses the provider-neutral HTTP client port"
+        tauriHttpClientAdapter -> httpClientCommand "Invokes bounded HTTP request" "Tauri IPC"
+        tauriHttpClientAdapter -> httpCollectionCommand "Loads, saves and explicitly exports bounded collections" "Tauri IPC"
+        httpCollectionCommand -> httpCollectionSaveDialog "Requests a native-selected destination for Save As"
+        httpCollectionCommand -> filesystem "Publishes a new JSON export without replacing files"
+        httpClientCommand -> httpService "Sends explicitly submitted request and receives bounded response" "HTTP/HTTPS"
         desktopSidebar -> fileExplorerController "Hosts the existing file-tree interactions" "React composition"
         fileExplorerController -> desktopEditorController "Creates files through the guarded editor boundary"
         developer -> piWorkspaceAgentScreen "Uses Pi and inspects read-only workspace accessories" "Desktop UI"
@@ -179,7 +312,6 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         documentNavigationController -> desktopEditorController "Opens diagnostic targets before requesting an editor reveal"
         editorCommandController -> desktopEditorController "Coordinates tab activation/close and buffer persistence"
         editorCommandController -> javaLanguageController "Flushes and synchronizes Java documents around editor commands"
-        terminalController -> tauriAdapters "Uses the injected terminal session and command ports"
         settingsController -> languageLifecyclePanel "Opens Settings and requests independently owned tooling refreshes"
         settingsController -> xcomSetupController "Open owns one monitor and transaction lifecycle; close cancels both"
         javaLanguageController -> desktopShellController "Supplies projected problems and ready-context state"
@@ -187,6 +319,25 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         developer -> javaClipboardPasteSurface "Reviews, acknowledges when required, applies, or cancels an import plan"
         javaClipboardPasteSurface -> refactorKitImportController "Starts preview, exact-plan Apply, and cancellation"
         refactorKitImportController -> tauriRefactorKitAdapter "Probes capability before clipboard access, then previews, applies, or discards"
+        desktopUi -> javaFileActions "Exposes Java file review through Monaco shortcuts, palette and context menu"
+        javaFileActions -> javaRefactoringReview "Opens an exact saved-file target after current-buffer checks"
+        javaFileActions -> desktopEditorController "Requires saved buffers without writing sources"
+        javaRefactoringReview -> tauriRefactorKitAdapter "Requests reviewed Java plans, exact-plan Apply and provider-supported Rollback" "Typed ports"
+        javaRefactoringReview -> desktopEditorController "Holds write protection and refreshes affected clean buffers"
+        desktopUi -> javaProjectContextController "Hosts saved Java project synchronization and source ownership inspection"
+        javaProjectContextController -> tauriAdapters "Uses the typed project-context port without accessing Tauri APIs"
+        desktopUi -> javaCursorNavigationController "Provides definitions and references through Monaco's Java navigation interface"
+        javaProjectContextController -> javaCursorNavigationController "Supplies the selected saved project and SDK context"
+        javaCursorNavigationController -> tauriAdapters "Requests typed saved-source Java navigation"
+        javaCursorNavigationController -> documentNavigationController "Opens verified locations through current editor and context guards"
+        refactorKitDaemonFacade -> refactorKitJavaNavigation "Delegates saved-source position queries on blocking workers"
+        refactorKitJavaNavigation -> refactorKitJavaProjectContext "Reuses selected project and SDK configuration validation"
+        refactorKitJavaNavigation -> refactorKitTransport "Reopens the same project settings and requires the query's context attestation"
+        refactorKitDaemonFacade -> refactorKitJavaProjectContext "Delegates project context and cancellation on blocking workers"
+        refactorKitJavaProjectContext -> refactorKitTransport "Discovers capabilities and queries the read-only project context"
+        refactorKitDaemonFacade -> refactorKitJavaContextRefactoring "Delegates SDK-bound preview, Apply and discard on workspace-serialized blocking workers"
+        refactorKitJavaContextRefactoring -> refactorKitJavaProjectContext "Reuses selected project and SDK configuration validation"
+        refactorKitJavaContextRefactoring -> refactorKitTransport "Requires explicit operation admission and retains exact provider plans for SDK-bound Apply"
         tauriRefactorKitAdapter -> refactorKitHandlers "Invokes bounded diagnostic status commands" "Tauri invoke"
         tauriRefactorKitAdapter -> refactorKitDaemonFacade "Invokes provider-neutral capability discovery and managed transaction commands" "Tauri invoke"
         refactorKitImportController -> desktopSidebar "Refreshes only backend-reported result directories"
@@ -305,10 +456,10 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         xcomLanguageBuildAdapters -> xcomLanguageBuildBridge "Uses an authorized native boundary"
         xcomLanguageBuildBridge -> xcomToolchain "Uses separately approved bounded protocols"
 
-        developer -> javaMonacoSemantics "Uses completion, hover, and signature help in the exact synchronized Java model"
+        developer -> javaMonacoSemantics "Uses completion, hover, signature help, and semantic highlighting in the exact synchronized Java model"
         desktopUi -> javaLanguageController "Supplies ready editor state, optimistic model changes, saves, and closes"
         javaMonacoSemantics -> javaLanguageController "Requests guarded semantics and cancellation"
-        javaLanguageController -> tauriJavaIntelligenceAdapter "Flushes didChange before completion, hover, or signature help" "Tauri adapter"
+        javaLanguageController -> tauriJavaIntelligenceAdapter "Flushes didChange before completion, hover, signature-help, or semantic-token requests" "Tauri adapter"
         tauriJavaIntelligenceAdapter -> javaLanguageFacade "Invokes correlated semantic and cancellation commands" "Tauri invoke"
         javaSemanticBridge -> jdtLs "Synchronizes documents and requests guarded Java semantics" "LSP over stdio"
 
@@ -319,7 +470,8 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         developer -> javaAdvancedPresentation "Uses navigation, editing, formatting, rename, and hierarchy workflows"
         javaAdvancedPresentation -> javaAdvancedCoordinator "Supplies gestures and renders provider-labeled results"
         javaAdvancedCoordinator -> javaLanguageController "Reuses synchronization, cancellation, and stale guards"
-        javaAdvancedCoordinator -> refactoringPort "Requests reviewed refactoring plans and controlled application"
+        javaAdvancedCoordinator -> refactorKitChangeCoordinator "Routes planned contextual refactoring requests"
+        refactorKitChangeCoordinator -> refactoringPort "Requests qualified engine plans and controlled application"
         javaAdvancedCoordinator -> externalProviderAdapters "Requests bounded provider capabilities"
         javaAdvancedCoordinator -> javaAdvancedBridge "Uses native semantic and mutation transport"
         javaAdvancedBridge -> jdtLs "Requests broader Java semantic operations" "LSP over stdio"
@@ -345,7 +497,7 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         container ide "IdeContainers" {
             title "IDE Containers"
             description "Desktop and Rust host the Pi attachment boundary, guarded Java, bounded XCOM operations, and digest-bound Foundry publication."
-            include developer webApp desktopApp rustBackend browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
+            include developer webApp desktopApp rustBackend javaDebuggerBridge javaDebuggee javaAttachedTarget browser filesystem osClipboard steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
             autoLayout lr
         }
 
@@ -359,14 +511,14 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         component desktopApp "DesktopAppComponents" {
             title "Desktop App Components"
             description "Composition wires the workspace-native Pi screen, guarded controllers, XCOM boundaries, and digest-bound Project Foundry creation."
-            include developer desktopUi workspaceController desktopEditorController settingsController terminalController fileExplorerController documentNavigationController editorCommandController desktopShellController aiAgentController piWorkspaceAgentScreen piWorkspaceAgentController piNativeTerminal piDetachedRenderer tauriPiWorkspaceAgentAdapter javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport refactorKitStatusController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomNativeActivationEvidenceAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomBuildRecipeController xcomBuildRecipeReviewService xcomBuildRecipeReviewPolicy tauriXcomBuildRecipeInspectionAdapter xcomBuildRecipeContribution xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
+            include developer desktopUi editorExternalChangeMonitor workspaceController desktopEditorController settingsController terminalController workspaceTerminalRenderer fileExplorerController documentNavigationController editorCommandController desktopShellController aiAgentController piWorkspaceAgentScreen piWorkspaceAgentController piNativeTerminal piDetachedRenderer tauriPiWorkspaceAgentAdapter javaClipboardPasteSurface refactorKitImportController refactorKitSymbolNavigationSupport javaFileActions javaRefactoringReview refactorKitStatusController tauriRefactorKitAdapter desktopSidebar desktopBottomPanel httpClientPanel oauthBrowserHelper httpClientController tauriHttpClientAdapter javaDatabasePanel javaDatabaseController tauriJavaDatabaseAdapter languageContracts languageLifecyclePanel tauriAdapters tauriLanguageAdapter tauriJavaIntelligenceAdapter javaLanguageController javaMonacoSemantics xcomFeatureContracts xcomMonitorPanel xcomDryRunPlanner tauriXcomMonitorAdapter tauriXcomTransactionAdapter xcomSetupPresentation xcomSetupController xcomProductionSetup xcomModuleActivationController tauriXcomNativeActivationEvidenceAdapter xcomActivationEvaluator xcomConfiguredActivationEvaluator xcomConfigurationDiagnosticMapper xcomConfigurationDiagnosticAlert xcomProjectRecognitionPanel xcomBuildRecipeController xcomBuildRecipeReviewService xcomBuildRecipeReviewPolicy tauriXcomBuildRecipeInspectionAdapter tauriXcomBuildRecipeContribution xcomFoundryController xcomFoundryDialog xcomFoundryCustody tauriXcomFoundryAdapter rustBackend
             autoLayout lr
         }
 
         component rustBackend "RustBackendComponents" {
             title "Rust Backend Components"
-            description "Native services own workspace Pi sessions alongside guarded Java, RefactorKit, bounded XCOM operations, and Foundry publication."
-            include desktopApp workspaceCommands piWorkspaceAgentFacade piWorkspaceAgentRuntime piWorkspaceAgentAccessories refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner xcomNativeActivationAuthority xcomBuildRecipeInspector tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
+            description "Native services own workspace shell and Pi sessions alongside guarded Java, RefactorKit, bounded XCOM operations, and Foundry publication."
+            include desktopApp editorFileIo editorDiskReader workspaceCommands workspaceShellSessions oauthCommand browser oauthIssuer httpClientCommand httpCollectionCommand httpCollectionSaveDialog httpService javaDatabaseCommand jdbcDriver jdbcDatabase piWorkspaceAgentFacade piWorkspaceAgentRuntime piWorkspaceAgentAccessories refactorKitHandlers refactorKitDaemonFacade refactorPreviewEngine refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge xcomSteamMonitor xcomSetupWorkflow xcomProductionOperations xcomModuleConfigurationReader xcomModuleEvidenceScanner xcomNativeActivationAuthority xcomBuildRecipeInspector tauriDirectoryDialog xcomFoundryAuthority xcomFoundryRenderer xcomFoundryApply filesystem steamMetadata xcomToolchain xcomApproval osPrograms piRuntime jdk jdtLs refactorKit
             autoLayout lr
         }
 
@@ -636,28 +788,28 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
         systemContext ide "JavaProviderContext" {
             title "Java Provider Context"
             description "Shows the IDE boundary with JDT LS, RefactorKit, additional providers, and authorized workspace storage."
-            include developer ide filesystem jdtLs refactorKit externalProviders
+            include developer ide filesystem jdtLs refactorKit jdk javaBuildTools externalProviders
             autoLayout lr
         }
 
         container ide "JavaProviderContainers" {
             title "Desktop Java Runtime"
             description "Separates desktop and native Java responsibilities from clipboard, JDT LS, RefactorKit, and additional provider runtimes."
-            include developer desktopApp rustBackend osClipboard jdtLs refactorKit externalProviders
+            include developer desktopApp rustBackend javaDebuggerBridge javaDebuggee javaAttachedTarget osClipboard jdtLs refactorKit jdk javaBuildTools externalProviders
             autoLayout lr
         }
 
         component desktopApp "JavaDesktopComponents" {
             title "Java Activation and Monaco Components"
             description "Separates guarded semantics from module activation, contextual contributions, broader Monaco workflows, and refactoring."
-            include developer javaMonacoSemantics javaLanguageController javaActivationEvaluator javaContributionCoordinator languageContracts javaAdvancedPresentation javaAdvancedCoordinator refactoringPort externalProviderAdapters filesystem rustBackend
+            include developer javaExecutionController javaDebuggerSourceController javaSourceBreakpointSettings javaExecutionAdapter javaMonacoSemantics javaLanguageController javaActivationEvaluator javaContributionCoordinator languageContracts javaAdvancedPresentation javaAdvancedCoordinator refactorKitChangeCoordinator refactoringPort externalProviderAdapters filesystem rustBackend
             autoLayout lr
         }
 
         component rustBackend "JavaRustComponents" {
             title "Native Java Components"
             description "Separates language lifecycle and semantic modules from RefactorKit transactions, broader Java semantics, and additional runtime adapters."
-            include desktopApp refactorKitHandlers refactorKitDaemonFacade refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge javaAdvancedBridge refactorPreviewEngine externalRuntimeAdapters jdtLs refactorKit externalProviders
+            include desktopApp javaExecutor javaCoverageReports workspaceShellSessions javaDebuggerSourceBinding javaClassReload javaDebuggerBridge javaDebuggee javaAttachedTarget refactorKitJavaCli refactorKitJavaProjectContext refactorKitJavaNavigation refactorKitJavaContextRefactoring refactorKitHandlers refactorKitDaemonFacade refactorKitCapabilityPolicy refactorKitBoundaryPolicy refactorKitTransport clipboardHandler javaLanguageFacade javaLanguageBoundaryPolicy javaLifecycleOrchestrator javaSemanticBridge javaAdvancedBridge refactorPreviewEngine externalRuntimeAdapters jdtLs refactorKit jdk javaBuildTools externalProviders
             autoLayout lr
         }
 
@@ -696,12 +848,6 @@ workspace "IDE Architecture" "Web-first editing, workspace-native Pi TUI access,
                 background #fff2cc
                 color #7f6000
                 stroke #bf9000
-                border dashed
-            }
-            element "Frozen" {
-                background #eeeeee
-                color #555555
-                stroke #777777
                 border dashed
             }
         }

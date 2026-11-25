@@ -4,6 +4,11 @@ export type {
   EditorRevealRequest,
   JavaEditorSemanticContext,
   JavaEditorSemantics,
+  JavaEditorNavigation,
+  JavaEditorDebugger,
+  JavaEditorLaunch,
+  JavaEditorCoverage,
+  JavaEditorFileActions,
 } from "./Editor";
 export type {
   DiagnosticCounts,

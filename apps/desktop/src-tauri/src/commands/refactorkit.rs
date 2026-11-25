@@ -24,7 +24,7 @@ const MAX_SYMBOL_BYTES: usize = 512;
 const MAX_EXTERNAL_JAVA_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PROTOCOL_ID_BYTES: usize = 256;
 const EXTERNAL_JAVA_IMPORT_UPDATE_REQUIRED: &str = "Update RefactorKit to a managed daemon release that supports java.importExternalClass with targetDirectory, preview, apply, and rollback.";
-const EXTERNAL_JAVA_IMPORT_UNAVAILABLE_REASON: &str = "The installed RefactorKit API exposes java.importExternalClass only through a targetPackage contract, and the installed distribution has no managed daemon launcher; path-driven IDE paste is unavailable.";
+const EXTERNAL_JAVA_IMPORT_UNAVAILABLE_REASON: &str = "The installed RefactorKit API exposes java.importExternalClass through a targetPackage contract. Path-driven IDE paste requires a managed targetDirectory import with preview, apply and rollback.";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,15 +194,19 @@ pub fn rollback_refactorkit_transaction(
 }
 
 #[tauri::command]
-pub fn get_refactorkit_status() -> Result<RefactorKitStatus, String> {
-    let path = match find_refactorkit_on_path() {
+pub async fn get_refactorkit_status() -> Result<RefactorKitStatus, String> {
+    super::blocking::run(probe_refactorkit_status).await
+}
+
+fn probe_refactorkit_status() -> Result<RefactorKitStatus, String> {
+    let path = match find_refactorkit() {
         Some(path) => path,
         None => {
             return Ok(RefactorKitStatus {
                 available: false,
                 path: None,
                 version: None,
-                last_error: Some("refactorkit was not found on PATH".to_string()),
+                last_error: Some("RefactorKit was not found on an absolute PATH entry or in the standard user installation.".to_string()),
             })
         }
     };
@@ -238,11 +242,11 @@ pub fn get_refactorkit_status() -> Result<RefactorKitStatus, String> {
 }
 
 fn probe_refactorkit_capabilities() -> Result<RefactorKitCapabilities, String> {
-    let Some(executable) = find_refactorkit_on_path() else {
+    let Some(executable) = find_refactorkit() else {
         return Ok(unavailable_external_import_capabilities(
             "unknown".to_string(),
             None,
-            "RefactorKit is not installed on an absolute PATH entry.".to_string(),
+            "RefactorKit was not found on an absolute PATH entry or in the standard user installation.".to_string(),
         ));
     };
     let cwd = workspace_root()?;
@@ -551,8 +555,8 @@ fn execute_refactorkit(
     args: Vec<OsString>,
     root: PathBuf,
 ) -> Result<RefactorKitCommandResult, String> {
-    let executable = find_refactorkit_on_path()
-        .ok_or_else(|| "refactorkit was not found on PATH".to_string())?;
+    let executable = find_refactorkit()
+        .ok_or_else(|| "RefactorKit was not found on an absolute PATH entry or in the standard user installation.".to_string())?;
     let output = run_capped_command(&executable, &args, &root, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)?;
     let locations = locations_from_output(action, &output, &root);
 
@@ -942,18 +946,48 @@ fn command_error_message(output: &CappedCommandOutput, timeout: Duration) -> Str
 }
 
 fn parse_version_text(text: &str) -> Option<String> {
-    text.lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(ToString::to_string)
+    let mut first_line = None;
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        first_line.get_or_insert(line);
+        if line.starts_with("RefactorKit ") && line.contains(" (API ") && line.ends_with(')') {
+            return Some(line.to_string());
+        }
+    }
+    first_line.map(ToString::to_string)
 }
 
 pub(crate) fn find_refactorkit_on_path() -> Option<PathBuf> {
-    find_executable_on_path(OsStr::new(REFACTORKIT_EXECUTABLE))
+    find_executable_in_path(env::var_os("PATH").as_deref(), OsStr::new(REFACTORKIT_EXECUTABLE))
 }
 
-fn find_executable_on_path(executable: &OsStr) -> Option<PathBuf> {
-    let path_var = env::var_os("PATH")?;
+fn find_refactorkit() -> Option<PathBuf> {
+    let search_path = env::var_os("PATH");
+    let home = env::var_os("HOME").map(PathBuf::from);
+    find_refactorkit_with(search_path.as_deref(), home.as_deref())
+}
+
+fn find_refactorkit_with(search_path: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
+    let executable = OsStr::new(REFACTORKIT_EXECUTABLE);
+    find_executable_in_path(search_path, executable).or_else(|| {
+        let directory = standard_bin_for_home(home?)?;
+        executable_candidates(&directory, executable)
+            .into_iter()
+            .find(|candidate| is_executable_file(candidate))
+            .and_then(|candidate| candidate.canonicalize().ok())
+    })
+}
+
+fn standard_bin_for_home(home: &Path) -> Option<PathBuf> {
+    home.is_absolute()
+        .then(|| home.join(".local/share/refactorkit/bin"))
+}
+
+pub(crate) fn standard_refactorkit_bin() -> Option<PathBuf> {
+    standard_bin_for_home(&PathBuf::from(env::var_os("HOME")?))
+}
+
+fn find_executable_in_path(search_path: Option<&OsStr>, executable: &OsStr) -> Option<PathBuf> {
+    let path_var = search_path?;
 
     for dir in env::split_paths(&path_var) {
         if !dir.is_absolute() {
@@ -1040,6 +1074,65 @@ mod tests {
             stdout_truncated: false,
             stderr_truncated: false,
         }
+    }
+
+    #[cfg(unix)]
+    fn discovery_launcher(directory: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir_all(directory).unwrap();
+        let executable = directory.join("refactorkit");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        executable.canonicalize().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_discovery_finds_standard_installation_without_path() {
+        let root = make_temp_workspace();
+        let home = root.join("home");
+        let installed = discovery_launcher(&home.join(".local/share/refactorkit/bin"));
+        assert_eq!(find_refactorkit_with(None, Some(&home)), Some(installed));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_discovery_preserves_absolute_path_precedence() {
+        let root = make_temp_workspace();
+        let home = root.join("home");
+        discovery_launcher(&home.join(".local/share/refactorkit/bin"));
+        let path_executable = discovery_launcher(&root.join("path-bin"));
+        let search_path = env::join_paths([root.join("path-bin")]).unwrap();
+        assert_eq!(find_refactorkit_with(Some(&search_path), Some(&home)), Some(path_executable));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_discovery_rejects_relative_home_and_nonexecutable_installations() {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(standard_bin_for_home(Path::new("relative-home")), None);
+        assert_eq!(find_refactorkit_with(None, Some(Path::new("relative-home"))), None);
+        let root = make_temp_workspace();
+        let installed = discovery_launcher(&root.join(".local/share/refactorkit/bin"));
+        fs::set_permissions(&installed, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(find_refactorkit_with(None, Some(&root)), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_discovery_canonicalizes_a_standard_installation_link() {
+        let root = make_temp_workspace();
+        let package = root.join("package");
+        let executable = discovery_launcher(&package.join("bin"));
+        let home = root.join("home");
+        let share = home.join(".local/share");
+        fs::create_dir_all(&share).unwrap();
+        std::os::unix::fs::symlink(&package, share.join("refactorkit")).unwrap();
+        assert_eq!(find_refactorkit_with(None, Some(&home)), Some(executable));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1338,6 +1431,16 @@ mod tests {
         assert_eq!(
             parse_version_text("\n refactorkit 1.2.3\nextra"),
             Some("refactorkit 1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn version_parser_skips_jvm_warning_when_refactorkit_version_is_present() {
+        assert_eq!(
+            parse_version_text(
+                "[0.002s][warning][perf,memops] performance counters are unavailable\nRefactorKit 0.7.0 (API 0.2)\n"
+            ),
+            Some("RefactorKit 0.7.0 (API 0.2)".to_string())
         );
     }
 

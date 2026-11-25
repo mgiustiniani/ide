@@ -268,6 +268,7 @@ test("ESLint preserves generated and build output ignores", async () => {
     "apps/web/dist/probe.js",
     "apps/web/.turbo/probe.js",
     "coverage/probe.js",
+    "test-output/probe.js",
     "test-results/probe.mjs",
     "apps/desktop/src-tauri/target/probe.js",
     "packages/contracts/src/probe.d.ts",

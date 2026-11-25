@@ -9,6 +9,7 @@ import {
   readFile,
   readlink,
   realpath,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -17,6 +18,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { remote } from "webdriverio";
+import { NativeEditorSurface } from "./native-editor-surface.js";
 
 import {
   NativeScenarioEnvironmentLease,
@@ -44,6 +46,8 @@ const A_MARKER_FILE = "a-only.ts";
 const B_MARKER_FILE = "b-only.ts";
 const A_FILE_CONTENT = 'export const nativeWorkspaceIdentity = "workspace-a-modified";\n';
 const B_FILE_CONTENT = 'export const nativeWorkspaceIdentity = "workspace-b-modified";\n';
+const LITERAL_FILE = ":(glob)caffè -> only.ts ";
+const LITERAL_CONTENT = 'export const literalIdentity = "literal-modified";\n';
 const COMMANDLESS_PACKAGE = "npm:pi-multi-pass";
 const INSTALLED_PACKAGES = Object.freeze([
   "skills/multi-agent",
@@ -60,6 +64,23 @@ const CUSTOM_ENVIRONMENT_VARIABLES = [
   "IDE_PI_STORY_STATE_DIR",
   "IDE_PI_STORY_PROVIDER_PATH",
 ] as const;
+
+// Only holds a selected real Git invocation; successful calls execute the system Git unchanged.
+const DELAYED_GIT_SOURCE = String.raw`#!/usr/bin/python3
+import json, os, sys, time
+control = os.path.join(os.path.dirname(__file__), "git-delay.json")
+if "diff" in sys.argv[1:]:
+    try:
+        with open(control) as source:
+            settings = json.load(source)
+    except FileNotFoundError:
+        settings = None
+    if settings and os.getcwd() == settings["root"] and sys.argv[-1] == settings["path"]:
+        with open(settings["entered"], "w") as output:
+            json.dump({"pid": os.getpid(), "cwd": os.getcwd(), "args": sys.argv[1:]}, output)
+        time.sleep(30)
+os.execv("/usr/bin/git", ["git", *sys.argv[1:]])
+`;
 
 const PROVIDER_SOURCE = String.raw`#!/usr/bin/python3
 import base64
@@ -350,6 +371,15 @@ interface NativePiEvidence {
     detachedWindow: boolean;
     stopConfirmation: boolean;
     restartHistory: boolean;
+  };
+  gitReview?: {
+    readonly literalPathOpened: true;
+    readonly editorResponsiveWhileGitPending: true;
+    readonly timeoutVisible: true;
+    readonly timedOutProcessExited: true;
+    readonly dirtyBufferPreserved: true;
+    readonly diskAndIndexPreserved: true;
+    readonly undoRedoTracksSavedText: true;
   };
   rawTransport?: {
     readonly keyboard: true;
@@ -828,6 +858,20 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
       interval: 50,
       timeoutMsg: "production Changes accessory did not expose the workspace fixture",
     });
+    const fixture = this.workspace(this.#activeWorkspaceId);
+    const review = await changes.$(`[aria-label="Read-only diff for ${fixture.fileName}"]`);
+    await review.waitForDisplayed({ timeout: UI_TIMEOUT_MS, interval: 50 });
+    const patch = await this.#domText(review);
+    assert.ok(patch.includes(`${fixture.id}-baseline`), "real Git old content missing");
+    assert.ok(patch.includes(`${fixture.id}-modified`), "real Git new content missing");
+    const openRange = await review.$('button[aria-label^="Open range "]');
+    await openRange.click();
+    const tab = await this.browser().$(`[role="tab"][data-path="${fixture.fileName}"]`);
+    await this.browser().waitUntil(async () => (await tab.getAttribute("aria-selected")) === "true", {
+      timeout: UI_TIMEOUT_MS, interval: 50, timeoutMsg: "Git hunk did not open its source in the editor",
+    });
+    assert.equal(await readFile(path.join(fixture.root, fixture.fileName), "utf8"), fixture.content);
+    await this.#assertBoundedGitReview();
     await this.#clickAgentTab("Activity");
     const activity = await this.#agentPanel("activity");
     await this.browser().waitUntil(
@@ -848,6 +892,82 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     );
     await this.#clickAgentTab("Pi");
     this.#evidence.ui.accessories = true;
+  }
+
+  async #assertBoundedGitReview(): Promise<void> {
+    assert.equal(this.#activeWorkspaceId, "workspace-a");
+    const browser = this.browser(), fixture = this.workspace("workspace-a");
+    const surface = new NativeEditorSurface(this);
+    const indexPath = path.join(fixture.root, ".git/index");
+    const indexBefore = await readFile(indexPath);
+    const changes = await this.#agentPanel("changes");
+    const literalReview = await changes.$(`[aria-label="Read-only diff for ${cssAttribute(LITERAL_FILE)}"]`);
+    await literalReview.waitForDisplayed({ timeout: UI_TIMEOUT_MS });
+    assert.match(await this.#domText(literalReview), /literal-baseline/u);
+    assert.match(await this.#domText(literalReview), /literal-modified/u);
+    assert.doesNotMatch(await this.#domText(literalReview), /workspace-a-modified/u);
+    await literalReview.$('button[aria-label^="Open range "]').click();
+    const literalTab = await browser.$(`[role="tab"][data-path="${cssAttribute(LITERAL_FILE)}"]`);
+    await browser.waitUntil(async () => (await literalTab.getAttribute("aria-selected")) === "true", { timeout: 3000 });
+
+    const entered = path.join(this.#artifactDirectory!, "git-delay-entered.json");
+    const control = path.join(this.#providerDirectory!, "git-delay.json");
+    await writeFile(control, JSON.stringify({ root: fixture.root, path: fixture.fileName, entered }));
+    let delayedPid: number | undefined;
+    let dirtyContent = "";
+    try {
+      await browser.$('button[aria-label="Refresh Agent accessory metadata"]').click();
+      await browser.waitUntil(async () => { try { await access(entered); return true; } catch { return false; } }, { timeout: 3000 });
+      const invocation = JSON.parse(await readFile(entered, "utf8")) as { pid: number; cwd: string; args: string[] };
+      assert.equal(invocation.cwd, fixture.root);
+      assert.equal(invocation.args.at(-1), fixture.fileName);
+      delayedPid = invocation.pid;
+      const tab = await browser.$(`[role="tab"][data-path="${fixture.fileName}"]`);
+      await tab.click();
+      await browser.waitUntil(async () => (await tab.getAttribute("aria-selected")) === "true", { timeout: 2000 });
+      assert.equal(await processRunning(delayedPid), true, "Git completed before the responsiveness observation");
+      await surface.focus(fixture.fileName);
+      await browser.keys(["Control", "End"]);
+      await browser.keys("// Git review dirty draft");
+      await tab.$('[aria-label="Unsaved changes"]').waitForExist({ timeout: 2000 });
+      dirtyContent = await surface.renderedText({ file: fixture.fileName });
+      assert.match(dirtyContent, /Git review dirty draft/u);
+      await browser.waitUntil(async () => /Diff review unavailable:.*timed out/u.test(await this.#domText(changes)), { timeout: 6500 });
+      await browser.waitUntil(async () => !(await processRunning(delayedPid!)), { timeout: 2000 });
+      assert.equal(await readFile(path.join(fixture.root, fixture.fileName), "utf8"), fixture.content);
+    } finally {
+      await rm(control, { force: true });
+      if (delayedPid && await processRunning(delayedPid)) await stopProcess(delayedPid);
+    }
+    await browser.$('button[aria-label="Refresh Agent accessory metadata"]').click();
+    const review = await changes.$(`[aria-label="Read-only diff for ${fixture.fileName}"]`);
+    await review.waitForDisplayed({ timeout: UI_TIMEOUT_MS });
+    await review.$('button[aria-label^="Open range "]').click();
+    const editor = await browser.$(`[role="textbox"][aria-label="Code editor for ${fixture.fileName}"]`);
+    await editor.waitForDisplayed({ timeout: 3000 });
+    await surface.assertBuffer(fixture.fileName, dirtyContent);
+    await surface.assertDirty(fixture.fileName, true);
+    await surface.focus(fixture.fileName);
+    let undoCount = 0;
+    for (; undoCount < 32;) {
+      await browser.keys(["Control", "z"]);
+      undoCount += 1;
+      if (await surface.renderedText({ file: fixture.fileName }) === fixture.content) break;
+      await surface.assertDirty(fixture.fileName, true);
+    }
+    await surface.assertBuffer(fixture.fileName, fixture.content);
+    await surface.assertDirty(fixture.fileName, false);
+    for (let index = 0; index < undoCount; index += 1) await browser.keys(["Control", "y"]);
+    await surface.assertBuffer(fixture.fileName, dirtyContent);
+    await surface.assertDirty(fixture.fileName, true);
+    assert.equal(await readFile(path.join(fixture.root, fixture.fileName), "utf8"), fixture.content);
+    await surface.discardUsingDisk(fixture.fileName, fixture.content, { expectedBuffer: dirtyContent });
+    assert.equal(await readFile(path.join(fixture.root, fixture.fileName), "utf8"), fixture.content);
+    await surface.assertBuffer(fixture.fileName, fixture.content);
+    assert.equal(await readFile(path.join(fixture.root, LITERAL_FILE), "utf8"), LITERAL_CONTENT);
+    assert.deepEqual(await readFile(indexPath), indexBefore);
+    this.#evidence.gitReview = { literalPathOpened: true, editorResponsiveWhileGitPending: true, timeoutVisible: true, timedOutProcessExited: true, dirtyBufferPreserved: true, diskAndIndexPreserved: true, undoRedoTracksSavedText: true };
+    await this.#capture("bounded-git-review-and-dirty-buffer");
   }
 
   async assertInstalledPackages(): Promise<void> {
@@ -1320,10 +1440,22 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
       this.#driver = undefined;
       this.#driverExit = undefined;
       if (driver && driverExit) {
-        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
+        const signalDriver = (signal: NodeJS.Signals): void => {
+          try {
+            if (process.platform !== "win32" && driver.pid) process.kill(-driver.pid, signal);
+            else driver.kill(signal);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+        };
+        // The owned WebKit driver can retain the parent's diagnostic pipes after
+        // tauri-driver exits. Stop its isolated group and release both readers.
+        signalDriver("SIGTERM");
         await Promise.race([driverExit.catch(() => undefined), wait(1_500)]);
-        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
+        signalDriver("SIGKILL");
         await Promise.race([driverExit.catch(() => undefined), wait(500)]);
+        driver.stdout?.destroy();
+        driver.stderr?.destroy();
         driverExited = driver.exitCode !== null || driver.signalCode !== null;
       }
     } finally {
@@ -1396,9 +1528,14 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
       await this.#git(fixture.root, ["init", "--quiet"]);
       await this.#git(fixture.root, ["config", "user.name", "Pi Story"]);
       await this.#git(fixture.root, ["config", "user.email", "pi-story@example.invalid"]);
+      if (fixture.id === "workspace-a") {
+        await writeFile(path.join(fixture.root, LITERAL_FILE), 'export const literalIdentity = "literal-baseline";\n', "utf8");
+        await this.#git(fixture.root, ["--literal-pathspecs", "add", "--", LITERAL_FILE]);
+      }
       await this.#git(fixture.root, ["add", "--", fixture.fileName]);
       await this.#git(fixture.root, ["commit", "--quiet", "-m", "fixture baseline"]);
       await writeFile(path.join(fixture.root, fixture.fileName), fixture.content, "utf8");
+      if (fixture.id === "workspace-a") await writeFile(path.join(fixture.root, LITERAL_FILE), LITERAL_CONTENT, "utf8");
       await mkdir(path.join(fixture.root, ".ide"), { recursive: true });
       const timestamp = "2026-08-09T00:00:00Z";
       await writeFile(
@@ -1456,6 +1593,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
     this.#providerEventFile = path.join(this.#artifactDirectory, "pi-provider-events.jsonl");
     await writeFile(this.#providerPath, PROVIDER_SOURCE, { encoding: "utf8", mode: 0o700 });
     await chmod(this.#providerPath, 0o700);
+    await writeFile(path.join(this.#providerDirectory, "git"), DELAYED_GIT_SOURCE, { mode: 0o700 });
     const providerStat = await stat(this.#providerPath);
     const sha256 = createHash("sha256")
       .update(await readFile(this.#providerPath))
@@ -1516,7 +1654,7 @@ export class NativePiWorkspaceAgentStorySession implements PiWorkspaceAgentStory
         "--native-driver",
         this.#webKitWebDriverPath,
       ],
-      { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+      { detached: process.platform !== "win32", env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
     this.#driver = driver;
     const capture = (chunk: Buffer): void => {

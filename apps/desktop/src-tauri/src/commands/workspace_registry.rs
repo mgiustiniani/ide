@@ -3,9 +3,43 @@ use std::fs;
 use std::hash::Hasher;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime};
+
+// Root transitions remain serialized even though their filesystem/process work
+// now runs outside the native UI thread.
+static ROOT_ACTIVATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static ACTIVE_WORKSPACE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub(super) fn active_workspace_generation() -> u64 {
+    ACTIVE_WORKSPACE_GENERATION.load(Ordering::Acquire)
+}
+
+fn advance_active_workspace_generation() {
+    let _ = ACTIVE_WORKSPACE_GENERATION.fetch_update(
+        Ordering::AcqRel,
+        Ordering::Acquire,
+        |generation| Some(generation.saturating_add(1)),
+    );
+}
+
+fn record_workspace_activation<T>(result: Result<T, String>) -> Result<T, String> {
+    if result.is_ok() {
+        advance_active_workspace_generation();
+    }
+    result
+}
+
+pub(super) fn with_root_activation<T>(
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let _activation = ROOT_ACTIVATION
+        .lock()
+        .map_err(|_| "Workspace activation state is unavailable.".to_owned())?;
+    work()
+}
 
 use crate::app_config::{now_rfc3339, workspace_registry_path, write_json_pretty};
 use crate::workspace::{ensure_within_root, set_workspace_root_override, workspace_root};
@@ -58,11 +92,24 @@ impl Default for WorkspaceRegistry {
 }
 
 #[tauri::command]
-pub fn ensure_current_workspace(
-    xcom2_activation: State<
-        '_,
-        crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
-    >,
+pub async fn ensure_current_workspace<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<WorkspaceInfo, String> {
+    super::blocking::run(move || {
+        with_root_activation(|| {
+            close_clean_database_session(&app)?;
+            let result = ensure_current_workspace_impl(
+                &app.state::<crate::commands::xcom2_native_activation::Xcom2NativeActivationState>(
+                ),
+            );
+            record_workspace_activation(result)
+        })
+    })
+    .await
+}
+
+fn ensure_current_workspace_impl(
+    xcom2_activation: &crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
 ) -> Result<WorkspaceInfo, String> {
     use crate::commands::xcom2_native_activation::ActivationRevocationCode;
 
@@ -100,17 +147,45 @@ pub fn list_workspaces() -> Result<WorkspaceRegistry, String> {
 }
 
 #[tauri::command]
-pub fn switch_workspace(
+pub async fn switch_workspace<R: Runtime>(
     workspace_id: String,
-    xcom2_activation: State<
-        '_,
-        crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
-    >,
-    refactorkit: State<'_, crate::commands::refactorkit_daemon::RefactorKitDaemonState>,
-    refactorkit_semantic: State<
-        '_,
-        crate::commands::refactorkit_daemon::SavedSnapshotSemanticState,
-    >,
+    app: AppHandle<R>,
+) -> Result<WorkspaceInfo, String> {
+    super::blocking::run(move || {
+        with_root_activation(|| {
+            close_clean_database_session(&app)?;
+            let result = switch_workspace_impl(
+                workspace_id,
+                &app.state::<crate::commands::xcom2_native_activation::Xcom2NativeActivationState>(
+                ),
+                &app.state::<crate::commands::java_execution::JavaExecutionState>(),
+                &app.state::<crate::commands::terminal::WorkspaceTerminalState>(),
+                &app.state::<crate::commands::editor_recovery::EditorRecoveryState>(),
+                &app.state::<crate::commands::refactorkit_daemon::RefactorKitDaemonState>(),
+                &app.state::<crate::commands::refactorkit_daemon::SavedSnapshotSemanticState>(),
+            );
+            record_workspace_activation(result)
+        })
+    })
+    .await
+}
+
+fn close_clean_database_session<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    if let Some(database) = app.try_state::<super::java_database::session::JavaDatabaseSessionState>() {
+        database.transition_allowed()?;
+        database.shutdown_all();
+    }
+    Ok(())
+}
+
+fn switch_workspace_impl(
+    workspace_id: String,
+    xcom2_activation: &crate::commands::xcom2_native_activation::Xcom2NativeActivationState,
+    java_execution: &crate::commands::java_execution::JavaExecutionState,
+    terminal: &crate::commands::terminal::WorkspaceTerminalState,
+    editor_recovery: &crate::commands::editor_recovery::EditorRecoveryState,
+    refactorkit: &crate::commands::refactorkit_daemon::RefactorKitDaemonState,
+    refactorkit_semantic: &crate::commands::refactorkit_daemon::SavedSnapshotSemanticState,
 ) -> Result<WorkspaceInfo, String> {
     use crate::commands::xcom2_native_activation::ActivationRevocationCode;
 
@@ -126,6 +201,9 @@ pub fn switch_workspace(
     // Serialize with any in-flight managed RefactorKit request before changing the global
     // workspace root. Otherwise an apply could still target the previous root after the UI has
     // observed the new selection. Killing an idle session when validation later fails is safe.
+    java_execution.shutdown_all();
+    terminal.shutdown_all();
+    editor_recovery.shutdown_all();
     refactorkit.shutdown_all();
     refactorkit_semantic.shutdown_all();
     let result = switch_workspace_at(&workspace_id, &registry_path);
@@ -484,6 +562,24 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn workspace_activation_generation_advances_only_after_success() {
+        with_root_activation(|| {
+            let before = active_workspace_generation();
+            assert_eq!(
+                record_workspace_activation(Ok("workspace")),
+                Ok("workspace")
+            );
+            assert_eq!(active_workspace_generation(), before.saturating_add(1));
+
+            let failed: Result<(), String> = Err("activation failed".to_string());
+            assert!(record_workspace_activation(failed).is_err());
+            assert_eq!(active_workspace_generation(), before.saturating_add(1));
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

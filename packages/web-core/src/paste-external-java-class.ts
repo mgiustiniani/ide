@@ -56,7 +56,7 @@ export interface PasteExternalJavaClassOptions {
 
 const DEFAULT_MAX_CLIPBOARD_LENGTH = 1_048_576;
 const CAPABILITY_UNAVAILABLE_MESSAGE =
-  "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview and apply support.";
+  "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview, apply, and rollback support.";
 
 /**
  * Coordinates an explicit clipboard paste without inspecting Java source or writing files.
@@ -108,7 +108,8 @@ export class PasteExternalJavaClass {
         !capability.supported ||
         !capability.targetDirectory ||
         !capability.preview ||
-        !capability.apply
+        !capability.apply ||
+        !capability.rollback
       ) {
         return this.setIfCurrent(operation, {
           status: "unavailable",

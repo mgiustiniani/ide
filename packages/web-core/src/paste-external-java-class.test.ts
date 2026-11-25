@@ -141,7 +141,25 @@ describe("PasteExternalJavaClass", () => {
     expect(state).toEqual({
       status: "unavailable",
       message:
-        "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview and apply support.",
+        "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview, apply, and rollback support.",
+    });
+    expect(h.readText).not.toHaveBeenCalled();
+    expect(h.previewExternalJavaImport).not.toHaveBeenCalled();
+  });
+
+  it("stays unavailable without rollback capability before reading the clipboard", async () => {
+    const h = harness();
+    vi.mocked(h.refactorKit.getCapabilities).mockResolvedValue({
+      ...capabilities,
+      javaImportExternalClass: { ...capabilities.javaImportExternalClass, rollback: false },
+    });
+
+    const state = await h.useCase.preview(selection);
+
+    expect(state).toEqual({
+      status: "unavailable",
+      message:
+        "Paste Java Class is unavailable because RefactorKit does not advertise java.importExternalClass with targetDirectory preview, apply, and rollback support.",
     });
     expect(h.readText).not.toHaveBeenCalled();
     expect(h.previewExternalJavaImport).not.toHaveBeenCalled();

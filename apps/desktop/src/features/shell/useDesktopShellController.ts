@@ -1,7 +1,7 @@
 import type { ProblemItem } from "@ide/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-export type DesktopBottomTabId = "terminal" | "ai-agent" | "problems";
+export type DesktopBottomTabId = "terminal" | "ai-agent" | "problems" | "http-client" | "database";
 
 export interface DesktopPanelActions {
   setLeftSidebarWidth(width: number): void;
@@ -65,7 +65,14 @@ export function useDesktopShellController({
   );
   const activateBottomTab = useCallback(
     (tabId: string): void => {
-      if (tabId !== "terminal" && tabId !== "ai-agent" && tabId !== "problems") return;
+      if (
+        tabId !== "terminal" &&
+        tabId !== "ai-agent" &&
+        tabId !== "problems" &&
+        tabId !== "http-client" &&
+        tabId !== "database"
+      )
+        return;
 
       setActiveBottomTab(tabId);
       getPanelActions().setActivePanel("bottomPanel");

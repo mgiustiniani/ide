@@ -22,7 +22,7 @@ REQ_RE = re.compile(r"^@REQ-[A-Za-z0-9][A-Za-z0-9._-]*$")
 TAG_RE = re.compile(r"@[A-Za-z0-9][A-Za-z0-9._-]*")
 FEATURE_RE = re.compile(r"^(?:Feature|Business Need|Ability)\s*:", re.IGNORECASE)
 SCENARIO_RE = re.compile(r"^Scenario(?: Outline)?\s*:\s*(.*)$", re.IGNORECASE)
-EXCLUDED_PARTS = {".git", "node_modules", "target", "dist", "build", "coverage", ".turbo", ".vite"}
+EXCLUDED_PARTS = {".git", "node_modules", "target", "dist", "build", "coverage", "test-results", ".turbo", ".vite"}
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,9 @@ def parse_feature(path: Path) -> list[Scenario]:
             pending_tags.update(TAG_RE.findall(stripped))
             continue
         if FEATURE_RE.match(stripped):
-            feature_tags = set(pending_tags)
+            # Narrative headings may use Feature/Business Need/Ability aliases.
+            # Preserve the one file-level declaration across that preamble.
+            feature_tags.update(pending_tags)
             pending_tags.clear()
             continue
         scenario_match = SCENARIO_RE.match(stripped)
@@ -160,13 +162,13 @@ def validate(
                 failures.append(f"{location} {scenario.name!r}: expected exactly one @REQ-* tag, found {req_tags}")
             else:
                 req_id = req_tags[0]
-                if req_id in requirement_ids:
+                if req_id in requirement_ids and requirement_ids[req_id].path != scenario.path:
                     first = requirement_ids[req_id]
                     failures.append(
                         f"{location} {scenario.name!r}: duplicate {req_id}; first used at "
                         f"{first.path.relative_to(root).as_posix()}:{first.line}"
                     )
-                else:
+                elif req_id not in requirement_ids:
                     requirement_ids[req_id] = scenario
             if not classes:
                 failures.append(f"{location} {scenario.name!r}: missing functional/non-functional classification")

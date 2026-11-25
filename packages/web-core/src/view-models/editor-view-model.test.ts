@@ -44,6 +44,120 @@ function createPort(): EditorPort {
   };
 }
 
+describe("background source loading", () => {
+  it("preserves active selection and dirty buffers while opening an affected source", async () => {
+    const store = createEditorStore();
+    const port = createPort();
+    const editor = new EditorViewModel(store.getState, port);
+    await editor.openFile("Main.java");
+    editor.updateContent("Main.java", "unsaved main");
+    expect(await editor.openFileInBackground("Use.java", () => true)).toBe(true);
+    expect(store.getState().activeFilePath).toBe("Main.java");
+    expect(store.getState().contents).toMatchObject({
+      "Main.java": "unsaved main",
+      "Use.java": "content of Use.java",
+    });
+    expect(store.getState().tabs.map((tab) => [tab.filePath, tab.isDirty])).toEqual([
+      ["Main.java", true],
+      ["Use.java", false],
+    ]);
+    expect(port.saveContent).not.toHaveBeenCalled();
+  });
+
+  it.each(["workspace", "foreground", "authority"])(
+    "discards a late background read after %s retirement",
+    async (reason) => {
+      const store = createEditorStore();
+      const port = createPort();
+      const editor = new EditorViewModel(store.getState, port);
+      await editor.openFile("Main.java");
+      const pending = deferred<EditorContent>();
+      vi.mocked(port.loadContent).mockReturnValueOnce(pending.promise);
+      let current = true;
+      const opening = editor.openFileInBackground("Use.java", () => current);
+      if (reason === "workspace") editor.invalidateWorkspaceOperations();
+      if (reason === "foreground") editor.switchActiveFile("Main.java");
+      if (reason === "authority") current = false;
+      pending.resolve(content("Use.java"));
+      expect(await opening).toBe(false);
+      expect(store.getState().contents["Use.java"]).toBeUndefined();
+      expect(store.getState().openFiles.map((file) => file.filePath)).toEqual(["Main.java"]);
+    },
+  );
+
+  it("never reloads an existing unsaved affected source", async () => {
+    const store = createEditorStore();
+    const port = createPort();
+    const editor = new EditorViewModel(store.getState, port);
+    await editor.openFile("Use.java");
+    editor.updateContent("Use.java", "unsaved use");
+    await editor.openFile("Main.java");
+    vi.mocked(port.loadContent).mockClear();
+    expect(await editor.openFileInBackground("Use.java", () => true)).toBe(true);
+    expect(port.loadContent).not.toHaveBeenCalled();
+    expect(store.getState().contents["Use.java"]).toBe("unsaved use");
+    expect(store.getState().activeFilePath).toBe("Main.java");
+  });
+});
+
+describe("EditorViewModel saveFile", () => {
+  it("keeps edits made during a pending save dirty", async () => {
+    const store = createEditorStore();
+    const port = createPort();
+    const file = openFile("Main.java", "java");
+    store.getState().openFile(file);
+    const pending = deferred<OpenFile[]>();
+    vi.mocked(port.saveContent).mockReturnValue(pending.promise);
+    const editor = new EditorViewModel(store.getState, port);
+    editor.updateContent(file.filePath, "first");
+    const saving = editor.saveFile(file.filePath);
+    editor.updateContent(file.filePath, "second");
+    pending.resolve([file]);
+    await saving;
+    expect(store.getState().contents[file.filePath]).toBe("second");
+    expect(store.getState().tabs[0].isDirty).toBe(true);
+  });
+
+  it("serializes saves of the same file in invocation order", async () => {
+    const store = createEditorStore();
+    const port = createPort();
+    const file = openFile("Main.java", "java");
+    store.getState().openFile(file);
+    const pending = deferred<OpenFile[]>();
+    vi.mocked(port.saveContent).mockReturnValueOnce(pending.promise).mockResolvedValue([file]);
+    const editor = new EditorViewModel(store.getState, port);
+    editor.updateContent(file.filePath, "first");
+    const first = editor.saveFile(file.filePath);
+    await Promise.resolve();
+    editor.updateContent(file.filePath, "second");
+    const second = editor.saveFile(file.filePath);
+    await Promise.resolve();
+    expect(port.saveContent).toHaveBeenCalledTimes(1);
+    pending.resolve([file]);
+    await Promise.all([first, second]);
+    expect(port.saveContent).toHaveBeenNthCalledWith(2, file.filePath, "second");
+    expect(store.getState().tabs[0].isDirty).toBe(false);
+  });
+
+  it("does not resurrect a tab after workspace invalidation", async () => {
+    const store = createEditorStore();
+    const port = createPort();
+    const file = openFile("Main.java", "java");
+    store.getState().openFile(file);
+    const pending = deferred<OpenFile[]>();
+    vi.mocked(port.saveContent).mockReturnValue(pending.promise);
+    const editor = new EditorViewModel(store.getState, port);
+    editor.updateContent(file.filePath, "first");
+    const saving = editor.saveFile(file.filePath);
+    await Promise.resolve();
+    editor.invalidateWorkspaceOperations();
+    store.getState().closeFile(file.filePath);
+    pending.resolve([file]);
+    await saving;
+    expect(store.getState().openFiles).toEqual([]);
+  });
+});
+
 describe("EditorViewModel openFile", () => {
   let store: ReturnType<typeof createEditorStore>;
   let port: EditorPort;

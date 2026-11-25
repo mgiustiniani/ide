@@ -3,7 +3,10 @@
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::State;
@@ -18,7 +21,6 @@ use super::saved_snapshot_semantic::*;
 use super::transport::*;
 
 use std::fs;
-use std::sync::{Mutex as TestMutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_workspace(label: &str) -> PathBuf {
@@ -1270,9 +1272,47 @@ fn reset_models_workspace_switch_and_app_exit_cleanup() {
                 workspace_id: "w".into(),
                 workspace_generation: 1,
                 operation: None,
+                rollback_files: vec![],
             },
         );
         manager.consumed_plans.insert("old".into());
+        manager.engine_plans.insert(
+            "cli-plan".into(),
+            EnginePlanGuard {
+                operation: RefactoringOperation::FormatFile,
+                target: RefactoringTarget {
+                    kind: "file".into(),
+                    path: "Sample.java".into(),
+                    identity: "Sample.java".into(),
+                    selection: None,
+                },
+                change_intent: None,
+                apply_eligible: true,
+                preview_artifact: RefactorKitPreviewArtifact {
+                    affected_files: vec![json!({"change":"edit","path":"Sample.java"})],
+                    patch: "reviewed patch".into(),
+                    review_evidence: vec![json!("formatter")],
+                },
+                workspace_id: "w".into(),
+                workspace_generation: 1,
+                selection_generation: 1,
+                request_id: "cli-request".into(),
+            },
+        );
+        manager.engine_transactions.insert(
+            "cli-tx".into(),
+            TransactionGuard {
+                workspace_id: "w".into(),
+                workspace_generation: 1,
+                operation: Some("format-file".into()),
+                rollback_files: vec![json!({"change":"edit","path":"Sample.java"})],
+            },
+        );
+        reset_daemon(&mut manager);
+        assert!(manager.plans.is_empty() && manager.transactions.is_empty());
+        assert!(manager.consumed_plans.is_empty());
+        assert!(manager.engine_plans.contains_key("cli-plan"));
+        assert!(manager.engine_transactions.contains_key("cli-tx"));
     }
     state.shutdown_all();
     let manager = state.0.lock().unwrap();
@@ -1281,13 +1321,14 @@ fn reset_models_workspace_switch_and_app_exit_cleanup() {
             && manager.plans.is_empty()
             && manager.transactions.is_empty()
             && manager.consumed_plans.is_empty()
+            && manager.engine_plans.is_empty()
+            && manager.engine_transactions.is_empty()
     );
 }
 
 #[cfg(unix)]
 fn daemon_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<TestMutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| TestMutex::new(())).lock().unwrap()
+    super::daemon_env_test_lock()
 }
 
 #[cfg(unix)]
@@ -1376,10 +1417,231 @@ fn detailed_transport_retains_only_safe_json_rpc_error_code() {
 
     assert_eq!(error.kind, SessionCallErrorKind::Rejected);
     assert_eq!(error.rpc_code, Some(-32602));
+    assert_eq!(error.rpc_message, None);
     let debug = format!("{error:?}");
     for forbidden in ["private", "toolchain", "secret", "payload"] {
         assert!(!debug.contains(forbidden));
     }
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
+fn detailed_transport_keeps_the_session_usable_after_json_rpc_internal_error() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("internal-error-retry");
+    let (mut session, script) = fake_session(
+        &root,
+        "read first; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Internal error\"}}\\n'; read second; printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"recovered\":true}}\\n'",
+    );
+
+    let error = session_call_detailed(
+        &mut session,
+        "intelligence.query",
+        json!({"requestId": "query-1", "kind": "definition"}),
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, SessionCallErrorKind::Rejected);
+    assert_eq!(error.rpc_code, Some(-32603));
+
+    let response = session_call_detailed(
+        &mut session,
+        "intelligence.query",
+        json!({"requestId": "query-2", "kind": "implementations"}),
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(response, json!({"recovered": true}));
+
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
+fn detailed_transport_retains_bounded_plain_text_for_safe_rpc_refusals() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("safe-structured-error");
+    let (mut session, script) = fake_session(
+        &root,
+        "read line; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"changeSignature.reorderParameters refuses public method or protected method until external-consumer risk and hierarchy evidence are complete\\\\n\"}}\\n'",
+    );
+
+    let error = session_call_detailed(
+        &mut session,
+        "refactor.preview",
+        json!({"operation": "reorder-method-parameters"}),
+        Duration::from_secs(1),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.kind, SessionCallErrorKind::Rejected);
+    assert_eq!(
+        error.rpc_message.as_deref(),
+        Some("changeSignature.reorderParameters refuses public method or protected method until external-consumer risk and hierarchy evidence are complete")
+    );
+    assert_eq!(format!("{error:?}").contains("external-consumer"), false);
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn safe_rpc_error_message_explains_parameter_removal_side_effects() {
+    let refusal = "Removed call-site argument may have observable effects; only literals and exact JDT-bound local/parameter reads are supported";
+    assert_eq!(
+        safe_rpc_error_message(Some(&json!(refusal))).as_deref(),
+        Some("Removing this argument could remove a side effect. RefactorKit supports removing literals and reads of local variables or parameters when their bindings are known")
+    );
+    assert_eq!(
+        safe_rpc_error_message(Some(&json!(format!("{refusal}: /private/source.java")))),
+        None
+    );
+}
+
+#[test]
+fn safe_rpc_error_message_has_a_strict_length_limit() {
+    let value = json!("a".repeat(600));
+    assert_eq!(value.as_str().unwrap().len(), 600);
+    assert_eq!(
+        safe_rpc_error_message(Some(&json!("public method is not editable"))),
+        Some("public method is not editable".into())
+    );
+    let message = safe_rpc_error_message(Some(&value)).expect("plain text should be accepted");
+    assert_eq!(message.chars().count(), 513);
+    assert!(message.ends_with('…'));
+}
+
+#[test]
+#[cfg(unix)]
+fn cancellable_transport_terminates_the_owned_daemon_after_bounded_grace() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("cancel-navigation");
+    let (mut session, script) = fake_session(&root, "read line; sleep 30");
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let signal = cancelled.clone();
+    let signal_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(75));
+        signal.store(true, Ordering::SeqCst);
+    });
+    let started = Instant::now();
+
+    let error = session_call_detailed_cancellable(
+        &mut session,
+        "intelligence.query",
+        json!({"requestId": "cancel-me"}),
+        Duration::from_secs(3),
+        &cancelled,
+    )
+    .unwrap_err();
+
+    signal_thread.join().unwrap();
+    assert_eq!(error.kind, SessionCallErrorKind::Session);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(session.child.try_wait().unwrap().is_some());
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
+fn acknowledged_intelligence_cancellation_keeps_the_provider_session_usable() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("cancel-navigation-ack");
+    let notification_path = root.join("cancellation.json");
+    let body = format!(
+        "read query; read cancellation; printf '%s' \"$cancellation\" > '{}'; printf '{{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{{\"code\":-32800,\"message\":\"Request cancelled\"}}}}\\n'; read followup; printf '{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"session\":\"usable\"}}}}\\n'; sleep 2",
+        notification_path.display()
+    );
+    let (mut session, script) = fake_session(&root, &body);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let signal = cancelled.clone();
+    let signal_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(75));
+        signal.store(true, Ordering::SeqCst);
+    });
+
+    let error = session_call_detailed_cancellable(
+        &mut session,
+        "intelligence.query",
+        json!({"requestId": "cancel-me"}),
+        Duration::from_secs(3),
+        &cancelled,
+    )
+    .unwrap_err();
+    signal_thread.join().unwrap();
+
+    assert_eq!(error.kind, SessionCallErrorKind::Rejected);
+    assert_eq!(error.rpc_code, Some(-32800));
+    let notification: Value =
+        serde_json::from_slice(&fs::read(&notification_path).unwrap()).unwrap();
+    assert_eq!(notification["method"], "intelligence.cancel");
+    assert_eq!(notification["params"]["requestId"], "cancel-me");
+    assert!(notification.get("id").is_none());
+    assert!(session.child.try_wait().unwrap().is_none());
+    assert_eq!(
+        session_call_detailed(
+            &mut session,
+            "server.version",
+            json!({}),
+            Duration::from_secs(1),
+        )
+        .unwrap(),
+        json!({"session": "usable"})
+    );
+
+    terminate(&mut session.child);
+    fs::remove_file(script).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(unix)]
+fn delayed_intelligence_cancellation_acknowledgement_keeps_the_provider_session_usable() {
+    let _lock = daemon_env_lock();
+    let root = temp_workspace("cancel-navigation-delayed-ack");
+    let (mut session, script) = fake_session(
+        &root,
+        "read query; read cancellation; sleep 0.4; printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32800,\"message\":\"Request cancelled\"}}\\n'; read followup; printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"session\":\"usable\"}}\\n'; sleep 2",
+    );
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let signal = cancelled.clone();
+    let signal_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(75));
+        signal.store(true, Ordering::SeqCst);
+    });
+    let started = Instant::now();
+
+    let error = session_call_detailed_cancellable(
+        &mut session,
+        "intelligence.query",
+        json!({"requestId": "cancel-me"}),
+        Duration::from_secs(3),
+        &cancelled,
+    )
+    .unwrap_err();
+    signal_thread.join().unwrap();
+
+    assert_eq!(error.kind, SessionCallErrorKind::Rejected);
+    assert_eq!(error.rpc_code, Some(-32800));
+    assert!(started.elapsed() >= Duration::from_millis(450));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(session.child.try_wait().unwrap().is_none());
+    assert_eq!(
+        session_call_detailed(
+            &mut session,
+            "server.version",
+            json!({}),
+            Duration::from_secs(1),
+        )
+        .unwrap(),
+        json!({"session": "usable"})
+    );
+
     terminate(&mut session.child);
     fs::remove_file(script).unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -1441,6 +1703,7 @@ fn process_death_clears_all_manager_lifecycle_state() {
             workspace_id: "w".into(),
             workspace_generation: 1,
             operation: None,
+            rollback_files: vec![],
         },
     );
     assert_eq!(
@@ -1572,9 +1835,13 @@ fn packaged_daemon_full_preview_discard_apply_rollback_smoke() {
 
 #[test]
 fn command_signatures_remain_stable() {
-    let _: for<'a> fn(
-        State<'a, RefactorKitDaemonState>,
-    ) -> Result<RefactorKitCapabilities, String> = super::get_refactorkit_capabilities;
+    fn capabilities_command<
+        F: std::future::Future<Output = Result<RefactorKitCapabilities, String>>,
+    >(
+        _: fn(tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    capabilities_command(super::get_refactorkit_capabilities::<tauri::Wry>);
     let _: for<'a> fn(PreviewRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
         super::preview_refactorkit_external_java_import;
     let _: for<'a> fn(ApplyRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
@@ -1595,10 +1862,8 @@ fn command_signatures_remain_stable() {
         RollbackRefactoringRequest,
         State<'a, RefactorKitDaemonState>,
     ) -> Result<Value, String> = super::rollback_refactorkit_refactoring;
-    let _: for<'a> fn(
-        DiscardRequest,
-        State<'a, RefactorKitDaemonState>,
-    ) -> Result<Value, String> = super::discard_refactorkit_refactoring;
+    let _: for<'a> fn(DiscardRequest, State<'a, RefactorKitDaemonState>) -> Result<Value, String> =
+        super::discard_refactorkit_refactoring;
     let _: for<'a> fn(
         State<'a, RefactorKitDaemonState>,
         State<'a, SavedSnapshotSemanticState>,
@@ -1628,17 +1893,34 @@ fn command_signatures_remain_stable() {
 #[test]
 fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
     let facade = include_str!("../refactorkit_daemon.rs");
-    // The real-engine slice (REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001) adds 10 thin
-    // command wrappers on top of the original 14; the facade stays thin (no process,
-    // no Tauri dependency below the inbound boundary, no forbidden imports).
+    // Command wrappers expose the Java editor, project, language-settings, navigation, source,
+    // watch and engine endpoints while protocol and process work stay outside this boundary.
     assert_eq!(
         facade
             .lines()
             .filter(|line| line.trim() == "#[tauri::command]")
             .count(),
-        24
+        28
     );
-    assert!(facade.lines().count() < 260);
+    // Keep the inbound facade bounded while placing source-command adapters at the Tauri boundary.
+    assert!(facade.lines().count() < 550);
+    let context_commands = include_str!("java_context_commands.rs");
+    // Saved-source recovery also enters through the Java project context boundary.
+    assert_eq!(
+        context_commands
+            .lines()
+            .filter(|line| line.trim() == "#[tauri::command]")
+            .count(),
+        14
+    );
+    let source_commands = include_str!("java_source_commands.rs");
+    assert_eq!(
+        source_commands
+            .lines()
+            .filter(|line| line.trim() == "#[tauri::command]")
+            .count(),
+        6
+    );
     for forbidden in [
         concat!("std::process::", "Command"),
         concat!("Child", "Stdin"),
@@ -1651,6 +1933,10 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
     }
 
     for (name, module) in [
+        (
+            "java_editor_transaction",
+            include_str!("java_editor_transaction.rs"),
+        ),
         ("application", include_str!("application.rs")),
         ("capability_policy", include_str!("capability_policy.rs")),
         ("contract", include_str!("contract.rs")),
@@ -1660,6 +1946,25 @@ fn facade_is_thin_and_tauri_free_below_the_inbound_boundary() {
             include_str!("saved_snapshot_semantic.rs"),
         ),
         ("transport", include_str!("transport.rs")),
+        ("java_navigation", include_str!("java_navigation.rs")),
+        ("java_editor_diagnostics", include_str!("java_editor_diagnostics.rs")),
+        ("java_entry_points", include_str!("java_entry_points.rs")),
+        (
+            "java_dependency_source",
+            include_str!("java_dependency_source.rs"),
+        ),
+        (
+            "java_editor_refactoring",
+            include_str!("java_editor_refactoring.rs"),
+        ),
+        (
+            "java_context_refactoring",
+            include_str!("java_context_refactoring.rs"),
+        ),
+        (
+            "java_project_context",
+            include_str!("java_project_context.rs"),
+        ),
     ] {
         assert!(!module.contains("tauri::"), "{name} depends on Tauri");
         assert!(
@@ -1770,11 +2075,47 @@ fn general_refactoring_requests_are_closed_and_camel_case() {
     assert!(serde_json::from_value::<RollbackRefactoringRequest>(extra_rollback).is_err());
 
     for (operation, name) in [
+        (
+            RefactoringOperation::CreateMavenModule,
+            "create-maven-module",
+        ),
+        (
+            RefactoringOperation::CreateGradleModule,
+            "create-gradle-module",
+        ),
         (RefactoringOperation::RenameClass, "rename-class"),
         (RefactoringOperation::RenameMember, "rename-member"),
-        (RefactoringOperation::RenameLocalVariable, "rename-local-variable"),
+        (
+            RefactoringOperation::RenameLocalVariable,
+            "rename-local-variable",
+        ),
         (RefactoringOperation::MoveClass, "move-class"),
-        (RefactoringOperation::ChangeMethodSignature, "change-method-signature"),
+        (RefactoringOperation::MoveSourceRoot, "move-source-root"),
+        (
+            RefactoringOperation::ChangeMethodSignature,
+            "change-method-signature",
+        ),
+        (
+            RefactoringOperation::RemoveMethodParameter,
+            "remove-method-parameter",
+        ),
+        (RefactoringOperation::MakeStatic, "make-static"),
+        (RefactoringOperation::MakePublic, "make-public"),
+        (RefactoringOperation::ChangeFieldType, "change-field-type"),
+        (RefactoringOperation::ExtractConstant, "extract-constant"),
+        (RefactoringOperation::ExtractVariable, "extract-variable"),
+        (RefactoringOperation::InlineMethod, "inline-method"),
+        (RefactoringOperation::ExtractParameter, "extract-parameter"),
+        (RefactoringOperation::ExtractField, "extract-field"),
+        (RefactoringOperation::ExtractInterface, "extract-interface"),
+        (
+            RefactoringOperation::ExtractSuperclass,
+            "extract-superclass",
+        ),
+        (RefactoringOperation::PullUpMember, "pull-up-member"),
+        (RefactoringOperation::PushDownMember, "push-down-member"),
+        (RefactoringOperation::MoveMember, "move-member"),
+        (RefactoringOperation::EncapsulateField, "encapsulate-field"),
         (RefactoringOperation::SafeDelete, "safe-delete"),
     ] {
         assert_eq!(operation.as_str(), name);
@@ -1808,9 +2149,18 @@ fn general_refactoring_params_are_exact_and_authority_free() {
             "identity": "example.Widget", "selection": {"start": 10, "end": 20}
         })
     );
-    assert_eq!(refactoring_apply_params("plan-1"), json!({"planId": "plan-1"}));
-    assert_eq!(refactoring_rollback_params("tx-1"), json!({"transactionId": "tx-1"}));
-    assert_eq!(refactoring_discard_params("plan-1"), json!({"planId": "plan-1"}));
+    assert_eq!(
+        refactoring_apply_params("plan-1"),
+        json!({"planId": "plan-1"})
+    );
+    assert_eq!(
+        refactoring_rollback_params("tx-1"),
+        json!({"transactionId": "tx-1"})
+    );
+    assert_eq!(
+        refactoring_discard_params("plan-1"),
+        json!({"planId": "plan-1"})
+    );
     let preview = refactoring_preview_params("rename-class", &target);
     for forbidden in [
         "workspaceId",
@@ -1827,7 +2177,11 @@ fn general_refactoring_params_are_exact_and_authority_free() {
 #[test]
 fn general_refactoring_preview_statuses_are_normalized_without_apply_authority() {
     let root = temp_workspace("refactor-normalize");
-    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    fs::write(
+        root.join("src/main/java/example/Widget.java"),
+        "package example; public class Widget {}",
+    )
+    .unwrap();
     let request = refactor_preview_request(&workspace_id_for_path(&root));
     for (wire, status) in [
         ("preview", "ready"),
@@ -1844,11 +2198,19 @@ fn general_refactoring_preview_statuses_are_normalized_without_apply_authority()
             normalized.pointer("/target/path").and_then(Value::as_str),
             Some("src/main/java/example/Widget.java")
         );
-        assert_eq!(normalized["authority"]["workspaceId"], request.authority.workspace_id);
-        assert_eq!(normalized["selectionGeneration"], request.selection_generation);
+        assert_eq!(
+            normalized["authority"]["workspaceId"],
+            request.authority.workspace_id
+        );
+        assert_eq!(
+            normalized["selectionGeneration"],
+            request.selection_generation
+        );
         assert_eq!(normalized["risks"], json!(["Affects call sites"]));
         assert_eq!(
-            normalized.pointer("/evidence/0/kind").and_then(Value::as_str),
+            normalized
+                .pointer("/evidence/0/kind")
+                .and_then(Value::as_str),
             Some("edit")
         );
         assert_eq!(
@@ -1863,7 +2225,11 @@ fn general_refactoring_preview_statuses_are_normalized_without_apply_authority()
 #[test]
 fn general_refactoring_apply_outcomes_are_normalized_honestly() {
     let root = temp_workspace("refactor-apply");
-    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    fs::write(
+        root.join("src/main/java/example/Widget.java"),
+        "package example; public class Widget {}",
+    )
+    .unwrap();
     let applied = json!({
         "planId": "refactor-plan-1", "operation": "rename-class", "outcome": "applied",
         "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
@@ -1894,17 +2260,26 @@ fn general_refactoring_apply_outcomes_are_normalized_honestly() {
 
     let mut wrong_plan = applied.clone();
     wrong_plan["planId"] = json!("other-plan");
-    assert!(normalize_refactoring_apply(wrong_plan, &root, "refactor-plan-1", "rename-class").is_err());
+    assert!(
+        normalize_refactoring_apply(wrong_plan, &root, "refactor-plan-1", "rename-class").is_err()
+    );
     let mut wrong_operation = applied.clone();
     wrong_operation["operation"] = json!("move-class");
-    assert!(normalize_refactoring_apply(wrong_operation, &root, "refactor-plan-1", "rename-class").is_err());
+    assert!(
+        normalize_refactoring_apply(wrong_operation, &root, "refactor-plan-1", "rename-class")
+            .is_err()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn general_refactoring_rollback_is_normalized_and_correlated() {
     let root = temp_workspace("refactor-rollback");
-    fs::write(root.join("src/main/java/example/Widget.java"), "package example; public class Widget {}").unwrap();
+    fs::write(
+        root.join("src/main/java/example/Widget.java"),
+        "package example; public class Widget {}",
+    )
+    .unwrap();
     let raw = json!({
         "transactionId": "tx-1", "rolledBack": true,
         "changedFiles": [{"change": "edit", "path": "src/main/java/example/Widget.java", "primary": true}],
@@ -1915,7 +2290,9 @@ fn general_refactoring_rollback_is_normalized_and_correlated() {
     assert_eq!(normalized["rolledBack"], true);
     assert_eq!(normalized["transactionId"], "tx-1");
     assert_eq!(
-        normalized.pointer("/conflicts/0/kind").and_then(Value::as_str),
+        normalized
+            .pointer("/conflicts/0/kind")
+            .and_then(Value::as_str),
         Some("reference")
     );
     let mut mismatch = raw;
@@ -1931,10 +2308,15 @@ fn general_refactoring_capability_is_advertised_only_when_offered() {
         "operations": ["rename-class","rename-member","rename-local-variable","move-class","change-method-signature","safe-delete"],
         "stability": "experimental", "preview": true, "apply": true, "rollback": true, "discard": true
     });
-    advertised["methods"].as_array_mut().unwrap().extend(json!([
-        {"name": "java.refactor.preview"}, {"name": "java.refactor.apply"},
-        {"name": "java.refactor.rollback"}, {"name": "java.refactor.discard"}
-    ]).as_array().unwrap().clone());
+    advertised["methods"].as_array_mut().unwrap().extend(
+        json!([
+            {"name": "java.refactor.preview"}, {"name": "java.refactor.apply"},
+            {"name": "java.refactor.rollback"}, {"name": "java.refactor.discard"}
+        ])
+        .as_array()
+        .unwrap()
+        .clone(),
+    );
 
     let normalized = serde_json::to_value(available_managed_capabilities(
         normalize_server_capabilities(&advertised).unwrap(),
@@ -1947,8 +2329,12 @@ fn general_refactoring_capability_is_advertised_only_when_offered() {
     assert_eq!(
         normalized.pointer("/generalRefactoring/operations"),
         Some(&json!([
-            "rename-class", "rename-member", "rename-local-variable",
-            "move-class", "change-method-signature", "safe-delete"
+            "rename-class",
+            "rename-member",
+            "rename-local-variable",
+            "move-class",
+            "change-method-signature",
+            "safe-delete"
         ]))
     );
     for flag in ["preview", "apply", "rollback", "discard"] {
@@ -1970,23 +2356,34 @@ fn general_refactoring_capability_is_advertised_only_when_offered() {
     assert_eq!(
         absent.pointer("/generalRefactoring/operations"),
         Some(&json!([
-            "rename-class", "rename-member", "rename-local-variable",
-            "move-class", "change-method-signature", "safe-delete"
+            "rename-class",
+            "rename-member",
+            "rename-local-variable",
+            "move-class",
+            "change-method-signature",
+            "safe-delete"
         ]))
     );
 
     let mut incomplete_operations = advertised.clone();
     incomplete_operations["javaRefactor"]["operations"] = json!(["rename-class"]);
     assert_eq!(
-        normalize_server_capabilities(&incomplete_operations).err().as_deref(),
+        normalize_server_capabilities(&incomplete_operations)
+            .err()
+            .as_deref(),
         Some(UNAVAILABLE)
     );
     let mut missing_method = advertised.clone();
-    missing_method["methods"].as_array_mut().unwrap().retain(|method| {
-        method.get("name").and_then(Value::as_str) != Some("java.refactor.rollback")
-    });
+    missing_method["methods"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|method| {
+            method.get("name").and_then(Value::as_str) != Some("java.refactor.rollback")
+        });
     assert_eq!(
-        normalize_server_capabilities(&missing_method).err().as_deref(),
+        normalize_server_capabilities(&missing_method)
+            .err()
+            .as_deref(),
         Some(UNAVAILABLE)
     );
     let mut false_flag = advertised.clone();
@@ -2010,6 +2407,7 @@ fn refactoring_rollback_rejects_operation_mismatch_and_unknown_transaction() {
                 workspace_id: workspace_id.clone(),
                 workspace_generation: 1,
                 operation: Some("rename-class".into()),
+                rollback_files: vec![],
             },
         );
     }
@@ -2048,10 +2446,26 @@ fn install_fixture_daemon(
     apply: &Value,
     rollback: &Value,
 ) -> PathBuf {
-    fs::write(root.join("caps.json"), format!("{}\n", serde_json::to_string(caps).unwrap())).unwrap();
-    fs::write(root.join("preview.json"), format!("{}\n", serde_json::to_string(preview).unwrap())).unwrap();
-    fs::write(root.join("apply.json"), format!("{}\n", serde_json::to_string(apply).unwrap())).unwrap();
-    fs::write(root.join("rollback.json"), format!("{}\n", serde_json::to_string(rollback).unwrap())).unwrap();
+    fs::write(
+        root.join("caps.json"),
+        format!("{}\n", serde_json::to_string(caps).unwrap()),
+    )
+    .unwrap();
+    fs::write(
+        root.join("preview.json"),
+        format!("{}\n", serde_json::to_string(preview).unwrap()),
+    )
+    .unwrap();
+    fs::write(
+        root.join("apply.json"),
+        format!("{}\n", serde_json::to_string(apply).unwrap()),
+    )
+    .unwrap();
+    fs::write(
+        root.join("rollback.json"),
+        format!("{}\n", serde_json::to_string(rollback).unwrap()),
+    )
+    .unwrap();
     let caps_path = root.join("caps.json").display().to_string();
     let preview_path = root.join("preview.json").display().to_string();
     let apply_path = root.join("apply.json").display().to_string();

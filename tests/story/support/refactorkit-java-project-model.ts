@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tests/story/support/refactorkit-java-project-model.ts
 // Story BDD driver for REQ-IDE-JAVA-PROJECT-MODEL-001
-// (features/refactorkit/java-project-model.feature, 5 scenarios / 31 Gherkin steps).
+// (features/refactorkit/java-project-model.feature, 6 scenarios / 32 Gherkin steps).
 //
 // GREEN (meaningful, honest): the Java project-model controller IS now wired.
 // The production controller
@@ -39,38 +39,42 @@
 // (symbols stdout lines kind\tfqcn\tpath:line) — or an honest error when the
 // engine is absent or the surface is not advertised. That resolution is honest
 // (the engine exists). The controller Java project-model path is wired:
-// AC-001 (present the model) and AC-002 (honest unavailable/error) PASS against
-// the real controller. AC-003 (extract/delegate/response + model sourced from
+// AC-001 (present the model) and AC-003 (honest unavailable/error) PASS against
+// the real controller. AC-004 (extract/delegate/response + model sourced from
 // RefactorKit) PASSES through the wired adapter -> port -> controller path.
-// AC-004 (web-first Tauri-free boundary) and AC-005 (status reconciliation) are
+// AC-005 (web-first Tauri-free boundary) and AC-006 (status reconciliation) are
 // static checks that PASS and are reported honestly.
 //
 // Expected GREEN (honest):
 //   - AC-001: the engine symbols scan returns packages/classes/symbols (TRUE via
 //     the real adapter behind the fake boundary) and the controller presents
 //     them as the project model (modelPresented=true) -> PASS.
-//   - AC-002: the engine is absent (status.unavailable) or the capability is not
+//   - AC-002: selecting an engine-reported model location uses the guarded Java
+//     navigation controller (TRUE through the production panel/controller) -> PASS.
+//   - AC-003: the engine is absent (status.unavailable) or the capability is not
 //     advertised (operationalSurface missing scan/symbols) and the controller
 //     reports honest unavailable/error, never fabricating (TRUE) -> PASS.
-//   - AC-003: the adapter extracts -> delegates -> returns (TRUE), and the
+//   - AC-004: the adapter extracts -> delegates -> returns (TRUE), and the
 //     project model comes from RefactorKit, presented by the wired controller
 //     (modelFromRefactorKit=true) -> PASS.
-//   - AC-004: web-first layers stay Tauri-free and capability access is through
+//   - AC-005: web-first layers stay Tauri-free and capability access is through
 //     ports (TRUE) -> PASS (static).
-//   - AC-005: feature stays @not-implemented (live Tauri-window project-model E2E
-//     is unvalidated headless), requirement unique/reconciled, and production
-//     presence (controllerProjectModelWired=true) does not silently promote the
-//     status (TRUE) -> PASS (static).
+//   - AC-006: feature stays @partial, requirement unique/reconciled, and bounded
+//     controller/GUI evidence is kept distinct from direct CLI qualification
+//     (TRUE) -> PASS (static).
 //
 // Evidence boundaries: this GREEN is driven through a deterministic in-process
 // boundary behind the REAL adapter and the REAL controller — it exercises the
 // controller/adapter/port/engine wiring but NOT a live external engine CLI, no
 // native GUI, no E2E, and no packaging. Those are reported separately and the
-// feature stays @not-implemented until live E2E validation.
+// feature stays @partial until direct CLI scan/symbols use through the live
+// panel and broader platform/packaging verification are qualified.
 // -----------------------------------------------------------------------------
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { createElement } from "react";
+import * as React from "react";
 import {
   existsSync,
   mkdirSync,
@@ -84,7 +88,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { act, renderHook } from "@testing-library/react";
+import { act, fireEvent, render, renderHook } from "@testing-library/react";
 import { TauriRefactorKitAdapter } from "../../../packages/tauri-adapters/src/refactorkit-tauri.js";
 import { BrowserRefactorKitAdapter } from "../../../packages/browser-adapters/src/refactorkit-browser.js";
 import type { RefactorKitPort } from "../../../packages/web-core/src/ports/refactorkit-port.js";
@@ -98,6 +102,10 @@ import type {
 /** The controller module is loaded dynamically so this support file does not pull its .tsx dependency graph into the focused runner. */
 const CONTROLLER_MODULE_PATH =
   "../../../apps/desktop/src/features/refactorkit-java-project-model/useJavaProjectModelController.js";
+const PROJECT_MODEL_PANEL_MODULE_PATH =
+  "../../../apps/desktop/src/features/refactorkit-java-project-model/JavaProjectModelPanel.js";
+const JAVA_NAVIGATION_CONTROLLER_MODULE_PATH =
+  "../../../apps/desktop/src/features/refactorkit-symbol-navigation/useRefactorKitSymbolNavigationController.js";
 
 /** Java project-model availability reported by the controller. */
 type JavaProjectModelAvailability = "available" | "unavailable" | "error";
@@ -267,6 +275,30 @@ export interface PortCapabilityEvidence {
   readonly port: string;
   readonly declaresInterface: boolean;
   readonly tauriImports: number;
+}
+
+export interface ProjectModelNavigationOutcome {
+  readonly selectedLocationMatchesEngine: boolean;
+  readonly openedLocationMatchesSelection: boolean;
+  readonly applicationUsesSharedNavigationController: boolean;
+  readonly workspaceGenerationRefused: boolean;
+  readonly inactiveWorkspaceRefused: boolean;
+  readonly switchingWorkspaceRefused: boolean;
+  readonly metadataLoadingRefused: boolean;
+}
+
+interface JavaNavigationWorkspaceContext {
+  generation: number;
+  workspaceId: string | null;
+  isSwitching: boolean;
+  isMetadataLoading: boolean;
+}
+
+interface JavaNavigationControllerSurface {
+  selectJavaReference(location: {
+    filePath: string;
+    point: { lineNumber: number; column: number };
+  }): Promise<boolean>;
 }
 
 export interface FeatureStatusReconciliation {
@@ -536,6 +568,21 @@ export class RefactorKitJavaProjectModelStorySession {
     rerender(props: { deps: UseJavaProjectModelControllerDependencies }): void;
     unmount(): void;
   };
+  #javaNavigationHarness?: {
+    result: { current: JavaNavigationControllerSurface };
+    unmount(): void;
+  };
+  #projectModelPanelUnmount?: () => void;
+  #javaNavigationContext?: JavaNavigationWorkspaceContext;
+  #selectedProjectLocation?: { path: string; line: number; column?: number };
+  #openedProjectLocation?: {
+    path: string;
+    point: { lineNumber: number; column: number };
+  };
+  #navigationAttempt?: Promise<boolean>;
+  #navigationOpenCount = 0;
+  #navigationSucceeded = false;
+  #projectModelNavigationOutcome?: ProjectModelNavigationOutcome;
   #useController?: UseJavaProjectModelController;
   #deps?: UseJavaProjectModelControllerDependencies;
   #symbolsResult?: RefactorKitCommandResult;
@@ -554,7 +601,7 @@ export class RefactorKitJavaProjectModelStorySession {
   #portCapabilityEvidence?: PortCapabilityEvidence[];
   #featureReconciliation?: FeatureStatusReconciliation;
 
-  /** AC-001..AC-005 precondition: an authorized isolated Java workspace + jsdom + wired controller. */
+  /** AC-001..AC-006 precondition: an authorized isolated Java workspace + jsdom + wired controller. */
   async start(): Promise<void> {
     if (this.#started) return;
     this.#started = true;
@@ -610,6 +657,173 @@ export class RefactorKitJavaProjectModelStorySession {
     return this.#symbolsResult;
   }
 
+  /** AC-002 Given: load an engine-reported location and mount the production Java navigation controller. */
+  async prepareProjectModelNavigation(): Promise<void> {
+    this.#assertStarted();
+    this.#boundary!.setMode("advertised");
+    await this.observeCapability();
+    await this.requestSymbolsScan();
+    const controller = this.#controller();
+    assert.ok(controller?.model, `${REQUIREMENT}: the project model has no engine-reported locations`);
+    assert.ok(
+      controller.model.classes.some(
+        (entry) =>
+          entry.qualifiedName === CLASS_FQN &&
+          entry.path === "src/main/java/example/model/Order.java" &&
+          entry.line === 3,
+      ),
+      `${REQUIREMENT}: the expected engine-reported type location is missing`,
+    );
+
+    const navigationModule = (await import(JAVA_NAVIGATION_CONTROLLER_MODULE_PATH)) as {
+      useRefactorKitSymbolNavigationController(dependencies: {
+        refactorKit: RefactorKitPort;
+        status: RefactorKitStatus | null;
+        capabilities: RefactorKitCapabilities | null;
+        isCheckingCapabilities: boolean;
+        workspaceInfo: WorkspaceInfo | null;
+        workspaceGeneration: number;
+        getWorkspaceContext(): JavaNavigationWorkspaceContext;
+        getRelevantBuffers(): readonly [];
+        navigateToPoint(
+          filePath: string,
+          point: { lineNumber: number; column: number },
+        ): Promise<boolean>;
+      }): JavaNavigationControllerSurface;
+    };
+    const status = await this.#adapter!.getStatus();
+    const capabilities = await this.#adapter!.getCapabilities();
+    const workspaceInfo: WorkspaceInfo = {
+      id: WORKSPACE_ID,
+      name: "Java Project Model Workspace",
+      rootPath: this.#workspaceRoot!,
+    };
+    this.#javaNavigationContext = {
+      generation: 1,
+      workspaceId: WORKSPACE_ID,
+      isSwitching: false,
+      isMetadataLoading: false,
+    };
+    this.#javaNavigationHarness = renderHook(() =>
+      navigationModule.useRefactorKitSymbolNavigationController({
+        refactorKit: this.#adapter!,
+        status,
+        capabilities,
+        isCheckingCapabilities: false,
+        workspaceInfo,
+        workspaceGeneration: 1,
+        getWorkspaceContext: () => ({ ...this.#javaNavigationContext! }),
+        getRelevantBuffers: () => [],
+        navigateToPoint: async (filePath, point) => {
+          this.#openedProjectLocation = { path: filePath, point };
+          this.#navigationOpenCount += 1;
+          return true;
+        },
+      }),
+    );
+  }
+
+  /** AC-002 When: click the engine-reported type in the production project-model panel. */
+  async selectProjectModelLocation(): Promise<void> {
+    this.#assertStarted();
+    const controller = this.#controller();
+    assert.ok(controller?.model, `${REQUIREMENT}: the project model is not available for navigation`);
+    assert.ok(this.#javaNavigationHarness, `${REQUIREMENT}: Java navigation controller is not mounted`);
+    const panelModule = (await import(PROJECT_MODEL_PANEL_MODULE_PATH)) as {
+      JavaProjectModelPanel(props: {
+        controller: JavaProjectModelControllerSurface;
+        onNavigateLocation(location: { path: string; line: number; column?: number }): void;
+      }): ReturnType<typeof createElement>;
+    };
+    const view = render(
+      createElement(panelModule.JavaProjectModelPanel, {
+        controller,
+        onNavigateLocation: (location) => {
+          this.#selectedProjectLocation = location;
+          this.#navigationAttempt = this.#javaNavigationHarness!.result.current.selectJavaReference({
+            filePath: location.path,
+            point: { lineNumber: location.line, column: location.column ?? 1 },
+          });
+        },
+      }),
+    );
+    this.#projectModelPanelUnmount = view.unmount;
+    const button = view.getByRole("button", {
+      name: `Open type ${CLASS_FQN} at src/main/java/example/model/Order.java:3`,
+    });
+    await act(async () => {
+      fireEvent.click(button);
+      assert.ok(this.#navigationAttempt, `${REQUIREMENT}: selecting the type did not request navigation`);
+      this.#navigationSucceeded = await this.#navigationAttempt;
+    });
+  }
+
+  /** AC-002 Then: verify panel-to-controller routing and all workspace authority refusals. */
+  async verifyProjectModelNavigation(): Promise<ProjectModelNavigationOutcome> {
+    this.#assertStarted();
+    assert.ok(this.#selectedProjectLocation, `${REQUIREMENT}: no project-model location was selected`);
+    assert.ok(this.#openedProjectLocation, `${REQUIREMENT}: shared navigation did not open a source location`);
+    const selected = this.#selectedProjectLocation;
+    const opened = this.#openedProjectLocation;
+    const navController = this.#javaNavigationHarness?.result.current;
+    const context = this.#javaNavigationContext;
+    assert.ok(navController && context, `${REQUIREMENT}: Java navigation authority is missing`);
+    const expectedLocation = {
+      filePath: selected.path,
+      point: { lineNumber: selected.line, column: selected.column ?? 1 },
+    };
+    const callCountBeforeRefusals = this.#navigationOpenCount;
+
+    context.generation = 2;
+    const generationRefused =
+      !(await navController.selectJavaReference(expectedLocation)) &&
+      this.#navigationOpenCount === callCountBeforeRefusals;
+    context.generation = 1;
+    context.workspaceId = "retired-workspace";
+    const inactiveWorkspaceRefused =
+      !(await navController.selectJavaReference(expectedLocation)) &&
+      this.#navigationOpenCount === callCountBeforeRefusals;
+    context.workspaceId = WORKSPACE_ID;
+    context.isSwitching = true;
+    const switchingWorkspaceRefused =
+      !(await navController.selectJavaReference(expectedLocation)) &&
+      this.#navigationOpenCount === callCountBeforeRefusals;
+    context.isSwitching = false;
+    context.isMetadataLoading = true;
+    const metadataLoadingRefused =
+      !(await navController.selectJavaReference(expectedLocation)) &&
+      this.#navigationOpenCount === callCountBeforeRefusals;
+    context.isMetadataLoading = false;
+
+    const appText = readFileSync(APP_PATH, "utf8");
+    const appUsesSharedNavigationController =
+      appText.includes("onNavigateLocation={(location) => {") &&
+      appText.includes(".selectJavaReference({") &&
+      appText.includes("filePath: location.path,") &&
+      appText.includes("point: { lineNumber: location.line, column: location.column ?? 1 },");
+    this.#projectModelNavigationOutcome = {
+      selectedLocationMatchesEngine:
+        selected.path === "src/main/java/example/model/Order.java" &&
+        selected.line === 3 &&
+        selected.column === 1,
+      openedLocationMatchesSelection:
+        this.#navigationSucceeded &&
+        opened.path === selected.path &&
+        opened.point.lineNumber === selected.line &&
+        opened.point.column === (selected.column ?? 1),
+      applicationUsesSharedNavigationController: appUsesSharedNavigationController,
+      workspaceGenerationRefused: generationRefused,
+      inactiveWorkspaceRefused,
+      switchingWorkspaceRefused,
+      metadataLoadingRefused,
+    };
+    return this.#projectModelNavigationOutcome;
+  }
+
+  projectModelNavigationOutcome(): ProjectModelNavigationOutcome | undefined {
+    return this.#projectModelNavigationOutcome;
+  }
+
   /**
    * AC-001 Then: the engine returns packages, classes, and symbols correlated to
    * the workspace authority, the request, and the provider. GREEN: the engine
@@ -658,7 +872,7 @@ export class RefactorKitJavaProjectModelStorySession {
   }
 
   /**
-   * AC-002 When: the engine is absent or the engine symbols scan fails for that
+   * AC-003 When: the engine is absent or the engine symbols scan fails for that
    * workspace root. GREEN: the controller reports the capability honestly —
    * both when the engine is absent (status.unavailable, ENGINE_ABSENT_REASON)
    * and when the capability is not advertised (operationalSurface missing
@@ -717,7 +931,7 @@ export class RefactorKitJavaProjectModelStorySession {
     this.#fallbackRewrite = false;
   }
 
-  /** AC-002 And: a browser without a conforming provider reports the local Java project-model capability as unavailable. */
+  /** AC-003 And: a browser without a conforming provider reports the local Java project-model capability as unavailable. */
   async observeBrowserUnavailable(): Promise<boolean> {
     this.#assertStarted();
     let unavailable = false;
@@ -730,7 +944,7 @@ export class RefactorKitJavaProjectModelStorySession {
     return unavailable;
   }
 
-  /** AC-003 Given: a Java project-model request arrives at an adapter behind a port. */
+  /** AC-004 Given: a Java project-model request arrives at an adapter behind a port. */
   async requestAdapter(): Promise<void> {
     this.#assertStarted();
     this.#boundary!.setMode("advertised");
@@ -738,7 +952,7 @@ export class RefactorKitJavaProjectModelStorySession {
   }
 
   /**
-   * AC-003 When (shared): the adapter receives the request and runs
+   * AC-004 When (shared): the adapter receives the request and runs
    * extract -> delegate -> response. The real adapter extracts the request and
    * delegates to run_refactorkit_engine_scan / run_refactorkit_engine_symbols
    * (the controller's exact delegate sequence), returning the engine response.
@@ -778,7 +992,7 @@ export class RefactorKitJavaProjectModelStorySession {
     return this.#adapterOutcome;
   }
 
-  /** AC-004 When (browser profile): exercise the Java project-model capability through the browser adapter. */
+  /** AC-005 When (browser profile): exercise the Java project-model capability through the browser adapter. */
   async observeBrowserCapability(): Promise<void> {
     this.#assertStarted();
     let unavailable = false;
@@ -790,7 +1004,7 @@ export class RefactorKitJavaProjectModelStorySession {
     this.#browserProviderReportsUnavailable = unavailable;
   }
 
-  /** AC-004 Then: scan the web-first layers for @tauri-apps/api imports. */
+  /** AC-005 Then: scan the web-first layers for @tauri-apps/api imports. */
   scanWebFirstLayers(): WebFirstLayerScanResult[] {
     this.#assertStarted();
     const results: WebFirstLayerScanResult[] = [];
@@ -807,7 +1021,7 @@ export class RefactorKitJavaProjectModelStorySession {
     return results;
   }
 
-  /** AC-004 Then: browser and desktop project-model implementations live behind frontend ports. */
+  /** AC-005 Then: browser and desktop project-model implementations live behind frontend ports. */
   portCapabilityEvidence(): PortCapabilityEvidence[] {
     this.#assertStarted();
     const text = readFileSync(PORT_PATH, "utf8");
@@ -824,7 +1038,7 @@ export class RefactorKitJavaProjectModelStorySession {
     return results;
   }
 
-  /** AC-005 When: parse the feature file for status/requirement reconciliation. */
+  /** AC-006 When: parse the feature file for status/requirement reconciliation. */
   reconcileFeatureStatus(): FeatureStatusReconciliation {
     this.#assertStarted();
     const text = readFileSync(FEATURE_PATH, "utf8");
@@ -888,16 +1102,16 @@ export class RefactorKitJavaProjectModelStorySession {
   }
 
   /**
-   * AC-005: honest production-presence evidence. The engine defines
+   * AC-006: honest production-presence evidence. The engine defines
    * run_engine_scan / run_engine_symbols, the real adapter delegates
    * scan() / symbols(), and the CONTROLLER PROJECT-MODEL PATH is now WIRED —
    * useJavaProjectModelController wires refresh() to refactorKit.scan() /
    * refactorKit.symbols(), parses the engine symbols stdout
    * (kind\tfqcn\tpath:line) into packages/classes/symbols (buildProjectModel),
    * and presents the read-only model; App.tsx mounts the controller and the
-   * JavaProjectModelPanel. Presence does not promote the declared status; AC-005
-   * reconciles @not-implemented because live Tauri-window project-model E2E is
-   * unvalidated headless.
+   * JavaProjectModelPanel. The wired path is reported separately from direct
+   * real-CLI output through the live panel; AC-006 reconciles @partial until that
+   * flow and broader platform/packaging coverage are qualified.
    */
   productionGap(): ProductionGap {
     const realEngineText = readFileSync(REAL_ENGINE_PATH, "utf8");
@@ -1037,11 +1251,12 @@ export class RefactorKitJavaProjectModelStorySession {
     return {
       requirement: REQUIREMENT,
       phase: "story-green",
-      declaredStatus: "@not-implemented",
+      declaredStatus: "@partial",
       evidenceKind: "tauri-harness",
       nativeGui: false,
       e2e: false,
       packagedApplication: false,
+      projectModelNavigationOutcome: this.#projectModelNavigationOutcome,
       presentationOutcome: this.#presentationOutcome,
       adapterOutcome: this.#adapterOutcome,
       productionGap: this.productionGap(),
@@ -1064,6 +1279,22 @@ export class RefactorKitJavaProjectModelStorySession {
   dispose(): void {
     if (!this.#started) return;
     this.#started = false;
+    if (this.#projectModelPanelUnmount) {
+      try {
+        this.#projectModelPanelUnmount();
+      } catch {
+        // Best-effort unmount; no native detail is emitted.
+      }
+      this.#projectModelPanelUnmount = undefined;
+    }
+    if (this.#javaNavigationHarness) {
+      try {
+        this.#javaNavigationHarness.unmount();
+      } catch {
+        // Best-effort unmount; no native detail is emitted.
+      }
+      this.#javaNavigationHarness = undefined;
+    }
     if (this.#controllerHarness) {
       try {
         this.#controllerHarness.unmount();
@@ -1198,6 +1429,7 @@ export class RefactorKitJavaProjectModelStorySession {
       ["KeyboardEvent", window.KeyboardEvent],
       ["Event", window.Event],
       ["CustomEvent", window.CustomEvent],
+      ["React", React],
       ["getComputedStyle", window.getComputedStyle.bind(window)],
       ["requestAnimationFrame", (callback: FrameRequestCallback) => (queueMicrotask(() => callback(0)), 0)],
       ["cancelAnimationFrame", () => undefined],

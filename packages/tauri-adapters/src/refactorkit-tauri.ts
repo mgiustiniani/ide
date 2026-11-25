@@ -1,19 +1,44 @@
+import { JavaProjectContextRetiredError, RefactorRollbackNotStartedError } from "@ide/web-core";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeJavaEditorTransaction } from "./java-editor-transaction-tauri";
+import {
+  javaEditorPreviewWire,
+  normalizeJavaEditorPreviewAuthority,
+  verifyJavaEditorPreview,
+} from "./java-editor-refactoring-tauri";
 import {
   normalizeRefactorKitMethodCapabilities,
+  mavenModuleRenameApplyOffered,
+  mavenModuleRenamePreviewOffered,
   normalizeSavedSnapshotDefinitionResult,
   normalizeSavedSnapshotSemanticSessionStartResult,
   normalizeSavedSnapshotSemanticSessionStopResult,
   normalizeSavedSnapshotSymbolSearchResult,
   normalizeTypeScriptDiagnosticsResponse,
   validateRefactorChangeIntent,
+  javaRefactoringFormatsFiles,
+  isJavaProjectOperationContext,
+  javaContextRefactoringOffered,
+  javaRefactoringMutationAuthorized,
+  javaEditorRefactoringPreviewOffered,
+  javaEditorMutationOffered,
+  javaProjectContextAttestationMatches,
 } from "@ide/contracts";
 import type {
+  JavaEditorTransactionRequest,
+  JavaEditorTransactionResult,
   ApplyRefactorKitPlanRequest,
   ApplyRefactorKitPlanResult,
   DiscardRefactorKitPlanRequest,
   DiscardRefactorKitPlanResult,
   PreviewExternalJavaImportRequest,
+  MavenModuleRenameApplyRequest,
+  MavenModuleRenameApplyResult,
+  MavenModuleRenameDiscardRequest,
+  MavenModuleRenamePreview,
+  MavenModuleRenamePreviewRequest,
+  MavenModuleRenameRollbackRequest,
+  MavenModuleRenameRollbackResult,
   RefactorApplyRequest,
   RefactorApplyResult,
   RefactorPreviewRequest,
@@ -37,8 +62,12 @@ import type {
   RefactorKitSafetyCapabilities,
   RefactorKitPlanDiagnostic,
   RefactorKitPlanConflict,
+  RefactorKitSafeDeleteReferenceAnalysis,
+  RefactorKitTypedReference,
+  RefactorKitTypedReferenceAnalysis,
   RefactorKitStatus,
   RefactoringOperation,
+  JavaFormatterProfile,
   RollbackRefactorKitTransactionRequest,
   RollbackRefactorKitTransactionResult,
   SavedSnapshotDefinitionRequest,
@@ -118,11 +147,55 @@ const REFACTORING_OPERATIONS = [
   "rename-member",
   "rename-local-variable",
   "move-class",
+  "move-member",
+  "move-package",
+  "move-source-root",
   "change-method-signature",
+  "reorder-method-parameters",
+  "make-static",
+  "inline-variable",
+  "inline-constant",
+  "extract-constant",
+  "extract-variable",
+  "extract-parameter",
+  "extract-field",
+  "pull-up-member",
+  "push-down-member",
+  "encapsulate-field",
   "safe-delete",
+  "format-file",
+  "organize-imports",
+] as const;
+// Add Parameter is available only through the saved Java project-context route.
+// Keep it out of the older general CLI capability surface.
+const PROJECT_CONTEXT_REFACTORING_OPERATIONS = [
+  "batch-cleanup",
+  ...REFACTORING_OPERATIONS,
+  "create-maven-module",
+  "create-gradle-module",
+  "rename-gradle-module",
+  "add-method-parameter",
+  "remove-method-parameter",
+  "make-public",
+  "change-field-type",
+  "change-method-parameter-type",
+  "extract-method",
+  "inline-method",
+  "introduce-parameter-object",
+  "extract-delegate",
+  "extract-interface",
+  "extract-superclass",
+  "push-down-member",
 ] as const;
 const JAVA_NAVIGATION_OPERATIONS = ["definition", "references"] as const;
-const REFACTOR_TARGET_KINDS = ["class", "member", "local-binding"] as const;
+const REFACTOR_TARGET_KINDS = [
+  "class",
+  "member",
+  "local-binding",
+  "file",
+  "source-root",
+  "package",
+] as const;
 const REFACTOR_APPLY_OUTCOMES = ["applied", "refused", "stale", "failed", "indeterminate"] as const;
 const UTF8_ENCODER = new TextEncoder();
 const UPDATE_REQUIRED =
@@ -132,12 +205,19 @@ export type TauriRefactorKitManagedErrorCode =
   | "REFACTORKIT_UPDATE_REQUIRED"
   | "REFACTORKIT_PREVIEW_REFUSED"
   | "REFACTORKIT_PREVIEW_FAILED"
+  | "REFACTORKIT_PREVIEW_SESSION_FAILED"
+  | "REFACTORKIT_PREVIEW_PROTOCOL_FAILED"
+  | "REFACTORKIT_PREVIEW_REQUEST_TOO_LARGE"
+  | "REFACTORKIT_PREVIEW_CONTEXT_UNATTESTED"
+  | "REFACTORKIT_PREVIEW_STALE_CONTEXT"
   | "REFACTORKIT_APPLY_STALE"
   | "REFACTORKIT_APPLY_REFUSED"
   | "REFACTORKIT_APPLY_FAILED"
   | "REFACTORKIT_DISCARD_FAILED"
   | "REFACTORKIT_ROLLBACK_CONFLICT"
-  | "REFACTORKIT_ROLLBACK_FAILED";
+  | "REFACTORKIT_ROLLBACK_FAILED"
+  | "REFACTORKIT_ROLLBACK_INPUTS_CHANGED"
+  | "REFACTORKIT_ROLLBACK_OUTCOME_UNKNOWN";
 
 type RecordValue = Record<string, unknown>;
 type DiagnosticSnapshotMode = (typeof DIAGNOSTIC_SNAPSHOT_MODE_VOCABULARY)[number];
@@ -171,6 +251,8 @@ export class TauriRefactorKitManagedCommandError extends TauriAdapterError {
     message: string,
   ) {
     super(command, message);
+    // Keep command identity on the error for diagnostics, not in user guidance.
+    this.message = message;
     this.name = "TauriRefactorKitManagedCommandError";
   }
 }
@@ -431,6 +513,53 @@ function validatePath(command: string, path: string, field: string): string {
   return path;
 }
 
+function validateFormatterProfileSelection(
+  value: JavaFormatterProfile,
+  command: string,
+): JavaFormatterProfile {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new TauriAdapterError(command, "Invalid Eclipse formatter profile selection.");
+  const record = value as unknown as RecordValue;
+  if (Object.keys(record).some((key) => !["path", "profileName"].includes(key)))
+    throw new TauriAdapterError(command, "Invalid Eclipse formatter profile selection.");
+  const path = validatePath(
+    command,
+    protocolString(command, record, "path", MAX_PATH, false),
+    "formatterProfile.path",
+  );
+  const profileName = protocolString(command, record, "profileName", 256, false);
+  if (
+    !path.toLowerCase().endsWith(".xml") ||
+    !profileName.trim() ||
+    profileName.trim() !== profileName ||
+    /[\u0000-\u001f\u007f]/.test(profileName)
+  )
+    throw new TauriAdapterError(command, "Invalid Eclipse formatter profile selection.");
+  return { path, profileName };
+}
+
+function verifyFormatterProfileAttestation(
+  command: string,
+  selected: JavaFormatterProfile | undefined,
+  result: RefactorPreviewResult,
+): void {
+  const hasAttestation =
+    result.formatterProfilePath !== undefined ||
+    result.formatterProfileName !== undefined ||
+    result.formatterProfileSha256 !== undefined;
+  if (!selected) {
+    if (hasAttestation)
+      throw invalidProtocolShape(command, "unexpected Eclipse formatter profile attestation");
+    return;
+  }
+  if (
+    result.formatterProfilePath !== selected.path ||
+    result.formatterProfileName !== selected.profileName ||
+    !result.formatterProfileSha256
+  )
+    throw invalidProtocolShape(command, "the selected Eclipse formatter profile was not attested");
+}
+
 function protocolId(command: string, record: RecordValue, field: string): string {
   const value = protocolString(command, record, field, MAX_ID, false);
   if (!/^[A-Za-z0-9_.:-]+$/.test(value))
@@ -466,6 +595,107 @@ function validatePreviewRequest(request: PreviewExternalJavaImportRequest, comma
   ) {
     throw new TauriAdapterError(command, "Invalid external Java provenance");
   }
+}
+
+function validateMavenModuleRenamePreviewRequest(
+  request: MavenModuleRenamePreviewRequest,
+  command: string,
+): MavenModuleRenamePreviewRequest {
+  validatePath(command, request.oldModuleDir, "oldModuleDir");
+  validatePath(command, request.newModuleDir, "newModuleDir");
+  requestId(request.workspaceId, command, "workspaceId");
+  requestId(request.requestId, command, "requestId");
+  requestGeneration(request.workspaceGeneration, command, "workspaceGeneration");
+  requestGeneration(request.selectionGeneration, command, "selectionGeneration");
+  if (
+    !/^[a-f0-9]{64}$/u.test(request.expectedSnapshotHash) ||
+    !/^[a-f0-9]{64}$/u.test(request.expectedContextHash)
+  )
+    throw new TauriAdapterError(command, "Missing synchronized Java project hashes");
+  if (
+    request.newArtifactId !== undefined &&
+    (request.newArtifactId.trim() !== request.newArtifactId ||
+      request.newArtifactId.length === 0 ||
+      request.newArtifactId.length > 256 ||
+      /[\u0000-\u001f\u007f]/u.test(request.newArtifactId))
+  )
+    throw new TauriAdapterError(command, "Invalid Maven module artifact ID");
+  return {
+    oldModuleDir: request.oldModuleDir,
+    newModuleDir: request.newModuleDir,
+    ...(request.newArtifactId === undefined ? {} : { newArtifactId: request.newArtifactId }),
+    expectedSnapshotHash: request.expectedSnapshotHash,
+    expectedContextHash: request.expectedContextHash,
+    workspaceId: request.workspaceId,
+    workspaceGeneration: request.workspaceGeneration,
+    selectionGeneration: request.selectionGeneration,
+    requestId: request.requestId,
+  };
+}
+
+function normalizeMavenModuleRenamePreview(
+  command: string,
+  response: unknown,
+): MavenModuleRenamePreview {
+  const record = protocolRecord(command, response);
+  if (record.operation !== "java.renameMavenModule" || record.status !== "preview")
+    throw invalidProtocolShape(command, "invalid Maven module rename operation or status");
+  const snapshotHash = protocolString(command, record, "snapshotHash", 64, false);
+  if (!/^[a-f0-9]{64}$/u.test(snapshotHash))
+    throw invalidProtocolShape(command, "invalid snapshotHash");
+  return {
+    planId: protocolId(command, record, "planId"),
+    operation: "java.renameMavenModule",
+    status: "preview",
+    summary: protocolString(command, record, "summary", MAX_TEXT, false),
+    snapshotHash,
+    affectedFiles: strings(command, record.affectedFiles, "affectedFiles").map((path, index) =>
+      validatePath(command, path, `affectedFiles[${index}]`),
+    ),
+    renderedDiff: protocolString(command, record, "renderedDiff", MAX_DIFF),
+    diffTruncated: protocolBoolean(command, record, "diffTruncated"),
+    diffTruncationReasons: strings(command, record.diffTruncationReasons, "diffTruncationReasons"),
+    provider: protocolString(command, record, "provider", 256, false),
+    providerVersion: protocolString(command, record, "providerVersion", 256, false),
+    workspaceId: protocolId(command, record, "workspaceId"),
+    workspaceGeneration: integer(command, record, "workspaceGeneration", 1),
+    selectionGeneration: integer(command, record, "selectionGeneration", 1),
+    requestId: protocolId(command, record, "requestId"),
+  };
+}
+
+function normalizeMavenModuleRenameApply(
+  command: string,
+  response: unknown,
+): MavenModuleRenameApplyResult {
+  const record = protocolRecord(command, response);
+  if (record.status !== "applied")
+    throw invalidProtocolShape(command, "invalid Maven module rename Apply status");
+  const snapshotHash = protocolString(command, record, "snapshotHash", 64, false);
+  if (!/^[a-f0-9]{64}$/u.test(snapshotHash))
+    throw invalidProtocolShape(command, "invalid post-Apply snapshot hash");
+  return {
+    planId: protocolId(command, record, "planId"),
+    transactionId: protocolId(command, record, "transactionId"),
+    snapshotHash,
+    changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
+    provider: protocolString(command, record, "provider", 256, false),
+    providerVersion: protocolString(command, record, "providerVersion", 256, false),
+  };
+}
+
+function normalizeMavenModuleRenameRollback(
+  command: string,
+  response: unknown,
+): MavenModuleRenameRollbackResult {
+  const record = protocolRecord(command, response);
+  if (record.rolledBack !== true)
+    throw invalidProtocolShape(command, "Maven module rename was not rolled back");
+  return {
+    transactionId: protocolId(command, record, "transactionId"),
+    rolledBack: true,
+    changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
+  };
 }
 
 function validateApplyRequest(request: ApplyRefactorKitPlanRequest, command: string): void {
@@ -1437,20 +1667,49 @@ async function invokeSymbolNavigation(
   }
 }
 
-function nativeErrorText(error: unknown): string {
-  if (typeof error === "string") return error.toLowerCase();
-  if (error instanceof Error) return error.message.toLowerCase();
+function nativeErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
   if (isRecord(error)) {
     for (const field of ["message", "error", "reason"] as const) {
-      if (typeof error[field] === "string") return error[field].toLowerCase();
+      if (typeof error[field] === "string") return error[field];
     }
   }
   return "";
 }
 
-function managedCommandError(command: string, error: unknown): TauriAdapterError {
+function nativeErrorText(error: unknown): string {
+  return nativeErrorMessage(error).toLowerCase();
+}
+
+function safeJavaPreviewRefusalReason(error: unknown): string | undefined {
+  const raw = nativeErrorMessage(error);
+  const prefix = /RefactorKit refused this Java operation(?: \(JSON-RPC error -?\d+\))?\. /u.exec(
+    raw,
+  );
+  if (!prefix || prefix.index === undefined) return undefined;
+  const reasonStart = prefix.index + prefix[0].length;
+  const end = [" Synchronize and review a new plan.", " No source changes were made."]
+    .map((suffix) => raw.indexOf(suffix, reasonStart))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right)[0];
+  if (end === undefined) return undefined;
+  const reason = raw.slice(reasonStart, end).replace(/\s+/gu, " ").trim();
+  if (
+    !reason ||
+    reason.length > 512 ||
+    /[\\/]/u.test(reason) ||
+    /\b(?:password|secret|credential|token|authorization|api key)\b/iu.test(reason) ||
+    !/^[\p{L}\p{N}\s.,:;()'_\-.]+$/u.test(reason)
+  )
+    return undefined;
+  return reason.replace(/[.!?]+$/u, "");
+}
+
+function managedCommandError(command: string, error: unknown): TauriAdapterError | RefactorRollbackNotStartedError {
   // Classification may inspect native text, but neither it nor the submitted request is
-  // retained on the public error. Messages are deliberately static and source-safe.
+  // retained on the public error. Only a tightly filtered preview refusal reason is
+  // carried through; other messages remain static and source-safe.
   const text = nativeErrorText(error);
   if (command === "get_refactorkit_capabilities") {
     return new TauriRefactorKitUpdateRequiredError(command);
@@ -1465,6 +1724,58 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
       /refus|reject/.test(text)
         ? "RefactorKit refused to preview this external Java import."
         : "RefactorKit could not preview the external Java import.",
+    );
+  }
+  if (command === "preview_refactorkit_maven_module_rename") {
+    if (text.startsWith("refactorkit refused the maven module destination or artifact id.")) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_REFUSED",
+        "RefactorKit refused the Maven module destination or artifact ID. Choose an unused module directory. Leave the artifact ID empty to keep it, or enter an unused ID for a direct-child rename.",
+      );
+    }
+    if (text.startsWith("refactorkit could not verify the maven reactor model for this rename.")) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_REFUSED",
+        "RefactorKit could not verify the Maven reactor model for this rename. The workspace is unchanged.",
+      );
+    }
+    if (/session failed or timed out/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_SESSION_FAILED",
+        "The RefactorKit daemon session failed or timed out while previewing the Maven module rename.",
+      );
+    }
+    if (/invalid response/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_PROTOCOL_FAILED",
+        "RefactorKit returned an invalid response for the Maven module rename preview.",
+      );
+    }
+    if (/request exceeds the allowed size/.test(text)) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_REQUEST_TOO_LARGE",
+        "The Maven module rename preview request exceeds the allowed size.",
+      );
+    }
+    const refused = /refus|reject/.test(text);
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      refused ? "REFACTORKIT_PREVIEW_REFUSED" : "REFACTORKIT_PREVIEW_FAILED",
+      refused
+        ? "RefactorKit refused to preview this Maven module rename."
+        : "RefactorKit could not preview the Maven module rename.",
+    );
+  }
+  if (command === "discard_refactorkit_maven_module_rename_preview") {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_DISCARD_FAILED",
+      "RefactorKit could not discard the Maven module rename preview.",
     );
   }
   if (command === "apply_refactorkit_plan") {
@@ -1547,11 +1858,31 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
     );
   }
   if (command === "preview_refactorkit_engine_refactoring") {
+    const refused = /refus|reject/.test(text);
+    const refusalReason = refused ? safeJavaPreviewRefusalReason(error) : undefined;
+    if (text.includes("did not return a managed plan for the selected saved java context"))
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_CONTEXT_UNATTESTED",
+        "RefactorKit could not verify this preview against the current saved Java project context. Apply is unavailable and no changes were made.",
+      );
+    if (
+      /project inputs changed|synchronize and preview again|snapshot (?:changed|is stale)/i.test(
+        text,
+      )
+    )
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_PREVIEW_STALE_CONTEXT",
+        "The selected Java project context changed. Synchronize the project and preview again.",
+      );
     return new TauriRefactorKitManagedCommandError(
       command,
-      /refus|reject/.test(text) ? "REFACTORKIT_PREVIEW_REFUSED" : "REFACTORKIT_PREVIEW_FAILED",
-      /refus|reject/.test(text)
-        ? "RefactorKit refused to preview this real-engine Java refactoring."
+      refused ? "REFACTORKIT_PREVIEW_REFUSED" : "REFACTORKIT_PREVIEW_FAILED",
+      refused
+        ? refusalReason
+          ? `RefactorKit refused to preview this real-engine Java refactoring: ${refusalReason}. No source changes were made.`
+          : "RefactorKit refused to preview this real-engine Java refactoring. No source changes were made."
         : "RefactorKit could not preview this real-engine Java refactoring.",
     );
   }
@@ -1584,6 +1915,18 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
     );
   }
   if (command === "rollback_refactorkit_engine_refactoring") {
+    if (text.startsWith("rollback write outcome is unknown:")) {
+      return new TauriRefactorKitManagedCommandError(
+        command,
+        "REFACTORKIT_ROLLBACK_OUTCOME_UNKNOWN",
+        "Rollback may have changed files, but the result could not be confirmed. Inspect the project and compare open buffers with disk before continuing.",
+      );
+    }
+    if (text.startsWith("saved project inputs changed after apply; rollback was not started (")) {
+      return Object.assign(new RefactorRollbackNotStartedError(
+        "Saved project files changed after Apply. Rollback was not started. Review the changes and the transaction before retrying.",
+      ), { command, code: "REFACTORKIT_ROLLBACK_INPUTS_CHANGED" as const, cause: undefined });
+    }
     if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
       return new TauriRefactorKitManagedCommandError(
         command,
@@ -1595,6 +1938,16 @@ function managedCommandError(command: string, error: unknown): TauriAdapterError
       command,
       "REFACTORKIT_ROLLBACK_FAILED",
       "RefactorKit could not roll back the real-engine refactoring transaction.",
+    );
+  }
+  if (
+    command === "rollback_refactorkit_maven_module_rename" &&
+    text.startsWith("maven module rename rollback conflicts with the current workspace state.")
+  ) {
+    return new TauriRefactorKitManagedCommandError(
+      command,
+      "REFACTORKIT_ROLLBACK_CONFLICT",
+      "The workspace changed after the Maven module rename. Review the changes before retrying rollback.",
     );
   }
   if (/conflict|stale|unknown|ownership mismatch/.test(text)) {
@@ -2146,8 +2499,8 @@ function normalizeGeneralRefactoring(
   if (new Set(operations).size !== operations.length) {
     throw invalidProtocolShape(command, "duplicate general refactoring operation");
   }
-  if (supported && REFACTORING_OPERATIONS.some((operation) => !operations.includes(operation))) {
-    throw invalidProtocolShape(command, "incomplete general refactoring operation set");
+  if (supported && operations.length === 0) {
+    throw invalidProtocolShape(command, "empty supported general refactoring operation set");
   }
   const result: RefactorKitGeneralRefactoringCapability = {
     supported,
@@ -2188,6 +2541,11 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
     // The daemon always serializes generalRefactoring, so normalize it always.
     generalRefactoring: normalizeGeneralRefactoring(command, record.generalRefactoring),
   };
+  if (record.safeDeleteReferenceAnalysis !== undefined) {
+    if (record.safeDeleteReferenceAnalysis !== "complete-project")
+      throw invalidProtocolShape(command, "invalid safe-delete reference analysis scope");
+    normalized.safeDeleteReferenceAnalysis = "complete-project";
+  }
   if (Object.prototype.hasOwnProperty.call(record, "methods")) {
     try {
       const methods = normalizeRefactorKitMethodCapabilities(record.methods);
@@ -2195,6 +2553,70 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
     } catch {
       throw invalidProtocolShape(command, "invalid method capability metadata");
     }
+  }
+  if (record.javaContextRefactoring !== undefined) {
+    const sdk = protocolRecord(command, record.javaContextRefactoring, "javaContextRefactoring");
+    const operations = strings(command, sdk.operations, "javaContextRefactoring.operations");
+    if (
+      sdk.schemaVersion !== 1 ||
+      sdk.requiresExplicitContext !== true ||
+      sdk.sourceAuthority !== "saved-snapshot" ||
+      operations.length > 64 ||
+      operations.some((operation) => !operation || operation.length > 128) ||
+      new Set(operations).size !== operations.length
+    )
+      throw invalidProtocolShape(command, "invalid Java SDK refactoring advertisement");
+    normalized.javaContextRefactoring = {
+      schemaVersion: 1,
+      operations,
+      requiresExplicitContext: true,
+      sourceAuthority: "saved-snapshot",
+      rollbackAuthority: protocolBoolean(command, sdk, "rollbackAuthority"),
+      renderedDiff:
+        sdk.renderedDiff === undefined ? false : protocolBoolean(command, sdk, "renderedDiff"),
+    };
+    if (sdk.editorSelectionSchemaVersion !== undefined)
+      normalized.javaContextRefactoring.editorSelectionSchemaVersion = protocolString(
+        command,
+        sdk,
+        "editorSelectionSchemaVersion",
+        128,
+        false,
+      );
+    for (const key of ["selectionQueryKind", "selectionSchemaVersion"] as const)
+      if (sdk[key] !== undefined)
+        normalized.javaContextRefactoring[key] = protocolString(command, sdk, key, 128, false);
+    for (const key of [
+      "editorPreviewMethod",
+      "editorPreviewSchemaVersion",
+      "editorTransactionSchemaVersion",
+    ] as const)
+      if (sdk[key] !== undefined)
+        normalized.javaContextRefactoring[key] = protocolString(command, sdk, key, 128, false);
+    for (const key of [
+      "dirtyEditorPreview",
+      "dirtyEditorMutationAuthority",
+      "durableEditorRecovery",
+    ] as const)
+      if (sdk[key] !== undefined)
+        normalized.javaContextRefactoring[key] = protocolBoolean(command, sdk, key);
+    for (const key of ["editorPreviewOperations", "editorMutationOperations"] as const)
+      if (sdk[key] !== undefined) {
+        const ops = strings(command, sdk[key], key);
+        if (
+          ops.length > 64 ||
+          new Set(ops).size !== ops.length ||
+          ops.some((v) => !v || v.length > 128)
+        )
+          throw invalidProtocolShape(command, "invalid editor preview operations");
+        normalized.javaContextRefactoring[key] = ops;
+      }
+    const operationCapabilities = normalizeOperationCapabilities(
+      command,
+      sdk.operationCapabilities,
+    );
+    if (operationCapabilities !== undefined)
+      normalized.javaContextRefactoring.operationCapabilities = operationCapabilities;
   }
   let languageKernel: NormalizedLanguageKernelStatus | undefined;
   if (Object.prototype.hasOwnProperty.call(record, "languageKernel")) {
@@ -2206,6 +2628,125 @@ function normalizeCapabilities(command: string, response: unknown): RefactorKitC
     normalized.safety = normalizeSafety(command, record.safety);
   }
   return normalized;
+}
+
+function normalizeOperationCapabilities(
+  command: string,
+  value: unknown,
+): NonNullable<RefactorKitCapabilities["javaContextRefactoring"]>["operationCapabilities"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 64) return undefined;
+  const normalized: NonNullable<
+    RefactorKitCapabilities["javaContextRefactoring"]
+  >["operationCapabilities"] = [];
+  const moveClassRows = value.filter(
+    (candidate) =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>).operation === "moveClass",
+  );
+  if (moveClassRows.length > 1) return undefined;
+  if (moveClassRows.length === 1) {
+    const moveClass = moveClassRows[0] as Record<string, unknown>;
+    if (moveClass.targetModuleSelection !== undefined) {
+      const selection = protocolRecord(
+        command,
+        moveClass.targetModuleSelection,
+        "operationCapabilities.moveClass.targetModuleSelection",
+      );
+      if (
+        selection.schemaVersion !== "java-move-class-target-module-v1" ||
+        selection.argument !== "targetModuleId" ||
+        selection.identity !== "module-id-within-source-provider" ||
+        selection.requiresAvailableContext !== true ||
+        selection.sourceSetKind !== "main" ||
+        selection.requiresUniqueNonGeneratedRoot !== true
+      )
+        return undefined;
+      normalized.push({
+        operation: "moveClass",
+        targetModuleSelection: {
+          schemaVersion: "java-move-class-target-module-v1",
+          argument: "targetModuleId",
+          identity: "module-id-within-source-provider",
+          requiresAvailableContext: true,
+          sourceSetKind: "main",
+          requiresUniqueNonGeneratedRoot: true,
+        },
+      });
+    }
+  }
+
+  const safeDeleteRows = value.filter(
+    (candidate) =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>).operation === "safeDelete",
+  );
+  if (safeDeleteRows.length > 1) return undefined;
+  if (safeDeleteRows.length === 1) {
+    const safeDelete = safeDeleteRows[0] as Record<string, unknown>;
+    if (safeDelete.referenceAnalysis !== undefined) {
+      const analysis = protocolRecord(
+        command,
+        safeDelete.referenceAnalysis,
+        "operationCapabilities.safeDelete.referenceAnalysis",
+      );
+      if (
+        analysis.schemaVersion !== "java-safe-delete-reference-analysis-v1" ||
+        analysis.scope !== "workspace-text-v1" ||
+        analysis.resultField !== "referenceAnalysis" ||
+        !Array.isArray(analysis.statusValues) ||
+        analysis.statusValues.length !== 2 ||
+        analysis.statusValues[0] !== "complete" ||
+        analysis.statusValues[1] !== "incomplete" ||
+        analysis.managedApplyAuthority !== "none" ||
+        analysis.completeProject !== false
+      )
+        return undefined;
+      normalized.push({
+        operation: "safeDelete",
+        referenceAnalysis: {
+          schemaVersion: "java-safe-delete-reference-analysis-v1",
+          scope: "workspace-text-v1",
+          resultField: "referenceAnalysis",
+          statusValues: ["complete", "incomplete"],
+          managedApplyAuthority: "none",
+          completeProject: false,
+        },
+      });
+    }
+  }
+  const addParameterRows = value.filter(
+    (candidate) =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>).operation === "changeSignature.addParameter",
+  );
+  const flags: unknown = addParameterRows[0]?.features;
+  if (
+    addParameterRows.length === 1 &&
+    flags !== null &&
+    typeof flags === "object" &&
+    !Array.isArray(flags) &&
+    Reflect.get(flags, "thisMethodReferenceMigration") === true
+  ) {
+    normalized.push({
+      operation: "changeSignature.addParameter",
+      features: { thisMethodReferenceMigration: true },
+    });
+  }
+  const batchRows = value.filter((candidate) =>
+    candidate && typeof candidate === "object" && !Array.isArray(candidate) && candidate.operation === "batchCleanup");
+  const batchFeatures: unknown = batchRows[0]?.features;
+  if (batchRows.length === 1 && batchFeatures && typeof batchFeatures === "object" &&
+      !Array.isArray(batchFeatures) && Reflect.get(batchFeatures, "formatterProfile") === true) {
+    normalized.push({ operation: "batchCleanup", features: { formatterProfile: true } });
+  }
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 /**
@@ -2230,6 +2771,19 @@ function normalizeEngineCapabilities(
   if (new Set(operations).size !== operations.length) {
     throw invalidProtocolShape(command, "duplicate engine operation");
   }
+  const managedOperations = strings(
+    command,
+    record.managedOperations ?? [],
+    "managedOperations",
+  ).map((operation) => {
+    validateRefactoringOperation(operation, command);
+    if (!operations.includes(operation))
+      throw invalidProtocolShape(command, "managed mutation operation is not advertised");
+    return operation as RefactoringOperation;
+  });
+  if (new Set(managedOperations).size !== managedOperations.length) {
+    throw invalidProtocolShape(command, "duplicate managed mutation operation");
+  }
   const operationalSurface = strings(command, record.operationalSurface, "operationalSurface");
   const rollbackAdvertised = protocolBoolean(command, record, "rollbackAdvertised");
   const previewReadOnly = protocolBoolean(command, record, "previewReadOnly");
@@ -2244,9 +2798,8 @@ function normalizeEngineCapabilities(
   // operations stay typed RefactoringOperation[], while definition/references are
   // advertised as a dedicated Java-navigation capability. An engine that advertises
   // only definition/references is honestly unavailable for general refactoring.
-  const refactoringOperations = operations.filter(
-    (operation): operation is RefactoringOperation =>
-      (REFACTORING_OPERATIONS as readonly string[]).includes(operation),
+  const refactoringOperations = operations.filter((operation): operation is RefactoringOperation =>
+    (REFACTORING_OPERATIONS as readonly string[]).includes(operation),
   );
   const navigationOperations = operations.filter(
     (operation): operation is TauriRefactorKitJavaNavigationOperation =>
@@ -2291,6 +2844,7 @@ function normalizeEngineCapabilities(
     engineVersion: version,
     operationalSurface,
     workspaceId,
+    managedJavaMutationOperations: managedOperations,
   };
   if (navigationOperations.length > 0) {
     normalized.javaNavigation = javaNavigation;
@@ -2509,8 +3063,15 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function validateRefactoringOperation(value: string, command: string): void {
-  if (!(REFACTORING_OPERATIONS as readonly string[]).includes(value)) {
+function validateRefactoringOperation(
+  value: string,
+  command: string,
+  projectContext = false,
+): void {
+  const operations = projectContext
+    ? PROJECT_CONTEXT_REFACTORING_OPERATIONS
+    : REFACTORING_OPERATIONS;
+  if (!(operations as readonly string[]).includes(value)) {
     throw new TauriAdapterError(command, "Invalid RefactorKit refactoring operation");
   }
 }
@@ -2564,7 +3125,7 @@ function validatePreviewRefactoringRequest(
   request: RefactorPreviewRequest,
   command: string,
 ): RecordValue {
-  validateRefactoringOperation(request.operation, command);
+  validateRefactoringOperation(request.operation, command, request.projectContext !== undefined);
   // RQR-RFK-ENGINE-001: the real-engine request carries an operation-specific
   // changeIntent. An operation that requires intent but is absent, mismatched, or
   // incomplete is honestly refused here (never fabricated, never an empty change
@@ -2576,6 +3137,14 @@ function validatePreviewRefactoringRequest(
   }
   const target = validateRefactorTarget(request.target, command);
   const authority = validateRefactorAuthority(request.authority, command);
+  const formatterProfile = request.formatterProfile
+    ? validateFormatterProfileSelection(request.formatterProfile, command)
+    : undefined;
+  if (formatterProfile && (!javaRefactoringFormatsFiles(request.operation, request.changeIntent) || !request.projectContext))
+    throw new TauriAdapterError(
+      command,
+      "An Eclipse formatter profile requires a Java project-context preview with formatting.",
+    );
   requestGeneration(request.selectionGeneration, command, "selectionGeneration");
   requestId(request.requestId, command, "requestId");
   const wire: RecordValue = {
@@ -2588,6 +3157,12 @@ function validatePreviewRefactoringRequest(
   if (request.changeIntent !== undefined) {
     wire.changeIntent = request.changeIntent;
   }
+  if (request.projectContext !== undefined) {
+    if (!isJavaProjectOperationContext(request.projectContext))
+      throw new TauriAdapterError(command, "Invalid Java project context.");
+    wire.projectContext = structuredClone(request.projectContext);
+  }
+  if (formatterProfile !== undefined) wire.formatterProfile = formatterProfile;
   return wire;
 }
 
@@ -2595,7 +3170,7 @@ function validateApplyRefactoringRequest(
   request: RefactorApplyRequest,
   command: string,
 ): RecordValue {
-  validateRefactoringOperation(request.operation, command);
+  validateRefactoringOperation(request.operation, command, request.projectContext !== undefined);
   // RQR-RFK-ENGINE-001: the real-engine apply carries an operation-specific
   // changeIntent. An operation that requires intent but is absent, mismatched, or
   // incomplete is honestly refused here (never fabricated, never an empty change
@@ -2622,6 +3197,18 @@ function validateApplyRefactoringRequest(
   }
   const target = validateRefactorTarget(request.target, command);
   const authority = validateRefactorAuthority(request.authority, command);
+  const formatterProfile = request.formatterProfile
+    ? validateFormatterProfileSelection(request.formatterProfile, command)
+    : undefined;
+  const formatterProfileSha256 = request.formatterProfileSha256;
+  if (
+    (formatterProfile === undefined) !== (formatterProfileSha256 === undefined) ||
+    (formatterProfile && (!javaRefactoringFormatsFiles(request.operation, request.changeIntent) || !request.projectContext)) ||
+    (formatterProfileSha256 !== undefined &&
+      (typeof formatterProfileSha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(formatterProfileSha256)))
+  )
+    throw new TauriAdapterError(command, "Invalid or stale Eclipse formatter profile approval.");
   const wire: RecordValue = {
     planId: request.planId,
     operation: request.operation,
@@ -2638,6 +3225,15 @@ function validateApplyRefactoringRequest(
   if (request.changeIntent !== undefined) {
     wire.changeIntent = request.changeIntent;
   }
+  if (request.projectContext !== undefined) {
+    if (!isJavaProjectOperationContext(request.projectContext))
+      throw new TauriAdapterError(command, "Invalid Java project context.");
+    wire.projectContext = structuredClone(request.projectContext);
+  }
+  if (formatterProfile !== undefined) {
+    wire.formatterProfile = formatterProfile;
+    wire.formatterProfileSha256 = formatterProfileSha256;
+  }
   return wire;
 }
 
@@ -2645,16 +3241,28 @@ function validateRollbackRefactoringRequest(
   request: RefactorRollbackRequest,
   command: string,
 ): RecordValue {
-  validateRefactoringOperation(request.operation, command);
+  validateRefactoringOperation(request.operation, command, request.projectContext !== undefined);
   requestId(request.transactionId, command, "transactionId");
   requestId(request.requestId, command, "requestId");
   const authority = validateRefactorAuthority(request.authority, command);
-  return {
+  const wire: RecordValue = {
     transactionId: request.transactionId,
     operation: request.operation,
     authority,
     requestId: request.requestId,
   };
+  if (request.projectContext !== undefined) {
+    if (
+      !isJavaProjectOperationContext(request.projectContext) ||
+      !/^[a-f0-9]{64}$/.test(request.expectedSnapshotHash ?? "")
+    )
+      throw new TauriAdapterError(command, "Invalid original Java rollback authority.");
+    wire.projectContext = structuredClone(request.projectContext);
+    wire.expectedSnapshotHash = request.expectedSnapshotHash;
+  } else if (request.expectedSnapshotHash !== undefined) {
+    throw new TauriAdapterError(command, "Missing original Java rollback context.");
+  }
+  return wire;
 }
 
 function normalizeRefactorTarget(command: string, value: unknown): RefactoringTarget {
@@ -2678,7 +3286,10 @@ function normalizeRefactorTarget(command: string, value: unknown): RefactoringTa
   return target;
 }
 
-function normalizeRefactorPreview(command: string, response: unknown): RefactorPreviewResult {
+export function normalizeRefactorPreview(
+  command: string,
+  response: unknown,
+): RefactorPreviewResult {
   const record = protocolRecord(command, response);
   const confidence = record.confidence;
   if (
@@ -2697,17 +3308,17 @@ function normalizeRefactorPreview(command: string, response: unknown): RefactorP
   const authority = protocolRecord(command, record.authority, "authority");
   const result: RefactorPreviewResult = {
     planId: protocolId(command, record, "planId"),
-    operation: enumValue(command, record, "operation", REFACTORING_OPERATIONS),
+    operation: enumValue(command, record, "operation", PROJECT_CONTEXT_REFACTORING_OPERATIONS),
     target: normalizeRefactorTarget(command, record.target),
     status: enumValue(command, record, "status", ["ready", "refused", "stale", "error"] as const),
     summary: protocolString(command, record, "summary", MAX_TEXT, false),
     confidence,
-    riskLevel: enumValue(
-      command,
-      record,
-      "riskLevel",
-      ["low", "medium", "high", "unknown"] as const,
-    ),
+    riskLevel: enumValue(command, record, "riskLevel", [
+      "low",
+      "medium",
+      "high",
+      "unknown",
+    ] as const),
     risks: strings(command, record.risks, "risks"),
     evidence: array(command, record.evidence, "evidence", (item) => {
       const normalized: RefactorKitEvidence = {
@@ -2771,10 +3382,274 @@ function normalizeRefactorPreview(command: string, response: unknown): RefactorP
     provider: protocolString(command, record, "provider", MAX_TEXT, false),
     providerVersion: nullableString(command, record, "providerVersion"),
   };
+  const referenceAnalysis = normalizeRefactorReferenceAnalysis(
+    command,
+    record.referenceAnalysis,
+    result.operation,
+  );
+  if (referenceAnalysis !== undefined) result.referenceAnalysis = referenceAnalysis;
+  if (record.projectContext !== undefined) {
+    const context = protocolRecord(command, record.projectContext, "projectContext");
+    const projectPath = protocolString(command, context, "projectPath", MAX_PATH);
+    if (projectPath !== "") validatePath(command, projectPath, "projectContext.projectPath");
+    const contextHash = protocolString(command, context, "contextHash", 64, false);
+    const platformIdentities = strings(
+      command,
+      context.platformIdentities,
+      "projectContext.platformIdentities",
+    );
+    if (
+      (context.contextSchemaVersion !== "java-project-context-v1" &&
+        context.contextSchemaVersion !== "java-project-context-v2" &&
+        context.contextSchemaVersion !== "java-project-context-v3" &&
+        context.contextSchemaVersion !== "java-project-context-v4" &&
+        context.contextSchemaVersion !== "java-project-context-v5" &&
+        context.contextSchemaVersion !== "java-project-context-v6" &&
+        context.contextSchemaVersion !== "java-project-context-v7") ||
+      !/^[a-f0-9]{64}$/.test(contextHash) ||
+      platformIdentities.length === 0 ||
+      platformIdentities.length > 256 ||
+      platformIdentities.some((hash) => !/^[a-f0-9]{64}$/.test(hash))
+    )
+      throw invalidProtocolShape(command, "invalid Java project-context attestation");
+    result.projectContext = {
+      projectPath,
+      contextHash,
+      contextSchemaVersion: context.contextSchemaVersion,
+      platformIdentities,
+    };
+  }
+  const formatterProfilePath = optionalProtocolString(
+    command,
+    record,
+    "formatterProfilePath",
+    true,
+  );
+  const formatterProfileName = optionalProtocolString(command, record, "formatterProfileName");
+  const formatterProfileSha256 = optionalProtocolString(command, record, "formatterProfileSha256");
+  if (
+    formatterProfilePath !== undefined ||
+    formatterProfileName !== undefined ||
+    formatterProfileSha256 !== undefined
+  ) {
+    if (
+      !formatterProfilePath?.toLowerCase().endsWith(".xml") ||
+      !formatterProfileName?.trim() ||
+      formatterProfileName.trim() !== formatterProfileName ||
+      /[\u0000-\u001f\u007f]/.test(formatterProfileName) ||
+      !formatterProfileSha256 ||
+      !/^[a-f0-9]{64}$/.test(formatterProfileSha256)
+    )
+      throw invalidProtocolShape(command, "invalid Eclipse formatter profile attestation");
+    result.formatterProfilePath = formatterProfilePath;
+    result.formatterProfileName = formatterProfileName;
+    result.formatterProfileSha256 = formatterProfileSha256;
+  }
+  if (record.diffTruncated !== undefined) {
+    result.diffTruncated = protocolBoolean(command, record, "diffTruncated");
+    result.diffTruncationReasons = strings(
+      command,
+      record.diffTruncationReasons,
+      "diffTruncationReasons",
+    );
+    if (result.diffTruncated && result.applyEligibility.eligible)
+      throw invalidProtocolShape(command, "a truncated Java diff cannot authorize Apply");
+  }
+  if (record.editorPreview !== undefined) {
+    result.editorPreview = normalizeJavaEditorPreviewAuthority(record.editorPreview);
+    if (
+      result.applyEligibility.eligible &&
+      result.editorPreview.mutationMode !== "durable-editor-owned"
+    )
+      throw invalidProtocolShape(command, "editor plans cannot authorize saved-source Apply");
+  }
   return deepFreeze(result);
 }
 
-function normalizeRefactorApply(command: string, response: unknown): RefactorApplyResult {
+function normalizeRefactorReferenceAnalysis(
+  command: string,
+  value: unknown,
+  operation: RefactoringOperation,
+): RefactorPreviewResult["referenceAnalysis"] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const record = protocolRecord(command, value, "referenceAnalysis");
+  if (record.schemaVersion === "java-safe-delete-reference-analysis-v1") {
+    if (operation !== "safe-delete")
+      throw invalidProtocolShape(command, "unexpected safe-delete reference analysis");
+    return normalizeSafeDeleteReferenceAnalysis(command, record);
+  }
+  if (record.schemaVersion !== "refactorkit-reference-analysis-v1" || operation !== "rename-member")
+    throw invalidProtocolShape(command, "unexpected typed reference analysis");
+  return normalizeTypedReferenceAnalysis(command, record);
+}
+
+function normalizeSafeDeleteReferenceAnalysis(
+  command: string,
+  record: RecordValue,
+): RefactorKitSafeDeleteReferenceAnalysis {
+  const boundedCount = (candidate: unknown, maximum: number): number | null => {
+    if (candidate === null) return null;
+    if (
+      typeof candidate !== "number" ||
+      !Number.isSafeInteger(candidate) ||
+      candidate < 0 ||
+      candidate > maximum
+    )
+      throw invalidProtocolShape(command, "invalid safe-delete reference analysis count");
+    return candidate;
+  };
+  const status = enumValue(command, record, "status", ["complete", "incomplete"] as const);
+  const inputCount = boundedCount(record.inputCount, 8_192);
+  const verifiedBytes = boundedCount(record.verifiedBytes, 32 * 1024 * 1024);
+  const snapshotHash = protocolString(command, record, "snapshotHash", 64, false);
+  if (
+    record.schemaVersion !== "java-safe-delete-reference-analysis-v1" ||
+    record.operation !== "safeDelete" ||
+    record.scope !== "workspace-text-v1" ||
+    (status === "complete" && (inputCount === null || verifiedBytes === null)) ||
+    !/^[a-f0-9]{64}$/.test(snapshotHash) ||
+    record.managedApplyAuthority !== "none" ||
+    record.completeProject !== false ||
+    record.referenceClosure !== "incomplete"
+  )
+    throw invalidProtocolShape(command, "invalid safe-delete reference analysis attestation");
+  return {
+    schemaVersion: "java-safe-delete-reference-analysis-v1",
+    operation: "safeDelete",
+    scope: "workspace-text-v1",
+    status,
+    inputCount,
+    verifiedBytes,
+    snapshotHash,
+    managedApplyAuthority: "none",
+    completeProject: false,
+    referenceClosure: "incomplete",
+  };
+}
+
+function normalizeTypedReferenceAnalysis(
+  command: string,
+  record: RecordValue,
+): RefactorKitTypedReferenceAnalysis {
+  const completeness = enumValue(command, record, "completeness", [
+    "COMPLETE",
+    "INCOMPLETE",
+    "UNRESOLVED",
+  ] as const);
+  const managedWriteAuthority = enumValue(command, record, "managedWriteAuthority", [
+    "none",
+    "managed-stable",
+  ] as const);
+  const references: RefactorKitTypedReference[] = array(
+    command,
+    record.references,
+    "referenceAnalysis.references",
+    (reference) => {
+      const location = protocolRecord(command, reference.location, "reference.location");
+      const range = protocolRecord(command, location.range, "reference.location.range");
+      const start = protocolRecord(command, range.start, "reference.location.range.start");
+      const end = protocolRecord(command, range.end, "reference.location.range.end");
+      const startPosition = {
+        line: integer(command, start, "line"),
+        character: integer(command, start, "character"),
+      };
+      const endPosition = {
+        line: integer(command, end, "line"),
+        character: integer(command, end, "character"),
+      };
+      if (
+        endPosition.line < startPosition.line ||
+        (endPosition.line === startPosition.line && endPosition.character < startPosition.character)
+      )
+        throw invalidProtocolShape(command, "invalid typed reference range");
+      return {
+        languageId: protocolString(command, reference, "languageId", 64, false),
+        kind: enumValue(command, reference, "kind", [
+          "symbol",
+          "framework.entity-property",
+          "configuration.value",
+        ] as const),
+        targetOwner: protocolString(command, reference, "targetOwner", MAX_TEXT, false),
+        targetMember: protocolString(command, reference, "targetMember", MAX_TEXT, false),
+        location: {
+          path: validatePath(
+            command,
+            protocolString(command, location, "path", MAX_PATH, false),
+            "reference.location.path",
+          ),
+          range: { start: startPosition, end: endPosition },
+        },
+        resourceKind: enumValue(command, reference, "resourceKind", [
+          "source",
+          "java.annotation-string",
+          "xml",
+          "yaml",
+          "properties",
+          "build-descriptor",
+          "generated-source",
+          "other",
+        ] as const),
+        provenance: protocolString(command, reference, "provenance", 256, false),
+        completeness: enumValue(command, reference, "completeness", [
+          "COMPLETE",
+          "INCOMPLETE",
+          "UNRESOLVED",
+        ] as const),
+      };
+    },
+  );
+  const scope = protocolString(command, record, "scope", 256, false);
+  if (record.schemaVersion !== "refactorkit-reference-analysis-v1")
+    throw invalidProtocolShape(command, "invalid typed reference analysis identity");
+  return {
+    schemaVersion: "refactorkit-reference-analysis-v1",
+    scope,
+    completeness,
+    completeProject: protocolBoolean(command, record, "completeProject"),
+    managedWriteAuthority,
+    references,
+    warnings: strings(command, record.warnings, "referenceAnalysis.warnings"),
+  };
+}
+
+function verifyRefactorReferenceAnalysis(
+  command: string,
+  request: RefactorPreviewRequest,
+  result: RefactorPreviewResult,
+): void {
+  const analysis = result.referenceAnalysis;
+  if (!analysis) return;
+  if (analysis.schemaVersion === "java-safe-delete-reference-analysis-v1") {
+    if (
+      request.operation !== "safe-delete" ||
+      !request.projectContext ||
+      analysis.snapshotHash !== request.projectContext.snapshotHash
+    )
+      throw invalidProtocolShape(
+        command,
+        "safe-delete reference analysis does not match the selected Java snapshot",
+      );
+    return;
+  }
+  if (request.operation !== "rename-member" || !request.projectContext)
+    throw invalidProtocolShape(
+      command,
+      "typed reference analysis requires a saved Java member rename context",
+    );
+  if (
+    (!analysis.completeProject ||
+      analysis.completeness !== "COMPLETE" ||
+      analysis.managedWriteAuthority !== "managed-stable" ||
+      analysis.references.some((reference) => reference.completeness !== "COMPLETE")) &&
+    result.applyEligibility.eligible
+  )
+    throw invalidProtocolShape(
+      command,
+      "incomplete typed reference analysis cannot advertise managed Apply",
+    );
+}
+
+export function normalizeRefactorApply(command: string, response: unknown): RefactorApplyResult {
   const record = protocolRecord(command, response);
   const primaryFile =
     record.primaryFile === null
@@ -2786,7 +3661,7 @@ function normalizeRefactorApply(command: string, response: unknown): RefactorApp
         );
   const result: RefactorApplyResult = {
     planId: protocolId(command, record, "planId"),
-    operation: enumValue(command, record, "operation", REFACTORING_OPERATIONS),
+    operation: enumValue(command, record, "operation", PROJECT_CONTEXT_REFACTORING_OPERATIONS),
     outcome: enumValue(command, record, "outcome", REFACTOR_APPLY_OUTCOMES),
     changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
     primaryFile,
@@ -2797,12 +3672,21 @@ function normalizeRefactorApply(command: string, response: unknown): RefactorApp
   if (Object.prototype.hasOwnProperty.call(record, "transactionId")) {
     result.transactionId = protocolId(command, record, "transactionId");
   }
+  if (record.appliedSnapshotHash !== undefined) {
+    const snapshot = protocolString(command, record, "appliedSnapshotHash", 64, false);
+    if (!/^[a-f0-9]{64}$/.test(snapshot))
+      throw invalidProtocolShape(command, "invalid post-apply Java snapshot");
+    result.appliedSnapshotHash = snapshot;
+  }
   return result;
 }
 
-function normalizeRefactorRollback(command: string, response: unknown): RefactorRollbackResult {
+export function normalizeRefactorRollback(
+  command: string,
+  response: unknown,
+): RefactorRollbackResult {
   const record = protocolRecord(command, response);
-  return {
+  const result: RefactorRollbackResult = {
     transactionId: protocolId(command, record, "transactionId"),
     rolledBack: protocolBoolean(command, record, "rolledBack"),
     changedFiles: affectedFiles(command, record.changedFiles, "changedFiles"),
@@ -2817,6 +3701,15 @@ function normalizeRefactorRollback(command: string, response: unknown): Refactor
     }),
     diagnostics: diagnostics(command, record.diagnostics, "diagnostics"),
   };
+  for (const field of ["rolledBackContextHash", "restoredSnapshotHash"] as const) {
+    if (record[field] !== undefined) {
+      const value = protocolString(command, record, field, 64, false);
+      if (!/^[a-f0-9]{64}$/.test(value))
+        throw invalidProtocolShape(command, `invalid Java rollback ${field}`);
+      result[field] = value;
+    }
+  }
+  return result;
 }
 
 // Existing fixed-command normalization.
@@ -2924,7 +3817,10 @@ function normalizeStatus(command: string, response: unknown): RefactorKitStatus 
  * returned by the NEW run_refactorkit_engine_scan/symbols/definition/references/
  * diagnostics commands.
  */
-function normalizeEngineCommandResult(command: string, response: unknown): RefactorKitCommandResult {
+function normalizeEngineCommandResult(
+  command: string,
+  response: unknown,
+): RefactorKitCommandResult {
   const record = requireRecord(command, response);
   return {
     stdout: requireString(command, response, record, "stdout"),
@@ -2974,6 +3870,29 @@ export interface TauriRefactorKitEngineCapabilities extends RefactorKitCapabilit
 }
 
 export class TauriRefactorKitAdapter implements RefactorKitPort {
+  private readonly editorPlans = new Set<string>();
+  private readonly editorMutationPlans = new Map<
+    string,
+    {
+      planHash: string;
+      contextHash: string;
+      snapshotHash: string;
+      formatterProfile?: JavaFormatterProfile;
+      formatterProfileSha256?: string;
+    }
+  >();
+  private readonly sdkPlans = new Set<string>();
+  private readonly mavenModuleRenamePlans = new Map<
+    string,
+    Pick<
+      MavenModuleRenameDiscardRequest,
+      "workspaceId" | "workspaceGeneration" | "selectionGeneration" | "requestId"
+    >
+  >();
+  private readonly mavenModuleRenameTransactions = new Map<
+    string,
+    Pick<MavenModuleRenameRollbackRequest, "workspaceId" | "workspaceGeneration">
+  >();
   private currentSavedSnapshotSymbolSearchResult:
     Readonly<SavedSnapshotSymbolSearchResult> | undefined;
   private savedSnapshotSearchSequence = 0;
@@ -2988,28 +3907,19 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     // report; the base daemon surface (external-import, language-kernel, methods,
     // safety) is preserved alongside engine presence/version + operational surface.
     const engineCommand = "get_refactorkit_engine_capabilities";
-    const engine = normalizeEngineCapabilities(
-      engineCommand,
-      await invokeManaged(engineCommand),
-    );
+    const engine = normalizeEngineCapabilities(engineCommand, await invokeManaged(engineCommand));
     const baseCommand = "get_refactorkit_capabilities";
     const base = normalizeCapabilities(baseCommand, await invokeManaged(baseCommand));
     const merged: TauriRefactorKitEngineCapabilities = {
-      api: base.api,
-      apiVersion: base.apiVersion,
-      provider: base.provider,
-      providerVersion: base.providerVersion,
-      javaImportExternalClass: base.javaImportExternalClass,
+      ...base,
       generalRefactoring: engine.generalRefactoring,
+      managedJavaMutationOperations: engine.managedJavaMutationOperations,
       engineDiscovered: engine.engineDiscovered,
       enginePath: engine.enginePath,
       engineVersion: engine.engineVersion,
       operationalSurface: engine.operationalSurface,
       workspaceId: engine.workspaceId,
     };
-    if (base.methods !== undefined) merged.methods = base.methods;
-    if (base.languageKernel !== undefined) merged.languageKernel = base.languageKernel;
-    if (base.safety !== undefined) merged.safety = base.safety;
     if (engine.javaNavigation !== undefined) merged.javaNavigation = engine.javaNavigation;
     return deepFreeze(merged);
   }
@@ -3246,6 +4156,145 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     return result;
   }
 
+  async previewMavenModuleRename(
+    request: MavenModuleRenamePreviewRequest,
+  ): Promise<MavenModuleRenamePreview> {
+    const command = "preview_refactorkit_maven_module_rename";
+    const exactRequest = validateMavenModuleRenamePreviewRequest(request, command);
+    const capabilities = await this.getCapabilities();
+    if (!mavenModuleRenamePreviewOffered(capabilities))
+      throw new TauriAdapterError(
+        command,
+        "RefactorKit does not advertise Maven module rename preview with a rendered diff.",
+      );
+    if (
+      (exactRequest.oldModuleDir.includes("/") || exactRequest.newModuleDir.includes("/")) &&
+      !mavenModuleRenamePreviewOffered(capabilities, true)
+    )
+      throw new TauriAdapterError(
+        command,
+        "This RefactorKit runtime supports Maven module renames between direct children of the reactor root.",
+      );
+    const result = normalizeMavenModuleRenamePreview(
+      command,
+      await invokeManaged(command, { ...exactRequest }),
+    );
+    if (
+      result.snapshotHash !== request.expectedSnapshotHash ||
+      result.workspaceId !== request.workspaceId ||
+      result.workspaceGeneration !== request.workspaceGeneration ||
+      result.selectionGeneration !== request.selectionGeneration ||
+      result.requestId !== request.requestId
+    )
+      throw invalidProtocolShape(
+        command,
+        "response does not match the requested workspace authority",
+      );
+    this.mavenModuleRenamePlans.set(result.planId, {
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      selectionGeneration: request.selectionGeneration,
+      requestId: request.requestId,
+    });
+    return deepFreeze(result);
+  }
+
+  async discardMavenModuleRenamePreview(
+    request: MavenModuleRenameDiscardRequest,
+  ): Promise<boolean> {
+    const command = "discard_refactorkit_maven_module_rename_preview";
+    const reviewed = this.mavenModuleRenamePlans.get(request.planId);
+    if (
+      !reviewed ||
+      reviewed.workspaceId !== request.workspaceId ||
+      reviewed.workspaceGeneration !== request.workspaceGeneration ||
+      reviewed.selectionGeneration !== request.selectionGeneration ||
+      reviewed.requestId !== request.requestId
+    )
+      throw new TauriAdapterError(command, "Maven module rename preview is stale or unknown.");
+    validateDiscardRequest(request, command);
+    const exactRequest = {
+      planId: request.planId,
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      selectionGeneration: request.selectionGeneration,
+      requestId: request.requestId,
+    };
+    const result = normalizeDiscard(command, await invokeManaged(command, exactRequest));
+    if (result.planId !== request.planId)
+      throw invalidProtocolShape(command, "response planId does not match the requested plan");
+    this.mavenModuleRenamePlans.delete(request.planId);
+    return result.discarded;
+  }
+
+  async applyMavenModuleRename(
+    request: MavenModuleRenameApplyRequest,
+  ): Promise<MavenModuleRenameApplyResult> {
+    const command = "apply_refactorkit_maven_module_rename";
+    const reviewed = this.mavenModuleRenamePlans.get(request.planId);
+    if (
+      !reviewed ||
+      reviewed.workspaceId !== request.workspaceId ||
+      reviewed.workspaceGeneration !== request.workspaceGeneration ||
+      reviewed.selectionGeneration !== request.selectionGeneration ||
+      reviewed.requestId !== request.requestId
+    )
+      throw new TauriAdapterError(command, "Maven module rename preview is stale or unknown.");
+    validateApplyRequest(request, command);
+    if (!mavenModuleRenameApplyOffered(await this.getCapabilities()))
+      throw new TauriAdapterError(
+        command,
+        "RefactorKit does not advertise managed Maven module rename Apply and Rollback.",
+      );
+    let result: MavenModuleRenameApplyResult;
+    try {
+      result = normalizeMavenModuleRenameApply(
+        command,
+        await invokeManaged(command, { ...request, approval: { ...request.approval } }),
+      );
+    } catch (error) {
+      // The daemon may have committed before transport or response validation failed.
+      this.mavenModuleRenamePlans.delete(request.planId);
+      throw error;
+    }
+    if (result.planId !== request.planId)
+      throw invalidProtocolShape(command, "response does not match the reviewed plan");
+    this.mavenModuleRenamePlans.delete(request.planId);
+    this.mavenModuleRenameTransactions.set(result.transactionId, {
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+    });
+    return deepFreeze(result);
+  }
+
+  async rollbackMavenModuleRename(
+    request: MavenModuleRenameRollbackRequest,
+  ): Promise<MavenModuleRenameRollbackResult> {
+    const command = "rollback_refactorkit_maven_module_rename";
+    const reviewed = this.mavenModuleRenameTransactions.get(request.transactionId);
+    if (
+      !reviewed ||
+      reviewed.workspaceId !== request.workspaceId ||
+      reviewed.workspaceGeneration !== request.workspaceGeneration
+    )
+      throw new TauriAdapterError(command, "Maven module rename transaction is stale or unknown.");
+    validateRollbackRequest(request, command);
+    const exactRequest = {
+      transactionId: request.transactionId,
+      workspaceId: request.workspaceId,
+      workspaceGeneration: request.workspaceGeneration,
+      requestId: request.requestId,
+    };
+    const result = normalizeMavenModuleRenameRollback(
+      command,
+      await invokeManaged(command, exactRequest),
+    );
+    if (result.transactionId !== request.transactionId)
+      throw invalidProtocolShape(command, "response does not match the requested transaction");
+    if (result.rolledBack) this.mavenModuleRenameTransactions.delete(request.transactionId);
+    return deepFreeze(result);
+  }
+
   // Capability-before-offer: general Java refactoring is offered only when the
   // daemon explicitly advertises the operation set and the requested feature. The
   // adapter never infers support from a version number, a generic apply button, or
@@ -3278,31 +4327,181 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
         `RefactorKit general Java refactoring ${feature} is not advertised by the daemon.`,
       );
     }
+    if (
+      feature === "apply" &&
+      operation !== undefined &&
+      !javaRefactoringMutationAuthorized(capabilities, operation)
+    ) {
+      throw new TauriAdapterError(
+        command,
+        `RefactorKit does not advertise managed mutation authority for Java refactoring operation ${operation}.`,
+      );
+    }
+  }
+
+  private async requireJavaContextRefactoringFeature(
+    command: string,
+    operation: RefactoringOperation,
+    feature: "preview" | "apply" | "rollback",
+  ): Promise<void> {
+    if (!javaContextRefactoringOffered(await this.getCapabilities(), operation, feature))
+      throw new TauriAdapterError(
+        command,
+        "RefactorKit does not advertise this operation with the selected Java project context. Update the daemon and refresh capabilities.",
+      );
   }
 
   async previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
+    if (request.operation === "batch-cleanup" &&
+        (!request.projectContext || request.editorOverlay || request.target.selection ||
+         request.changeIntent?.operation !== "batch-cleanup" ||
+         request.changeIntent.actions?.[0]?.path !== request.target.path))
+      throw new TauriAdapterError("preview_refactorkit_engine_refactoring", "Batch cleanup requires a saved project context and its first selected file as target.");
+    if (request.editorOverlay) {
+      const command = "query_refactorkit_java_navigation";
+      validatePreviewRefactoringRequest(request, command);
+      const wire = javaEditorPreviewWire(request);
+      if (!javaEditorRefactoringPreviewOffered(await this.getCapabilities(), request.operation))
+        throw new TauriAdapterError(
+          command,
+          "RefactorKit does not advertise Java draft selection and preview.",
+        );
+      if (
+        request.editorMutationMode &&
+        !javaEditorMutationOffered(await this.getCapabilities(), request.operation)
+      )
+        throw new Error("Durable editor mutation is unavailable for this operation.");
+      const response = await invokeTauri<unknown>(command, { request: wire });
+      const record = protocolRecord(command, response);
+      if (record.status === "refused" || record.status === "unavailable") {
+        if (
+          record.workspaceId !== wire.workspaceId ||
+          record.generation !== wire.generation ||
+          record.requestId !== wire.requestId ||
+          record.kind !== wire.kind ||
+          record.documentPath !== wire.document.path ||
+          record.documentVersion !== wire.document.version ||
+          (record.projectContextRetired !== undefined && record.projectContextRetired !== true)
+        )
+          throw invalidProtocolShape(command, "uncorrelated Java draft refusal");
+        const message = protocolString(command, record, "message", 4096, false);
+        if (record.projectContextRetired === true)
+          throw new JavaProjectContextRetiredError(
+            `${message} The Java project session was retired. Synchronize the project before trying again.`,
+          );
+        throw new TauriAdapterError(command, message);
+      }
+      const result = normalizeRefactorPreview(command, response);
+      verifyFormatterProfileAttestation(command, request.formatterProfile, result);
+      if (!javaProjectContextAttestationMatches(request.projectContext, result.projectContext))
+        throw invalidProtocolShape(command, "draft preview does not attest the selected SDK");
+      verifyRefactorReferenceAnalysis(command, request, result);
+      await verifyJavaEditorPreview(result, request);
+      this.editorPlans.add(result.planId);
+      if (result.editorPreview?.mutationMode === "durable-editor-owned" && request.projectContext)
+        this.editorMutationPlans.set(result.planId, {
+          planHash: result.editorPreview.planHash,
+          contextHash: request.projectContext.contextHash,
+          snapshotHash: request.projectContext.snapshotHash,
+          ...(request.formatterProfile
+            ? { formatterProfile: structuredClone(request.formatterProfile) }
+            : {}),
+          ...(result.formatterProfileSha256
+            ? { formatterProfileSha256: result.formatterProfileSha256 }
+            : {}),
+        });
+      return deepFreeze(result);
+    }
     const command = "preview_refactorkit_engine_refactoring";
     const exactRequest = validatePreviewRefactoringRequest(request, command);
-    await this.requireGeneralRefactoringFeature(command, request.operation, "preview");
-    return normalizeRefactorPreview(command, await invokeManaged(command, exactRequest));
+    if (request.projectContext)
+      await this.requireJavaContextRefactoringFeature(command, request.operation, "preview");
+    else await this.requireGeneralRefactoringFeature(command, request.operation, "preview");
+    const response = await invokeManaged(command, exactRequest);
+    const result = normalizeRefactorPreview(command, response);
+    verifyFormatterProfileAttestation(command, request.formatterProfile, result);
+    if (request.projectContext && typeof result.diffTruncated !== "boolean")
+      throw invalidProtocolShape(command, "missing Java diff completeness evidence");
+    if (!javaProjectContextAttestationMatches(request.projectContext, result.projectContext))
+      throw invalidProtocolShape(
+        command,
+        "response does not attest the selected Java project context",
+      );
+    verifyRefactorReferenceAnalysis(command, request, result);
+    if (request.projectContext) this.sdkPlans.add(result.planId);
+    return deepFreeze(result);
+  }
+
+  async editorTransaction(
+    request: JavaEditorTransactionRequest,
+  ): Promise<JavaEditorTransactionResult> {
+    const capabilities = await this.getCapabilities();
+    if (
+      !["rename-class", "rename-member", "format-file", "organize-imports"].some((operation) =>
+        javaEditorMutationOffered(capabilities, operation as RefactoringOperation),
+      )
+    )
+      throw new Error("RefactorKit does not advertise durable Java editor transactions.");
+    if (request.phase === "prepare" || request.phase === "confirm") {
+      const review = this.editorMutationPlans.get(request.planId ?? "");
+      if (
+        !review ||
+        review.planHash !== request.approvedPlanHash ||
+        review.contextHash !== request.projectContext.contextHash ||
+        review.snapshotHash !== request.projectContext.snapshotHash ||
+        review.formatterProfileSha256 !== request.formatterProfileSha256 ||
+        JSON.stringify(review.formatterProfile) !== JSON.stringify(request.formatterProfile)
+      )
+        throw new Error(
+          "Review and approve the exact durable Java editor plan before applying it.",
+        );
+    }
+    return invokeJavaEditorTransaction(request);
   }
 
   async applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult> {
+    if (this.editorPlans.has(request.planId))
+      throw new Error("Applying a draft preview is unavailable.");
     const command = "apply_refactorkit_engine_refactoring";
     const exactRequest = validateApplyRefactoringRequest(request, command);
-    await this.requireGeneralRefactoringFeature(command, request.operation, "apply");
-    const result = normalizeRefactorApply(command, await invokeManaged(command, exactRequest));
+    if (request.projectContext)
+      await this.requireJavaContextRefactoringFeature(command, request.operation, "apply");
+    else await this.requireGeneralRefactoringFeature(command, request.operation, "apply");
+    const response = await invokeManaged(command, exactRequest);
+    const result = normalizeRefactorApply(command, response);
+    if (request.projectContext && result.outcome === "applied") {
+      const contextHash = protocolRecord(command, response).appliedContextHash;
+      if (contextHash !== request.projectContext.contextHash || !result.appliedSnapshotHash)
+        throw invalidProtocolShape(
+          command,
+          "write outcome is unknown: Java context attestation is missing or changed",
+        );
+      result.appliedContextHash = request.projectContext.contextHash;
+    }
     if (result.planId !== request.planId) {
       throw invalidProtocolShape(command, "response planId does not match the requested plan");
     }
+    this.sdkPlans.delete(request.planId);
     return result;
   }
 
   async rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult> {
     const command = "rollback_refactorkit_engine_refactoring";
     const exactRequest = validateRollbackRefactoringRequest(request, command);
-    await this.requireGeneralRefactoringFeature(command, request.operation, "rollback");
+    if (request.projectContext)
+      await this.requireJavaContextRefactoringFeature(command, request.operation, "rollback");
+    else await this.requireGeneralRefactoringFeature(command, request.operation, "rollback");
     const result = normalizeRefactorRollback(command, await invokeManaged(command, exactRequest));
+    if (
+      request.projectContext &&
+      result.rolledBack &&
+      (result.rolledBackContextHash !== request.projectContext.contextHash ||
+        result.restoredSnapshotHash !== request.projectContext.snapshotHash)
+    )
+      throw invalidProtocolShape(
+        command,
+        "rollback write outcome is unknown: original Java authority was not confirmed",
+      );
     if (result.transactionId !== request.transactionId) {
       throw invalidProtocolShape(
         command,
@@ -3317,7 +4516,12 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
   ): Promise<DiscardRefactorKitPlanResult> {
     const command = "discard_refactorkit_engine_refactoring";
     validateDiscardRequest(request, command);
-    await this.requireGeneralRefactoringFeature(command, undefined, "discard");
+    if (this.editorPlans.delete(request.planId)) {
+      this.editorMutationPlans.delete(request.planId);
+      return { planId: request.planId, discarded: true };
+    }
+    if (!this.sdkPlans.has(request.planId))
+      await this.requireGeneralRefactoringFeature(command, undefined, "discard");
     const exactRequest = {
       planId: request.planId,
       authority: {
@@ -3331,6 +4535,7 @@ export class TauriRefactorKitAdapter implements RefactorKitPort {
     if (result.planId !== request.planId) {
       throw invalidProtocolShape(command, "response planId does not match the requested plan");
     }
+    this.sdkPlans.delete(request.planId);
     return result;
   }
 

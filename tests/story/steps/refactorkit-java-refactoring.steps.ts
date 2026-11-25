@@ -37,7 +37,6 @@ import {
   REQUIREMENT,
   TARGET_FILE,
   WORKSPACE_ID,
-  REFACTOR_OPERATIONS,
   type RefactorOperation,
   getRefactorKitJavaRefactoringSession,
   disposeRefactorKitJavaRefactoringSession,
@@ -89,14 +88,11 @@ Given<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "the person requests a preview for that operation and target",
-  async function () {
-    const session = sessionFor(this);
-    await session.requestGeneralRefactoringPreview(PRIMARY_OPERATION, TARGET_FILE);
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the person requests a preview for that operation and target", async function () {
+  const session = sessionFor(this);
+  await session.requestGeneralRefactoringPreview(PRIMARY_OPERATION, TARGET_FILE);
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   // cucumber-js reports a step whose text contains "/" as undefined unless the
@@ -147,7 +143,10 @@ Then<StoryWorld>(
     assert.ok(plan.renderedDiff.length > 0, `${REQUIREMENT} no available diff`);
     assert.ok(plan.structuredDiff.length > 0, `${REQUIREMENT} no structured diff`);
     assert.ok(Array.isArray(plan.warnings), `${REQUIREMENT} no warnings evidence`);
-    assert.ok(Array.isArray(plan.diagnosticsAfterPreview), `${REQUIREMENT} no diagnostics evidence`);
+    assert.ok(
+      Array.isArray(plan.diagnosticsAfterPreview),
+      `${REQUIREMENT} no diagnostics evidence`,
+    );
     assert.ok(Array.isArray(plan.risks), `${REQUIREMENT} no risk evidence`);
     assert.ok(Array.isArray(plan.conflicts), `${REQUIREMENT} no conflicts evidence`);
     assert.ok(
@@ -213,7 +212,8 @@ Then<StoryWorld>(
     const session = sessionFor(this);
     const outcome = session.reportedOutcome();
     assert.ok(
-      outcome !== undefined && ["applied", "refused", "stale", "failed", "indeterminate"].includes(outcome),
+      outcome !== undefined &&
+        ["applied", "refused", "stale", "failed", "indeterminate"].includes(outcome),
       `${REQUIREMENT} the IDE did not report an honest outcome`,
     );
     assert.equal(outcome, "applied", `${REQUIREMENT} the IDE fabricated a non-applied outcome`);
@@ -291,7 +291,11 @@ Then<StoryWorld>(
     const ports = session.portCapabilityEvidence();
     assert.ok(ports.length === 1, `${REQUIREMENT} port capability evidence is incomplete`);
     for (const port of ports) {
-      assert.equal(port.declaresInterface, true, `${REQUIREMENT} ${port.port} does not declare a port interface`);
+      assert.equal(
+        port.declaresInterface,
+        true,
+        `${REQUIREMENT} ${port.port} does not declare a port interface`,
+      );
       assert.equal(port.tauriImports, 0, `${REQUIREMENT} ${port.port} imports a platform API`);
     }
     await attachEvidence(session, this);
@@ -303,7 +307,7 @@ Then<StoryWorld>(
 // -----------------------------------------------------------------------------
 
 Then<StoryWorld>(
-  "the requirement ID \"@REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001\" is repository-unique and reconciled",
+  'the requirement ID "@REQ-IDE-REFACTORKIT-JAVA-REFACTORING-001" is repository-unique and reconciled',
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
@@ -351,7 +355,11 @@ Then<StoryWorld>(
       true,
       `${REQUIREMENT} the daemon does not advertise the general refactoring operation set`,
     );
-    assert.equal(session.fabricatedPlan(), false, `${REQUIREMENT} a hard-coded/fake plan promotes the status`);
+    assert.equal(
+      session.fabricatedPlan(),
+      false,
+      `${REQUIREMENT} a hard-coded/fake plan promotes the status`,
+    );
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
     assert.ok(
@@ -372,7 +380,11 @@ Then<StoryWorld>(
     // are reported separately and not claimed here.
     const evidence = session.evidence();
     assert.equal(evidence.evidenceKind, "tauri-harness", `${REQUIREMENT} evidence kind mismatch`);
-    assert.equal(evidence.nativeGui, false, `${REQUIREMENT} native GUI evidence is not reported separately`);
+    assert.equal(
+      evidence.nativeGui,
+      false,
+      `${REQUIREMENT} native GUI evidence is not reported separately`,
+    );
     assert.equal(evidence.e2e, false, `${REQUIREMENT} e2e evidence is not reported separately`);
     assert.equal(
       evidence.packagedApplication,

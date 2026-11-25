@@ -1,172 +1,190 @@
-// ---------------------------------------------------------------------------
-// git_diff_review.rs — read-only git diff-review commands
-//
-// Native implementations behind REQ-IDE-GIT-DIFF-REVIEW-001:
-//   git_status_modified  -> `git status --porcelain=v1` modified/added paths
-//   git_diff_hunks       -> `git diff --no-ext-diff --unified=3` hunks + range
-//   editor_open_range    -> resolve an existing path and report the exact
-//                           range the editor port is asked to open
-//
-// The whole flow is strictly read-only: no command ever mutates the working
-// tree, and unavailable states are reported honestly instead of fabricated.
-// ---------------------------------------------------------------------------
-
-use std::path::Path;
-use std::process::Command;
-
+//! Read-only working-tree Git review; the Git executable owns repository interpretation.
+pub(super) mod process;
+use super::workspace_registry::{active_workspace_generation, with_root_activation};
+use crate::workspace::{resolve_existing_path_in_root, workspace_root};
 use regex::Regex;
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
-use crate::workspace::{resolve_existing_path, workspace_root};
-
-/// Lists the modified/added tracked paths (git status porcelain v1, M/A only).
-#[tauri::command]
-pub fn git_status_modified() -> Result<Value, String> {
-    let root = workspace_root()?;
-    let paths = modified_paths(&root);
-    serde_json::to_value(paths).map_err(|e| format!("Serialization error: {e}"))
+fn current_root(expected: Option<&str>, generation: u64) -> Result<PathBuf, String> {
+    with_root_activation(|| {
+        let root = workspace_root()?;
+        if active_workspace_generation() != generation
+            || expected.is_some_and(|expected| Path::new(expected) != root)
+        {
+            return Err("The workspace changed; refresh Git changes.".into());
+        }
+        Ok(root)
+    })
+}
+fn require_current(root: &Path, generation: u64) -> Result<(), String> {
+    current_root(root.to_str(), generation).map(|_| ())
 }
 
-/// Read-only hunk-level diff for one modified/added working-tree path.
 #[tauri::command]
-pub fn git_diff_hunks(file_path: String) -> Result<Value, String> {
-    let root = workspace_root()?;
+pub async fn git_status_modified(workspace_path: Option<String>) -> Result<Value, String> {
+    let generation = active_workspace_generation();
+    super::blocking::run(move || {
+        let root = current_root(workspace_path.as_deref(), generation)?;
+        let result = list_modified_in_root(&root);
+        require_current(&root, generation)?;
+        result
+    })
+    .await
+}
+fn list_modified_in_root(root: &Path) -> Result<Value, String> {
+    serde_json::to_value(modified_paths(root, Instant::now() + process::TIMEOUT)?)
+        .map_err(|_| "Git changes could not be decoded.".into())
+}
 
-    // Extract: the path must be a known modified/added working-tree file.
-    let paths = modified_paths(&root);
-    if !paths.iter().any(|p| p == &file_path) {
-        return Ok(json!({
-            "kind": "unavailable",
-            "reason": format!("not a modified working-tree file: {file_path}")
-        }));
-    }
-
-    // Delegate: read-only diff for exactly this path (no working-tree writes).
-    let output = Command::new("git")
-        .args(["diff", "--no-ext-diff", "--unified=3", "--", &file_path])
-        .current_dir(&root)
-        .output();
-    let text = match output {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).into_owned()
-        }
-        _ => {
-            return Ok(json!({
-                "kind": "unavailable",
-                "reason": format!("git diff failed for {file_path}")
-            }));
-        }
+#[tauri::command]
+pub async fn git_diff_hunks(
+    file_path: String,
+    workspace_path: Option<String>,
+) -> Result<Value, String> {
+    let generation = active_workspace_generation();
+    super::blocking::run(move || {
+        let root = current_root(workspace_path.as_deref(), generation)?;
+        let result = diff_in_root(&root, &file_path);
+        require_current(&root, generation)?;
+        result
+    })
+    .await
+}
+fn unavailable(reason: impl Into<String>) -> Value {
+    json!({"kind":"unavailable", "reason": reason.into()})
+}
+fn diff_in_root(root: &Path, file_path: &str) -> Result<Value, String> {
+    let deadline = Instant::now() + process::TIMEOUT;
+    let paths = match modified_paths(root, deadline) {
+        Ok(paths) => paths,
+        Err(error) => return Ok(unavailable(error)),
     };
-
+    if !paths.iter().any(|path| path == file_path) {
+        return Ok(unavailable(
+            "The selected file has no reviewable tracked changes.",
+        ));
+    }
+    let text = match process::git(
+        root,
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--unified=3",
+            "--",
+            file_path,
+        ],
+        deadline,
+    ) {
+        Ok(text) => text,
+        Err(error) => return Ok(unavailable(error)),
+    };
     let hunks = parse_hunks(&text);
     if hunks.is_empty() {
-        return Ok(json!({
-            "kind": "unavailable",
-            "reason": format!("no hunks available for {file_path}")
-        }));
+        return Ok(unavailable(
+            "No unstaged text changes are available for this file.",
+        ));
     }
-
-    // Range: union of newStart..newStart+newLines-1 across all hunks.
-    let mut range_start = u32::MAX;
-    let mut range_end = 0u32;
-    for hunk in &hunks {
-        let new_start = hunk["newStart"].as_u64().unwrap_or(1) as u32;
-        let new_lines = hunk["newLines"].as_u64().unwrap_or(1) as u32;
-        let hunk_end = new_start
-            .saturating_add(new_lines)
-            .saturating_sub(1);
-        if new_start < range_start {
-            range_start = new_start;
-        }
-        if hunk_end > range_end {
-            range_end = hunk_end;
-        }
-    }
-
-    Ok(json!({
-        "kind": "ok",
-        "diff": {
-            "path": file_path,
-            "hunks": hunks,
-            "range": {
-                "path": file_path,
-                "startLine": range_start,
-                "endLine": range_end
-            },
-            "readOnly": true
-        }
-    }))
-}
-
-/// Resolves an existing workspace path and reports the exact requested range.
-/// Performs no write: it only confirms what the editor port asks to open.
-#[tauri::command]
-pub fn editor_open_range(path: String, start_line: u32, end_line: u32) -> Result<Value, String> {
-    let resolved = resolve_existing_path(&path)?;
-    if !resolved.is_file() || start_line == 0 || end_line < start_line {
-        return Ok(json!({
-            "kind": "unavailable",
-            "reason": format!(
-                "cannot open range {start_line}..{end_line} in {path}: not a file or invalid range"
+    let start = hunks
+        .iter()
+        .filter_map(|h| h["newStart"].as_u64())
+        .min()
+        .unwrap_or(1)
+        .max(1);
+    let end = hunks
+        .iter()
+        .filter_map(|h| {
+            Some(
+                h["newStart"]
+                    .as_u64()?
+                    .saturating_add(h["newLines"].as_u64()?.saturating_sub(1))
+                    .max(1),
             )
-        }));
-    }
-    Ok(json!({
-        "path": resolved.to_string_lossy(),
-        "startLine": start_line,
-        "endLine": end_line
-    }))
+        })
+        .max()
+        .unwrap_or(start);
+    Ok(
+        json!({"kind":"ok", "diff":{"path":file_path,"hunks":hunks,"range":{"path":file_path,"startLine":start,"endLine":end},"readOnly":true}}),
+    )
 }
 
-/// Runs `git status --porcelain=v1` in `root` and returns the M/A paths.
-/// On process failure it returns an empty list (Ok(json!([])) semantics).
-fn modified_paths(root: &Path) -> Vec<String> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain=v1"])
-        .current_dir(root)
-        .output();
-    match output {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<String> = stdout.lines().map(|s| s.to_owned()).collect();
-            parse_status(&lines)
+#[tauri::command]
+pub async fn editor_open_range(
+    path: String,
+    start_line: u32,
+    end_line: u32,
+    workspace_path: Option<String>,
+) -> Result<Value, String> {
+    let generation = active_workspace_generation();
+    super::blocking::run(move || {
+        let root = current_root(workspace_path.as_deref(), generation)?;
+        let resolved = resolve_existing_path_in_root(&root, &path)?;
+        if !resolved.is_file() || start_line == 0 || end_line < start_line {
+            return Ok(unavailable("The source range is unavailable."));
         }
-        Err(_) => Vec::new(),
-    }
+        require_current(&root, generation)?;
+        Ok(json!({"path":resolved.to_string_lossy(),"startLine":start_line,"endLine":end_line}))
+    })
+    .await
 }
 
-/// Pure parser: keeps porcelain-v1 lines whose first two status columns
-/// contain M or A (skips `??`, `D`, and renames), then trims the path and
-/// keeps the destination after ` -> `.
-fn parse_status(paths: &[String]) -> Vec<String> {
-    let mut kept = Vec::new();
-    for line in paths {
-        let chars: Vec<char> = line.chars().collect();
-        if chars.len() < 3 {
+fn modified_paths(root: &Path, deadline: Instant) -> Result<Vec<String>, String> {
+    let prefix = process::git(root, &["rev-parse", "--show-prefix"], deadline)?;
+    let prefix = prefix.strip_suffix('\n').unwrap_or(&prefix);
+    let status = process::git(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+            "--",
+            ".",
+        ],
+        deadline,
+    )?;
+    parse_status(&status, prefix)
+}
+fn parse_status(status: &str, prefix: &str) -> Result<Vec<String>, String> {
+    if !status.is_empty() && !status.ends_with('\0') {
+        return Err("Git status output is incomplete.".into());
+    }
+    let mut records = status.split_terminator('\0');
+    let mut paths = Vec::new();
+    while let Some(record) = records.next() {
+        let bytes = record.as_bytes();
+        if bytes.len() < 4
+            || bytes[2] != b' '
+            || !bytes[..2].iter().all(|c| b" MADRCU?!T".contains(c))
+        {
+            return Err("Git status output is malformed.".into());
+        }
+        let code = &bytes[..2];
+        if code.iter().any(|c| matches!(c, b'R' | b'C')) && records.next().is_none() {
+            return Err("Git status output is incomplete.".into());
+        }
+        if !code.iter().any(|c| matches!(c, b'M' | b'A')) || code.contains(&b'D') {
             continue;
         }
-        let x = chars[0];
-        let y = chars[1];
-        if !((x == 'M' || x == 'A') || (y == 'M' || y == 'A')) {
-            continue;
-        }
-        let mut path = line.get(3..).unwrap_or("").trim().to_string();
-        if let Some(arrow) = path.find(" -> ") {
-            path = path.get(arrow + 4..).unwrap_or("").trim().to_string();
-        }
+        let path = record[3..]
+            .strip_prefix(prefix)
+            .ok_or("Git returned a path outside this workspace.")?;
         if path.is_empty() {
             continue;
         }
-        kept.push(path);
+        paths.push(path.to_owned());
     }
-    kept
+    Ok(paths)
 }
 
 /// Pure parser: splits unified-diff text into hunks. Omitted counts default
 /// to 1; each hunk carries old/new start, old/new count, and body text until
 /// the next hunk header.
 fn parse_hunks(text: &str) -> Vec<Value> {
-    let re = Regex::new(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").unwrap();
+    let re = Regex::new(r"(?m)^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@[^\n]*\n?").unwrap();
     let captures: Vec<regex::Captures> = re.captures_iter(text).collect();
     let mut hunks = Vec::new();
     for (idx, caps) in captures.iter().enumerate() {
@@ -203,29 +221,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_status_keeps_only_ma_lines() {
-        let lines = vec![
-            " M src/lib/git.ts".to_string(),
-            "M  src/a.rs".to_string(),
-            "MM src/b.rs".to_string(),
-            "AM src/c.rs".to_string(),
-            "?? untracked/".to_string(),
-            " D deleted.rs".to_string(),
-            "R  old.txt -> new.txt".to_string(),
-            "!! ignored/".to_string(),
-        ];
-        let paths = parse_status(&lines);
+    fn status_records_preserve_literal_paths_and_skip_rename_sources() {
+        let status = " M src/lib.ts\0AM old -> new.java\0 D removed.java\0RM renamed.java\0old.java\0 M last.java\0";
         assert_eq!(
-            paths,
-            vec!["src/lib/git.ts", "src/a.rs", "src/b.rs", "src/c.rs"]
+            parse_status(status, "").unwrap(),
+            vec!["src/lib.ts", "old -> new.java", "renamed.java", "last.java"]
         );
-    }
-
-    #[test]
-    fn parse_status_keeps_destination_after_arrow() {
-        let lines = vec!["A  old.txt -> new.txt".to_string()];
-        let paths = parse_status(&lines);
-        assert_eq!(paths, vec!["new.txt"]);
+        assert!(parse_status("bad", "").is_err());
     }
 
     #[test]
@@ -263,3 +265,6 @@ index abc..def 100644
         assert!(parse_hunks(text).is_empty());
     }
 }
+
+#[cfg(all(test, unix))]
+mod git_integration_tests;

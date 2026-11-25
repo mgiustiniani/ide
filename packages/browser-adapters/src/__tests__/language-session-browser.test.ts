@@ -14,8 +14,15 @@ const ALL_FALSE_CAPABILITIES = {
   definition: false,
   references: false,
   symbols: false,
+  documentSymbols: false,
+  documentHighlights: false,
+  implementation: false,
+  callHierarchy: false,
+  workspaceSymbols: false,
+  semanticTokens: false,
   codeActions: false,
   formatting: false,
+  rangeFormatting: false,
   rename: false,
   hierarchy: false,
 };
@@ -48,7 +55,9 @@ describe("BrowserLanguageSessionAdapter", () => {
   it("rejects start and restart instead of simulating lifecycle success", async () => {
     const adapter = new BrowserLanguageSessionAdapter();
 
-    await expect(adapter.start({ workspaceId: "workspace-1" })).rejects.toEqual(
+    await expect(
+      adapter.start({ workspaceId: "workspace-1", gradleImportEnabled: false }),
+    ).rejects.toEqual(
       expect.objectContaining({
         name: "BrowserLanguageSessionUnavailableError",
         code: "BROWSER_LANGUAGE_SESSION_UNAVAILABLE",
@@ -56,7 +65,7 @@ describe("BrowserLanguageSessionAdapter", () => {
       }),
     );
     await expect(
-      adapter.restart({ workspaceId: "workspace-1", generation: 4 }),
+      adapter.restart({ workspaceId: "workspace-1", generation: 4, gradleImportEnabled: false }),
     ).rejects.toBeInstanceOf(BrowserLanguageSessionUnavailableError);
   });
 

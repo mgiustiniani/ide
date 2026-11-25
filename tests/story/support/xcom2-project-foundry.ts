@@ -1531,7 +1531,10 @@ export class Xcom2ProjectFoundryHarness {
     );
     const forbidden = /(?:process|shell|terminal|git|network|powershell|batch|execute|spawn)/iu;
     assert.deepEqual(
-      this.#tauriCalls.filter((call) => forbidden.test(call.command)),
+      this.#tauriCalls.filter(
+        (call) =>
+          call.command !== "get_workspace_terminal_capabilities" && forbidden.test(call.command),
+      ),
       [],
       `Production executable transcript: ${JSON.stringify(this.#tauriCalls)}`,
     );

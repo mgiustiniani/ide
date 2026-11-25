@@ -16,6 +16,13 @@ Given<StoryWorld>(
   },
 );
 
+Given<StoryWorld>(
+  "the workspace contains a nested Java file named {string}",
+  async function (filePath: string) {
+    await this.nativeDesktopFileOpenSession().createNestedJavaFixture(filePath);
+  },
+);
+
 Given<StoryWorld>("its unique exact logical content is:", async function (content: string) {
   await this.nativeDesktopFileOpenSession().setExactFixtureContent(content);
 });
@@ -47,6 +54,24 @@ Then<StoryWorld>(
 When<StoryWorld>("the person clicks that file item", async function () {
   await this.nativeDesktopFileOpenSession().clickFileItem();
 });
+
+When<StoryWorld>("the person opens Go to File with Ctrl+P", async function () {
+  await this.nativeDesktopFileOpenSession().openGoToFile();
+});
+
+When<StoryWorld>(
+  "the person searches Quick Open for {string} and expects {string}",
+  async function (query: string, filePath: string) {
+    await this.nativeDesktopFileOpenSession().searchQuickOpen(query, filePath);
+  },
+);
+
+When<StoryWorld>(
+  "the person opens the Quick Open result {string}",
+  async function (filePath: string) {
+    await this.nativeDesktopFileOpenSession().selectQuickOpenResult(filePath);
+  },
+);
 
 Then<StoryWorld>(
   "within {int} seconds the selected path is exactly the sandboxed workspace path for {string}",

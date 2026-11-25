@@ -5,7 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
+import { FileTree as RealFileTree } from "../../../../packages/ui/src/components/FileTree/FileTree";
 import {
   XCOM2_PROJECT_FOUNDRY_APPLY_DESTINATION_PRESENT_PRESENTATION,
   XCOM2_PROJECT_FOUNDRY_APPLY_UNAVAILABLE_PRESENTATION,
@@ -68,6 +69,7 @@ const testHarness = vi.hoisted(() => {
     setLeftSidebarWidth: vi.fn(),
     setBottomPanelHeight: vi.fn(),
     toggleVisibility: vi.fn(),
+    setVisibility: vi.fn(),
     setActivePanel: vi.fn(),
   });
 
@@ -79,6 +81,7 @@ const testHarness = vi.hoisted(() => {
     harness.fileTreeViewModel = null;
     harness.fileTreeStore = null;
     harness.useRealFileTree = false;
+    harness.useRealFileTreeComponent = false;
     harness.editorViewModel = null;
     harness.terminalViewModel = null;
     harness.restoreSessionPromise = null;
@@ -154,6 +157,11 @@ const testHarness = vi.hoisted(() => {
       provider: "jdt-ls",
       workspaceId: "workspace-one",
       generation: 3,
+      gradleImportEnabled: false,
+      gradleSettingsConfigured: false,
+      projectPath: "",
+      activeMavenProfiles: [],
+      inactiveMavenProfiles: [],
       capabilities: {
         documentSync: false,
         diagnostics: false,
@@ -167,6 +175,7 @@ const testHarness = vi.hoisted(() => {
         formatting: false,
         rename: false,
         hierarchy: false,
+        semanticTokens: false,
       },
       checkedAt: "2026-07-11T00:00:00.000Z",
     };
@@ -336,6 +345,7 @@ const testHarness = vi.hoisted(() => {
     harness.javaRefactoringApplyResult = null;
     harness.latestJavaRefactoringDialogProps = null;
     harness.latestPanelLayoutProps = null;
+    harness.latestCommandPaletteCommands = [];
     harness.latestProjectFoundryDialogProps = null;
     harness.latestSemanticSymbolSearchProps = null;
     harness.latestSettingsPanelDiagnosticPresentation = null;
@@ -432,6 +442,7 @@ function enableExternalJavaImport() {
       targetDirectory: true,
       preview: true,
       apply: true,
+      rollback: true,
     },
   };
   testHarness.externalJavaPlan = (request: any) => externalJavaPlan(request);
@@ -480,6 +491,20 @@ function javaRefactoringPreview(request: any, overrides: Record<string, any> = {
 }
 
 function enableGeneralJavaRefactoring() {
+  const languageKernel = testHarness.externalJavaCapabilities.languageKernel;
+  const runtime = {
+    executionMode: "in-process",
+    supportsTimeout: true,
+    supportsCancellation: true,
+    usesWorkspaceOverlay: false,
+    recordsProcessProvenance: true,
+    limits: {
+      requestTimeoutMillis: null,
+      maxInputBytes: null,
+      maxOutputBytes: null,
+      maxProcesses: null,
+    },
+  };
   testHarness.externalJavaCapabilities = {
     ...testHarness.externalJavaCapabilities,
     generalRefactoring: {
@@ -490,6 +515,32 @@ function enableGeneralJavaRefactoring() {
       rollback: true,
       discard: true,
       stability: "preview",
+    },
+    languageKernel: {
+      ...languageKernel,
+      schema: {
+        ...languageKernel.schema,
+        adapters: languageKernel.schema.adapters.map((adapter: any) =>
+          adapter.languageId === "java"
+            ? {
+                ...adapter,
+                runtime,
+                capabilities: [
+                  ...adapter.capabilities,
+                  {
+                    operation: "renameClass",
+                    stability: "stable",
+                    evidence: "compiler",
+                    mutationAuthority: "managed-stable",
+                    backend: adapter.backend,
+                    runtime,
+                    extensions: [],
+                  },
+                ],
+              }
+            : adapter,
+        ),
+      },
     },
   };
   testHarness.javaRefactoringPreview = (request: any) => javaRefactoringPreview(request);
@@ -542,9 +593,11 @@ function xcom2Transaction(overrides: Record<string, any> = {}) {
 // Mocks: Tauri adapters depend on @tauri-apps/api which is unavailable in
 // a jsdom environment, so we mock the entire module.
 // ---------------------------------------------------------------------------
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue({}),
-}));
+vi.mock("@tauri-apps/api/core", () => {
+  const invoke = vi.fn().mockResolvedValue({});
+  testHarness.nativeInvoke = invoke;
+  return { invoke };
+});
 
 vi.mock("@tauri-apps/api/process", () => ({
   exit: vi.fn(),
@@ -558,6 +611,12 @@ vi.mock("@ide/tauri-adapters", () => {
     createFolder: vi.fn().mockResolvedValue([]),
     delete: vi.fn().mockResolvedValue([]),
     rename: vi.fn().mockResolvedValue([]),
+    searchFiles: vi.fn().mockResolvedValue({
+      workspaceGeneration: 1,
+      files: [],
+      truncated: false,
+      partial: false,
+    }),
     onFileSelect: vi.fn().mockReturnValue(vi.fn()),
   };
   testHarness.fileTreeAdapter = fileTreeAdapter;
@@ -574,6 +633,14 @@ vi.mock("@ide/tauri-adapters", () => {
   };
 
   const terminalAdapter = {
+    capabilities: vi.fn().mockResolvedValue({
+      workspaceId: "test",
+      generation: 1,
+      available: false,
+      defaultShell: null,
+      reason: "No native terminal in this harness.",
+    }),
+    close: vi.fn().mockResolvedValue(undefined),
     executeCommand: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     onOutput: vi.fn().mockReturnValue(vi.fn()),
@@ -802,15 +869,27 @@ vi.mock("@ide/tauri-adapters", () => {
     getStatus: vi.fn(({ workspaceId }: any) =>
       Promise.resolve({ ...testHarness.languageServiceStatus, workspaceId }),
     ),
-    start: vi.fn(({ workspaceId }: any) => {
-      testHarness.languageServiceStatus = {
-        ...testHarness.languageServiceStatus,
+    start: vi.fn(
+      ({
         workspaceId,
-        state: "ready",
-        generation: testHarness.languageServiceStatus.generation + 1,
-      };
-      return Promise.resolve(testHarness.languageServiceStatus);
-    }),
+        gradleImportEnabled,
+        projectPath,
+        activeMavenProfiles,
+        inactiveMavenProfiles,
+      }: any) => {
+        testHarness.languageServiceStatus = {
+          ...testHarness.languageServiceStatus,
+          workspaceId,
+          state: "ready",
+          gradleImportEnabled,
+          projectPath,
+          activeMavenProfiles,
+          inactiveMavenProfiles,
+          generation: testHarness.languageServiceStatus.generation + 1,
+        };
+        return Promise.resolve(testHarness.languageServiceStatus);
+      },
+    ),
     stop: vi.fn(({ workspaceId }: any) => {
       const status = { ...testHarness.languageServiceStatus, workspaceId, state: "stopped" };
       if (workspaceId === testHarness.languageServiceStatus.workspaceId) {
@@ -818,15 +897,27 @@ vi.mock("@ide/tauri-adapters", () => {
       }
       return Promise.resolve(status);
     }),
-    restart: vi.fn(({ workspaceId }: any) => {
-      testHarness.languageServiceStatus = {
-        ...testHarness.languageServiceStatus,
+    restart: vi.fn(
+      ({
         workspaceId,
-        state: "ready",
-        generation: testHarness.languageServiceStatus.generation + 1,
-      };
-      return Promise.resolve(testHarness.languageServiceStatus);
-    }),
+        gradleImportEnabled,
+        projectPath,
+        activeMavenProfiles,
+        inactiveMavenProfiles,
+      }: any) => {
+        testHarness.languageServiceStatus = {
+          ...testHarness.languageServiceStatus,
+          workspaceId,
+          state: "ready",
+          gradleImportEnabled,
+          projectPath,
+          activeMavenProfiles,
+          inactiveMavenProfiles,
+          generation: testHarness.languageServiceStatus.generation + 1,
+        };
+        return Promise.resolve(testHarness.languageServiceStatus);
+      },
+    ),
     didOpen: vi.fn().mockResolvedValue(undefined),
     didChange: vi.fn().mockResolvedValue(undefined),
     didSave: vi.fn().mockResolvedValue(undefined),
@@ -1041,6 +1132,7 @@ vi.mock("@ide/tauri-adapters", () => {
     TauriAiAgentAdapter: vi.fn().mockImplementation(() => aiAgentAdapter),
     TauriPiWorkspaceAgentAdapter: vi.fn().mockImplementation(() => piWorkspaceAgentAdapter),
     createTauriAdapters: vi.fn(() => ({
+      gitWorkspaceAdapter: { inspect: vi.fn(async () => ({ activation: 7, revision: "a".repeat(64), head: "b".repeat(40), branch: "main", localBranches: [{ name: "main", head: "b".repeat(40) }], repositoryRoot: "/workspace", files: [], commits: [], authorName: "Fixture", authorEmail: "fixture@example.invalid", commitUnavailableReason: null })), review: vi.fn(), mutate: vi.fn() },
       fileTreeAdapter,
       editorAdapter,
       terminalAdapter,
@@ -1052,6 +1144,17 @@ vi.mock("@ide/tauri-adapters", () => {
       languageSessionAdapter,
       documentSyncAdapter: languageSessionAdapter,
       javaIntelligenceAdapter,
+      javaLspRefactoringAdapter: {
+        getCapabilities: vi.fn(async () => ({
+          available: false,
+          serverVersion: null,
+          changeVisibility: false,
+          extractParameter: false,
+          extractSuperclass: false,
+          detail: "mock unavailable",
+        })),
+        preview: vi.fn(),
+      },
       xcom2ModuleConfigurationAdapter,
       xcom2ModuleScannerAdapter,
       xcom2SetupAdapter,
@@ -1074,8 +1177,27 @@ vi.mock("@ide/tauri-adapters", () => {
 // ---------------------------------------------------------------------------
 // Mock UI components that may rely on CSS or external assets
 // ---------------------------------------------------------------------------
-vi.mock("@ide/ui", () => ({
+vi.mock("@ide/ui", async () => ({
   Icon: ({ type }: any) => <span data-testid={`icon-${type}`} />,
+  CommandPalette: ({ commands }: { commands: readonly any[] }) => {
+    testHarness.latestCommandPaletteCommands = commands;
+    return null;
+  },
+  JavaProjectTextSearchPanel: ({
+    focusRequest = 0,
+    onFocusRequestHandled,
+  }: {
+    focusRequest?: number;
+    onFocusRequestHandled?(request: number): void;
+  }) => {
+    const input = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+      if (focusRequest <= 0) return;
+      input.current?.focus();
+      onFocusRequestHandled?.(focusRequest);
+    }, [focusRequest, onFocusRequestHandled]);
+    return <input ref={input} placeholder="Text to find in project" />;
+  },
   PanelLayout: ({
     leftSidebar,
     explorerActivityLabel = "Explorer",
@@ -1110,8 +1232,7 @@ vi.mock("@ide/ui", () => ({
       activeActivity,
       activityContributions: Object.freeze(
         activityContributions.filter(
-          (candidate: any) =>
-            candidate.id !== "pi-agent" && candidate.id !== "java-intelligence",
+          (candidate: any) => candidate.id !== "pi-agent" && candidate.id !== "java-intelligence" && candidate.id !== "java-structure" && candidate.id !== "git-source-control",
         ),
       ),
       allActivityContributions: activityContributions,
@@ -1431,14 +1552,18 @@ vi.mock("@ide/ui", () => ({
       {children}
     </div>
   ),
-  FileTree: ({
-    onSelect,
-    selectedDirectoryPath,
-    onSelectDirectory,
-    onFocusDirectory,
-    onPasteJavaClass,
-  }: any) => {
+  FileTree: (props: any) => {
     const [menuOpen, setMenuOpen] = useState(false);
+    if (testHarness.useRealFileTreeComponent) return <RealFileTree {...props} />;
+    const {
+      onSelect,
+      selectedDirectoryPath,
+      onSelectDirectory,
+      onFocusDirectory,
+      onPasteJavaClass,
+      onCreateFile,
+      onCreateFolder,
+    } = props;
     const directory = { id: "folder-src", name: "src", path: "src", type: "folder" };
     const otherDirectory = { id: "folder-lib", name: "lib", path: "lib", type: "folder" };
     return (
@@ -1479,15 +1604,35 @@ vi.mock("@ide/ui", () => ({
           lib
         </button>
         {menuOpen ? (
-          <button
-            type="button"
-            onClick={() => {
-              onPasteJavaClass?.(directory);
-              setMenuOpen(false);
-            }}
-          >
-            Paste Java Class from Clipboard
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                void onCreateFile?.(directory, "NewType.java");
+                setMenuOpen(false);
+              }}
+            >
+              New File…
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void onCreateFolder?.(directory, "example");
+                setMenuOpen(false);
+              }}
+            >
+              New Folder…
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onPasteJavaClass?.(directory);
+                setMenuOpen(false);
+              }}
+            >
+              Paste Java Class from Clipboard
+            </button>
+          </>
         ) : null}
         <button
           type="button"
@@ -1563,18 +1708,21 @@ vi.mock("@ide/ui", () => ({
         <span data-testid="java-refactor-target-path">{dialog.target.path}</span>
         <span>{dialog.selection?.workspaceId ?? "Not authorized"}</span>
         <span>{dialog.message ?? ""}</span>
-        <pre data-testid="java-refactor-plan">
-          {dialog.plan ? JSON.stringify(dialog.plan) : ""}
-        </pre>
+        <pre data-testid="java-refactor-plan">{dialog.plan ? JSON.stringify(dialog.plan) : ""}</pre>
         <span>{dialog.result?.transactionId ?? ""}</span>
         <span>{dialog.rollback?.transactionId ?? ""}</span>
         <button type="button" onClick={() => props.onSetOperation("move-class")}>
           Set operation
         </button>
-        <button type="button" onClick={() => props.onSetTarget({ ...dialog.target, path: "b.java" })}>
+        <button
+          type="button"
+          onClick={() => props.onSetTarget({ ...dialog.target, path: "b.java" })}
+        >
           Set target
         </button>
-        <button type="button" onClick={props.onPreview}>Preview</button>
+        <button type="button" onClick={props.onPreview}>
+          Preview
+        </button>
         <button
           type="button"
           disabled={dialog.status !== "preview" || !dialog.plan}
@@ -1674,15 +1822,7 @@ vi.mock("@ide/ui", () => ({
       </div>
     );
   },
-  ProblemsPanel: ({ items, onNavigate }: any) => (
-    <div data-testid="ProblemsPanel" data-count={items.length}>
-      {items.map((item: any) => (
-        <button key={item.id} type="button" onClick={() => onNavigate(item.filePath, item.range)}>
-          {item.message}
-        </button>
-      ))}
-    </div>
-  ),
+  ProblemsPanel: (await import("../../../../packages/ui/src/components/ProblemsPanel/ProblemsPanel")).ProblemsPanel,
   Terminal: ({ commandHistory, onClear }: any) => (
     <div
       data-testid="Terminal"
@@ -1787,6 +1927,7 @@ vi.mock("@ide/ui", () => ({
     </div>
   ),
   JavaIntelligencePanel: ({
+    focusWorkspaceSymbolSearch,
     status,
     isChecking,
     error,
@@ -1824,6 +1965,7 @@ vi.mock("@ide/ui", () => ({
         data-language-generation={String(languageServiceStatus?.generation ?? "")}
         data-document-sync={String(languageServiceStatus?.capabilities?.documentSync ?? false)}
         data-language-refreshing={String(isLanguageServiceRefreshing)}
+        data-symbol-search-focus={String(focusWorkspaceSymbolSearch ?? 0)}
       >
         <div>{status?.version ? `RefactorKit ${status.version}` : "RefactorKit unavailable"}</div>
         <div role="status">JDT LS {languageServiceStatus?.state ?? "not checked"}</div>
@@ -2295,6 +2437,7 @@ vi.mock("@ide/web-core/view-models", async () => {
           if (testHarness.createFileError) throw testHarness.createFileError;
           return testHarness.createFilePath ?? (parentPath ? `${parentPath}/${name}` : name);
         }),
+        createFolder: vi.fn(async () => undefined),
         subscribeToFileSelection: vi.fn().mockReturnValue(vi.fn()),
         openFiles: [],
       };
@@ -2302,7 +2445,17 @@ vi.mock("@ide/web-core/view-models", async () => {
       return instance;
     }),
     EditorViewModel: vi.fn().mockImplementation(() => {
+      const lifetimes = new Map<string, symbol>();
       const instance = {
+        reviewSavedBuffers: vi.fn(() => () => undefined),
+        beginExternalWrite: vi.fn(() => () => undefined),
+        refreshCleanBuffers: vi.fn(async () => ({ files: [], warnings: [] })),
+        bufferLifetime: vi.fn((filePath: string) => {
+          if (!testHarness.editorState.tabs.some((tab: any) => tab.filePath === filePath))
+            return undefined;
+          if (!lifetimes.has(filePath)) lifetimes.set(filePath, Symbol());
+          return lifetimes.get(filePath);
+        }),
         openIntent: 0,
         openFile: vi.fn(async (filePath: string) => {
           testHarness.openFileObservedEditorText =
@@ -2341,9 +2494,17 @@ vi.mock("@ide/web-core/view-models", async () => {
             tab.filePath === filePath ? { ...tab, isDirty: true } : tab,
           );
         }),
-        saveFile: vi.fn().mockResolvedValue(undefined),
+        saveFile: vi.fn(async (filePath: string) => {
+          testHarness.editorState.tabs = testHarness.editorState.tabs.map((tab: any) =>
+            tab.filePath === filePath ? { ...tab, isDirty: false } : tab,
+          );
+        }),
         closeFile: vi.fn().mockResolvedValue(undefined),
+        cursorPosition: vi.fn().mockReturnValue(null),
         cancelPendingOpen: vi.fn(() => {
+          instance.openIntent += 1;
+        }),
+        invalidateWorkspaceOperations: vi.fn(() => {
           instance.openIntent += 1;
         }),
         restoreSession: vi.fn(() => {
@@ -2391,6 +2552,33 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ["New File…", "Create file"],
+    ["New Folder…", "Create folder"],
+    ["New Java Type…", "Create Java type"],
+  ])("retires the %s dialog when switching workspaces", async (action, dialogName) => {
+    testHarness.useRealFileTreeComponent = true;
+    testHarness.fileTreeState.expandedPaths = new Set(["src"]);
+    const { App } = await import("../App");
+    const rendered = render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+    fireEvent.contextMenu(screen.getByText("src"));
+    fireEvent.click(screen.getByRole("menuitem", { name: action }));
+    const dialog = screen.getByRole("dialog", { name: dialogName });
+    fireEvent.change(within(dialog).getAllByRole("textbox")[0], {
+      target: { value: "PendingName" },
+    });
+    rendered.rerender(<App />);
+    expect(
+      within(screen.getByRole("dialog", { name: dialogName })).getByDisplayValue("PendingName"),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("option", { name: "Workspace Two" }));
+    await screen.findByText("Workspace: Workspace Two");
+    expect(screen.queryByRole("dialog", { name: dialogName })).toBeNull();
+    expect(testHarness.fileTreeViewModel.createFile).not.toHaveBeenCalled();
+    expect(testHarness.fileTreeViewModel.createFolder).not.toHaveBeenCalled();
+  }, 15_000);
+
   it("renders the desktop shell with Tauri adapters", async () => {
     // Lazy import so mocks are applied first.
     const { App } = await import("../App");
@@ -2406,7 +2594,7 @@ describe("App", () => {
     // The three core UI sections should render.
     expect(screen.getByTestId("LeftSidebar")).toBeDefined();
     expect(screen.getByTestId("Editor")).toBeDefined();
-    expect(screen.getByTestId("Terminal")).toBeDefined();
+    expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeDefined();
 
     // Desktop composition should pass live getState functions and expose new UI wiring.
     const viewModels = await import("@ide/web-core/view-models");
@@ -2414,11 +2602,11 @@ describe("App", () => {
       expect.any(Function),
     );
     expect(vi.mocked(viewModels.EditorViewModel).mock.calls[0]?.[0]).toEqual(expect.any(Function));
-    expect(vi.mocked(viewModels.TerminalViewModel).mock.calls[0]?.[0]).toEqual(
-      expect.any(Function),
-    );
+
     expect(screen.getByTestId("Editor").dataset.hasTabClose).toBe("true");
-    expect(screen.getByTestId("Terminal").dataset.hasClear).toBe("true");
+    expect(
+      (screen.getByRole("button", { name: "New terminal" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
   });
 
@@ -2964,6 +3152,35 @@ describe("App", () => {
     expect(screen.queryByTestId("SemanticSymbolSearchPanel")).toBeNull();
   });
 
+  it("opens RefactorKit Java project locations through workspace navigation", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    const contribution = testHarness.latestPanelLayoutProps.activityContributions.find(
+      (candidate: any) => candidate.id === "java-project-model",
+    );
+    expect(contribution.content.props.onNavigateLocation).toEqual(expect.any(Function));
+
+    act(() => {
+      contribution.content.props.onNavigateLocation({
+        path: "maven/app/src/main/java/pkg/Runner.java",
+        line: 6,
+        column: 1,
+      });
+    });
+
+    await waitFor(() => {
+      expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith(
+        "maven/app/src/main/java/pkg/Runner.java",
+      );
+      expect(screen.getByTestId("Editor").dataset.revealFilePath).toBe(
+        "maven/app/src/main/java/pkg/Runner.java",
+      );
+      expect(screen.getByTestId("Editor").dataset.revealLine).toBe("6");
+    });
+  });
+
   it("cold-mounts a persisted workspace only after authorization and promotes stale registry data", async () => {
     const authorization = createDeferred<any>();
     const lifecycle: string[] = [];
@@ -3172,7 +3389,9 @@ describe("App", () => {
       expect(testHarness.fileTreeViewModel.refreshDirectory).toHaveBeenCalledWith("src");
       expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith("src/Imported.java");
       expect(screen.getByText("tx-java-1")).toBeDefined();
-      expect(screen.getByRole("status").textContent).toContain("tx-java-1");
+      expect(screen.getByRole("status", { name: "Java import status" }).textContent).toContain(
+        "tx-java-1",
+      );
     });
     expect(testHarness.aiAgentAdapter.sendPrompt).not.toHaveBeenCalled();
     expect(testHarness.refactorKitAdapter.discardPlan).not.toHaveBeenCalled();
@@ -3526,22 +3745,24 @@ describe("App", () => {
     expect(testHarness.refactorKitAdapter.discardPlan).toHaveBeenCalledOnce();
   });
 
-  it("opens the Java Refactor dialog and reports general refactoring unavailable when not advertised", async () => {
+  it("opens the Java Refactor dialog and disables preview when the operation is not advertised", async () => {
     const { App } = await import("../App");
     render(<App />);
     await screen.findByText("Workspace: Workspace One");
 
     fireEvent.click(screen.getByRole("button", { name: "Java Refactor" }));
     await screen.findByRole("dialog", { name: "Java Refactor" });
-    expect(screen.getByRole("button", { name: "Preview" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-
-    await screen.findByText(/RefactorKit general Java refactoring is unavailable/);
+    expect((screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      screen.getByText(/This operation is unavailable for the current RefactorKit context/),
+    ).toBeDefined();
     expect(testHarness.refactorKitAdapter.previewRefactoring).not.toHaveBeenCalled();
     expect(testHarness.refactorKitAdapter.applyRefactoring).not.toHaveBeenCalled();
-    expect(
-      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it("previews read-only, applies the exact reviewed Java plan, and rolls back when advertised and transaction-bound", async () => {
@@ -3559,6 +3780,9 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Element identity"), {
       target: { value: "example.A" },
     });
+    fireEvent.change(screen.getByLabelText("New name"), {
+      target: { value: "Renamed" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
     await screen.findByText("Refactor example.A");
@@ -3569,6 +3793,9 @@ describe("App", () => {
       authority: { workspaceId: "workspace-one", workspaceGeneration: expect.any(Number) },
     });
 
+    const stopsBeforeApply = testHarness.nativeInvoke.mock.calls.filter(
+      ([command]: [string]) => command === "stop_refactorkit_java_project_context",
+    ).length;
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => {
       expect(testHarness.refactorKitAdapter.applyRefactoring).toHaveBeenCalledOnce();
@@ -3581,6 +3808,7 @@ describe("App", () => {
       authority: request.authority,
       selectionGeneration: request.selectionGeneration,
       requestId: request.requestId,
+      changeIntent: { operation: "rename-class", newName: "Renamed" },
       approval: {
         approvalId: `desktop-java-refactor-approval-${request.requestId}`,
         approvedPlanId: `plan-${request.requestId}`,
@@ -3590,6 +3818,13 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("tx-java-refactor-1")).toBeDefined();
       expect(document.body.textContent).toContain("applied successfully");
+    });
+    await waitFor(() => {
+      expect(
+        testHarness.nativeInvoke.mock.calls.filter(
+          ([command]: [string]) => command === "stop_refactorkit_java_project_context",
+        ),
+      ).toHaveLength(stopsBeforeApply);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Rollback" }));
@@ -3618,6 +3853,9 @@ describe("App", () => {
     });
     fireEvent.change(screen.getByLabelText("Element identity"), {
       target: { value: "example.A" },
+    });
+    fireEvent.change(screen.getByLabelText("New name"), {
+      target: { value: "Renamed" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     await screen.findByText("Refactor example.A");
@@ -3675,7 +3913,7 @@ describe("App", () => {
     expect(filesTab.getAttribute("aria-selected")).toBe("true");
     expect(agentTab.getAttribute("aria-selected")).toBe("false");
     expect(screen.getByTestId("FileTree")).toBeDefined();
-    expect(screen.getByTestId("Terminal")).toBeDefined();
+    expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeDefined();
     expect(screen.queryByRole("tab", { name: "AI Agent" })).toBeNull();
 
     fireEvent.click(agentTab);
@@ -3686,13 +3924,138 @@ describe("App", () => {
       expect(testHarness.piWorkspaceAgentAdapter.attach).toHaveBeenCalledOnce();
     });
     expect(screen.getByText("Native Pi TUI")).toBeDefined();
-    expect(screen.getByTestId("Terminal")).toBeDefined();
+    expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeDefined();
 
     fireEvent.click(filesTab);
     await waitFor(() => {
       expect(screen.getByTestId("FileTree")).toBeDefined();
       expect(testHarness.piWorkspaceAgentAdapter.detach).toHaveBeenCalledOnce();
     });
+  });
+
+  it("opens Java Run from the command palette", async () => {
+    testHarness.panelState.layout.visibility.leftSidebar.visible = false;
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    const command = testHarness.latestCommandPaletteCommands.find(
+      (item: { id: string }) => item.id === "java.execution.open",
+    );
+    if (!command) throw new Error("Java Run command is unavailable.");
+    expect(command).toMatchObject({ id: "java.execution.open", label: "Open Java Run" });
+    act(() => command.run());
+
+    expect(testHarness.panelState.setVisibility).toHaveBeenCalledWith("leftSidebar", true);
+    await waitFor(() => {
+      expect(testHarness.latestPanelLayoutProps.activeActivity).toBe("java-execution");
+    });
+  });
+
+  it("opens Git from the palette without invoking Git before explicit trust", async () => {
+    testHarness.panelState.layout.visibility.leftSidebar.visible = false;
+    const { App } = await import("../App"); render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+    const command = testHarness.latestCommandPaletteCommands.find((item: { id: string }) => item.id === "git.open-source-control");
+    expect(command).toBeDefined(); act(() => command.run());
+    expect(testHarness.panelState.setVisibility).toHaveBeenCalledWith("leftSidebar", true);
+    expect(await screen.findByRole("region", { name: "Git source control" })).toBeDefined();
+    expect((screen.getByRole("button", { name: "Refresh Git" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /I trust this repository/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Git" }));
+    expect(await screen.findByText("No changed files in this workspace.")).toBeDefined();
+  });
+
+  it("opens Java Structure from the palette and exposes its source synchronization requirement", async () => {
+    testHarness.panelState.layout.visibility.leftSidebar.visible = false;
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+    const command = testHarness.latestCommandPaletteCommands.find((item: { id: string }) => item.id === "java.show-file-structure");
+    expect(command).toBeDefined();
+    act(() => command.run());
+    expect(testHarness.panelState.setVisibility).toHaveBeenCalledWith("leftSidebar", true);
+    expect(await screen.findByRole("region", { name: "Java file structure" })).toBeDefined();
+    expect(screen.getByText("Open a workspace Java source file to view its structure.")).toBeDefined();
+    expect(testHarness.latestPanelLayoutProps.activeActivity).toBe("java-structure");
+  });
+
+  it("offers Go to File from the command palette and opens the native quick-open dialog with Ctrl+P", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    const command = testHarness.latestCommandPaletteCommands.find(
+      (item: { id: string }) => item.id === "workspace.go-to-file",
+    );
+    if (!command) throw new Error("Go to File command is unavailable.");
+    expect(command).toMatchObject({ id: "workspace.go-to-file", label: "Go to File" });
+    act(() => command.run());
+    expect(await screen.findByRole("dialog", { name: "Go to File" })).toBeDefined();
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Search workspace files" }), {
+      key: "Escape",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to File" })).toBeNull());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "p",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("dialog", { name: "Go to File" })).toBeDefined();
+  });
+
+  it("opens and focuses Java workspace-symbol search with Ctrl/Command+T", async () => {
+    testHarness.panelState.layout.visibility.leftSidebar.visible = false;
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "t",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => window.dispatchEvent(event));
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(testHarness.panelState.setVisibility).toHaveBeenCalledWith("leftSidebar", true);
+    await waitFor(() => {
+      expect(testHarness.latestPanelLayoutProps.activeActivity).toBe("java-intelligence");
+      expect(screen.getByTestId("JavaIntelligencePanel").dataset.symbolSearchFocus).toBe("1");
+    });
+  });
+
+  it("opens and focuses Java project text search with Ctrl/Command+Shift+F", async () => {
+    testHarness.panelState.layout.visibility.leftSidebar.visible = false;
+    const { App } = await import("../App");
+    render(<App />);
+    await screen.findByText("Workspace: Workspace One");
+
+    const event = new KeyboardEvent("keydown", {
+      key: "f",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => window.dispatchEvent(event));
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(testHarness.panelState.setVisibility).toHaveBeenCalledWith("leftSidebar", true);
+    await waitFor(() => {
+      expect(testHarness.latestPanelLayoutProps.activeActivity).toBe("java-project-model");
+      expect(document.activeElement).toBe(screen.getByPlaceholderText("Text to find in project"));
+    });
+
+    const searchInput = screen.getByPlaceholderText("Text to find in project");
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Java Project" }));
+    expect(document.activeElement).not.toBe(searchInput);
   });
 
   it.each([
@@ -3727,7 +4090,7 @@ describe("App", () => {
         testHarness.latestPanelLayoutProps.activityContributions.map(
           (candidate: any) => candidate.id,
         ),
-      ).toEqual(["java-project-model"]);
+      ).toEqual(["java-execution", "java-project-model"]);
     });
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
     expect(testHarness.latestSettingsPanelDiagnosticPresentation).toBeNull();
@@ -3754,11 +4117,12 @@ describe("App", () => {
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
 
     const contributions = testHarness.latestPanelLayoutProps.activityContributions;
-    expect(contributions).toHaveLength(2);
+    expect(contributions).toHaveLength(3);
     expect(Object.isFrozen(contributions)).toBe(true);
     expect(Object.isFrozen(contributions[0])).toBe(true);
     expect(contributions.map((candidate: any) => candidate.id)).toEqual([
       "xcom2-project",
+      "java-execution",
       "java-project-model",
     ]);
     expect(contributions[0]).toMatchObject({
@@ -3835,11 +4199,12 @@ describe("App", () => {
     expect(screen.queryByTestId("Xcom2ProjectRecognitionPanel")).toBeNull();
 
     const contributions = testHarness.latestPanelLayoutProps.activityContributions;
-    expect(contributions).toHaveLength(2);
+    expect(contributions).toHaveLength(3);
     expect(Object.isFrozen(contributions)).toBe(true);
     expect(Object.isFrozen(contributions[0])).toBe(true);
     expect(contributions.map((candidate: any) => candidate.id)).toEqual([
       "xcom2-project",
+      "java-execution",
       "java-project-model",
     ]);
     expect(contributions[0]).toMatchObject({
@@ -3916,7 +4281,7 @@ describe("App", () => {
       within(bottomTabList)
         .getAllByRole("tab")
         .map((tab) => tab.textContent),
-    ).toEqual(["Terminal"]);
+    ).toEqual(["Terminal", "HTTP Client", "Database"]);
     for (const label of ["XCOM 2 Project", "Build", "Problems", "Logs", "Language"]) {
       expect(within(bottomTabList).queryByRole("tab", { name: label })).toBeNull();
     }
@@ -4032,7 +4397,7 @@ describe("App", () => {
       testHarness.latestPanelLayoutProps.activityContributions.map(
         (candidate: any) => candidate.id,
       ),
-    ).toEqual(["java-project-model"]);
+    ).toEqual(["java-execution", "java-project-model"]);
     expect(Object.isFrozen(testHarness.latestPanelLayoutProps.activityContributions)).toBe(true);
     expect(screen.queryByRole("tab", { name: "XCOM 2 Project" })).toBeNull();
 
@@ -4143,7 +4508,7 @@ describe("App", () => {
       testHarness.latestPanelLayoutProps.activityContributions.map(
         (candidate: any) => candidate.id,
       ),
-    ).toEqual(["java-project-model"]);
+    ).toEqual(["java-execution", "java-project-model"]);
 
     await act(async () => {
       gate.resolve();
@@ -4188,7 +4553,7 @@ describe("App", () => {
         testHarness.latestPanelLayoutProps.activityContributions.map(
           (candidate: any) => candidate.id,
         ),
-      ).toEqual(["java-project-model"]);
+      ).toEqual(["java-execution", "java-project-model"]);
     });
 
     testHarness.xcom2ModuleConfiguration = {
@@ -5299,7 +5664,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create test file" }));
 
     await waitFor(() => {
-      expect(testHarness.fileTreeViewModel.createFile).toHaveBeenCalledWith("", "created.ts");
+      expect(testHarness.fileTreeViewModel.createFile).toHaveBeenCalledWith(
+        "",
+        "created.ts",
+        expect.any(Function),
+      );
       expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith("backend/exact-created.ts");
       expect(screen.getByTestId("Editor").dataset.filePath).toBe("backend/exact-created.ts");
     });
@@ -5323,9 +5692,51 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create test file" }));
 
     await waitFor(() => {
-      expect(testHarness.fileTreeViewModel.createFile).toHaveBeenCalledWith("src", "created.ts");
+      expect(testHarness.fileTreeViewModel.createFile).toHaveBeenCalledWith(
+        "src",
+        "created.ts",
+        expect.any(Function),
+      );
       expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith("src/server-created.ts");
     });
+  });
+
+  it("creates and opens a file from the FileTree context target", async () => {
+    testHarness.createFilePath = "src/NewType.java";
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    fireEvent.contextMenu(screen.getByTestId("directory-src"));
+    fireEvent.click(screen.getByRole("button", { name: "New File…" }));
+
+    await waitFor(() => {
+      expect(testHarness.fileTreeViewModel.createFile).toHaveBeenCalledWith(
+        "src",
+        "NewType.java",
+        expect.any(Function),
+      );
+      expect(testHarness.editorViewModel.openFile).toHaveBeenCalledWith("src/NewType.java");
+      expect(screen.getByTestId("Editor").dataset.filePath).toBe("src/NewType.java");
+    });
+  });
+
+  it("routes Java package creation from FileTree through the workspace guard", async () => {
+    const { App } = await import("../App");
+    render(<App />);
+
+    await screen.findByText("Workspace: Workspace One");
+    fireEvent.contextMenu(screen.getByTestId("directory-src"));
+    fireEvent.click(screen.getByRole("button", { name: "New Folder…" }));
+
+    await waitFor(() => {
+      expect(testHarness.fileTreeViewModel.createFolder).toHaveBeenCalledWith(
+        "src",
+        "example",
+        expect.any(Function),
+      );
+    });
+    expect(testHarness.editorViewModel.openFile).not.toHaveBeenCalled();
   });
 
   it("keeps the empty editor and surfaces create failures to the welcome form", async () => {
@@ -5367,7 +5778,10 @@ describe("App", () => {
 
     const switchedWorkspace = testHarness.workspaceRegistry.workspaces[1];
     switchDeferred.resolve(switchedWorkspace);
-    await waitFor(() => expect((workspaceTwo as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => {
+      expect(workspaceTwo.getAttribute("aria-selected")).toBe("true");
+      expect((screen.getByRole("option", { name: /Workspace One/ }) as HTMLButtonElement).disabled).toBe(false);
+    });
   });
 
   it("does not open a path returned after the workspace generation changes", async () => {
@@ -5915,6 +6329,7 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(screen.getByTestId("file-src-main-java"));
     await waitFor(() => expect(testHarness.languageSessionAdapter.didOpen).toHaveBeenCalled());
+    const openedVersion = testHarness.languageSessionAdapter.didOpen.mock.calls.at(-1)![0].document.version;
 
     const diagnostic = {
       range: { start: { line: 2, character: 4 }, end: { line: 2, character: 8 } },
@@ -5931,7 +6346,7 @@ describe("App", () => {
           workspaceId: "workspace-one",
           path: "src/Main.java",
           uri: "file:///workspace/one/src/Main.java",
-          version: 2,
+          version: openedVersion,
         },
         diagnostics: [diagnostic],
       }),
@@ -5958,7 +6373,7 @@ describe("App", () => {
           workspaceId: "workspace-one",
           path: "src/Main.java",
           uri: "file:///workspace/one/src/Main.java",
-          version: 1,
+          version: openedVersion - 1,
         },
         diagnostics: [],
       }),
@@ -5974,7 +6389,23 @@ describe("App", () => {
           workspaceId: "workspace-one",
           path: "src/Main.java",
           uri: "file:///workspace/one/src/Main.java",
-          version: 3,
+          version: openedVersion + 1,
+        },
+        diagnostics: [],
+      }),
+    );
+    expect(screen.getByTestId("Editor").dataset.diagnosticsCount).toBe("1");
+    act(() =>
+      testHarness.emitLanguageServiceEvent("workspace-one", {
+        type: "diagnostics",
+        workspaceId: "workspace-one",
+        generation: testHarness.languageServiceStatus.generation,
+        provider: "jdt-ls",
+        document: {
+          workspaceId: "workspace-one",
+          path: "src/Main.java",
+          uri: "file:///workspace/one/src/Main.java",
+          version: openedVersion,
         },
         diagnostics: [],
       }),

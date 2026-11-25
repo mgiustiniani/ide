@@ -75,6 +75,8 @@ export function Terminal({
   const historyIndexRef = useRef(-1);
   const historyRef = useRef(commandHistory);
   const currentInputRef = useRef(currentInput);
+  const activeSessionRef = useRef(isSessionActive);
+  activeSessionRef.current = isSessionActive;
   const onCommandRef = useRef(onCommand);
   const onInputChangeRef = useRef(onInputChange);
   const promptRef = useRef(`\x1b[32m$\x1b[0m `);
@@ -132,7 +134,7 @@ export function Terminal({
       allowTransparency: false,
       convertEol: true,
       // Enable input handling
-      disableStdin: false,
+      disableStdin: !isSessionActive,
     });
 
     const fitAddon = new FitAddon();
@@ -142,7 +144,7 @@ export function Terminal({
     fitAddon.fit();
 
     // Write initial prompt
-    term.write(promptRef.current);
+    if (isSessionActive) term.write(promptRef.current);
 
     // Track current input buffer
     let inputBuffer = "";
@@ -151,7 +153,7 @@ export function Terminal({
     term.onKey((e) => {
       const { domEvent } = e;
 
-      if (!domEvent) return;
+      if (!domEvent || !activeSessionRef.current) return;
 
       // Prevent default browser handling
       domEvent.preventDefault();
@@ -274,7 +276,7 @@ export function Terminal({
               : "";
       term.write(`${color}${lastOutput.text}\x1b[0m\r\n`);
       // Re-write prompt after output
-      term.write(promptRef.current);
+      if (activeSessionRef.current) term.write(promptRef.current);
     }
   }, [output]);
 
@@ -282,7 +284,7 @@ export function Terminal({
   const handleClear = useCallback(() => {
     if (terminalRef.current) {
       terminalRef.current.clear();
-      terminalRef.current.write(promptRef.current);
+      if (activeSessionRef.current) terminalRef.current.write(promptRef.current);
     }
     onClear?.();
   }, [onClear]);

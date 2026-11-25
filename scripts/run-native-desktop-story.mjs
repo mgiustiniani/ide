@@ -14,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { discoverCucumberSelection } from "./cucumber-selection.mjs";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -38,6 +39,254 @@ const supportedProfiles = new Set([
   "implementedDesktopTauriWebdriver",
   "desktopTauriWebdriver",
   "desktopFileOpenNativeGui",
+  "javaSourceFileCreationNativeGui",
+  "javaLargePackageAppImageNativeGui",
+  "javaCompilerAndSourceCreationAppImageNativeGui",
+  "desktopStartupResponsivenessNativeGui",
+  "editorRecoveryNativeGui",
+  "editorDiskComparisonNativeGui",
+  "editorExternalChangesNativeGui",
+  "editorRecoveryHistoryNativeGui",
+  "editorRecoveryFailuresNativeGui",
+  "editorRecoveryCapacityCorruptionNativeGui",
+  "editorStorageFullNativeGui",
+  "editorCloseGuardsNativeGui",
+  "javaExecutionNativeGui",
+  "javaFlightRecorderNativeGui",
+  "javaFlightRecorderAppImageNativeGui",
+  "javaBuildToolsNativeGui",
+  "javaFailsafeReactorNativeGui",
+  "javaFailsafeReactorAppImageNativeGui",
+  "javaDebuggerNativeGui",
+  "javaDebuggerAppImageNativeGui",
+  "workspaceTerminalNativeGui",
+  "javaJdiDebuggerNativeGui",
+  "javaJdiDebuggerAppImageNativeGui",
+  "javaClassChangeReviewNativeGui",
+  "javaDropFrameNativeGui",
+  "javaRestartExecutionNativeGui",
+  "javaExecutionCommandsNativeGui",
+  "javaJdiRunToCursorNativeGui",
+  "javaTestJvmNativeGui",
+  "javaCoverageNativeGui",
+  "javaCoverageAppImageNativeGui",
+  "javaConditionalDebuggerNativeGui",
+  "javaConditionalDebuggerAppImageNativeGui",
+  "javaExceptionBreakpointsNativeGui",
+  "javaAttachDebuggerNativeGui",
+  "javaFileOperationsNativeGui",
+  "javaTestDiscoveryNativeGui",
+  "javaTestNgDiscoveryNativeGui",
+  "javaJupiterTestExecutionNativeGui",
+  "javaTestNgTestExecutionNativeGui",
+  "javaPlainJdkTestNgNativeGui",
+  "javaPlainJdkTestNgAppImageNativeGui",
+  "javaWorkingDirectoryNativeGui",
+  "java8MavenRunNativeGui",
+  "java8MavenRunAppImageNativeGui",
+  "javaApplicationInputNativeGui",
+  "javaCursorNavigationNativeGui",
+  "javaCursorNavigationAppImageNativeGui",
+  "javaCodeActionsNativeGui",
+  "javaOnTypeFormattingNativeGui",
+  "javaJavadocNativeGui",
+  "javaLanguageResponsivenessNativeGui",
+  "javaOrganizeImportsNativeGui",
+  "javaParameterRenameNativeGui",
+  "javaCrossFileRenameNativeGui",
+  "javaSemanticTypeRenameNativeGui",
+  "javaMultiDocumentCodeActionNativeGui",
+  "javaTryCatchCodeActionNativeGui",
+  "javaFormatterProfileNativeGui",
+  "javaLocalRenameNativeGui",
+  "javaLanguageIntelligenceNativeGui",
+  "javaJdtlsRuntimePreferenceNativeGui",
+  "javaSearchEverywhereNativeGui",
+  "javaTemplatesNativeGui",
+  "javaLibraryNavigationNativeGui",
+  "javaModularLibraryNavigationNativeGui",
+  "javaPlatformSourceNativeGui",
+  "javaProjectContextNativeGui",
+  "javaReferenceBackendNativeGui",
+  "javaReferenceBackendAppImageNativeGui",
+  "javaCompactSourceNativeGui",
+  "javaGradleCompactSourceNativeGui",
+  "javaNamedModuleSourceCreationNativeGui",
+  "javaGradleProjectModelNativeGui",
+  "javaGradleJpmsV5NativeGui",
+  "javaMavenJpmsV5NativeGui",
+  "javaGradlePreviewNativeGui",
+  "javaMavenFailsafeContextNativeGui",
+  "javaMavenFailsafeContextAppImageNativeGui",
+  "javaMavenTestJvmSelectionAppImageNativeGui",
+  "javaSelectedTestDebuggerNativeGui",
+  "javaSelectedTestDebuggerAppImageNativeGui",
+  "javaFailedTestDebuggerNativeGui",
+  "javaFailedTestDebuggerAppImageNativeGui",
+  "javaMavenFailedTestDebuggerAppImageNativeGui",
+  "javaFrameworkTestDebuggerNativeGui",
+  "javaMavenModuleRenameNativeGui",
+  "javaMavenModuleCreateNativeGui",
+  "javaGradleModuleCreateNativeGui",
+  "javaModuleCreationAppImageNativeGui",
+  "javaModuleRenameAppImageNativeGui",
+  "javaGradleModuleRenameInboundAppImageNativeGui",
+  "javaGradleApplicationModuleRenameAppImageNativeGui",
+  "javaProjectTestTemplatesNativeGui",
+  "javaProjectTestTemplatesGradleNativeGui",
+  "javaProjectScaffoldNativeGui",
+  "javaSpringBootStarterAppImageNativeGui",
+  "javaSpringBootGradleStarterAppImageNativeGui",
+  "java26ScaffoldNativeGui",
+  "java26ScaffoldBuildNativeGui",
+  "java26ScaffoldWrapperBuildAppImageNativeGui",
+  "java27ScaffoldWrapperBuildAppImageNativeGui",
+  "javaUnsupportedReleaseContextNativeGui",
+  "java26ProjectContextNativeGui",
+  "java26ProjectContextAppImageNativeGui",
+  "java26MavenContextNativeGui",
+  "java26GradleContextNativeGui",
+  "java27ProjectContextNativeGui",
+  "java27ProjectContextAppImageNativeGui",
+  "java27GradleContextNativeGui",
+  "java27MavenContextNativeGui",
+  "java27PreviewSourceOwnershipNativeGui",
+  "java27V7OwnerOnlySourceOwnershipNativeGui",
+  "java27V7JdtlsDefinitionNativeGui",
+  "java27PreviewImportNativeGui",
+  "javaProjectTextSearchNativeGui",
+  "javaEntryPointsNativeGui",
+  "javaDeclaredProjectNativeGui",
+  "javaDeclaredProjectTestsNativeGui",
+  "javaEditorDiagnosticsNativeGui",
+  "java26EditorDiagnosticsNativeGui",
+  "java26TestSourceEditorDiagnosticsNativeGui",
+  "java26EditorDiagnosticsAppImageNativeGui",
+  "javaGradleEditorDiagnosticsNativeGui",
+  "javaMultiModuleEditorDiagnosticsNativeGui",
+  "javaTestSourceEditorDiagnosticsNativeGui",
+  "javaMetadataOnlyEditorDiagnosticsNativeGui",
+  "javaExternalSourceEditorDiagnosticsNativeGui",
+  "javaProjectExecutionNativeGui",
+  "javaGradleDiagnosticsNativeGui",
+  "javaGradleDiagnosticsAppImageNativeGui",
+  "javaMavenPreparationAppImageNativeGui",
+  "javaProjectWorkingDirectoryNativeGui",
+  "javaProjectWorkingDirectoryAppImageNativeGui",
+  "javaProjectWrapperNativeGui",
+  "javaProjectCustomOutputNativeGui",
+  "javaProjectDebuggerNativeGui",
+  "javaProjectExecutionAndDebuggerAppImageNativeGui",
+  "javaProjectDebuggerAppImageNativeGui",
+  "javaGradleProjectExecutionNativeGui",
+  "javaGradleMixedJvmNativeGui",
+  "javaGradleKotlinDefinitionNativeGui",
+  "javaGradleKotlinDefinitionAppImageNativeGui",
+  "javaMavenMixedJvmNativeGui",
+  "javaMixedJvmAppImageNativeGui",
+  "javaGradleCompositeExecutionNativeGui",
+  "javaGradleCompositeExecutionAppImageNativeGui",
+  "javaGradleCustomSourceSetNativeGui",
+  "javaGradleKotlinDslNativeGui",
+  "javaProjectDiscoveryNativeGui",
+  "javaProjectCoverageNativeGui",
+  "javaProjectCoverageAppImageNativeGui",
+  "javaProjectGradleMultimoduleCoverageNativeGui",
+  "javaProjectTestRerunNativeGui",
+  "javaProjectJupiterTestsNativeGui",
+  "javaProjectTestNgTestsNativeGui",
+  "javaProjectMixedTestEnginesNativeGui",
+  "javaProjectTestWorkflowsAppImageNativeGui",
+  "javaMavenProjectTestScopeAppImageNativeGui",
+  "javaMavenAggregatorDiscoveryAppImageNativeGui",
+  "javaGradleBatchCleanupNativeGui",
+  "javaBatchCleanupNativeGui",
+  "javaSdkRefactoringNativeGui",
+  "javaSignatureHierarchyNativeGui",
+  "javaFunctionalReferencesNativeGui",
+  "javaFunctionalReferencesAppImageNativeGui",
+  "javaConstructorSelectionNativeGui",
+  "javaGradleModuleRenameKotlinNativeGui",
+  "javaGradleModuleRenameGroovyNativeGui",
+  "javaFieldTypeNativeGui",
+  "javaFieldTypeAppImageNativeGui",
+  "javaProjectGradleCommandsNativeGui",
+  "javaProjectMavenCommandsNativeGui",
+  "javaConstructorDelegationNativeGui",
+  "javaConstructorDelegationVariantsNativeGui",
+  "javaConstructorRefactoringAppImageNativeGui",
+  "javaConstructorReferencesNativeGui",
+  "javaConstructorSignatureNativeGui",
+  "javaConstructorSignatureVariantsNativeGui",
+  "javaJpqlReviewNativeGui",
+  "javaJpqlReviewAppImageNativeGui",
+  "javaJpqlOpaqueResourceAppImageNativeGui",
+  "javaJpqlManagedAppImageNativeGui",
+  "javaJpqlNamedQueryAppImageNativeGui",
+  "javaSdkFormatterProfileNativeGui",
+  "javaCleanupAppImageNativeGui",
+  "javaBatchFormatterProfileAppImageNativeGui",
+  "javaExtractMethodNativeGui",
+  "javaExtractVariableNativeGui",
+  "javaInlineRefactoringsNativeGui",
+  "javaInlineRefactoringsAppImageNativeGui",
+  "javaInlineMethodUpgradeAppImageNativeGui",
+  "javaParameterObjectAppImageNativeGui",
+  "javaExtractDelegateAppImageNativeGui",
+  "javaInlineVariableNativeGui",
+  "javaInlineConstantNativeGui",
+  "javaExtractParameterNativeGui",
+  "javaExtractFieldNativeGui",
+  "javaExtractVariableInitializerNativeGui",
+  "javaExtractExpressionAppImageNativeGui",
+  "javaCursorParameterReorderNativeGui",
+  "javaCursorParameterRenameNativeGui",
+  "javaPublicParameterReorderRefusalNativeGui",
+  "javaMakeStaticNativeGui",
+  "javaMakePublicNativeGui",
+  "javaRefactorKitLspNativeGui",
+  "javaExtractInterfaceNativeGui",
+  "javaExtractSuperclassNativeGui",
+  "javaMoveMemberNativeGui",
+  "javaPullUpMemberNativeGui",
+  "javaPushDownMemberNativeGui",
+  "javaEncapsulateFieldNativeGui",
+  "javaMemberRefactoringAppImageNativeGui",
+  "javaCursorParameterAdditionNativeGui",
+  "javaCursorParameterRemovalNativeGui",
+  "javaCursorParameterTypeChangeNativeGui",
+  "javaParameterTypeAppImageNativeGui",
+  "javaDraftRefactoringNativeGui",
+  "javaDraftRefactoringAppImageNativeGui",
+  "javaGradleDraftRecoveryAppImageNativeGui",
+  "javaMethodRefactoringAppImageNativeGui",
+  "javaGradleExtractMethodAppImageNativeGui",
+  "javaDraftImportsRenameNativeGui",
+  "javaProjectModelClassRefactoringNativeGui",
+  "httpClientNativeGui",
+  "httpOAuthAuthorizationNativeGui",
+  "gitWorkspaceNativeGui",
+  "gitHistoryNativeGui",
+  "gitBranchDeletionNativeGui",
+  "javaProjectContextGitBranchNativeGui",
+  "javaGradleProjectContextGitBranchNativeGui",
+  "javaProjectContextGitRebaseNativeGui",
+  "javaGradleProjectContextGitRebaseNativeGui",
+  "httpRequestFilesNativeGui",
+  "javaDatabaseNativeGui",
+  "javaDatabasePlansNativeGui",
+  "javaProjectModelPackageMoveNativeGui",
+  "javaProjectModelPackageMoveCommandPaletteNativeGui",
+  "javaGradleProjectModelPackageMoveNativeGui",
+  "javaProjectModelPackageMoveAppImageNativeGui",
+  "javaGradleProjectModelClassRefactoringNativeGui",
+  "javaProjectModelClassRefactoringAppImageNativeGui",
+  "javaGradleCrossModuleClassMoveAppImageNativeGui",
+  "javaReferenceDevelopmentAppImageNativeGui",
+  "javaGradleClassMoveRecoveryAppImageNativeGui",
+  "javaProjectModelSourceRootRefactoringNativeGui",
+  "javaProjectModelSourceRootRefactoringAppImageNativeGui",
+  "javaDraftRecoveryNativeGui",
   "refactorKitJavaImportNativeGui",
   "desktopLayoutNativeGui",
   "piWorkspaceAgentNativeGui",
@@ -45,6 +294,11 @@ const supportedProfiles = new Set([
   "xcom2ModuleActivationNativeGui",
   "xcom2ModuleConfigurationActivationNativeGui",
   "xcom2ModuleConfigurationDiagnosticsNativeGui",
+  "javaLanguageIntelligenceCoreNativeGui",
+  "java26PreviewImportNativeGui",
+  "javaPreviewCompatibilityNativeGui",
+  "javaLanguageIntelligenceAppImageNativeGui",
+  "javaApplicationInputAppImageNativeGui",
 ]);
 
 const executablePrerequisites = [
@@ -73,6 +327,95 @@ const executablePrerequisites = [
     exposedAs: "IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH",
   },
 ];
+const waylandPrerequisites = [
+  {
+    name: "KWin Wayland compositor",
+    variable: "KWIN_WAYLAND_PATH",
+    command: "kwin_wayland",
+    exposedAs: "IDE_STORY_NATIVE_GUI_KWIN_WAYLAND_PATH",
+  },
+  {
+    name: "Qt 6 D-Bus client",
+    variable: "QDBUS6_PATH",
+    command: "qdbus6",
+    exposedAs: "IDE_STORY_NATIVE_GUI_QDBUS6_PATH",
+  },
+];
+const waylandClipboardPrerequisites = [
+  {
+    name: "Wayland clipboard writer (wl-clipboard 2.3 or newer)",
+    variable: "WL_COPY_PATH",
+    command: "wl-copy",
+    exposedAs: "IDE_STORY_NATIVE_GUI_WL_COPY_PATH",
+  },
+  {
+    name: "Wayland clipboard reader (wl-clipboard 2.3 or newer)",
+    variable: "WL_PASTE_PATH",
+    command: "wl-paste",
+    exposedAs: "IDE_STORY_NATIVE_GUI_WL_PASTE_PATH",
+  },
+];
+
+// The value states whether the profile uses the Wayland clipboard tools.
+export const waylandAppImageProfiles = new Map([
+  ["javaFailsafeReactorAppImageNativeGui", true],
+  ["javaCursorNavigationAppImageNativeGui", false],
+  ["javaLanguageIntelligenceAppImageNativeGui", true],
+  ["javaJdiDebuggerAppImageNativeGui", true],
+  ["javaFlightRecorderAppImageNativeGui", true],
+  ["javaSelectedTestDebuggerAppImageNativeGui", true],
+  ["javaFailedTestDebuggerAppImageNativeGui", true],
+  ["javaMavenFailedTestDebuggerAppImageNativeGui", true],
+  ["javaProjectDebuggerAppImageNativeGui", true],
+  ["javaGradleDiagnosticsAppImageNativeGui", true],
+  ["javaMavenPreparationAppImageNativeGui", true],
+  ["javaGradleCompositeExecutionAppImageNativeGui", true],
+  ["javaGradleCrossModuleClassMoveAppImageNativeGui", true],
+  ["javaProjectModelClassRefactoringAppImageNativeGui", true],
+  ["javaGradleClassMoveRecoveryAppImageNativeGui", true],
+  ["javaProjectCoverageAppImageNativeGui", true],
+  ["javaProjectTestWorkflowsAppImageNativeGui", true],
+  ["javaMavenProjectTestScopeAppImageNativeGui", true],
+  ["javaMavenAggregatorDiscoveryAppImageNativeGui", true],
+  ["javaProjectWorkingDirectoryAppImageNativeGui", true],
+  ["javaDraftRefactoringAppImageNativeGui", true],
+  ["javaGradleDraftRecoveryAppImageNativeGui", true],
+  ["javaMethodRefactoringAppImageNativeGui", true],
+  ["javaExtractExpressionAppImageNativeGui", true],
+  ["javaInlineRefactoringsAppImageNativeGui", true],
+  ["javaLargePackageAppImageNativeGui", false],
+  ["javaConditionalDebuggerAppImageNativeGui", true],
+  ["javaCleanupAppImageNativeGui", true],
+  ["javaBatchFormatterProfileAppImageNativeGui", true],
+  ["javaInlineMethodUpgradeAppImageNativeGui", true],
+  ["javaParameterObjectAppImageNativeGui", true],
+  ["javaFunctionalReferencesAppImageNativeGui", true],
+  ["javaExtractDelegateAppImageNativeGui", true],
+  ["javaParameterTypeAppImageNativeGui", true],
+  ["javaModuleCreationAppImageNativeGui", true],
+  ["javaModuleRenameAppImageNativeGui", true],
+  ["javaGradleModuleRenameInboundAppImageNativeGui", true],
+  ["javaGradleApplicationModuleRenameAppImageNativeGui", true],
+  ["javaConstructorRefactoringAppImageNativeGui", true],
+  ["javaFieldTypeAppImageNativeGui", true],
+  ["javaMemberRefactoringAppImageNativeGui", true],
+  ["javaJpqlReviewAppImageNativeGui", true],
+  ["javaJpqlOpaqueResourceAppImageNativeGui", true],
+  ["javaJpqlManagedAppImageNativeGui", true],
+  ["javaJpqlNamedQueryAppImageNativeGui", true],
+  ["javaGradleExtractMethodAppImageNativeGui", true],
+  ["javaMavenTestJvmSelectionAppImageNativeGui", true],
+  ["javaMavenFailsafeContextAppImageNativeGui", true],
+  ["java26EditorDiagnosticsAppImageNativeGui", true],
+  ["java27ProjectContextAppImageNativeGui", true],
+  ["javaCoverageAppImageNativeGui", false],
+  ["javaReferenceDevelopmentAppImageNativeGui", true],
+  ["javaReferenceBackendAppImageNativeGui", true],
+  ["javaSpringBootStarterAppImageNativeGui", true],
+  ["javaSpringBootGradleStarterAppImageNativeGui", true],
+  ["javaProjectModelSourceRootRefactoringAppImageNativeGui", true],
+  ["javaProjectModelPackageMoveAppImageNativeGui", true],
+]);
 
 export class NativeDesktopStoryError extends Error {
   constructor(message, { code, cause } = {}) {
@@ -192,16 +535,25 @@ export async function resolveNativeDesktopPrerequisites(
     applicationPath = defaultApplicationPath,
     requiresNativeJavaImport = false,
     preflightPython = preflightNativeJavaImportPython,
+    displayBackend = "x11",
+    requiresWaylandClipboard = false,
   } = {},
 ) {
   if (process.platform !== "linux") {
     throw new NativeDesktopStoryPrerequisiteError(
-      `desktop/tauri-webdriver scaffolding requires Linux X11, received ${process.platform}`,
+      `desktop/tauri-webdriver scaffolding requires Linux, received ${process.platform}`,
     );
   }
 
   const resolved = {};
-  for (const prerequisite of executablePrerequisites) {
+  const prerequisites = displayBackend === "wayland"
+    ? [
+        ...executablePrerequisites.filter(({ command }) => command !== "xvfb-run"),
+        ...waylandPrerequisites,
+        ...(requiresWaylandClipboard ? waylandClipboardPrerequisites : []),
+      ]
+    : executablePrerequisites;
+  for (const prerequisite of prerequisites) {
     resolved[prerequisite.exposedAs] = await resolveExecutable(prerequisite, environment);
   }
 
@@ -291,6 +643,7 @@ export async function createNativeDesktopSandbox({
   };
   delete sandboxEnvironment.DISPLAY;
   delete sandboxEnvironment.WAYLAND_DISPLAY;
+  delete sandboxEnvironment.IDE_STORY_NATIVE_GUI_DISPLAY_BACKEND;
   delete sandboxEnvironment.DBUS_SESSION_BUS_ADDRESS;
   delete sandboxEnvironment.IDE_REFACTORKIT_DAEMON;
   delete sandboxEnvironment.IDE_ALLOW_REFACTORKIT_DAEMON_OVERRIDE;
@@ -308,12 +661,19 @@ export function createNativeDesktopRuntimeEnvironment(sandboxEnvironment, prereq
     prerequisites.IDE_STORY_NATIVE_GUI_TAURI_DRIVER_PATH,
     prerequisites.IDE_STORY_NATIVE_GUI_WEBKIT_WEBDRIVER_PATH,
     prerequisites.IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH,
+    prerequisites.IDE_STORY_NATIVE_GUI_KWIN_WAYLAND_PATH,
+    prerequisites.IDE_STORY_NATIVE_GUI_QDBUS6_PATH,
     prerequisites.IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH,
     prerequisites.IDE_STORY_NATIVE_GUI_APPLICATION_PATH,
-  ].map((executablePath) => path.dirname(executablePath));
-  const runtimePath = [...new Set([...ownedExecutableDirectories, "/usr/bin", "/bin"])].join(
-    path.delimiter,
-  );
+  ].filter(Boolean).map((executablePath) => path.dirname(executablePath));
+  const configuredBuildTool = sandboxEnvironment.IDE_JAVA_CONTEXT_TEST_GRADLE;
+  const buildToolDirectories =
+    typeof configuredBuildTool === "string" && path.isAbsolute(configuredBuildTool)
+      ? [path.dirname(configuredBuildTool)]
+      : [];
+  const runtimePath = [
+    ...new Set([...ownedExecutableDirectories, ...buildToolDirectories, "/usr/bin", "/bin"]),
+  ].join(path.delimiter);
   const runtimeEnvironment = {
     ...sandboxEnvironment,
     ...prerequisites,
@@ -530,6 +890,29 @@ async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
+export async function reuseNativeAppImage(manifestPath) {
+  const source = path.resolve(manifestPath);
+  const manifest = JSON.parse(await readFile(source, "utf8"));
+  const applicationPath = manifest?.executables?.IDE_STORY_NATIVE_GUI_APPLICATION_PATH;
+  const evidence = manifest?.evidence;
+  if (evidence?.artifactKind !== "appimage" || evidence.packagedApplication !== true ||
+      typeof applicationPath !== "string" || !path.isAbsolute(applicationPath) ||
+      !/^[0-9a-f]{64}$/.test(evidence.applicationSha256 ?? "")) {
+    throw new NativeDesktopStoryPrerequisiteError("The manifest must identify a packaged AppImage and its SHA-256.");
+  }
+  await assertExecutable(applicationPath, "AppImage from the native story manifest");
+  const sha256 = await sha256File(applicationPath);
+  if (sha256 !== evidence.applicationSha256) {
+    throw new NativeDesktopStoryPrerequisiteError("The AppImage no longer matches the native story manifest.");
+  }
+  return {
+    path: applicationPath,
+    sha256,
+    command: { executable: "reuse AppImage", arguments: [source] },
+    timeoutMs: 0,
+  };
+}
+
 export async function buildNativeDesktopApplication({
   signal,
   environment = process.env,
@@ -559,66 +942,24 @@ export async function buildNativeDesktopApplication({
   });
 }
 
-export function discoverNativeDesktopSelection(profile) {
+export function discoverNativeDesktopSelection(profile, { discover = discoverCucumberSelection } = {}) {
   if (!supportedProfiles.has(profile)) {
     throw new NativeDesktopStoryExecutionError(
       `Unsupported native desktop Story profile: ${profile}`,
     );
   }
 
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      cucumberEntry,
-      "--config",
-      "cucumber.js",
-      "--profile",
-      profile,
-      "--dry-run",
-      "--format",
-      "message",
-    ],
-    {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 30_000,
-    },
-  );
-  if (result.error || result.status !== 0) {
+  let scenarios;
+  try {
+    scenarios = discover({ repositoryRoot, profile, cucumberEntry }).map(
+      (scenario) => Object.freeze({ ...scenario, tags: Object.freeze([...scenario.tags]) }),
+    );
+  } catch (error) {
     throw new NativeDesktopStoryExecutionError(
       `Native desktop Story profile discovery failed: ${profile}`,
-      { cause: result.error },
+      { cause: error },
     );
   }
-
-  const pickles = new Map();
-  const selectedPickleIds = new Set();
-  for (const line of result.stdout.split("\n")) {
-    if (!line.trim()) continue;
-    const envelope = JSON.parse(line);
-    if (envelope.pickle) {
-      pickles.set(envelope.pickle.id, {
-        id: envelope.pickle.id,
-        uri: envelope.pickle.uri,
-        line: envelope.pickle.location.line,
-        name: envelope.pickle.name,
-        tags: Object.freeze(envelope.pickle.tags.map(({ name }) => name).sort()),
-      });
-    }
-    if (envelope.testCase) selectedPickleIds.add(envelope.testCase.pickleId);
-  }
-  const scenarios = [...selectedPickleIds].map((pickleId) => {
-    const scenario = pickles.get(pickleId);
-    if (!scenario) {
-      throw new NativeDesktopStoryExecutionError(
-        `Native desktop Story profile ${profile} selected unknown Cucumber pickle ${pickleId}`,
-      );
-    }
-    return Object.freeze(scenario);
-  });
   return Object.freeze({
     profile,
     hasScenarios: scenarios.length > 0,
@@ -631,23 +972,25 @@ export function profileSelectsScenarios(profile) {
   return discoverNativeDesktopSelection(profile).hasScenarios;
 }
 
-export function nativeDesktopLaunchCommand(prerequisites, profile) {
+export function nativeDesktopLaunchCommand(prerequisites, profile, displayBackend = "x11") {
+  const cucumber = [
+    process.execPath, "--import", "tsx", cucumberEntry, "--config", "cucumber.js", "--profile", profile,
+  ];
+  if (displayBackend === "wayland") {
+    return {
+      command: prerequisites.IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH,
+      arguments: ["--", "/bin/bash", path.join(repositoryRoot, "scripts/run-native-wayland-session.sh"), ...cucumber],
+    };
+  }
   return {
-    command: prerequisites.IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH,
+    command: prerequisites.IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH,
     arguments: [
-      "--",
-      prerequisites.IDE_STORY_NATIVE_GUI_XVFB_RUN_PATH,
       "--auto-servernum",
       `--server-args=-screen 0 ${NATIVE_DESKTOP_DESIRED_WEBVIEW_WIDTH}x${NATIVE_DESKTOP_DESIRED_WEBVIEW_HEIGHT}x24`,
       "--",
-      process.execPath,
-      "--import",
-      "tsx",
-      cucumberEntry,
-      "--config",
-      "cucumber.js",
-      "--profile",
-      profile,
+      prerequisites.IDE_STORY_NATIVE_GUI_DBUS_RUN_SESSION_PATH,
+      "--",
+      ...cucumber,
     ],
   };
 }
@@ -665,9 +1008,157 @@ export async function runNativeDesktopStory(
     cleanupSandboxProcesses = cleanupNativeDesktopSandboxProcesses,
     run = runOwnedProcess,
     applicationPath = defaultApplicationPath,
+    artifactKind = "release-no-bundle",
+    displayBackend = "x11",
     buildTimeoutMs = NATIVE_DESKTOP_BUILD_TIMEOUT_MS,
+    executionTimeoutMs = profile === "javaReferenceBackendNativeGui" ? 300_000 : profile === "javaGradleCompactSourceNativeGui" || profile === "java26ProjectContextNativeGui" || profile === "javaSelectedTestDebuggerNativeGui" || profile === "javaFailedTestDebuggerNativeGui" || profile === "javaFrameworkTestDebuggerNativeGui" || profile === "javaGradleCompositeExecutionNativeGui"
+      ? 360_000
+      : profile === "javaProjectModelSourceRootRefactoringNativeGui" ||
+    profile === "javaGradleProjectModelPackageMoveNativeGui" ||
+    profile === "javaGradleProjectModelClassRefactoringNativeGui" ||
+    profile === "javaCursorNavigationNativeGui" ||
+    profile === "javaGradlePreviewNativeGui" ||
+    profile === "javaGradleJpmsV5NativeGui" ||
+    profile === "javaMavenJpmsV5NativeGui" ||
+    profile === "javaMavenModuleCreateNativeGui" ||
+    profile === "javaGradleModuleCreateNativeGui" ||
+    profile === "javaGradleBatchCleanupNativeGui" ||
+    profile === "javaMoveMemberNativeGui" ||
+    profile === "javaTestJvmNativeGui" ||
+    profile === "java26GradleContextNativeGui" ||
+    profile === "java27GradleContextNativeGui" ||
+    profile === "java27MavenContextNativeGui" ||
+    profile === "javaApplicationInputNativeGui" ||
+    profile === "javaProjectWorkingDirectoryNativeGui" ||
+    profile === "javaEntryPointsNativeGui" ||
+    profile === "javaDeclaredProjectNativeGui" ||
+    profile === "javaDeclaredProjectTestsNativeGui" ||
+    profile === "javaEditorDiagnosticsNativeGui" ||
+    profile === "java26EditorDiagnosticsNativeGui" ||
+    profile === "java26TestSourceEditorDiagnosticsNativeGui" ||
+    profile === "javaGradleEditorDiagnosticsNativeGui" ||
+    profile === "javaMultiModuleEditorDiagnosticsNativeGui" ||
+    profile === "javaTestSourceEditorDiagnosticsNativeGui" ||
+    profile === "javaMetadataOnlyEditorDiagnosticsNativeGui" ||
+    profile === "javaExternalSourceEditorDiagnosticsNativeGui" ||
+    profile === "javaModularLibraryNavigationNativeGui" ||
+    profile === "editorRecoveryHistoryNativeGui"
+      ? 240_000
+      : profile === "javaLibraryNavigationNativeGui" ||
+          profile === "java26PreviewImportNativeGui" ||
+          profile === "javaPreviewCompatibilityNativeGui" ||
+          profile === "java27PreviewImportNativeGui" ||
+          profile === "javaPlatformSourceNativeGui" ||
+          profile === "javaGradleDiagnosticsNativeGui" ||
+          profile === "javaProjectContextNativeGui" ||
+          profile === "javaGradleMixedJvmNativeGui" ||
+          profile === "javaGradleKotlinDefinitionNativeGui" ||
+          profile === "javaMavenMixedJvmNativeGui" ||
+          profile === "java26MavenContextNativeGui" ||
+          profile === "java27ProjectContextNativeGui" ||
+          profile === "java27PreviewSourceOwnershipNativeGui" ||
+          profile === "java27V7OwnerOnlySourceOwnershipNativeGui" ||
+          profile === "java27V7JdtlsDefinitionNativeGui" ||
+          profile === "javaGradleProjectModelNativeGui" ||
+          profile === "javaMavenFailsafeContextNativeGui" ||
+          profile === "javaCodeActionsNativeGui" ||
+          profile === "javaOnTypeFormattingNativeGui" ||
+          profile === "javaJavadocNativeGui" ||
+          profile === "javaLanguageResponsivenessNativeGui" ||
+          profile === "javaCoverageNativeGui" ||
+          profile === "javaTestDiscoveryNativeGui" ||
+          profile === "javaOrganizeImportsNativeGui" ||
+          profile === "javaParameterRenameNativeGui" ||
+          profile === "javaCrossFileRenameNativeGui" ||
+          profile === "javaSemanticTypeRenameNativeGui" ||
+          profile === "javaMultiDocumentCodeActionNativeGui" ||
+          profile === "javaTryCatchCodeActionNativeGui" ||
+          profile === "javaFormatterProfileNativeGui" ||
+          profile === "javaProjectCoverageNativeGui" ||
+          profile === "javaProjectTestRerunNativeGui" ||
+          profile === "javaDebuggerNativeGui" ||
+          profile === "javaProjectDebuggerNativeGui" ||
+          profile === "javaJdiDebuggerNativeGui" ||
+          profile === "javaSourceFileCreationNativeGui" ||
+          profile === "javaCompactSourceNativeGui" ||
+          profile === "javaNamedModuleSourceCreationNativeGui" ||
+          profile === "javaProjectScaffoldNativeGui" ||
+          profile === "java26ScaffoldNativeGui" ||
+          profile === "java26ScaffoldBuildNativeGui" ||
+          profile === "javaBuildToolsNativeGui" ||
+          profile === "javaProjectTestTemplatesGradleNativeGui" ||
+          profile === "javaProjectGradleMultimoduleCoverageNativeGui" ||
+          profile === "javaProjectJupiterTestsNativeGui" ||
+          profile === "javaProjectTestNgTestsNativeGui" ||
+          profile === "javaProjectMixedTestEnginesNativeGui" ||
+          profile === "javaBatchCleanupNativeGui" ||
+          profile === "javaSdkRefactoringNativeGui" ||
+          profile === "javaSignatureHierarchyNativeGui" ||
+          profile === "javaFunctionalReferencesNativeGui" ||
+          profile === "javaConstructorSelectionNativeGui" ||
+          profile === "javaGradleModuleRenameKotlinNativeGui" ||
+          profile === "javaGradleModuleRenameGroovyNativeGui" ||
+          profile === "javaFieldTypeNativeGui" ||
+          profile === "javaProjectGradleCommandsNativeGui" ||
+          profile === "javaProjectMavenCommandsNativeGui" ||
+          profile === "javaConstructorDelegationNativeGui" ||
+          profile === "javaConstructorDelegationVariantsNativeGui" ||
+          profile === "javaConstructorReferencesNativeGui" ||
+          profile === "javaConstructorSignatureNativeGui" ||
+          profile === "javaConstructorSignatureVariantsNativeGui" ||
+          profile === "javaJpqlReviewNativeGui" ||
+          profile === "javaSdkFormatterProfileNativeGui" ||
+          profile === "java27V7JdtlsDefinitionNativeGui" ||
+          profile === "javaExtractMethodNativeGui" ||
+          profile === "javaExtractVariableNativeGui" ||
+          profile === "javaInlineRefactoringsNativeGui" ||
+          profile === "javaInlineVariableNativeGui" ||
+          profile === "javaInlineConstantNativeGui" ||
+          profile === "javaExtractParameterNativeGui" ||
+          profile === "javaExtractFieldNativeGui" ||
+          profile === "javaExtractVariableInitializerNativeGui" ||
+          profile === "javaCursorParameterReorderNativeGui" ||
+          profile === "javaCursorParameterRenameNativeGui" ||
+          profile === "javaPublicParameterReorderRefusalNativeGui" ||
+          profile === "javaMakeStaticNativeGui" ||
+          profile === "javaMakePublicNativeGui" ||
+          profile === "javaRefactorKitLspNativeGui" ||
+          profile === "javaExtractInterfaceNativeGui" ||
+          profile === "javaExtractSuperclassNativeGui" ||
+          profile === "javaPullUpMemberNativeGui" ||
+          profile === "javaPushDownMemberNativeGui" ||
+          profile === "javaEncapsulateFieldNativeGui" ||
+          profile === "javaCursorParameterAdditionNativeGui" ||
+          profile === "javaCursorParameterRemovalNativeGui" ||
+          profile === "javaCursorParameterTypeChangeNativeGui" ||
+          profile === "javaProjectModelClassRefactoringNativeGui" ||
+          profile === "javaProjectModelPackageMoveCommandPaletteNativeGui" ||
+          profile === "javaSearchEverywhereNativeGui" ||
+          profile === "httpClientNativeGui" ||
+          profile === "httpOAuthAuthorizationNativeGui" ||
+          profile === "gitWorkspaceNativeGui" ||
+          profile === "gitHistoryNativeGui" ||
+          profile === "gitBranchDeletionNativeGui" ||
+          profile === "javaProjectContextGitBranchNativeGui" ||
+          profile === "javaGradleProjectContextGitBranchNativeGui" ||
+          profile === "javaProjectContextGitRebaseNativeGui" ||
+          profile === "javaGradleProjectContextGitRebaseNativeGui" ||
+          profile === "httpRequestFilesNativeGui" ||
+          profile === "javaDatabaseNativeGui" ||
+          profile === "javaDatabasePlansNativeGui"
+        ? 180_000
+        : NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
   } = {},
 ) {
+  if (artifactKind !== "release-no-bundle" && artifactKind !== "appimage") {
+    throw new NativeDesktopStoryExecutionError(
+      `Unsupported native desktop artifact kind: ${artifactKind}`,
+    );
+  }
+  if (displayBackend !== "x11" && displayBackend !== "wayland") {
+    throw new NativeDesktopStoryPrerequisiteError(`Unsupported native display backend: ${displayBackend}`);
+  }
+  const packagedApplication = artifactKind === "appimage";
   const discovered = selectsScenarios(profile);
   const selection =
     typeof discovered === "boolean"
@@ -682,6 +1173,30 @@ export async function runNativeDesktopStory(
     console.log(`Native desktop Story profile ${profile}: SKIP (no scenarios selected).`);
     return { skipped: true };
   }
+  if (profile === "javaRefactorKitLspNativeGui") {
+    if (environment.IDE_ALLOW_REFACTORKIT_LSP_OVERRIDE !== "1") {
+      throw new NativeDesktopStoryPrerequisiteError(
+        "The RefactorKit LSP GUI profile requires IDE_ALLOW_REFACTORKIT_LSP_OVERRIDE=1.",
+      );
+    }
+    const lsp = environment.IDE_REFACTORKIT_LSP;
+    if (!lsp) {
+      throw new NativeDesktopStoryPrerequisiteError(
+        "Set IDE_REFACTORKIT_LSP to a source-built RefactorKit LSP executable for this GUI profile.",
+      );
+    }
+    await assertExecutable(lsp, "source-built RefactorKit LSP executable");
+  }
+
+  if (profile === "httpOAuthAuthorizationNativeGui") {
+    const browser = environment.IDE_STORY_OAUTH_BROWSER_BINARY;
+    if (!browser || !path.isAbsolute(browser)) {
+      throw new NativeDesktopStoryPrerequisiteError(
+        "Set IDE_STORY_OAUTH_BROWSER_BINARY to an absolute Chromium executable for the isolated OAuth browser fixture.",
+      );
+    }
+    await assertExecutable(browser, "OAuth fixture Chromium executable");
+  }
 
   const application = await buildApplication({
     signal,
@@ -692,20 +1207,36 @@ export async function runNativeDesktopStory(
   const prerequisites = await resolvePrerequisites(environment, {
     applicationPath: application.path,
     requiresNativeJavaImport: selection.includesNativeJavaImport,
+    ...(displayBackend === "wayland" ? {
+      displayBackend,
+      requiresWaylandClipboard: waylandAppImageProfiles.get(profile) === true,
+    } : {}),
   });
   const sandbox = await createSandbox({ environment });
-  const runtimeEnvironment = createRuntimeEnvironment(sandbox.environment, prerequisites);
+  const runtimeEnvironment = {
+    ...createRuntimeEnvironment(sandbox.environment, prerequisites),
+    IDE_STORY_NATIVE_GUI_PACKAGED_APPLICATION: packagedApplication ? "1" : "0",
+    IDE_STORY_NATIVE_GUI_ARTIFACT_KIND: artifactKind,
+    ...(packagedApplication ? { APPIMAGE_EXTRACT_AND_RUN: "1" } : {}),
+  };
 
   const manifest = {
     target: "desktop/tauri-webdriver",
     profile,
-    selectedScenarios: selection.scenarios,
+    selectedScenarios: selection.scenarios.map(({ id, uri, line, name, tags }) => ({
+      id,
+      uri,
+      line,
+      name,
+      tags,
+    })),
     evidence: {
       nativeGui: true,
       e2e: true,
-      packagedApplication: false,
-      artifactKind: "release-no-bundle",
+      packagedApplication,
+      artifactKind,
       applicationSha256: application.sha256,
+      ...(displayBackend === "wayland" ? { displayBackend } : {}),
     },
     build: {
       command: application.command,
@@ -726,7 +1257,7 @@ export async function runNativeDesktopStory(
 
   const stdout = await open(path.join(sandbox.paths.artifacts, "stdout.log"), "w");
   const stderr = await open(path.join(sandbox.paths.artifacts, "stderr.log"), "w");
-  const launch = nativeDesktopLaunchCommand(prerequisites, profile);
+  const launch = nativeDesktopLaunchCommand(prerequisites, profile, displayBackend);
 
   console.log(`Native desktop Story sandbox: ${sandbox.root}`);
   console.log(`Native desktop Story diagnostics: ${sandbox.paths.artifacts}`);
@@ -735,7 +1266,7 @@ export async function runNativeDesktopStory(
     await run(launch.command, launch.arguments, {
       signal,
       environment: runtimeEnvironment,
-      timeoutMs: NATIVE_DESKTOP_OUTER_TIMEOUT_MS,
+      timeoutMs: executionTimeoutMs,
       stdio: ["ignore", stdout.fd, stderr.fd],
     });
   } catch (error) {
@@ -793,24 +1324,30 @@ function selectedProfile(arguments_) {
   return profile;
 }
 
-async function main() {
+export async function withNativeDesktopCancellation(run) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
 
   try {
-    await runNativeDesktopStory(selectedProfile(process.argv.slice(2)), {
-      signal: controller.signal,
-    });
+    return await run(controller.signal);
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+  }
+}
+
+async function main() {
+  try {
+    await withNativeDesktopCancellation((signal) =>
+      runNativeDesktopStory(selectedProfile(process.argv.slice(2)), { signal }),
+    );
   } catch (error) {
     const code = error instanceof NativeDesktopStoryError ? ` [${error.code}]` : "";
     console.error(`Native desktop Story runner failed${code}:`);
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
-  } finally {
-    process.removeListener("SIGINT", abort);
-    process.removeListener("SIGTERM", abort);
   }
 }
 

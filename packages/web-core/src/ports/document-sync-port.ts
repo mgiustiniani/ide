@@ -8,6 +8,8 @@ import type {
   DidCloseLanguageDocumentRequest,
   DidOpenLanguageDocumentRequest,
   DidSaveLanguageDocumentRequest,
+  RevalidateLanguageDocumentRequest,
+  DidSaveLanguageWorkspaceFileRequest,
 } from "@ide/contracts";
 
 export interface DocumentSyncPort {
@@ -22,4 +24,8 @@ export interface DocumentSyncPort {
 
   /** Close the versioned document in its owning workspace session. */
   didClose(request: DidCloseLanguageDocumentRequest): Promise<void>;
+  /** Optional read-only provider extension for diagnostics after workspace draft edits. */
+  revalidate?(request: RevalidateLanguageDocumentRequest): Promise<void>;
+  /** Notify an initialized provider about a saved non-language workspace file. */
+  didSaveWorkspaceFile?(request: DidSaveLanguageWorkspaceFileRequest): Promise<void>;
 }

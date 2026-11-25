@@ -16,12 +16,14 @@
     "@ide/tauri-adapters": "workspace:*",
     "@ide/ui": "workspace:*",
     "@ide/web-core": "workspace:*",
+    "@tauri-apps/api": "^2.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "yaml": "^2.9.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "^2.12.5",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.0",

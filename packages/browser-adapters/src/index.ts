@@ -5,6 +5,8 @@
 // fallback when browser storage is unavailable or rejects writes.
 // ---------------------------------------------------------------------------
 
+export { BrowserJavaNavigationAdapter } from "./java-navigation-browser";
+
 import type {
   FileNode,
   FileSelectionEvent,
@@ -591,8 +593,12 @@ export class BrowserEditorAdapter implements EditorPort {
     return readJSON<OpenFile[]>(BROWSER_STORAGE_KEYS.openFiles, [], isOpenFileArray);
   }
 
-  async closeFile(filePath: string): Promise<OpenFile[]> {
-    const openFiles = (await this.getOpenFiles()).filter((file) => file.filePath !== filePath);
+  closeFile(filePath: string): OpenFile[] {
+    const openFiles = readJSON<OpenFile[]>(
+      BROWSER_STORAGE_KEYS.openFiles,
+      [],
+      isOpenFileArray,
+    ).filter((file) => file.filePath !== filePath);
     writeJSON(BROWSER_STORAGE_KEYS.openFiles, openFiles);
     return openFiles;
   }
@@ -603,56 +609,14 @@ export class BrowserEditorAdapter implements EditorPort {
 export class BrowserTerminalAdapter implements TerminalPort {
   private outputCallbacks: Array<(output: TerminalOutput) => void> = [];
   private exitCallbacks: Array<(code: number | null) => void> = [];
-  private _cols = 80;
-  private _rows = 24;
 
-  async executeCommand(command: string): Promise<void> {
-    const trimmed = command.trim();
-
-    this.emitOutput({ text: `$ ${trimmed}`, type: "input", timestamp: Date.now() });
-
-    if (!trimmed) return;
-
-    if (trimmed === "clear" || trimmed === "cls") {
-      this.emitOutput({ text: "", type: "system", timestamp: Date.now() });
-      return;
-    }
-
-    if (trimmed === "exit") {
-      this.emitOutput({ text: "Session terminated.", type: "system", timestamp: Date.now() });
-      this.emitExit(0);
-      return;
-    }
-
-    if (trimmed === "ls" || trimmed.startsWith("ls ")) {
-      this.emitOutput({
-        text: "README.md  src/  packages/  public/",
-        type: "stdout",
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    if (trimmed === "pwd") {
-      this.emitOutput({ text: "/home/user/project", type: "stdout", timestamp: Date.now() });
-      return;
-    }
-
-    if (trimmed === "echo hello") {
-      this.emitOutput({ text: "hello", type: "stdout", timestamp: Date.now() });
-      return;
-    }
-
-    this.emitOutput({
-      text: `[simulated] Command not implemented: ${trimmed}`,
-      type: "stderr",
-      timestamp: Date.now(),
-    });
+  async executeCommand(_command: string): Promise<void> {
+    throw new Error(
+      "Interactive process execution is unavailable in the browser. Use the desktop application.",
+    );
   }
-
-  async resize(cols: number, rows: number): Promise<void> {
-    this._cols = cols;
-    this._rows = rows;
+  async resize(_cols: number, _rows: number): Promise<void> {
+    throw new Error("A native PTY is unavailable in the browser.");
   }
 
   onOutput(callback: (output: TerminalOutput) => void): () => void {
@@ -673,30 +637,16 @@ export class BrowserTerminalAdapter implements TerminalPort {
 
   startSession(): void {
     this.emitOutput({
-      text: "Welcome to IDE Terminal (simulated)",
-      type: "system",
-      timestamp: Date.now(),
-    });
-    this.emitOutput({
-      text: 'Type "exit" to close the session.',
+      text: "Interactive terminals are unavailable in the browser. Use the desktop application.",
       type: "system",
       timestamp: Date.now(),
     });
   }
-
-  stopSession(): void {
-    this.emitOutput({ text: "Session ended.", type: "system", timestamp: Date.now() });
-  }
+  stopSession(): void {}
 
   private emitOutput(output: TerminalOutput): void {
     for (const callback of this.outputCallbacks) {
       callback(output);
-    }
-  }
-
-  private emitExit(code: number | null): void {
-    for (const callback of this.exitCallbacks) {
-      callback(code);
     }
   }
 }

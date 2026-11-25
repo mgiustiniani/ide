@@ -1,88 +1,66 @@
-import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { useTerminalController } from "./useTerminalController";
-
-function createHarness() {
-  const viewModel = {
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    executeCommand: vi.fn(async (_command: string) => undefined),
-    updateCurrentInput: vi.fn(),
-    clearOutput: vi.fn(),
-  };
-  const session = {
-    startSession: vi.fn(),
-    stopSession: vi.fn(),
-  };
-  const store = {
-    setSessionActive: vi.fn(),
-    setLoading: vi.fn(),
-  };
-  const getStore = vi.fn(() => store);
-  const hook = renderHook(() => useTerminalController({ viewModel, session, getStore }));
-
-  return { hook, viewModel, session, store, getStore };
+import type { WorkspaceTerminalPort } from "@ide/web-core/ports";
+function port() {
+  return {
+    capabilities: vi.fn(async (context) => ({
+      ...context,
+      available: true,
+      defaultShell: "/bin/bash",
+      reason: null,
+    })),
+    start: vi.fn(),
+    read: vi.fn(),
+    write: vi.fn(),
+    resize: vi.fn(),
+    stop: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  } satisfies WorkspaceTerminalPort;
 }
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-describe("useTerminalController", () => {
-  it("starts the terminal on mount and fully stops it on unmount", () => {
-    const harness = createHarness();
-
-    expect(harness.viewModel.connect).toHaveBeenCalledOnce();
-    expect(harness.session.startSession).toHaveBeenCalledOnce();
-    expect(harness.store.setSessionActive).toHaveBeenNthCalledWith(1, true);
-    expect(harness.store.setLoading).toHaveBeenCalledWith(false);
-
-    harness.hook.unmount();
-
-    expect(harness.viewModel.disconnect).toHaveBeenCalledOnce();
-    expect(harness.session.stopSession).toHaveBeenCalledOnce();
-    expect(harness.store.setSessionActive).toHaveBeenLastCalledWith(false);
-  });
-
-  it("executes commands and clears the current input after success", async () => {
-    const harness = createHarness();
-
-    await act(() => harness.hook.result.current.executeCommand("pnpm test"));
-
-    expect(harness.viewModel.executeCommand).toHaveBeenCalledWith("pnpm test");
-    expect(harness.viewModel.updateCurrentInput).toHaveBeenCalledWith("");
-  });
-
-  it("clears input after command failure and logs no command, source, or error detail", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const harness = createHarness();
-    harness.viewModel.executeCommand.mockRejectedValueOnce(
-      new Error("secret output from /private/workspace/Main.java"),
+describe("desktop workspace terminal lifecycle", () => {
+  it("queries the real provider without automatically starting or trusting a shell", async () => {
+    const native = port();
+    const { result, unmount } = renderHook(() =>
+      useTerminalController({ port: native, workspaceId: "one", generation: 1, ready: true }),
     );
-
-    await act(() => harness.hook.result.current.executeCommand("cat /private/workspace/Main.java"));
-
-    expect(harness.viewModel.updateCurrentInput).toHaveBeenCalledWith("");
-    expect(consoleError).toHaveBeenCalledWith("[Terminal] Command execution failed", {
-      errorType: "Error",
+    await waitFor(() => expect(result.current.state.pending).toBe(false));
+    expect(native.capabilities).toHaveBeenCalledWith({
+      workspaceId: "one",
+      generation: 1,
+      clientId: expect.any(String),
     });
-    const logged = JSON.stringify(consoleError.mock.calls);
-    expect(logged).not.toContain("cat /private");
-    expect(logged).not.toContain("secret output");
-    expect(logged).not.toContain("Main.java");
+    expect(native.start).not.toHaveBeenCalled();
+    expect(result.current.state.trusted).toBe(false);
+    unmount();
   });
-
-  it("forwards input, clears output, and resets workspace-local terminal state", () => {
-    const harness = createHarness();
-
-    act(() => harness.hook.result.current.updateInput("next command"));
-    expect(harness.viewModel.updateCurrentInput).toHaveBeenLastCalledWith("next command");
-
-    act(() => harness.hook.result.current.clear());
-    expect(harness.viewModel.clearOutput).toHaveBeenCalledTimes(1);
-
-    act(() => harness.hook.result.current.resetWorkspace());
-    expect(harness.viewModel.clearOutput).toHaveBeenCalledTimes(2);
-    expect(harness.viewModel.updateCurrentInput).toHaveBeenLastCalledWith("");
+  it("rejects capabilities from an old workspace and resets trust during a switch", async () => {
+    const native = port();
+    let resolve!: (value: any) => void;
+    native.capabilities.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const { result, rerender } = renderHook(
+      ({ id, generation }) =>
+        useTerminalController({ port: native, workspaceId: id, generation, ready: true }),
+      { initialProps: { id: "one", generation: 1 } },
+    );
+    act(() => result.current.controller.trust(true));
+    rerender({ id: "two", generation: 2 });
+    await waitFor(() => expect(result.current.state.capabilities?.workspaceId).toBe("two"));
+    await act(async () =>
+      resolve({
+        workspaceId: "one",
+        generation: 1,
+        available: true,
+        defaultShell: "/bin/sh",
+        reason: null,
+      }),
+    );
+    expect(result.current.state.capabilities?.workspaceId).toBe("two");
+    expect(result.current.state.trusted).toBe(false);
   });
 });

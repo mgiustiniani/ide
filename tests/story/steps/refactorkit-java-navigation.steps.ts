@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tests/story/steps/refactorkit-java-navigation.steps.ts
 // Story BDD steps for REQ-IDE-JAVA-NAVIGATION-001
-// (features/refactorkit/java-navigation.feature, 5 scenarios / 37 Gherkin steps).
+// (features/refactorkit/java-navigation.feature).
 //
 // GREEN (meaningful, honest): Java go-to-definition and find-references ARE now
 // wired for Java. The production controller
@@ -27,10 +27,9 @@
 //     navigation capability is absent (TRUE) -> PASS.
 //   - AC-004: web-first layers stay Tauri-free and capability access is through
 //     ports (TRUE) -> PASS (static).
-//   - AC-005: feature stays @not-implemented (live Tauri-window navigation E2E is
-//     unvalidated headless), requirement unique/reconciled, and production presence
-//     (controllerJavaPathWired=true) does not silently promote the status (TRUE) ->
-//     PASS (static).
+//   - AC-005: qualified native coverage supports @partial while browser availability,
+//     clean-provider behavior and platform coverage remain limited; static production
+//     presence does not change the declared status (TRUE) -> PASS (static).
 //
 // Shared step wording (adapter extract/delegate/response, web-first, status
 // reconciliation) lives in shared-operational.steps.ts and is dispatched by tag
@@ -45,8 +44,6 @@ import type { StoryWorld } from "../support/world.js";
 import {
   RefactorKitJavaNavigationStorySession,
   REQUIREMENT,
-  SYMBOL_FQN,
-  JAVA_NAVIGATION_OPERATIONS,
   getRefactorKitJavaNavigationSession,
   disposeRefactorKitJavaNavigationSession,
 } from "../support/refactorkit-java-navigation.js";
@@ -198,14 +195,11 @@ Given<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "the person requests find-references for that Java symbol FQN",
-  async function () {
-    const session = sessionFor(this);
-    await session.requestReferences();
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the person requests find-references for that Java symbol FQN", async function () {
+  const session = sessionFor(this);
+  await session.requestReferences();
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   "the provider resolves the reference locations correlated to the symbol FQN, the workspace authority, the request, and the provider",
@@ -222,30 +216,24 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "the IDE presents the resolved references to the person",
-  async function () {
-    const session = sessionFor(this);
-    await session.presentReferences();
-    // GREEN: the controller Java path presents the resolved references (javaResult)
-    // to the person.
-    assert.equal(
-      session.referencesOutcome()?.referencesPresented,
-      true,
-      `${REQUIREMENT}: the IDE did NOT present the resolved references to the person — the controller Java path did not present the resolved references`,
-    );
-    await attachEvidence(session, this);
-  },
-);
+Then<StoryWorld>("the IDE presents the resolved references to the person", async function () {
+  const session = sessionFor(this);
+  await session.presentReferences();
+  // GREEN: the controller Java path presents the resolved references (javaResult)
+  // to the person.
+  assert.equal(
+    session.referencesOutcome()?.referencesPresented,
+    true,
+    `${REQUIREMENT}: the IDE did NOT present the resolved references to the person — the controller Java path did not present the resolved references`,
+  );
+  await attachEvidence(session, this);
+});
 
-When<StoryWorld>(
-  "the person selects a presented reference",
-  async function () {
-    const session = sessionFor(this);
-    await session.selectReference();
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the person selects a presented reference", async function () {
+  const session = sessionFor(this);
+  await session.selectReference();
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   "the IDE navigates to and reveals that reference location in the editor at the exact point reported by the provider coordinates",
@@ -262,7 +250,6 @@ Then<StoryWorld>(
     await attachEvidence(session, this);
   },
 );
-
 
 // -----------------------------------------------------------------------------
 // AC-003 — adapters extract/delegate/response and honest unavailable outcomes (GREEN)
@@ -325,10 +312,26 @@ Then<StoryWorld>(
   "it neither fabricates a definition, a reference list, a successful result, nor a fallback textual rewrite",
   async function () {
     const session = sessionFor(this);
-    assert.equal(session.fabricatedDefinition(), false, `${REQUIREMENT}: a definition was fabricated`);
-    assert.equal(session.fabricatedReferenceList(), false, `${REQUIREMENT}: a reference list was fabricated`);
-    assert.equal(session.fabricatedSuccess(), false, `${REQUIREMENT}: a successful result was fabricated`);
-    assert.equal(session.fallbackRewrite(), false, `${REQUIREMENT}: a fallback textual rewrite was fabricated`);
+    assert.equal(
+      session.fabricatedDefinition(),
+      false,
+      `${REQUIREMENT}: a definition was fabricated`,
+    );
+    assert.equal(
+      session.fabricatedReferenceList(),
+      false,
+      `${REQUIREMENT}: a reference list was fabricated`,
+    );
+    assert.equal(
+      session.fabricatedSuccess(),
+      false,
+      `${REQUIREMENT}: a successful result was fabricated`,
+    );
+    assert.equal(
+      session.fallbackRewrite(),
+      false,
+      `${REQUIREMENT}: a fallback textual rewrite was fabricated`,
+    );
     await attachEvidence(session, this);
   },
 );
@@ -372,22 +375,43 @@ Then<StoryWorld>(
         true,
         `${REQUIREMENT}: ${port.port} does not declare a port interface`,
       );
-      assert.equal(
-        port.tauriImports,
-        0,
-        `${REQUIREMENT}: ${port.port} imports a platform API`,
-      );
+      assert.equal(port.tauriImports, 0, `${REQUIREMENT}: ${port.port} imports a platform API`);
     }
     await attachEvidence(session, this);
   },
 );
 
 // -----------------------------------------------------------------------------
-// AC-005 — implementation status is evidence-based and stays @not-implemented (PASS, static)
+// AC-005 — implementation status reflects qualified partial scope (PASS, static)
 // -----------------------------------------------------------------------------
 
+When<StoryWorld>(
+  "Java navigation is reconciled against its current evidence",
+  async function () {
+    const session = sessionFor(this);
+    await session.start();
+    session.reconcileFeatureStatus();
+    await attachEvidence(session, this);
+  },
+);
+
 Then<StoryWorld>(
-  "the requirement ID \"@REQ-IDE-JAVA-NAVIGATION-001\" is repository-unique and reconciled",
+  "Java navigation declares one inherited partial status",
+  async function () {
+    const session = sessionFor(this);
+    const reconciliation = session.featureReconciliation();
+    assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
+    assert.deepEqual(
+      reconciliation.featureStatusTags,
+      ["@partial"],
+      `${REQUIREMENT}: feature status must reflect its qualified partial scope`,
+    );
+    await attachEvidence(session, this);
+  },
+);
+
+Then<StoryWorld>(
+  'the requirement ID "@REQ-IDE-JAVA-NAVIGATION-001" is repository-unique and reconciled',
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
@@ -397,10 +421,27 @@ Then<StoryWorld>(
       `${REQUIREMENT}: requirement ID is not declared`,
     );
     const uniqueness = session.requirementOccurrences();
-    assert.equal(uniqueness.unique, true, `${REQUIREMENT}: requirement ID is not repository-unique`);
+    assert.equal(
+      uniqueness.unique,
+      true,
+      `${REQUIREMENT}: requirement ID is not repository-unique`,
+    );
     assert.ok(
       uniqueness.occurrences >= 5,
       `${REQUIREMENT}: requirement ID is not reconciled across scenarios`,
+    );
+    await attachEvidence(session, this);
+  },
+);
+
+Then<StoryWorld>(
+  "the native Java cursor acceptance is separately declared partial",
+  async function () {
+    const session = sessionFor(this);
+    assert.equal(
+      session.nativeCursorRequirementIsPartial(),
+      true,
+      `${REQUIREMENT}: native cursor acceptance must declare its bounded partial scope`,
     );
     await attachEvidence(session, this);
   },
@@ -414,9 +455,9 @@ Then<StoryWorld>(
     // run_engine_references, the real adapter delegates definition(symbol) /
     // references(symbol), and the CONTROLLER JAVA PATH is now WIRED (real
     // production behavior). Production presence does not promote the declared
-    // status: the feature still reconciles @not-implemented because live
-    // Tauri-window navigation E2E is unvalidated headless, and no fabricated
-    // definition/reference result promotes it.
+    // status: the feature reconciles @partial based on separate native evidence;
+    // this deterministic harness and no fabricated definition/reference result do
+    // not promote that declared status further.
     const gap = session.productionGap();
     assert.equal(
       gap.engineDefinesDefinitionReferencesCommands,
@@ -433,13 +474,21 @@ Then<StoryWorld>(
       true,
       `${REQUIREMENT}: the controller Java path is not wired — GREEN requires the wired controller path`,
     );
-    assert.equal(session.fabricatedDefinition(), false, `${REQUIREMENT}: a hard-coded/fake definition promotes the status`);
-    assert.equal(session.fabricatedReferenceList(), false, `${REQUIREMENT}: a hard-coded/fake reference list promotes the status`);
+    assert.equal(
+      session.fabricatedDefinition(),
+      false,
+      `${REQUIREMENT}: a hard-coded/fake definition promotes the status`,
+    );
+    assert.equal(
+      session.fabricatedReferenceList(),
+      false,
+      `${REQUIREMENT}: a hard-coded/fake reference list promotes the status`,
+    );
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
     assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT}: production presence promoted the declared status`,
+      reconciliation.featureStatusTags.includes("@partial"),
+      `${REQUIREMENT}: production presence changed its partial status`,
     );
     await attachEvidence(session, this);
   },
@@ -455,31 +504,16 @@ Then<StoryWorld>(
     // coverage are reported separately and not claimed here.
     const evidence = session.evidence();
     assert.equal(evidence.evidenceKind, "tauri-harness", `${REQUIREMENT}: evidence kind mismatch`);
-    assert.equal(evidence.nativeGui, false, `${REQUIREMENT}: native GUI evidence is not reported separately`);
+    assert.equal(
+      evidence.nativeGui,
+      false,
+      `${REQUIREMENT}: native GUI evidence is not reported separately`,
+    );
     assert.equal(evidence.e2e, false, `${REQUIREMENT}: e2e evidence is not reported separately`);
     assert.equal(
       evidence.packagedApplication,
       false,
       `${REQUIREMENT}: packaging evidence is not reported separately`,
-    );
-    await attachEvidence(session, this);
-  },
-);
-
-Then<StoryWorld>(
-  "live Tauri-window navigation E2E may remain unvalidated headless without silently upgrading the declared status",
-  async function () {
-    const session = sessionFor(this);
-    const reconciliation = session.featureReconciliation();
-    assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
-    assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT}: unvalidated headless e2e silently upgraded the declared status`,
-    );
-    assert.equal(
-      reconciliation.scenarioStatusTags.length,
-      0,
-      `${REQUIREMENT}: unvalidated headless e2e silently upgraded a scenario status`,
     );
     await attachEvidence(session, this);
   },

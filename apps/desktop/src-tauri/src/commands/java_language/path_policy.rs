@@ -5,6 +5,20 @@ use std::path::{Path, PathBuf};
 use super::protocol::MAX_DIAGNOSTIC_URI_BYTES;
 
 pub(super) fn authorize_java_path(root: &Path, relative: &str) -> Result<(String, String), String> {
+    if Path::new(relative)
+        .extension()
+        .and_then(|value| value.to_str())
+        != Some("java")
+    {
+        return Err("Invalid workspace-relative Java document path".to_string());
+    }
+    authorize_workspace_path(root, relative)
+}
+
+pub(super) fn authorize_workspace_path(
+    root: &Path,
+    relative: &str,
+) -> Result<(String, String), String> {
     if relative.is_empty()
         || relative.len() > MAX_DIAGNOSTIC_URI_BYTES
         || relative.chars().any(char::is_control)
@@ -12,10 +26,6 @@ pub(super) fn authorize_java_path(root: &Path, relative: &str) -> Result<(String
         || relative
             .split(['/', '\\'])
             .any(|part| part.is_empty() || part == "." || part == "..")
-        || Path::new(relative)
-            .extension()
-            .and_then(|value| value.to_str())
-            != Some("java")
     {
         return Err("Invalid workspace-relative Java document path".to_string());
     }

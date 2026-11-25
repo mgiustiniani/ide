@@ -11,7 +11,8 @@
 // Ready-path semantic requests are served only when the requested version
 // matches the opened/ready synchronized document; not-ready or stale-version
 // requests are rejected honestly (ok:false, error.kind "stale-version").
-// The feature file itself is NOT promoted; AC-006 keeps @not-implemented.
+// The feature is @partial: production adapter scenarios and one focused native GUI scenario pass,
+// while the broader lifecycle, project-context, installer, and cross-platform scope remains open.
 // -----------------------------------------------------------------------------
 
 import { After, Given, Then, When } from "@cucumber/cucumber";
@@ -549,32 +550,48 @@ Then<StoryWorld>(
 );
 
 // -----------------------------------------------------------------------------
-// AC-006 — implementation status is evidence-based and not promoted
+// AC-006 — implementation status reflects verified scope
 // -----------------------------------------------------------------------------
 
-Given<StoryWorld>(
-  "characterization steps and glue establish meaningful RED for this feature",
+When<StoryWorld>(
+  "the Java language feature is parsed for status and requirement reconciliation",
   async function () {
     const session = sessionFor(this);
     session.start();
+    session.reconcileFeatureStatus();
     await attachEvidence(session, this);
   },
 );
 
 Then<StoryWorld>(
-  "observed test evidence does not silently upgrade the declared status",
+  'the feature declares exactly one effective status "@partial" at feature level',
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
-    assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT} GREEN evidence silently upgraded the declared status`,
-    );
     assert.equal(
-      reconciliation.scenarioStatusTags.every((tag) => tag === "@not-implemented"),
-      true,
-      `${REQUIREMENT} GREEN evidence silently upgraded a scenario status`,
+      new Set(reconciliation.featureStatusTags).size,
+      1,
+      `${REQUIREMENT} must declare exactly one effective feature status`,
+    );
+    assert.ok(
+      reconciliation.featureStatusTags.includes("@partial"),
+      `${REQUIREMENT} does not reflect its verified partial scope`,
+    );
+    await attachEvidence(session, this);
+  },
+);
+
+Then<StoryWorld>(
+  "no scenario declares a conflicting status override",
+  async function () {
+    const session = sessionFor(this);
+    const reconciliation = session.featureReconciliation();
+    assert.ok(reconciliation, `${REQUIREMENT} reconciliation is missing`);
+    assert.equal(
+      reconciliation.scenarioStatusTags.length,
+      0,
+      `${REQUIREMENT} declares a scenario-level status that conflicts with its feature status`,
     );
     await attachEvidence(session, this);
   },
@@ -592,7 +609,7 @@ Then<StoryWorld>(
     );
     const uniqueness = session.requirementOccurrences();
     assert.equal(uniqueness.unique, true, `${REQUIREMENT} requirement ID is not repository-unique`);
-    assert.ok(uniqueness.occurrences >= 6, `${REQUIREMENT} requirement ID is not reconciled across scenarios`);
+    assert.ok(uniqueness.occurrences >= 7, `${REQUIREMENT} requirement ID is not reconciled across scenarios`);
     await attachEvidence(session, this);
   },
 );

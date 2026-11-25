@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/capabilities.json",
+  "identifier": "main-editor",
+  "description": "Allow the main editor close-request handler to finish closing only after its dirty-buffer guard accepts",
+  "windows": ["main"],
+  "permissions": ["core:window:allow-destroy"]
+}

@@ -1,7 +1,7 @@
 //! Bounded LSP frame codec and normalized inbound protocol messages/events.
 
 use std::collections::VecDeque;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 use std::process::ChildStdin;
 use std::sync::{mpsc, Arc, Mutex};
@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 
 use super::contract::{
     JavaLanguageCapabilities, JavaLanguageServiceEvent, JavaLanguageServiceEventBatch,
+    SemanticTokenLegend,
 };
 use super::path_policy::{diagnostic_uri_in_workspace, file_uri};
 use super::support::lock;
@@ -65,6 +66,8 @@ impl EventQueue {
 pub(super) fn respond_to_server_request(
     writer: &Arc<Mutex<ChildStdin>>,
     request: &Value,
+    settings: &Value,
+    root: &Path,
 ) -> Result<(), String> {
     let id = request
         .get("id")
@@ -73,13 +76,29 @@ pub(super) fn respond_to_server_request(
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
     let result = match method {
         "workspace/configuration" => {
-            let count = request
+            let items = request
                 .pointer("/params/items")
                 .and_then(Value::as_array)
-                .map_or(0, Vec::len);
-            Value::Array(vec![Value::Null; count])
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            Value::Array(
+                items
+                    .iter()
+                    .map(|item| {
+                        let section = item.get("section").and_then(Value::as_str).unwrap_or("");
+                        let mut value = settings;
+                        if !section.is_empty() {
+                            for name in section.split('.') {
+                                value = value.get(name).unwrap_or(&Value::Null);
+                            }
+                        }
+                        value.clone()
+                    })
+                    .collect(),
+            )
         }
-        "workspace/workspaceFolders" => Value::Array(Vec::new()),
+        "workspace/workspaceFolders" => json!([{"uri":file_uri(root),
+            "name":root.file_name().and_then(|name|name.to_str()).unwrap_or("workspace")}]),
         "window/workDoneProgress/create"
         | "client/registerCapability"
         | "client/unregisterCapability" => Value::Null,
@@ -231,6 +250,7 @@ pub(super) fn wait_for_initialize(
     incoming: &mpsc::Receiver<Incoming>,
     expected_id: u64,
     timeout: Duration,
+    configuration: Option<(&Arc<Mutex<ChildStdin>>, &Value, &Path)>,
 ) -> Result<Value, String> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -241,6 +261,13 @@ pub(super) fn wait_for_initialize(
         match incoming {
             Incoming::Closed(detail) => return Err(detail),
             Incoming::Message(message) => {
+                if message.get("id").is_some() && message.get("method").is_some() {
+                    let (writer, settings, root) = configuration.ok_or_else(|| {
+                        "Server requested configuration before client setup".to_string()
+                    })?;
+                    respond_to_server_request(writer, &message, settings, root)?;
+                    continue;
+                }
                 if message.get("id").is_none() || message.get("method").is_some() {
                     continue;
                 }
@@ -286,7 +313,7 @@ pub(super) fn summarize_rpc_error(error: &Value) -> String {
     )
 }
 
-pub(super) fn initialize_request(id: u64, root: &Path) -> Value {
+pub(super) fn initialize_request(id: u64, root: &Path, settings: &Value) -> Value {
     let uri = file_uri(root);
     json!({
         "jsonrpc":"2.0",
@@ -297,19 +324,78 @@ pub(super) fn initialize_request(id: u64, root: &Path) -> Value {
             "clientInfo":{"name":"IDE Desktop","version":env!("CARGO_PKG_VERSION")},
             "rootUri":uri,
             "workspaceFolders":[{"uri":uri,"name":root.file_name().and_then(|v|v.to_str()).unwrap_or("workspace")}],
+            "initializationOptions":{"settings":settings,"workspaceFolders":[uri]},
             "capabilities":{
-                "workspace":{"workspaceFolders":true,"symbol":{"dynamicRegistration":false}},
+                "workspace":{"configuration":true,"workspaceFolders":true,"symbol":{"dynamicRegistration":false}},
                 "window":{"workDoneProgress":true},
                 "textDocument":{
                     "publishDiagnostics":{"relatedInformation":true,"versionSupport":true},
                     "completion":{"completionItem":{"snippetSupport":false}},
                     "hover":{"contentFormat":["markdown","plaintext"]},
-                    "definition":{},"references":{},"documentSymbol":{},"rename":{},
-                    "codeAction":{},"formatting":{},"signatureHelp":{}
+                    "definition":{},"typeDefinition":{},"references":{},"implementation":{"dynamicRegistration":true},"callHierarchy":{"dynamicRegistration":true},"documentSymbol":{"hierarchicalDocumentSymbolSupport":true},"documentHighlight":{},"rename":{},
+                    "codeAction":{"codeActionLiteralSupport":{"codeActionKind":{"valueSet":["quickfix","quickassist","refactor","source"]}},"isPreferredSupport":true},"formatting":{},"rangeFormatting":{"dynamicRegistration":true},"signatureHelp":{},
+                    "semanticTokens":{"requests":{"range":false,"full":{"delta":false}},"tokenTypes":["namespace","class","interface","enum","enumMember","type","typeParameter","method","property","variable","parameter","modifier","keyword","annotation","annotationMember","record","recordComponent","decorator"],"tokenModifiers":["abstract","static","readonly","deprecated","declaration","documentation","public","private","protected","native","generic","typeArgument","importDeclaration","constructor"],"formats":["relative"],"multilineTokenSupport":false,"overlappingTokenSupport":false},
+                    "inlayHint":{"dynamicRegistration":true},"onTypeFormatting":{"dynamicRegistration":true}
                 }
             }
         }
     })
+}
+
+pub(super) fn apply_dynamic_capability_registration(
+    capabilities: &mut JavaLanguageCapabilities,
+    method: &str,
+    params: &Value,
+) -> bool {
+    let (entries_key, registered) = match method {
+        "client/registerCapability" => ("registrations", true),
+        "client/unregisterCapability" => ("unregisterations", false),
+        _ => return false,
+    };
+    let entries = params
+        .get(entries_key)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut changed = false;
+    for entry in entries {
+        if entry.get("method").and_then(Value::as_str) == Some("textDocument/implementation")
+            && capabilities.implementation != registered
+        {
+            capabilities.implementation = registered;
+            changed = true;
+        }
+        if entry.get("method").and_then(Value::as_str) == Some("textDocument/prepareCallHierarchy")
+            && capabilities.call_hierarchy != registered
+        {
+            capabilities.call_hierarchy = registered;
+            changed = true;
+        }
+        if entry.get("method").and_then(Value::as_str) == Some("textDocument/rangeFormatting")
+            && capabilities.range_formatting != registered
+        {
+            capabilities.range_formatting = registered;
+            changed = true;
+        }
+        if entry.get("method").and_then(Value::as_str) == Some("textDocument/onTypeFormatting") {
+            let triggers = if registered {
+                on_type_formatting_triggers(&entry["registerOptions"])
+            } else {
+                Vec::new()
+            };
+            if capabilities.on_type_formatting_triggers != triggers {
+                capabilities.on_type_formatting_triggers = triggers;
+                changed = true;
+            }
+        }
+        if entry.get("method").and_then(Value::as_str) == Some("textDocument/inlayHint")
+            && capabilities.inlay_hints != registered
+        {
+            capabilities.inlay_hints = registered;
+            changed = true;
+        }
+    }
+    changed
 }
 
 pub(super) fn normalize_capabilities(result: &Value) -> JavaLanguageCapabilities {
@@ -320,14 +406,66 @@ pub(super) fn normalize_capabilities(result: &Value) -> JavaLanguageCapabilities
         completion: capability(capabilities, "completionProvider"),
         hover: capability(capabilities, "hoverProvider"),
         definition: capability(capabilities, "definitionProvider"),
+        type_definition: capability(capabilities, "typeDefinitionProvider"),
         references: capability(capabilities, "referencesProvider"),
         document_symbols: capability(capabilities, "documentSymbolProvider"),
+        document_highlights: capability(capabilities, "documentHighlightProvider"),
+        implementation: capability(capabilities, "implementationProvider"),
+        call_hierarchy: capability(capabilities, "callHierarchyProvider"),
         workspace_symbols: capability(capabilities, "workspaceSymbolProvider"),
+        semantic_tokens: semantic_token_legend(result).is_some(),
+        inlay_hints: capability(capabilities, "inlayHintProvider"),
         rename: capability(capabilities, "renameProvider"),
         code_actions: capability(capabilities, "codeActionProvider"),
         formatting: capability(capabilities, "documentFormattingProvider"),
+        range_formatting: capability(capabilities, "documentRangeFormattingProvider"),
+        on_type_formatting_triggers: on_type_formatting_triggers(&capabilities["documentOnTypeFormattingProvider"]),
         signature_help: capability(capabilities, "signatureHelpProvider"),
     }
+}
+
+fn on_type_formatting_triggers(options: &Value) -> Vec<String> {
+    fn valid(value: &Value) -> Option<&str> { value.as_str()
+        .filter(|value| value.chars().count() == 1 && !value.contains('\0')) }
+    let Some(first) = valid(&options["firstTriggerCharacter"]) else { return Vec::new(); };
+    let mut result = vec![first.to_string()];
+    if let Some(more) = options.get("moreTriggerCharacter") {
+        let Some(more) = more.as_array().filter(|more| more.len() <= 15) else { return Vec::new(); };
+        for value in more {
+            let Some(value) = valid(value) else { return Vec::new(); };
+            if !result.iter().any(|existing| existing == value) { result.push(value.to_string()); }
+        }
+    }
+    result
+}
+
+pub(super) fn semantic_token_legend(result: &Value) -> Option<SemanticTokenLegend> {
+    let provider = result.pointer("/capabilities/semanticTokensProvider")?;
+    let full = provider.get("full")?;
+    if !matches!(full, Value::Bool(true) | Value::Object(_)) {
+        return None;
+    }
+    let legend = provider.get("legend")?;
+    let values = |key: &str, max: usize| -> Option<Vec<String>> {
+        let values = legend.get(key)?.as_array()?;
+        if values.is_empty() || values.len() > max {
+            return None;
+        }
+        values
+            .iter()
+            .map(|value| {
+                let value = value.as_str()?;
+                if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
+                    return None;
+                }
+                Some(value.to_string())
+            })
+            .collect()
+    };
+    Some(SemanticTokenLegend {
+        token_types: values("tokenTypes", 64)?,
+        token_modifiers: values("tokenModifiers", 32)?,
+    })
 }
 
 pub(super) fn capability(capabilities: &Value, key: &str) -> bool {
@@ -370,7 +508,10 @@ pub(super) fn read_frame<R: BufRead>(
     let mut header_bytes = 0usize;
     loop {
         let mut line = Vec::new();
-        let read = reader
+        // Bound the read itself: read_until otherwise buffers an arbitrarily long
+        // unterminated line before the aggregate header check can run.
+        let read = (&mut *reader)
+            .take((MAX_HEADER_BYTES - header_bytes + 1) as u64)
             .read_until(b'\n', &mut line)
             .map_err(|error| format!("Cannot read LSP header: {error}"))?;
         if read == 0 {
@@ -390,9 +531,17 @@ pub(super) fn read_frame<R: BufRead>(
         let text = std::str::from_utf8(&line)
             .map_err(|_| "LSP header is not valid UTF-8".to_string())?
             .trim_end_matches(['\r', '\n']);
-        let (name, value) = text
-            .split_once(':')
-            .ok_or_else(|| "Malformed LSP header".to_string())?;
+        let (name, value) = text.split_once(':').ok_or_else(|| {
+            let mut preview: String = text
+                .chars()
+                .take(96)
+                .flat_map(char::escape_default)
+                .collect();
+            if text.chars().count() > 96 {
+                preview.push_str("...");
+            }
+            format!("Malformed LSP header: expected name:value; received \"{preview}\"")
+        })?;
         if name.eq_ignore_ascii_case("Content-Length") {
             if content_length.is_some() {
                 return Err("Duplicate LSP Content-Length header".to_string());
@@ -420,6 +569,24 @@ pub(super) fn read_frame<R: BufRead>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn on_type_formatting_retains_exact_triggers_and_dynamic_withdrawal() {
+        let mut capabilities = normalize_capabilities(&json!({"capabilities":{
+            "documentOnTypeFormattingProvider":{"firstTriggerCharacter":";", "moreTriggerCharacter":["}","\n",";"]}
+        }}));
+        assert_eq!(capabilities.on_type_formatting_triggers, vec![";", "}", "\n"]);
+        assert!(apply_dynamic_capability_registration(&mut capabilities, "client/unregisterCapability",
+            &json!({"unregisterations":[{"method":"textDocument/onTypeFormatting"}]})));
+        assert!(capabilities.on_type_formatting_triggers.is_empty());
+        assert!(apply_dynamic_capability_registration(&mut capabilities, "client/registerCapability",
+            &json!({"registrations":[{"method":"textDocument/onTypeFormatting", "registerOptions":{"firstTriggerCharacter":"}"}}]})));
+        assert_eq!(capabilities.on_type_formatting_triggers, vec!["}"]);
+        for options in [json!(true),json!({"firstTriggerCharacter":""}),json!({"firstTriggerCharacter":"ab"}),
+            json!({"firstTriggerCharacter":";","moreTriggerCharacter":[1]}),
+            json!({"firstTriggerCharacter":";","moreTriggerCharacter":vec!["}";16]})] {
+            assert!(on_type_formatting_triggers(&options).is_empty());
+        }
+    }
     use super::super::path_policy::file_uri;
     use super::*;
     use std::env;
@@ -487,20 +654,141 @@ mod tests {
     }
 
     #[test]
+    fn oversized_unterminated_header_stops_reading_at_the_limit() {
+        let mut stream = Cursor::new(vec![b'x'; MAX_HEADER_BYTES * 128]);
+        assert_eq!(
+            read_frame(&mut stream, 100).unwrap_err(),
+            "LSP header exceeds size limit"
+        );
+        assert_eq!(stream.position(), (MAX_HEADER_BYTES + 1) as u64);
+    }
+
+    #[test]
+    fn aggregate_header_limit_bounds_later_lines_and_accepts_the_exact_limit() {
+        let body = b"{}";
+        let prefix = b"Content-Length: 2\r\nX-Padding: ";
+        let padding = MAX_HEADER_BYTES - prefix.len() - 4;
+        let mut frame = prefix.to_vec();
+        frame.extend(vec![b'x'; padding]);
+        frame.extend_from_slice(b"\r\n\r\n");
+        assert_eq!(frame.len(), MAX_HEADER_BYTES);
+        frame.extend_from_slice(body);
+        assert_eq!(
+            read_frame(&mut Cursor::new(frame), 100).unwrap(),
+            Some(json!({}))
+        );
+
+        let mut oversized = prefix.to_vec();
+        oversized.extend(vec![b'x'; MAX_HEADER_BYTES * 8]);
+        let mut stream = Cursor::new(oversized);
+        assert_eq!(
+            read_frame(&mut stream, 100).unwrap_err(),
+            "LSP header exceeds size limit"
+        );
+        assert_eq!(stream.position(), (MAX_HEADER_BYTES + 1) as u64);
+    }
+
+    #[test]
+    fn non_protocol_output_is_refused_with_a_bounded_escaped_preview() {
+        let warning =
+            b"[0.001s][warning][os,container] runtime warning\nContent-Length: 2\r\n\r\n{}";
+        let mut stream = Cursor::new(warning);
+        let failure = read_frame(&mut stream, 100).unwrap_err();
+        assert!(failure.contains("[0.001s][warning][os,container] runtime warning"));
+        assert_eq!(
+            stream.position(),
+            warning.iter().position(|byte| *byte == b'\n').unwrap() as u64 + 1
+        );
+        let line = format!("\u{1b}\u{0}{}\n", "\u{1f680}".repeat(1_000));
+        let failure = read_frame(&mut Cursor::new(line.as_bytes()), 100).unwrap_err();
+        assert!(failure.contains("\\u{1b}\\u{0}"));
+        assert!(!failure.contains('\u{1b}') && !failure.contains('\0'));
+        assert!(failure.ends_with("...\""));
+        assert!(failure.len() < 1_200);
+    }
+
+    #[test]
     fn initialize_response_validation_and_capability_normalization() {
         let (tx, rx) = mpsc::channel();
-        tx.send(Incoming::Message(json!({"jsonrpc":"2.0","id":11,"result":{"capabilities":{"hoverProvider":true,"completionProvider":{},"renameProvider":false}}}))).unwrap();
-        let result = wait_for_initialize(&rx, 11, Duration::from_secs(1)).unwrap();
+        tx.send(Incoming::Message(json!({"jsonrpc":"2.0","id":11,"result":{"capabilities":{"hoverProvider":true,"completionProvider":{},"documentHighlightProvider":{},"implementationProvider":true,"callHierarchyProvider":true,"workspaceSymbolProvider":{},"documentRangeFormattingProvider":true,"inlayHintProvider":{},"renameProvider":false,"semanticTokensProvider":{"full":true,"legend":{"tokenTypes":["class","method"],"tokenModifiers":["declaration"]}}}}}))).unwrap();
+        let result = wait_for_initialize(&rx, 11, Duration::from_secs(1), None).unwrap();
         let capabilities = normalize_capabilities(&result);
-        assert!(capabilities.hover && capabilities.completion);
+        assert!(
+            capabilities.hover
+                && capabilities.completion
+                && capabilities.document_highlights
+                && capabilities.implementation
+                && capabilities.call_hierarchy
+                && capabilities.workspace_symbols
+                && capabilities.range_formatting
+                && capabilities.inlay_hints
+                && capabilities.semantic_tokens
+        );
         assert!(!capabilities.rename && !capabilities.definition);
+        assert_eq!(
+            semantic_token_legend(&result),
+            Some(SemanticTokenLegend {
+                token_types: vec!["class".to_string(), "method".to_string()],
+                token_modifiers: vec!["declaration".to_string()],
+            })
+        );
 
         let (tx, rx) = mpsc::channel();
         tx.send(Incoming::Message(
             json!({"jsonrpc":"2.0","id":12,"error":{"code":-32603,"message":"failed"}}),
         ))
         .unwrap();
-        assert!(wait_for_initialize(&rx, 12, Duration::from_secs(1)).is_err());
+        assert!(wait_for_initialize(&rx, 12, Duration::from_secs(1), None).is_err());
+    }
+
+    #[test]
+    fn dynamic_capabilities_track_implementation_call_hierarchy_and_other_features() {
+        let mut capabilities = JavaLanguageCapabilities::default();
+        let registered = json!({
+            "registrations":[
+                {"id":"implementation-provider","method":"textDocument/implementation","registerOptions":{}}
+                ,{"id":"call-hierarchy-provider","method":"textDocument/prepareCallHierarchy","registerOptions":{}}
+                ,{"id":"range-formatting-provider","method":"textDocument/rangeFormatting","registerOptions":{}}
+                ,{"id":"inlay-hints-provider","method":"textDocument/inlayHint","registerOptions":{}}
+            ]
+        });
+        assert!(apply_dynamic_capability_registration(
+            &mut capabilities,
+            "client/registerCapability",
+            &registered,
+        ));
+        assert!(capabilities.implementation);
+        assert!(capabilities.call_hierarchy);
+        assert!(capabilities.range_formatting);
+        assert!(capabilities.inlay_hints);
+        assert!(!apply_dynamic_capability_registration(
+            &mut capabilities,
+            "client/registerCapability",
+            &registered,
+        ));
+
+        let unregistered = json!({
+            "unregisterations":[
+                {"id":"implementation-provider","method":"textDocument/implementation"}
+                ,{"id":"call-hierarchy-provider","method":"textDocument/prepareCallHierarchy"}
+                ,{"id":"range-formatting-provider","method":"textDocument/rangeFormatting"}
+                ,{"id":"inlay-hints-provider","method":"textDocument/inlayHint"}
+            ]
+        });
+        assert!(apply_dynamic_capability_registration(
+            &mut capabilities,
+            "client/unregisterCapability",
+            &unregistered,
+        ));
+        assert!(!capabilities.implementation);
+        assert!(!capabilities.call_hierarchy);
+        assert!(!capabilities.range_formatting);
+        assert!(!capabilities.inlay_hints);
+        assert!(!apply_dynamic_capability_registration(
+            &mut capabilities,
+            "client/unregisterCapability",
+            &unregistered,
+        ));
     }
 
     #[test]

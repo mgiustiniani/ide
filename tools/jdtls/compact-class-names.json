@@ -1,0 +1,42 @@
+{
+  "upstreamJdtlsVersion": "1.63.0-202610191322",
+  "derivedJdtlsVersion": "1.63.0-202610191322-idecompact1",
+  "sourceCommit": "5a4dd839342e057849b378ec912c47035db65dbb",
+  "sourcePath": "src/org/eclipse/jdt/internal/compiler/ast/TypeDeclaration.java",
+  "sourceUrl": "https://raw.githubusercontent.com/eclipse-jdt/eclipse.jdt.core/5a4dd839342e057849b378ec912c47035db65dbb/org.eclipse.jdt.core.compiler.batch/src/org/eclipse/jdt/internal/compiler/ast/TypeDeclaration.java",
+  "sourceSha256": "d32dd0ee2d30a29c2fda461483d1e74e29493b66a0c2a33e27cf000ce8b0b677",
+  "patchedSourceSha256": "c4affec060fd651d19b1b3fb2fe85e9f20c6c2eb27e15117f86faf1efb193c6b",
+  "originalCompiler": "plugins/org.eclipse.jdt.core.compiler.batch_3.46.200.v20261008-1115.jar",
+  "originalCompilerSha256": "f667bb3666d9875a2309fa2447a19e6cdd960281473bd7125a22c5a435246d21",
+  "derivedCompiler": "plugins/org.eclipse.jdt.core.compiler.batch_3.46.200.v20261008-1115_idecompact1.jar",
+  "originalBundleVersion": "3.46.200.v20261008-1115",
+  "derivedBundleVersion": "3.46.200.v20261008-1115_idecompact1",
+  "classEntry": "org/eclipse/jdt/internal/compiler/ast/TypeDeclaration.class",
+  "license": "EPL-2.0",
+  "licenseUrl": "https://www.eclipse.org/legal/epl-2.0/",
+  "derivedClassSha256": "23c1c6a7924491650ec893edfb611ae85b9bebd589e64de9aa512ef146fe6a16",
+  "originalConfigurationSha256": {
+    "config_linux/config.ini": "c61a9d01b358ed6b38ce9cbc35cee1f8d83188bb87d783d722712b03c4b602d6",
+    "config_linux_arm/config.ini": "ce14706fe584baa2a5cf219344eda8805eece7927c0df43cd869dcc95d2ccdcc",
+    "config_mac/config.ini": "ef14a9c422bf70693155e39063bf34eb57fb712c3445c3346241c513d7615e78",
+    "config_mac_arm/config.ini": "0d5587fcd30641a4ce5b59e706d3565a8a7b7b40cd75c1d78ece842722c0b3ee",
+    "config_ss_linux/config.ini": "7ad86573986ce1b1d66db5e9e082a4443854b5cbd304cb33e1bb3a70203e8807",
+    "config_ss_linux_arm/config.ini": "8b3c6e1deacd040bbd6e99e6f29a02394f693578a92fabe40eb11fe16c27dfe1",
+    "config_ss_mac/config.ini": "9ff7903c73ea290e8194cc0671be5fe73bc3eb91776ccb40f75477546e4372ef",
+    "config_ss_mac_arm/config.ini": "b2d6db036069fc9965f03765469b0f7e1f59c8ef9cde35246e3520d84be2fa03",
+    "config_ss_win/config.ini": "c2c64c2f32e6a00e35ff52e893629c9953813321c02bc62b626cf6c027b1fdf7",
+    "config_win/config.ini": "e196936a778103c6c5ffecf130f83ee964bfd33580c39ea5270d223e4ea69ac2"
+  },
+  "derivedConfigurationSha256": {
+    "config_linux/config.ini": "50f5ab8e58b37a225ebbb28489c5225886f26a3980719bfdc48a9c4ae24691bd",
+    "config_linux_arm/config.ini": "415b5be9de73bf00d0a6db9748ad6c9e0c0c3b404686015d381067a3f3ea0753",
+    "config_mac/config.ini": "586ed0ebf1f6b5fd2588d4a467f4bb260116f4cd2e7e3ee6e73cb620afd6d07c",
+    "config_mac_arm/config.ini": "82674ae69ad316b8e97841fe7fad5f75b297e7ffcfe3f670ff6a3f8202c1039e",
+    "config_ss_linux/config.ini": "67d546626320ccfb5f029308a8112e629a695d08c04d8fa368fc4812f395fcb9",
+    "config_ss_linux_arm/config.ini": "5ed2c88b51c305641de601234577bd6e2a8da479d0e524be8fa82fed6423b536",
+    "config_ss_mac/config.ini": "200f51e484b700b5ac9cb88eba97e63b71389eaca0e807260fa2bb1d3a213ee4",
+    "config_ss_mac_arm/config.ini": "f6d083ecf87a07a4d60c32cc20db45759822466a929be9bd1fa089bc66a7eec7",
+    "config_ss_win/config.ini": "8e12129dd00effa6bc02bb129f170385452b0dee3d27ce444954e12164f9d7dc",
+    "config_win/config.ini": "7bda232dce2ca50d02b8739743cd2d450a2bc75ae5a2c0490b8c284aa81e9a0a"
+  }
+}

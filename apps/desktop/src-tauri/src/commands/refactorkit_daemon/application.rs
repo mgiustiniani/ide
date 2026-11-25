@@ -27,6 +27,7 @@ pub(super) struct TransactionGuard {
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
     pub(super) operation: Option<String>,
+    pub(super) rollback_files: Vec<Value>,
 }
 
 /// Preview artifact retained from the exact reviewed plan so Apply binds to the
@@ -50,6 +51,7 @@ pub(super) struct EnginePlanGuard {
     pub(super) operation: RefactoringOperation,
     pub(super) target: RefactoringTarget,
     pub(super) change_intent: Option<RefactorKitChangeIntent>,
+    pub(super) apply_eligible: bool,
     pub(super) preview_artifact: RefactorKitPreviewArtifact,
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
@@ -59,11 +61,15 @@ pub(super) struct EnginePlanGuard {
 
 #[derive(Default)]
 pub(super) struct Manager {
+    pub(super) java_transactions: HashMap<String, super::java_context_refactoring::Transaction>,
+    pub(super) java_project_context_plans: HashMap<String, super::java_context_refactoring::Plan>,
+    pub(super) java_refactoring: Option<super::java_context_refactoring::Active>,
     pub(super) session: Option<Session>,
     pub(super) plans: HashMap<String, Guard>,
     pub(super) transactions: HashMap<String, TransactionGuard>,
     pub(super) consumed_plans: HashSet<String>,
     pub(super) engine_plans: HashMap<String, EnginePlanGuard>,
+    pub(super) engine_transactions: HashMap<String, TransactionGuard>,
 }
 
 pub struct RefactorKitDaemonState(pub(super) Mutex<Manager>);
@@ -235,6 +241,7 @@ pub fn apply_refactorkit_plan(
             workspace_id: request.workspace_id,
             workspace_generation: request.workspace_generation,
             operation: None,
+            rollback_files: vec![],
         },
     );
     Ok(result)
@@ -337,7 +344,10 @@ pub fn preview_refactoring(
     request: PreviewRefactoringRequest,
     state: &RefactorKitDaemonState,
 ) -> Result<Value, String> {
-    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    let root = validate_workspace(
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+    )?;
     require_generation(request.selection_generation)?;
     validate_id(&request.request_id)?;
     validate_refactoring_target(&root, &request.target)?;
@@ -389,7 +399,10 @@ pub fn apply_refactoring(
     request: ApplyRefactoringRequest,
     state: &RefactorKitDaemonState,
 ) -> Result<Value, String> {
-    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    let root = validate_workspace(
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+    )?;
     require_generation(request.selection_generation)?;
     for value in [
         &request.plan_id,
@@ -448,6 +461,7 @@ pub fn apply_refactoring(
                     workspace_id: request.authority.workspace_id,
                     workspace_generation: request.authority.workspace_generation,
                     operation: Some(operation.to_string()),
+                    rollback_files: vec![],
                 },
             );
         }
@@ -460,7 +474,10 @@ pub fn rollback_refactoring(
     request: RollbackRefactoringRequest,
     state: &RefactorKitDaemonState,
 ) -> Result<Value, String> {
-    let root = validate_workspace(&request.authority.workspace_id, request.authority.workspace_generation)?;
+    let root = validate_workspace(
+        &request.authority.workspace_id,
+        request.authority.workspace_generation,
+    )?;
     validate_id(&request.transaction_id)?;
     validate_id(&request.request_id)?;
     let mut manager = lock(state)?;
@@ -567,14 +584,33 @@ pub(super) fn lock(
         .map_err(|_| "RefactorKit daemon state is unavailable.".to_string())
 }
 
+pub(super) fn has_retained_plan_id(
+    state: &RefactorKitDaemonState,
+    plan_id: &str,
+) -> Result<bool, String> {
+    let manager = lock(state)?;
+    Ok(manager.plans.contains_key(plan_id)
+        || manager.java_project_context_plans.contains_key(plan_id)
+        || manager.engine_plans.contains_key(plan_id)
+        || manager.consumed_plans.contains(plan_id))
+}
+
 pub(super) fn reset(manager: &mut Manager) {
+    manager.java_transactions.clear();
+    manager.java_project_context_plans.clear();
+    manager.java_refactoring.take();
+    reset_daemon(manager);
+    manager.engine_plans.clear();
+    manager.engine_transactions.clear();
+}
+
+pub(super) fn reset_daemon(manager: &mut Manager) {
     if let Some(mut session) = manager.session.take() {
         terminate(&mut session.child);
     }
     manager.plans.clear();
     manager.transactions.clear();
     manager.consumed_plans.clear();
-    manager.engine_plans.clear();
 }
 
 pub(super) fn ensure_session(
@@ -592,7 +628,17 @@ pub(super) fn ensure_session(
     if reusable {
         return Ok(());
     }
-    reset(manager);
+    // Daemon discovery and replacement do not own the CLI's reviewed plans
+    // or rollback transactions. A different workspace still retires both.
+    if manager
+        .session
+        .as_ref()
+        .is_some_and(|session| session.workspace_id != workspace_id || session.root != root)
+    {
+        reset(manager);
+    } else {
+        reset_daemon(manager);
+    }
     let mut session = spawn_session(workspace_id, generation, root)?;
     let initialized = (|| {
         let capabilities = session_call(
@@ -671,8 +717,14 @@ pub(super) fn refactoring_discard_params(plan_id: &str) -> Value {
     json!({"planId": plan_id})
 }
 
-pub(super) fn validate_refactoring_target(root: &Path, target: &RefactoringTarget) -> Result<String, String> {
-    if !matches!(target.kind.as_str(), "class" | "member" | "local-binding") {
+pub(super) fn validate_refactoring_target(
+    root: &Path,
+    target: &RefactoringTarget,
+) -> Result<String, String> {
+    if !matches!(
+        target.kind.as_str(),
+        "class" | "member" | "local-binding" | "file" | "source-root" | "package"
+    ) {
         return Err(PROTOCOL_FAILED.to_string());
     }
     if target.identity.is_empty()
@@ -703,7 +755,7 @@ pub(super) fn call(
         session_call(session, method, params, timeout)
     };
     if result.is_err() {
-        reset(manager);
+        reset_daemon(manager);
     }
     result
 }

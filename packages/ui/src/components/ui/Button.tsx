@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -52,6 +52,14 @@ export function Button({
   const btnRef = useRef<HTMLButtonElement>(null);
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number; size: number }[]>([]);
   const rippleIdRef = useRef(0);
+  const rippleTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = rippleTimers.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const btn = btnRef.current;
@@ -66,9 +74,11 @@ export function Button({
     setRipples((prev) => [...prev, { id, x, y, size }]);
 
     // Remove ripple after animation
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      rippleTimers.current.delete(timer);
       setRipples((prev) => prev.filter((r) => r.id !== id));
     }, 600);
+    rippleTimers.current.add(timer);
   }, []);
 
   const base =

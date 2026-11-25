@@ -4,7 +4,9 @@
 // Re‑export all contract types from a single entry point.
 
 export * from "./file-tree";
+export * from "./workspace-file-search";
 export * from "./editor";
+export * from "./editor-recovery";
 export * from "./terminal";
 export * from "./panel";
 export * from "./workspace";
@@ -24,5 +26,26 @@ export * from "./domain/xcom2-native-activation-evidence";
 export * from "./domain/xcom2-native-activation-evidence-policy";
 export * from "./language-service";
 export * from "./java-intelligence";
+export * from "./java-navigation";
+export * from "./java-editor-diagnostics";
+export * from "./java-dependency-source";
+export * from "./java-platform-source";
+export * from "./java-project-context";
+export * from "./java-editor-transaction";
+export * from "./java-lsp-refactoring";
+export * from "./java-project-operation-context";
+export * from "./java-project-text-search";
+export * from "./java-context-refactoring";
+export * from "./java-execution";
+export * from "./java-debugger";
 export * from "./xcom2";
 export * from "./xcom2-setup";
+export * from "./workspace-terminal";
+export * from "./java-coverage";
+export * from "./http-client";
+export * from "./java-database";
+export * from "./git-workspace";
+
+export * from "./java-names";
+export * from "./java-entry-points";
+export * from "./java-project-declaration";

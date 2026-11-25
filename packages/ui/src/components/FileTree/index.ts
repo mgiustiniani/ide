@@ -1,5 +1,7 @@
 export { FileTree } from "./FileTree";
 export type { FileTreeProps } from "./FileTree";
+export { createJavaTypeDraft, isValidJavaPackageName } from "./javaTypeSource";
+export type { JavaTypeDraft, JavaTypeKind } from "./javaTypeSource";
 
 export { FileTreeItem } from "./FileTreeItem";
 export type { FileTreeItemProps } from "./FileTreeItem";

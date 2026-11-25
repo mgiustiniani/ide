@@ -12,6 +12,7 @@ import "@ide/ui/styles/globals.css";
 import { App } from "./App";
 import { DetachedPiAgentApp } from "./DetachedPiAgentApp";
 
+document.documentElement.dataset.ideBootstrap = "entry-loaded";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
@@ -27,4 +28,5 @@ const application = isDetachedPiAgent ? (
   <App projectFoundry={createTauriXcom2ProjectFoundryRendererComposition()} />
 );
 
+document.documentElement.dataset.ideBootstrap = "render-requested";
 ReactDOM.createRoot(rootElement).render(<React.StrictMode>{application}</React.StrictMode>);

@@ -170,6 +170,38 @@ describe("useRefactorKitStatusController", () => {
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("Secret");
   });
 
+  it("returns capability failure details only when they are source-safe", async () => {
+    const port = createPort();
+    const controller = renderHook(() =>
+      useRefactorKitStatusController({
+        refactorKit: port.refactorKit,
+        deferWorkspaceActivation: true,
+      }),
+    );
+    port.getCapabilities.mockRejectedValueOnce(
+      new Error(
+        "[tauri:get_refactorkit_capabilities] Invalid response: invalid methods metadata",
+      ),
+    );
+
+    let snapshot!: Awaited<ReturnType<typeof controller.result.current.refreshWithSnapshot>>;
+    await act(async () => {
+      snapshot = await controller.result.current.refreshWithSnapshot();
+    });
+
+    expect(snapshot.capabilitiesError).toBe(
+      "[tauri:get_refactorkit_capabilities] Invalid response: invalid methods metadata",
+    );
+
+    port.getCapabilities.mockRejectedValueOnce(
+      new Error("Failed to read /home/user/.config/refactorkit/secret.json"),
+    );
+    await act(async () => {
+      snapshot = await controller.result.current.refreshWithSnapshot();
+    });
+    expect(snapshot.capabilitiesError).toBeNull();
+  });
+
   it("clears static diagnostic errors while a refresh checks again and recovers", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const port = createPort();

@@ -12,11 +12,7 @@ import { After, Given, Then, When } from "@cucumber/cucumber";
 import assert from "node:assert/strict";
 import type { StoryWorld } from "../support/world.js";
 import { DefaultEditorOpenRangePort } from "../../../packages/web-core/src/ports/editor-open-range-port.js";
-import {
-  GitDiffReviewSession,
-  NOT_IMPLEMENTED,
-  REQUIREMENT,
-} from "../support/git-diff-review.js";
+import { GitDiffReviewSession, REQUIREMENT } from "../support/git-diff-review.js";
 
 const gitDiffReviewSessions = new WeakMap<StoryWorld, GitDiffReviewSession>();
 
@@ -54,14 +50,11 @@ Given<StoryWorld>(
   },
 );
 
-Given<StoryWorld>(
-  "a platform that cannot produce a diff for the modified file",
-  async function () {
-    const session = sessionFor(this);
-    session.markPlatformDiffUnavailable();
-    await attachEvidence(session, this);
-  },
-);
+Given<StoryWorld>("a platform that cannot produce a diff for the modified file", async function () {
+  const session = sessionFor(this);
+  session.markPlatformDiffUnavailable();
+  await attachEvidence(session, this);
+});
 
 Given<StoryWorld>(
   "the web-first layers packages\\/ui, packages\\/web-core, and apps\\/web",
@@ -73,52 +66,40 @@ Given<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "the Changes surface is asked to review the modified file",
-  async function () {
-    const session = sessionFor(this);
-    await session.reviewModifiedFile("src/lib/git.ts"); // RED: throws NOT_IMPLEMENTED
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the Changes surface is asked to review the modified file", async function () {
+  const session = sessionFor(this);
+  await session.reviewModifiedFile("src/lib/git.ts"); // RED: throws NOT_IMPLEMENTED
+  await attachEvidence(session, this);
+});
 
-When<StoryWorld>(
-  "the person activates the diff range in the Changes surface",
-  async function () {
-    const session = sessionFor(this);
-    const visible = session.visibleRange() ?? { path: "src/lib/git.ts", startLine: 42, endLine: 60 };
-    // Inject a real editor driver so the production port DELEGATES and returns
-    // the driver's outcome — never an identity shortcut. This is the
-    // exact-range-open scenario (REQ-IDE-GIT-DIFF-REVIEW-002).
-    const editorPort = new DefaultEditorOpenRangePort({
-      openRange: (range) => {
-        session.recordEditorDriverOpen(range);
-        return { kind: "ok", opened: range };
-      },
-    });
-    session.setEditorPort(editorPort);
-    await session.openRange(visible.path, visible.startLine, visible.endLine);
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the person activates the diff range in the Changes surface", async function () {
+  const session = sessionFor(this);
+  const visible = session.visibleRange() ?? { path: "src/lib/git.ts", startLine: 42, endLine: 60 };
+  // Inject a real editor driver so the production port DELEGATES and returns
+  // the driver's outcome — never an identity shortcut. This is the
+  // exact-range-open scenario (REQ-IDE-GIT-DIFF-REVIEW-002).
+  const editorPort = new DefaultEditorOpenRangePort({
+    openRange: (range) => {
+      session.recordEditorDriverOpen(range);
+      return { kind: "ok", opened: range };
+    },
+  });
+  session.setEditorPort(editorPort);
+  await session.openRange(visible.path, visible.startLine, visible.endLine);
+  await attachEvidence(session, this);
+});
 
-When<StoryWorld>(
-  "the diff adapter is asked to produce the diff",
-  async function () {
-    const session = sessionFor(this);
-    await session.reviewModifiedFile("src/lib/git.ts"); // RED: throws NOT_IMPLEMENTED
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the diff adapter is asked to produce the diff", async function () {
+  const session = sessionFor(this);
+  await session.reviewModifiedFile("src/lib/git.ts"); // RED: throws NOT_IMPLEMENTED
+  await attachEvidence(session, this);
+});
 
-When<StoryWorld>(
-  "their source is scanned for platform API imports",
-  async function () {
-    const session = sessionFor(this);
-    session.scanWebFirstLayers(session.webFirstLayers());
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("their source is scanned for platform API imports", async function () {
+  const session = sessionFor(this);
+  session.scanWebFirstLayers(session.webFirstLayers());
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   "the Changes surface returns a read-only hunk-level diff for the modified file",
@@ -132,27 +113,33 @@ Then<StoryWorld>(
   },
 );
 
-Then<StoryWorld>(
-  "the hunk-level diff carries line and range metadata",
-  async function () {
-    const session = sessionFor(this);
-    const outcome = session.reviewOutcome();
-    assert.ok(outcome && outcome.kind === "ok", `${REQUIREMENT} ok diff is missing`);
-    assert.ok(outcome.diff.hunks.length > 0, `${REQUIREMENT} hunk-level diff has no hunks`);
-    assert.ok(outcome.diff.range.startLine >= 1, `${REQUIREMENT} range has no start line`);
-    assert.ok(outcome.diff.range.endLine >= outcome.diff.range.startLine, `${REQUIREMENT} range is not contiguous`);
-    assert.equal(outcome.diff.path, "src/lib/git.ts", `${REQUIREMENT} diff path mismatch`);
-    await attachEvidence(session, this);
-  },
-);
+Then<StoryWorld>("the hunk-level diff carries line and range metadata", async function () {
+  const session = sessionFor(this);
+  const outcome = session.reviewOutcome();
+  assert.ok(outcome && outcome.kind === "ok", `${REQUIREMENT} ok diff is missing`);
+  assert.ok(outcome.diff.hunks.length > 0, `${REQUIREMENT} hunk-level diff has no hunks`);
+  assert.ok(outcome.diff.range.startLine >= 1, `${REQUIREMENT} range has no start line`);
+  assert.ok(
+    outcome.diff.range.endLine >= outcome.diff.range.startLine,
+    `${REQUIREMENT} range is not contiguous`,
+  );
+  assert.equal(outcome.diff.path, "src/lib/git.ts", `${REQUIREMENT} diff path mismatch`);
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   "no write operation touched the working tree during the review",
   async function () {
     const session = sessionFor(this);
-    assert.equal(session.writeOperations().length, 0, `${REQUIREMENT} review wrote to the working tree`);
+    assert.equal(
+      session.writeOperations().length,
+      0,
+      `${REQUIREMENT} review wrote to the working tree`,
+    );
     assert.ok(
-      session.invokedPorts().every((port) => port.endsWith("#listModifiedFiles") || port.endsWith("#produceDiff")),
+      session
+        .invokedPorts()
+        .every((port) => port.endsWith("#listModifiedFiles") || port.endsWith("#produceDiff")),
       `${REQUIREMENT} review delegated outside the read-only diff ports`,
     );
     await attachEvidence(session, this);
@@ -185,7 +172,11 @@ Then<StoryWorld>(
   "the IDE creates no new AI or model dependency for the open operation",
   async function () {
     const session = sessionFor(this);
-    assert.equal(session.aiOrModelOperations().length, 0, `${REQUIREMENT} opened an AI/model dependency`);
+    assert.equal(
+      session.aiOrModelOperations().length,
+      0,
+      `${REQUIREMENT} opened an AI/model dependency`,
+    );
     assert.ok(
       session.invokedPorts().every((port) => port.endsWith("#openRange")),
       `${REQUIREMENT} range activation delegated outside the editor port`,

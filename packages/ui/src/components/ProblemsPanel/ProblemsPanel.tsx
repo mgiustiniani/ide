@@ -31,7 +31,11 @@ export interface ProblemGroup {
 export interface ProblemsPanelProps {
   items: readonly ProblemItem[];
   onNavigate?: (documentPath: string, range: DiagnosticRange) => void;
+  /** Allows the host to revalidate a provider-owned problem before opening it. */
+  onNavigateProblem?: (item: ProblemItem) => void;
   emptyMessage?: string;
+  /** A provider availability limitation, without an invented source location. */
+  notice?: string;
   /** Optional accessible name when more than one Problems panel is present. */
   ariaLabel?: string;
 }
@@ -95,7 +99,9 @@ function activateWithKeyboard(event: KeyboardEvent<HTMLButtonElement>, action: (
 export function ProblemsPanel({
   items,
   onNavigate,
+  onNavigateProblem,
   emptyMessage = "No problems detected.",
+  notice,
   ariaLabel = "Problems",
 }: ProblemsPanelProps): JSX.Element {
   const counts = getProblemCounts(items);
@@ -123,12 +129,13 @@ export function ProblemsPanel({
         ))}
       </header>
 
+      {notice ? <p role="alert" className="px-3 py-2 text-sm">{notice}</p> : null}
       {groups.length === 0 ? (
         <div
           className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--text-muted)]"
           role="status"
         >
-          {emptyMessage}
+          {notice ? "This provider cannot report diagnostics for this file." : emptyMessage}
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto" data-testid="problems-scroll-region">
@@ -147,7 +154,10 @@ export function ProblemsPanel({
                 </div>
                 <ul className="m-0 list-none p-0" role="group">
                   {group.items.map((item, itemIndex) => {
-                    const navigate = (): void => onNavigate?.(item.filePath, item.range);
+                    const navigate = (): void => {
+                      if (onNavigateProblem) onNavigateProblem(item);
+                      else onNavigate?.(item.filePath, item.range);
+                    };
                     const line = finiteCoordinate(item.range.start.line) + 1;
                     const column = finiteCoordinate(item.range.start.character) + 1;
                     return (

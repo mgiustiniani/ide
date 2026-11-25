@@ -16,6 +16,44 @@ afterEach(() => {
 });
 
 describe("useDocumentNavigationController", () => {
+  it("does not publish a reveal when a guarded file open is declined", async () => {
+    const openFileProgrammatically = vi.fn(async () => false);
+    const { result } = renderHook(() =>
+      useDocumentNavigationController({ displayedFilePath: null, openFileProgrammatically }),
+    );
+    await act(async () =>
+      expect(await result.current.navigateToLocation("Main.java", { kind: "range", range })).toBe(
+        false,
+      ),
+    );
+    expect(result.current.editorRevealRequest).toBeNull();
+  });
+
+  it("checks navigation authority before opening and after an asynchronous open", async () => {
+    let current = false;
+    const openFileProgrammatically = vi.fn(async () => {
+      current = false;
+      return true;
+    });
+    const canReveal = vi.fn(() => current);
+    const { result } = renderHook(() =>
+      useDocumentNavigationController({ displayedFilePath: null, openFileProgrammatically }),
+    );
+    await act(async () =>
+      expect(
+        await result.current.navigateToLocation("Main.java", { kind: "range", range }, canReveal),
+      ).toBe(false),
+    );
+    expect(openFileProgrammatically).not.toHaveBeenCalled();
+    current = true;
+    await act(async () =>
+      expect(
+        await result.current.navigateToLocation("Main.java", { kind: "range", range }, canReveal),
+      ).toBe(false),
+    );
+    expect(canReveal).toHaveBeenLastCalledWith(true);
+    expect(result.current.editorRevealRequest).toBeNull();
+  });
   it("derives supported previews and keeps closed state scoped to each document", () => {
     const openFileProgrammatically = vi.fn(async () => true);
     const initial: UseDocumentNavigationControllerDependencies = {
@@ -77,6 +115,27 @@ describe("useDocumentNavigationController", () => {
     });
   });
 
+  it("preserves the source range when navigation requests an editor selection", async () => {
+    const { result } = renderHook(() =>
+      useDocumentNavigationController({
+        displayedFilePath: null,
+        openFileProgrammatically: vi.fn(async () => true),
+      }),
+    );
+
+    await act(() =>
+      result.current.navigateToLocation("src/Main.java", { kind: "range", range, select: true }),
+    );
+
+    expect(result.current.editorRevealRequest).toEqual({
+      filePath: "src/Main.java",
+      line: 5,
+      column: 8,
+      selection: range,
+      requestId: 1,
+    });
+  });
+
   it("opens a diagnostic document and publishes one-based, nonnegative reveal coordinates", async () => {
     const openFileProgrammatically = vi.fn(async () => true);
     const { result } = renderHook(() =>
@@ -108,6 +167,16 @@ describe("useDocumentNavigationController", () => {
       }),
     );
     expect(result.current.editorRevealRequest).toEqual({
+      filePath: "src/Negative.java",
+      line: 1,
+      column: 1,
+      requestId: 2,
+    });
+    act(() => result.current.onRevealHandled(1));
+    expect(result.current.editorRevealRequest?.requestId).toBe(2);
+    act(() => result.current.onRevealHandled(2));
+    expect(result.current.editorRevealRequest).toBeNull();
+    expect(result.current.lastEditorRevealRequest).toEqual({
       filePath: "src/Negative.java",
       line: 1,
       column: 1,
@@ -175,4 +244,20 @@ describe("useDocumentNavigationController", () => {
     expect(logged).not.toContain("private/Secret.java");
     expect(logged).not.toContain("provider leaked");
   });
+});
+
+it("reveals an authorized position in the current document without reopening its language context", () => {
+  const openFileProgrammatically = vi.fn(async () => true);
+  const initialProps = { displayedFilePath: "Main.java", openFileProgrammatically };
+  const hook = renderHook((props) => useDocumentNavigationController(props), { initialProps });
+  const reveal = hook.result.current.revealCurrentLocation;
+  act(() => { expect(reveal("Main.java", { kind: "range", range }, () => false)).toBe(false); });
+  expect(hook.result.current.editorRevealRequest).toBeNull();
+  act(() => { expect(reveal("Main.java", { kind: "range", range }, () => true)).toBe(true); });
+  expect(hook.result.current.editorRevealRequest).toMatchObject({ filePath: "Main.java", line: 5, column: 8 });
+  const request = hook.result.current.editorRevealRequest;
+  hook.rerender({ ...initialProps, displayedFilePath: "Other.java" });
+  act(() => { expect(reveal("Main.java", { kind: "range", range }, () => true)).toBe(false); });
+  expect(hook.result.current.editorRevealRequest).toBe(request);
+  expect(openFileProgrammatically).not.toHaveBeenCalled();
 });

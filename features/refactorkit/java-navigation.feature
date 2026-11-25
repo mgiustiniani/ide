@@ -1,4 +1,4 @@
-@not-implemented
+@partial
 Business Need: Java go-to-definition and references wired in the IDE editor
   To navigate Java source under workspace authority with honest resolution and reveal
   A Java developer needs a Java symbol by fully-qualified name to resolve its definition and its
@@ -70,12 +70,11 @@ Feature: Java go-to-definition and references wired into the editor
     And capability access to the Java navigation capability is defined through ports, not platform APIs
 
   @REQ-IDE-JAVA-NAVIGATION-001 @java @desktop @story-bdd @functional-requirement
-  Scenario: AC-005 - Implementation status is evidence-based and live e2e may remain unvalidated headless
-    Given meaningful RED precedes new product behavior for this feature
-    When the feature file is parsed for requirement and status reconciliation
-    Then the feature declares exactly one effective status "@not-implemented" at feature level
+  Scenario: AC-005 - Partial implementation status reflects native evidence and remaining coverage
+    When Java navigation is reconciled against its current evidence
+    Then Java navigation declares one inherited partial status
     And no scenario overrides that single effective status
     And the requirement ID "@REQ-IDE-JAVA-NAVIGATION-001" is repository-unique and reconciled
+    And the native Java cursor acceptance is separately declared partial
+    And a browser without a conforming browser provider reports the local Java navigation capability as unavailable
     And contracts, shells, import Stories, diagnostics, or hard-coded/fake definition or reference results do not promote this status
-    And real-engine definition/references resolution, live editor or native GUI wiring, packaging, and platform coverage are reported separately
-    And live Tauri-window navigation E2E may remain unvalidated headless without silently upgrading the declared status

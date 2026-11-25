@@ -26,10 +26,29 @@ import type {
   SavedSnapshotSymbolSearchResult,
   TypeScriptDiagnosticsRequest,
   TypeScriptDiagnosticsResponse,
+  JavaEditorTransactionRequest,
+  JavaEditorTransactionResult,
+  MavenModuleRenamePreview,
+  MavenModuleRenameApplyRequest,
+  MavenModuleRenameApplyResult,
+  MavenModuleRenameDiscardRequest,
+  MavenModuleRenamePreviewRequest,
+  MavenModuleRenameRollbackRequest,
+  MavenModuleRenameRollbackResult,
 } from "@ide/contracts";
+
+/** A rollback request was refused before any source write; retry still requires full authority checks. */
+export class RefactorRollbackNotStartedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RefactorRollbackNotStartedError";
+  }
+}
 
 /** Provider-neutral boundary. Adapters alone translate these calls to an installed API. */
 export interface RefactorKitPort {
+  /** Explicit editor-owned transactions; absence means unavailable. Never delegates to saved-source Apply. */
+  editorTransaction?(request: JavaEditorTransactionRequest): Promise<JavaEditorTransactionResult>;
   getStatus(): Promise<RefactorKitStatus>;
   getCapabilities(): Promise<RefactorKitCapabilities>;
   scan(): Promise<RefactorKitCommandResult>;
@@ -71,6 +90,17 @@ export interface RefactorKitPort {
   // a successful result, or a fallback textual rewrite.
   // ---------------------------------------------------------------------------
   previewRefactoring(request: RefactorPreviewRequest): Promise<RefactorPreviewResult>;
+  /** Read-only provider-owned Maven module rename preview. It grants no Apply authority. */
+  previewMavenModuleRename(
+    request: MavenModuleRenamePreviewRequest,
+  ): Promise<MavenModuleRenamePreview>;
+  discardMavenModuleRenamePreview(request: MavenModuleRenameDiscardRequest): Promise<boolean>;
+  applyMavenModuleRename(
+    request: MavenModuleRenameApplyRequest,
+  ): Promise<MavenModuleRenameApplyResult>;
+  rollbackMavenModuleRename(
+    request: MavenModuleRenameRollbackRequest,
+  ): Promise<MavenModuleRenameRollbackResult>;
   applyRefactoring(request: RefactorApplyRequest): Promise<RefactorApplyResult>;
   /** Adapters must reject this call when rollback is not advertised. */
   rollbackRefactoring(request: RefactorRollbackRequest): Promise<RefactorRollbackResult>;

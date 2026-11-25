@@ -7,6 +7,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileNode, OpenFile } from "@ide/contracts";
+import { EditorViewModel } from "@ide/web-core";
+import { createEditorStore } from "@ide/web-core/state";
 
 async function loadAdapters() {
   return import("../index");
@@ -134,6 +136,30 @@ describe("BrowserFileTreeAdapter persistence", () => {
 });
 
 describe("BrowserEditorAdapter localStorage fallback", () => {
+  it("closes session metadata synchronously without writing source content or losing a companion draft", async () => {
+    const { BrowserEditorAdapter, BROWSER_STORAGE_KEYS } = await loadAdapters();
+    const files: OpenFile[] = [
+      { filePath: "main.txt", name: "main.txt", language: "plaintext", openedAt: 1 },
+      { filePath: "other.txt", name: "other.txt", language: "plaintext", openedAt: 2 },
+    ];
+    const sources = { "main.txt": "main source", "other.txt": "other source" };
+    seedJSON(BROWSER_STORAGE_KEYS.openFiles, files);
+    seedJSON(BROWSER_STORAGE_KEYS.fileContents, sources);
+    const store = createEditorStore();
+    const editor = new EditorViewModel(store.getState, new BrowserEditorAdapter());
+    await editor.openFile("main.txt");
+    await editor.openFile("other.txt");
+    editor.updateContent("other.txt", "companion draft");
+    const closing = editor.closeFile("main.txt");
+    expect(store.getState().tabs).toMatchObject([{ filePath: "other.txt", isDirty: true }]);
+    expect(store.getState().contents["other.txt"]).toBe("companion draft");
+    expect(readStoredJSON(BROWSER_STORAGE_KEYS.fileContents)).toEqual(sources);
+    expect(
+      readStoredJSON<OpenFile[]>(BROWSER_STORAGE_KEYS.openFiles).map((file) => file.filePath),
+    ).toEqual(["other.txt"]);
+    await closing;
+  });
+
   it("keeps working when localStorage rejects writes", async () => {
     const throwBlocked = () => {
       throw new Error("localStorage blocked");

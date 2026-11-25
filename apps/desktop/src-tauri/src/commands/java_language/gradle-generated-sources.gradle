@@ -1,0 +1,48 @@
+import groovy.json.JsonSlurper
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+def sourceSetsByModule = new JsonSlurper()
+    .parseText(new String('__IDE_GRADLE_GENERATED_SOURCES__'.decodeBase64(), 'UTF-8'))
+    .groupBy { it.module }
+
+gradle.beforeProject { project ->
+    if (!project.gradle.startParameter.taskNames.isEmpty()) {
+        return
+    }
+    def module = project.projectDir.canonicalFile
+    def sourceSets = sourceSetsByModule[module.path]
+    if (sourceSets) {
+        project.pluginManager.withPlugin('eclipse') {
+            project.eclipse.classpath.file.whenMerged { classpath ->
+                sourceSets.each { sourceSet ->
+                    def existing = classpath.entries.findAll { it instanceof SourceFolder }
+                    def anchors = existing.findAll { it.dir != null && sourceSet.sources.contains(it.dir.canonicalPath) }
+                    def keys = ['gradle_scope', 'gradle_used_by_scope', 'test']
+                    def anchor = anchors ? anchors.first() : null
+                    if (anchor != null && anchors.every { other ->
+                        other.output == anchor.output && keys.every { key ->
+                            other.entryAttributes[key] == anchor.entryAttributes[key]
+                        }
+                    }) {
+                        sourceSet.generated.each { path ->
+                            def directory = new File(path)
+                            if (directory.isDirectory() && directory.canonicalPath == path &&
+                                directory.toPath().startsWith(module.toPath()) &&
+                                !existing.any { it.dir?.canonicalPath == path }) {
+                                def relative = module.toPath().relativize(directory.toPath()).toString().replace(File.separator, '/')
+                                def folder = new SourceFolder(relative, anchor.output)
+                                folder.dir = directory
+                                keys.each { key ->
+                                    if (anchor.entryAttributes.containsKey(key)) {
+                                        folder.entryAttributes[key] = anchor.entryAttributes[key]
+                                    }
+                                }
+                                classpath.entries.add(folder)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

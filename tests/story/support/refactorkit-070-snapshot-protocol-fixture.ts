@@ -437,6 +437,20 @@ export class RefactorKit070SnapshotProtocolFixture {
         if (command === "get_refactorkit_status") {
           return structuredClone(READY_REFACTORKIT_070_SNAPSHOT_STATUS);
         }
+        if (command === "get_refactorkit_engine_capabilities") {
+          return {
+            engineDiscovered: false,
+            path: null,
+            version: null,
+            workspaceId: AUTHORITY.workspaceId,
+            operations: [],
+            managedOperations: [],
+            operationalSurface: [],
+            rollbackAdvertised: false,
+            previewReadOnly: true,
+            reason: "No real RefactorKit engine is installed in this deterministic harness.",
+          };
+        }
         if (command === "get_refactorkit_capabilities") {
           return structuredClone(REFACTORKIT_070_SNAPSHOT_ADVERTISEMENT);
         }

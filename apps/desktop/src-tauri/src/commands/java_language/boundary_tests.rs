@@ -78,55 +78,85 @@ fn public_request_contract_remains_camel_case_and_closed() {
 
 #[test]
 fn command_signatures_remain_stable() {
-    let _: for<'a> fn(
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaLanguageServiceStatus, String> = get_java_language_service_status;
-    let _: for<'a> fn(
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaLanguageServiceStatus, String> = start_java_language_service;
-    let _: for<'a> fn(
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaLanguageServiceStatus, String> = stop_java_language_service;
-    let _: for<'a> fn(
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaLanguageServiceStatus, String> = restart_java_language_service;
-    let _: for<'a> fn(
-        u64,
-        usize,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaLanguageServiceEventBatch, String> = poll_java_language_service_events;
+    fn status_command<
+        F: std::future::Future<Output = Result<JavaLanguageServiceStatus, String>>,
+    >(
+        _: fn(tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    status_command(get_java_language_service_status::<tauri::Wry>);
+    fn lifecycle_command<
+        F: std::future::Future<Output = Result<JavaLanguageServiceStatus, String>>,
+    >(
+        _: fn(tauri::AppHandle<tauri::Wry>, Option<JavaLanguageSessionRequest>) -> F,
+    ) {
+    }
+    lifecycle_command(start_java_language_service::<tauri::Wry>);
+    lifecycle_command(stop_java_language_service::<tauri::Wry>);
+    lifecycle_command(restart_java_language_service::<tauri::Wry>);
+    fn events_command<
+        F: std::future::Future<Output = Result<JavaLanguageServiceEventBatch, String>>,
+    >(
+        _: fn(u64, usize, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    events_command(poll_java_language_service_events::<tauri::Wry>);
 
-    let _: for<'a> fn(
-        JavaLanguageDocument,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<(), String> = open_java_language_document;
-    let _: for<'a> fn(
-        JavaLanguageDocument,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<(), String> = change_java_language_document;
-    let _: for<'a> fn(
-        JavaLanguageDocument,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<(), String> = save_java_language_document;
-    let _: for<'a> fn(
-        JavaLanguageDocument,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<(), String> = close_java_language_document;
+    fn document_command<F: std::future::Future<Output = Result<(), String>> + Send>(
+        _: fn(JavaLanguageDocument, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    document_command(open_java_language_document::<tauri::Wry>);
+    document_command(change_java_language_document::<tauri::Wry>);
+    document_command(save_java_language_document::<tauri::Wry>);
+    document_command(close_java_language_document::<tauri::Wry>);
+    document_command(revalidate_java_language_document::<tauri::Wry>);
+    fn workspace_file_command<F: std::future::Future<Output = Result<(), String>> + Send>(
+        _: fn(JavaLanguageWorkspaceFile, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    workspace_file_command(notify_java_language_workspace_file_saved::<tauri::Wry>);
 
-    let _: for<'a> fn(
-        JavaSemanticRequest,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaSemanticNativeResponse, String> = request_java_completion;
-    let _: for<'a> fn(
-        JavaSemanticRequest,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaSemanticNativeResponse, String> = request_java_hover;
-    let _: for<'a> fn(
-        JavaSemanticRequest,
-        State<'a, JavaLanguageServiceState>,
-    ) -> Result<JavaSemanticNativeResponse, String> = request_java_signature_help;
-    let _: for<'a> fn(String, State<'a, JavaLanguageServiceState>) -> Result<(), String> =
-        cancel_java_semantic_request;
+    fn semantic_command<
+        F: std::future::Future<Output = Result<JavaSemanticNativeResponse, String>> + Send,
+    >(
+        _: fn(JavaSemanticRequest, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    semantic_command(request_java_completion::<tauri::Wry>);
+    semantic_command(request_java_hover::<tauri::Wry>);
+    semantic_command(request_java_signature_help::<tauri::Wry>);
+    semantic_command(request_java_document_symbols::<tauri::Wry>);
+    semantic_command(request_java_document_highlights::<tauri::Wry>);
+    semantic_command(request_java_definitions::<tauri::Wry>);
+    semantic_command(request_java_type_definitions::<tauri::Wry>);
+    semantic_command(request_java_implementations::<tauri::Wry>);
+    semantic_command(request_java_references::<tauri::Wry>);
+    semantic_command(request_java_semantic_tokens::<tauri::Wry>);
+    semantic_command(request_java_inlay_hints::<tauri::Wry>);
+    semantic_command(request_java_formatting::<tauri::Wry>);
+    semantic_command(request_java_code_actions::<tauri::Wry>);
+    semantic_command(request_java_rename::<tauri::Wry>);
+
+    fn workspace_symbols_command<
+        F: std::future::Future<Output = Result<JavaWorkspaceSymbolsNativeResponse, String>> + Send,
+    >(
+        _: fn(JavaWorkspaceSymbolsRequest, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    workspace_symbols_command(request_java_workspace_symbols::<tauri::Wry>);
+    fn hierarchy_command<
+        F: std::future::Future<Output = Result<JavaSemanticNativeResponse, String>> + Send,
+    >(
+        _: fn(JavaCallHierarchyRequest, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    hierarchy_command(request_java_call_hierarchy::<tauri::Wry>);
+    fn cancellation_command<F: std::future::Future<Output = Result<(), String>> + Send>(
+        _: fn(String, tauri::AppHandle<tauri::Wry>) -> F,
+    ) {
+    }
+    cancellation_command(cancel_java_semantic_request::<tauri::Wry>);
 }
 
 #[test]
@@ -137,7 +167,7 @@ fn facade_contains_only_command_delegation() {
             .lines()
             .filter(|line| line.trim() == "#[tauri::command]")
             .count(),
-        13
+        29
     );
     for forbidden in [
         concat!("std::process::", "Command"),
@@ -149,5 +179,5 @@ fn facade_contains_only_command_delegation() {
     ] {
         assert!(!facade.contains(forbidden), "facade contains {forbidden}");
     }
-    assert!(facade.lines().count() < 250);
+    assert!(facade.lines().count() < 300);
 }
