@@ -18,7 +18,7 @@ import type {
 } from "@ide/contracts";
 import { captureJavaProjectOperationContext, isJavaGradleSettings, sameJavaProjectContextSettings } from "@ide/contracts";
 import type { JavaExecutionPort } from "@ide/web-core/ports";
-import { validateLaunchSettings } from "./javaLaunchSettings";
+import { validateLaunchSettings } from "./validateJavaLaunchSettings";
 import { useJavaApplicationInput } from "./useJavaApplicationInput";
 import { useJavaCoverageHistory } from "./useJavaCoverageHistory";
 import { checkCoverageThresholds, coverageThresholdError, emptyCoverageThresholds, type JavaCoverageThresholdSettings } from "./javaCoverageThresholds";

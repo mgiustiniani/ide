@@ -1,5 +1,5 @@
 import type { JavaLaunchConfiguration } from "@ide/contracts";
-import { validateLaunchSettings } from "./javaLaunchSettings";
+import { validateLaunchSettings } from "./validateJavaLaunchSettings";
 import { validCoverageThresholdSettings, type JavaCoverageThresholdSettings } from "./javaCoverageThresholds";
 
 export const MAX_JAVA_CONFIGURATIONS = 16;

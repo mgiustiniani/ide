@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportHttpCollections, reviewHttpCollectionImport } from "./httpCollectionTransfer";
+import { exportHttpCollections, reviewHttpCollectionImport } from "./httpCollectionSerialization";
 import { emptyHttpLibrary } from "./httpLibrary";
 import type { HttpRequestLibrary } from "@ide/contracts";
 const library = (body = "{{message}}"): HttpRequestLibrary => ({ version: 1,

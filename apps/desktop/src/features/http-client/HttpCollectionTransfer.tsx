@@ -5,7 +5,7 @@ import {
   exportHttpCollections,
   reviewHttpCollectionImport,
   type HttpImportConflictPolicy,
-} from "./httpCollectionTransfer";
+} from "./httpCollectionSerialization";
 
 const filePolicy = {
   maximumBytes: 2 * 1024 * 1024,
