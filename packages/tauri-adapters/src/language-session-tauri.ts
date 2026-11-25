@@ -1,21 +1,24 @@
-import type {
-  DidChangeLanguageDocumentRequest,
-  DidCloseLanguageDocumentRequest,
-  DidOpenLanguageDocumentRequest,
-  DidSaveLanguageDocumentRequest,
-  LanguageDiagnostic,
-  LanguageServiceCapabilities,
-  LanguageServiceEvent,
-  LanguageServiceEventListener,
-  LanguageServiceProgress,
-  LanguageServiceState,
-  LanguageServiceStatus,
-  LanguageServiceUnsubscribe,
-  LanguageSessionTarget,
-  RestartLanguageSessionRequest,
-  StartLanguageSessionRequest,
-  StopLanguageSessionRequest,
-  VersionedLanguageDocument,
+import {
+  isJavaGradleSettings,
+  type DidChangeLanguageDocumentRequest,
+  type DidCloseLanguageDocumentRequest,
+  type DidOpenLanguageDocumentRequest,
+  type DidSaveLanguageDocumentRequest,
+  type RevalidateLanguageDocumentRequest,
+  type DidSaveLanguageWorkspaceFileRequest,
+  type LanguageDiagnostic,
+  type LanguageServiceCapabilities,
+  type LanguageServiceEvent,
+  type LanguageServiceEventListener,
+  type LanguageServiceProgress,
+  type LanguageServiceState,
+  type LanguageServiceStatus,
+  type LanguageServiceUnsubscribe,
+  type LanguageSessionTarget,
+  type RestartLanguageSessionRequest,
+  type StartLanguageSessionRequest,
+  type StopLanguageSessionRequest,
+  type VersionedLanguageDocument,
 } from "@ide/contracts";
 import type { DocumentSyncPort, LanguageSessionPort } from "@ide/web-core/ports";
 
@@ -28,6 +31,8 @@ const MAX_DIAGNOSTICS = 200;
 const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 4_096;
 const MAX_RELATED_INFORMATION = 16;
 const MAX_DIAGNOSTIC_URI_LENGTH = 4_096;
+const MAX_MAVEN_PROFILES = 64;
+const MAX_MAVEN_PROFILE_ID_LENGTH = 256;
 const EMPTY_CAPABILITIES: LanguageServiceCapabilities = {
   documentSync: false,
   diagnostics: false,
@@ -37,6 +42,14 @@ const EMPTY_CAPABILITIES: LanguageServiceCapabilities = {
   definition: false,
   references: false,
   symbols: false,
+  documentSymbols: false,
+  documentHighlights: false,
+  implementation: false,
+  callHierarchy: false,
+  workspaceSymbols: false,
+  semanticTokens: false,
+  inlayHints: false,
+  rangeFormatting: false,
   codeActions: false,
   formatting: false,
   rename: false,
@@ -94,6 +107,37 @@ function optionalString(
   return value || undefined;
 }
 
+function formatterProfile(
+  command: string,
+  response: unknown,
+  value: unknown,
+): StartLanguageSessionRequest["javaFormatterProfile"] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (
+    !isRecord(value) ||
+    typeof value.path !== "string" ||
+    value.path.length === 0 ||
+    value.path.length > MAX_DOCUMENT_PATH_LENGTH ||
+    value.path.trim() !== value.path ||
+    /[\u0000-\u001f\u007f]/.test(value.path) ||
+    value.path.startsWith("/") ||
+    /^[A-Za-z]:/.test(value.path) ||
+    value.path
+      .replace(/\\/g, "/")
+      .split("/")
+      .some((part) => part === ".." || part === "." || part === "") ||
+    !value.path.toLowerCase().endsWith(".xml") ||
+    typeof value.profileName !== "string" ||
+    value.profileName.length === 0 ||
+    value.profileName.length > 256 ||
+    value.profileName.trim() !== value.profileName ||
+    /[\u0000-\u001f\u007f]/.test(value.profileName)
+  ) {
+    throw invalid(command, "invalid workspace Eclipse formatter profile", response);
+  }
+  return { path: value.path, profileName: value.profileName };
+}
+
 function integer(command: string, response: unknown, value: unknown, field: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw invalid(command, `invalid non-negative integer ${field}`, response);
@@ -110,6 +154,35 @@ function booleanField(
   if (typeof record[field] !== "boolean")
     throw invalid(command, `invalid boolean ${field}`, response);
   return record[field] as boolean;
+}
+
+function mavenProfiles(
+  command: string,
+  response: unknown,
+  value: unknown,
+  field: string,
+): string[] {
+  if (!Array.isArray(value) || value.length > MAX_MAVEN_PROFILES) {
+    throw invalid(command, `invalid ${field}`, response);
+  }
+  const profiles = value.map((profile) => {
+    if (
+      typeof profile !== "string" ||
+      profile.length === 0 ||
+      profile.length > MAX_MAVEN_PROFILE_ID_LENGTH ||
+      profile.trim() !== profile ||
+      profile.startsWith("!") ||
+      profile.includes(",") ||
+      /[\u0000-\u001f\u007f]/.test(profile)
+    ) {
+      throw invalid(command, `invalid ${field}`, response);
+    }
+    return profile;
+  });
+  if (new Set(profiles).size !== profiles.length) {
+    throw invalid(command, `duplicate ${field}`, response);
+  }
+  return profiles;
 }
 
 function lifecycleState(
@@ -157,11 +230,29 @@ function normalizeCapabilities(
   const definition = booleanField(command, response, record, "definition");
   const references = booleanField(command, response, record, "references");
   const documentSymbols = booleanField(command, response, record, "documentSymbols");
+  const documentHighlights = booleanField(command, response, record, "documentHighlights");
+  const implementation = booleanField(command, response, record, "implementation");
+  const callHierarchy =
+    record.callHierarchy === undefined
+      ? false
+      : booleanField(command, response, record, "callHierarchy");
   const workspaceSymbols = booleanField(command, response, record, "workspaceSymbols");
+  const semanticTokens = booleanField(command, response, record, "semanticTokens");
+  const inlayHints =
+    record.inlayHints === undefined ? false : booleanField(command, response, record, "inlayHints");
   const rename = booleanField(command, response, record, "rename");
   const codeActions = booleanField(command, response, record, "codeActions");
   const formatting = booleanField(command, response, record, "formatting");
+  const rangeFormatting =
+    record.rangeFormatting === undefined
+      ? false
+      : booleanField(command, response, record, "rangeFormatting");
   const signature = booleanField(command, response, record, "signatureHelp");
+  const triggers = record.onTypeFormattingTriggers;
+  if (triggers !== undefined && (!Array.isArray(triggers) || triggers.length > 16 ||
+    triggers.some(value => typeof value !== "string" || [...value].length !== 1 || value.includes("\0") || /^[\uD800-\uDFFF]$/u.test(value)) ||
+    new Set(triggers).size !== triggers.length))
+    throw invalid(command, "Invalid Java on-type formatting triggers", response);
   return {
     documentSync,
     diagnostics,
@@ -169,10 +260,20 @@ function normalizeCapabilities(
     hover,
     signature,
     definition,
+    ...(record.typeDefinition === undefined ? {} : { typeDefinition: booleanField(command, response, record, "typeDefinition") }),
     references,
     symbols: documentSymbols || workspaceSymbols,
+    documentSymbols,
+    documentHighlights,
+    implementation,
+    callHierarchy,
+    workspaceSymbols,
+    semanticTokens,
+    inlayHints,
     codeActions,
     formatting,
+    rangeFormatting,
+    ...(triggers === undefined ? {} : { onTypeFormattingTriggers: [...(triggers as string[])] }),
     rename,
     hierarchy: false,
   };
@@ -203,6 +304,52 @@ function normalizeStatus(
   }
   const state = lifecycleState(command, response, record.lifecycle, record.available);
   const provider = normalizeProvider(command, response, record.provider);
+  const gradleImportEnabled = booleanField(command, response, record, "gradleImportEnabled");
+  const gradleSettingsConfigured = booleanField(
+    command,
+    response,
+    record,
+    "gradleSettingsConfigured",
+  );
+  let projectPath: string | undefined;
+  if (record.projectPath !== undefined && record.projectPath !== null) {
+    if (
+      typeof record.projectPath !== "string" ||
+      record.projectPath.length > MAX_DOCUMENT_PATH_LENGTH ||
+      record.projectPath.startsWith("/") ||
+      /^[A-Za-z]:/.test(record.projectPath) ||
+      /[\u0000-\u001f\u007f]/.test(record.projectPath) ||
+      record.projectPath
+        .replace(/\\/g, "/")
+        .split("/")
+        .some((part) => part === ".." || part === ".")
+    ) {
+      throw invalid(command, "invalid workspace-relative projectPath", response);
+    }
+    projectPath = record.projectPath;
+  }
+  const activeMavenProfiles = mavenProfiles(
+    command,
+    response,
+    record.activeMavenProfiles,
+    "activeMavenProfiles",
+  );
+  const inactiveMavenProfiles = mavenProfiles(
+    command,
+    response,
+    record.inactiveMavenProfiles,
+    "inactiveMavenProfiles",
+  );
+  if (activeMavenProfiles.some((profile) => inactiveMavenProfiles.includes(profile))) {
+    throw invalid(command, "a Maven profile is both active and inactive", response);
+  }
+  const javaFormatterProfile = formatterProfile(command, response, record.javaFormatterProfile);
+  const mavenRepository = optionalString(
+    command,
+    response,
+    record.mavenRepository,
+    "mavenRepository",
+  );
   const serverVersion = optionalString(command, response, record.jdtlsVersion, "jdtlsVersion");
   const status: LanguageServiceStatus = {
     state,
@@ -215,11 +362,26 @@ function normalizeStatus(
       record.capabilities,
       state === "ready" || state === "indexing" || state === "degraded",
     ),
+    gradleImportEnabled,
+    gradleSettingsConfigured,
+    ...(projectPath !== undefined ? { projectPath } : {}),
+    ...(mavenRepository !== undefined ? { mavenRepository } : {}),
+    activeMavenProfiles,
+    inactiveMavenProfiles,
+    ...(javaFormatterProfile ? { javaFormatterProfile } : {}),
     checkedAt: validTimestamp(record.checkedAt) ?? new Date().toISOString(),
   };
   const serverPath = optionalString(command, response, record.jdtlsHome, "jdtlsHome");
   const javaExecutable = optionalString(command, response, record.javaExecutable, "javaExecutable");
   const javaVersion = optionalString(command, response, record.javaVersion, "javaVersion");
+  const projectJdkHome = optionalString(command, response, record.projectJdkHome, "projectJdkHome");
+  const serverJdkHome = optionalString(command, response, record.serverJdkHome, "serverJdkHome");
+  const projectJdkVersion = optionalString(
+    command,
+    response,
+    record.projectJdkVersion,
+    "projectJdkVersion",
+  );
   const detail = optionalString(command, response, record.detail, "detail");
   const workspaceRoot = optionalString(command, response, record.workspaceRoot, "workspaceRoot");
   if (serverVersion) {
@@ -229,6 +391,9 @@ function normalizeStatus(
   if (serverPath) status.serverPath = serverPath;
   if (javaExecutable) status.javaExecutable = javaExecutable;
   if (javaVersion) status.javaVersion = javaVersion;
+  if (projectJdkHome) status.projectJdkHome = projectJdkHome;
+  if (serverJdkHome) status.serverJdkHome = serverJdkHome;
+  if (projectJdkVersion) status.projectJdkVersion = projectJdkVersion;
   if (detail) status.lastError = detail;
   return { status, workspaceRoot };
 }
@@ -441,10 +606,164 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
     this.pollLimit = Math.min(100, Math.max(1, Math.floor(options.pollLimit ?? 100)));
   }
 
-  private async lifecycle(command: string, workspaceId: string): Promise<LanguageServiceStatus> {
+  private async lifecycle(
+    command: string,
+    workspaceId: string,
+    request?: {
+      workspaceId: string;
+      generation?: number;
+      projectJdkHome?: string;
+      serverJdkHome?: string;
+      gradleImportEnabled?: boolean;
+      projectPath?: string;
+      mavenRepository?: string;
+      activeMavenProfiles?: string[];
+      inactiveMavenProfiles?: string[];
+      gradle?: StartLanguageSessionRequest["gradle"];
+      javaFormatterProfile?: StartLanguageSessionRequest["javaFormatterProfile"];
+    },
+  ): Promise<LanguageServiceStatus> {
     try {
-      const response = await invokeTauri<unknown>(command);
+      if (
+        request?.gradleImportEnabled !== undefined &&
+        typeof request.gradleImportEnabled !== "boolean"
+      ) {
+        throw invalid(command, "invalid Gradle import authorization", request);
+      }
+      if (
+        request?.projectJdkHome !== undefined &&
+        (typeof request.projectJdkHome !== "string" ||
+          request.projectJdkHome.length === 0 ||
+          request.projectJdkHome.length > 4096 ||
+          request.projectJdkHome.includes("\0"))
+      ) {
+        throw invalid(command, "invalid project JDK home", request);
+      }
+      if (
+        request?.serverJdkHome !== undefined &&
+        (typeof request.serverJdkHome !== "string" ||
+          request.serverJdkHome.length === 0 ||
+          request.serverJdkHome.length > 4096 ||
+          request.serverJdkHome.trim() !== request.serverJdkHome ||
+          !/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(request.serverJdkHome) ||
+          /[\u0000-\u001f\u007f]/.test(request.serverJdkHome))
+      ) {
+        throw invalid(command, "invalid JDT LS runtime JDK home", request);
+      }
+      if (
+        request?.projectPath !== undefined &&
+        (typeof request.projectPath !== "string" ||
+          request.projectPath.length > MAX_DOCUMENT_PATH_LENGTH ||
+          request.projectPath.startsWith("/") ||
+          /^[A-Za-z]:/.test(request.projectPath) ||
+          /[\u0000-\u001f\u007f]/.test(request.projectPath) ||
+          request.projectPath
+            .replace(/\\/g, "/")
+            .split("/")
+            .some((part) => part === ".." || part === "."))
+      ) {
+        throw invalid(command, "invalid workspace-relative projectPath", request);
+      }
+      if (
+        request?.mavenRepository !== undefined &&
+        (typeof request.mavenRepository !== "string" ||
+          request.mavenRepository.length > MAX_DOCUMENT_PATH_LENGTH ||
+          request.mavenRepository.includes("\0") ||
+          /[\u0000-\u001f\u007f]/.test(request.mavenRepository))
+      ) {
+        throw invalid(command, "invalid Maven local repository", request);
+      }
+      if (request?.activeMavenProfiles !== undefined) {
+        mavenProfiles(command, request, request.activeMavenProfiles, "activeMavenProfiles");
+      }
+      if (request?.inactiveMavenProfiles !== undefined) {
+        mavenProfiles(command, request, request.inactiveMavenProfiles, "inactiveMavenProfiles");
+      }
+      if (request?.gradle !== undefined && !isJavaGradleSettings(request.gradle)) {
+        throw invalid(command, "invalid Gradle project settings", request);
+      }
+      if (request?.javaFormatterProfile !== undefined) {
+        formatterProfile(command, request, request.javaFormatterProfile);
+      }
+      if (
+        request?.activeMavenProfiles?.some((profile) =>
+          request.inactiveMavenProfiles?.includes(profile),
+        )
+      ) {
+        throw invalid(command, "a Maven profile is both active and inactive", request);
+      }
+      const response = await invokeTauri<unknown>(command, request ? { request } : undefined);
       const normalized = normalizeStatus(command, response, workspaceId);
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        normalized.status.projectJdkHome !== request.projectJdkHome
+      ) {
+        throw invalid(command, "project JDK selection was not applied", response);
+      }
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        (normalized.status.serverJdkHome ?? "") !== (request.serverJdkHome ?? "")
+      ) {
+        throw invalid(command, "JDT LS runtime JDK selection was not applied", response);
+      }
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        normalized.status.gradleImportEnabled !== (request.gradleImportEnabled ?? false)
+      ) {
+        throw invalid(command, "Gradle import authorization was not applied", response);
+      }
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        normalized.status.gradleSettingsConfigured !== (request.gradle !== undefined)
+      ) {
+        throw invalid(command, "Gradle project settings were not applied", response);
+      }
+      if (
+        request &&
+        request.projectPath !== undefined &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        normalized.status.projectPath !== (request.projectPath ?? "")
+      ) {
+        throw invalid(command, "selected Java project path was not applied", response);
+      }
+      if (
+        request &&
+        request.mavenRepository !== undefined &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        (normalized.status.mavenRepository ?? "") !== request.mavenRepository
+      ) {
+        throw invalid(command, "selected Maven local repository was not applied", response);
+      }
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        (JSON.stringify(normalized.status.activeMavenProfiles) !==
+          JSON.stringify(request.activeMavenProfiles ?? []) ||
+          JSON.stringify(normalized.status.inactiveMavenProfiles) !==
+            JSON.stringify(request.inactiveMavenProfiles ?? []))
+      ) {
+        throw invalid(command, "Maven profile selection was not applied", response);
+      }
+      if (
+        request &&
+        command !== "stop_java_language_service" &&
+        ["ready", "indexing", "degraded"].includes(normalized.status.state) &&
+        JSON.stringify(normalized.status.javaFormatterProfile ?? null) !==
+          JSON.stringify(request.javaFormatterProfile ?? null)
+      ) {
+        throw invalid(command, "Eclipse formatter profile was not applied", response);
+      }
       const previous = this.statuses.get(workspaceId);
       this.statuses.set(workspaceId, normalized.status);
       if (
@@ -463,16 +782,88 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
     return this.lifecycle("get_java_language_service_status", target.workspaceId);
   }
 
+  private lifecycleMutation: Promise<void> = Promise.resolve();
+
+  private mutateSession(
+    command: string,
+    request: {
+      workspaceId: string;
+      generation?: number;
+      projectJdkHome?: string;
+      serverJdkHome?: string;
+      gradleImportEnabled?: boolean;
+      projectPath?: string;
+      mavenRepository?: string;
+      activeMavenProfiles?: string[];
+      inactiveMavenProfiles?: string[];
+      gradle?: StartLanguageSessionRequest["gradle"];
+      javaFormatterProfile?: StartLanguageSessionRequest["javaFormatterProfile"];
+    },
+  ): Promise<LanguageServiceStatus> {
+    // Native lifecycle workers own one process. Preserve submission order so an older
+    // JDK replacement cannot acquire the native mutex after a newer replacement.
+    const operation = this.lifecycleMutation.then(() =>
+      this.lifecycle(command, request.workspaceId, request),
+    );
+    this.lifecycleMutation = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
   start(request: StartLanguageSessionRequest): Promise<LanguageServiceStatus> {
-    return this.lifecycle("start_java_language_service", request.workspaceId);
+    return this.mutateSession("start_java_language_service", {
+      workspaceId: request.workspaceId,
+      ...(request.projectJdkHome !== undefined ? { projectJdkHome: request.projectJdkHome } : {}),
+      ...(request.serverJdkHome !== undefined ? { serverJdkHome: request.serverJdkHome } : {}),
+      gradleImportEnabled: request.gradleImportEnabled,
+      ...(request.projectPath !== undefined ? { projectPath: request.projectPath } : {}),
+      ...(request.mavenRepository !== undefined
+        ? { mavenRepository: request.mavenRepository }
+        : {}),
+      ...(request.activeMavenProfiles !== undefined
+        ? { activeMavenProfiles: request.activeMavenProfiles }
+        : {}),
+      ...(request.inactiveMavenProfiles !== undefined
+        ? { inactiveMavenProfiles: request.inactiveMavenProfiles }
+        : {}),
+      ...(request.gradle !== undefined ? { gradle: request.gradle } : {}),
+      ...(request.javaFormatterProfile !== undefined
+        ? { javaFormatterProfile: request.javaFormatterProfile }
+        : {}),
+    });
   }
 
   stop(request: StopLanguageSessionRequest): Promise<LanguageServiceStatus> {
-    return this.lifecycle("stop_java_language_service", request.workspaceId);
+    return this.mutateSession("stop_java_language_service", {
+      workspaceId: request.workspaceId,
+      generation: request.generation,
+    });
   }
 
   restart(request: RestartLanguageSessionRequest): Promise<LanguageServiceStatus> {
-    return this.lifecycle("restart_java_language_service", request.workspaceId);
+    return this.mutateSession("restart_java_language_service", {
+      workspaceId: request.workspaceId,
+      generation: request.generation,
+      ...(request.projectJdkHome !== undefined ? { projectJdkHome: request.projectJdkHome } : {}),
+      ...(request.serverJdkHome !== undefined ? { serverJdkHome: request.serverJdkHome } : {}),
+      gradleImportEnabled: request.gradleImportEnabled,
+      ...(request.projectPath !== undefined ? { projectPath: request.projectPath } : {}),
+      ...(request.mavenRepository !== undefined
+        ? { mavenRepository: request.mavenRepository }
+        : {}),
+      ...(request.activeMavenProfiles !== undefined
+        ? { activeMavenProfiles: request.activeMavenProfiles }
+        : {}),
+      ...(request.inactiveMavenProfiles !== undefined
+        ? { inactiveMavenProfiles: request.inactiveMavenProfiles }
+        : {}),
+      ...(request.gradle !== undefined ? { gradle: request.gradle } : {}),
+      ...(request.javaFormatterProfile !== undefined
+        ? { javaFormatterProfile: request.javaFormatterProfile }
+        : {}),
+    });
   }
 
   didOpen(request: DidOpenLanguageDocumentRequest): Promise<void> {
@@ -491,6 +882,21 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
     return this.syncDocument("close_java_language_document", "close", request.document);
   }
 
+  revalidate(request: RevalidateLanguageDocumentRequest): Promise<void> {
+    return this.syncDocument("revalidate_java_language_document", "revalidate", request.document);
+  }
+
+  async didSaveWorkspaceFile({ document }: DidSaveLanguageWorkspaceFileRequest): Promise<void> {
+    const command = "notify_java_language_workspace_file_saved";
+    const status = this.statuses.get(document.workspaceId);
+    if (!status || !["ready", "indexing", "degraded"].includes(status.state))
+      throw new TauriAdapterError(command, "Workspace file notifications require an initialized session");
+    const identity = identityFromUri(document, document.workspaceId, this.workspaceRoots.get(document.workspaceId), document.uri);
+    if (identity.path !== document.path || /[\u0000-\u001f\u007f]/.test(document.path))
+      throw new TauriAdapterError(command, "Workspace file path and URI do not match");
+    await invokeTauri<void>(command, { document: { ...identity, generation: status.generation } });
+  }
+
   private documentVersionKey(workspaceId: string, path: string): string {
     return `${workspaceId}\u0000${normalizePath(path)}`;
   }
@@ -503,7 +909,7 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
 
   private async syncDocument(
     command: string,
-    action: "open" | "change" | "save" | "close",
+    action: "open" | "change" | "save" | "close" | "revalidate",
     document:
       DidOpenLanguageDocumentRequest["document"] | DidCloseLanguageDocumentRequest["document"],
   ): Promise<void> {
@@ -531,7 +937,9 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
       throw new TauriAdapterError(command, "Invalid Java document URI");
     }
     const fullDocument =
-      action === "close" ? undefined : (document as DidOpenLanguageDocumentRequest["document"]);
+      action === "close" || action === "revalidate"
+        ? undefined
+        : (document as DidOpenLanguageDocumentRequest["document"]);
     if (fullDocument) {
       if (fullDocument.languageId !== "java")
         throw new TauriAdapterError(command, "Only the Java language is supported");
@@ -553,7 +961,7 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
       throw new TauriAdapterError(command, "Document change version must be strictly increasing");
     }
     if (
-      (action === "save" || action === "close") &&
+      (action === "save" || action === "close" || action === "revalidate") &&
       (currentVersion === undefined || document.version !== currentVersion)
     ) {
       throw new TauriAdapterError(
@@ -583,6 +991,7 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
     const currentStatus = this.statuses.get(document.workspaceId);
     if (
       action !== "close" &&
+      action !== "revalidate" &&
       currentStatus?.generation === status.generation &&
       ["ready", "indexing", "degraded"].includes(currentStatus.state)
     )
@@ -652,6 +1061,10 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
             provider: "jdt-ls",
             workspaceId,
             generation: 0,
+            gradleImportEnabled: false,
+            gradleSettingsConfigured: false,
+            activeMavenProfiles: [],
+            inactiveMavenProfiles: [],
             capabilities: { ...EMPTY_CAPABILITIES },
             lastError: adapterError.message,
             checkedAt: new Date().toISOString(),
@@ -703,6 +1116,10 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
         ...(cached ?? {
           provider,
           workspaceId,
+          gradleImportEnabled: false,
+          gradleSettingsConfigured: false,
+          activeMavenProfiles: [],
+          inactiveMavenProfiles: [],
           capabilities: { ...EMPTY_CAPABILITIES },
           checkedAt: new Date().toISOString(),
         }),
@@ -778,6 +1195,9 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
         );
       }
       const document: VersionedLanguageDocument = { ...identity, version };
+      const unavailableReason = optionalString(POLL_COMMAND, nativeEvent.payload, params.unavailableReason, "unavailableReason");
+      if (unavailableReason && (unavailableReason.length > 4096 || params.diagnostics.length !== 0))
+        throw invalid(POLL_COMMAND, "invalid diagnostic unavailability", nativeEvent.payload);
       const diagnostics = params.diagnostics
         .slice(0, MAX_DIAGNOSTICS)
         .map((item) =>
@@ -797,6 +1217,7 @@ export class TauriLanguageSessionAdapter implements LanguageSessionPort, Documen
           provider,
           document,
           diagnostics,
+          ...(unavailableReason ? { unavailableReason } : {}),
         },
       };
     }

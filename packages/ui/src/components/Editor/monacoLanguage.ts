@@ -1,6 +1,19 @@
 import type { EditorProps } from "./Editor";
 
 const LANGUAGE_ALIASES: Record<string, string> = {
+  c: "c",
+  cpp: "cpp",
+  kotlin: "kotlin",
+  kt: "kotlin",
+  kts: "kotlin",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  sql: "sql",
+  python: "python",
+  py: "python",
+  shell: "shell",
+  ini: "ini",
   adoc: "asciidoc",
   asciidoc: "asciidoc",
   css: "css",
@@ -30,6 +43,22 @@ const LANGUAGE_ALIASES: Record<string, string> = {
 };
 
 const EXTENSION_LANGUAGES: Record<string, string> = {
+  c: "c",
+  cpp: "cpp",
+  h: "cpp",
+  hpp: "cpp",
+  kt: "kotlin",
+  kts: "kotlin",
+  xml: "xml",
+  svg: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  sql: "sql",
+  py: "python",
+  sh: "shell",
+  bash: "shell",
+  properties: "ini",
+  ini: "ini",
   adoc: "asciidoc",
   asciidoc: "asciidoc",
   css: "css",
@@ -64,7 +93,8 @@ export function getMonacoLanguage(language: EditorProps["language"], filePath: s
 
 /** A stable local URI gives every file its own Monaco model without network access. */
 export function getMonacoModelPath(filePath: string): string {
-  if (/^file:\/\//i.test(filePath)) return filePath;
+  if (/^(?:file|refactorkit-java-source|refactorkit-java-platform-source):\/\//i.test(filePath))
+    return filePath;
   const normalized = filePath.replace(/\\/g, "/").replace(/^\/+/, "");
   return encodeURI(`file:///${normalized || "__untitled__"}`);
 }

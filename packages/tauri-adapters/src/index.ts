@@ -5,7 +5,19 @@
 // ---------------------------------------------------------------------------
 
 import { TauriFileTreeAdapter } from "./file-tree-tauri";
+export { TauriJavaNavigationAdapter } from "./java-navigation-tauri";
+export { TauriGitWorkspaceAdapter } from "./git-workspace-tauri";
+export { TauriJavaProjectContextAdapter } from "./java-project-context-tauri";
+export { TauriJavaProjectPathPickerAdapter } from "./java-project-path-picker-tauri";
+export { TauriJavaProjectTextSearchAdapter } from "./java-project-text-search-tauri";
+export { TauriJavaProjectScaffoldAdapter } from "./java-project-scaffold-tauri";
+export {
+  TauriJavaDatabaseAdapter,
+  JAVA_DATABASE_INSPECT_COMMAND,
+  JAVA_DATABASE_EXECUTE_COMMAND,
+} from "./java-database-tauri";
 import { TauriEditorAdapter } from "./editor-tauri";
+import { TauriGitWorkspaceAdapter } from "./git-workspace-tauri";
 import { TauriTerminalAdapter } from "./terminal-tauri";
 import { TauriAiAgentAdapter } from "./ai-agent-tauri";
 import { TauriPiWorkspaceAgentAdapter } from "./pi-workspace-agent-tauri";
@@ -19,6 +31,7 @@ import {
 import { TauriRefactorKitAdapter } from "./refactorkit-tauri";
 import { TauriLanguageSessionAdapter } from "./language-session-tauri";
 import { TauriJavaIntelligenceAdapter } from "./java-intelligence-tauri";
+import { TauriJavaLspRefactoringAdapter } from "./java-lsp-refactoring-tauri";
 import { TauriXcom2ModuleConfigurationAdapter } from "./xcom2-module-configuration-tauri";
 import { TauriXcom2ModuleScannerAdapter } from "./xcom2-module-scanner-tauri";
 import { TauriXcom2SetupMonitorAdapter } from "./xcom2-setup-monitor-tauri";
@@ -95,6 +108,7 @@ export { TauriAdapterError, toTauriAdapterError } from "./errors";
  * Useful for app composition and tests that inject a complete adapter set.
  */
 export function createTauriAdapters(): {
+  gitWorkspaceAdapter: TauriGitWorkspaceAdapter;
   fileTreeAdapter: TauriFileTreeAdapter;
   editorAdapter: TauriEditorAdapter;
   terminalAdapter: TauriTerminalAdapter;
@@ -109,6 +123,7 @@ export function createTauriAdapters(): {
   languageSessionAdapter: TauriLanguageSessionAdapter;
   documentSyncAdapter: TauriLanguageSessionAdapter;
   javaIntelligenceAdapter: TauriJavaIntelligenceAdapter;
+  javaLspRefactoringAdapter: TauriJavaLspRefactoringAdapter;
   xcom2ModuleConfigurationAdapter: TauriXcom2ModuleConfigurationAdapter;
   xcom2ModuleScannerAdapter: TauriXcom2ModuleScannerAdapter;
   xcom2SetupMonitorAdapter: TauriXcom2SetupMonitorAdapter;
@@ -118,6 +133,7 @@ export function createTauriAdapters(): {
 } {
   const languageSessionAdapter = new TauriLanguageSessionAdapter();
   return {
+    gitWorkspaceAdapter: new TauriGitWorkspaceAdapter(),
     fileTreeAdapter: new TauriFileTreeAdapter(),
     editorAdapter: new TauriEditorAdapter(),
     terminalAdapter: new TauriTerminalAdapter(),
@@ -132,6 +148,7 @@ export function createTauriAdapters(): {
     languageSessionAdapter,
     documentSyncAdapter: languageSessionAdapter,
     javaIntelligenceAdapter: new TauriJavaIntelligenceAdapter(),
+    javaLspRefactoringAdapter: new TauriJavaLspRefactoringAdapter(),
     xcom2ModuleConfigurationAdapter: new TauriXcom2ModuleConfigurationAdapter(),
     xcom2ModuleScannerAdapter: new TauriXcom2ModuleScannerAdapter(),
     xcom2SetupMonitorAdapter: new TauriXcom2SetupMonitorAdapter(),
@@ -140,3 +157,6 @@ export function createTauriAdapters(): {
     xcom2ProjectBuildRecipeInspectionAdapter: new TauriXcom2ProjectBuildRecipeInspectionAdapter(),
   };
 }
+export { TauriJavaEntryPointAdapter } from "./java-entry-point-tauri";
+export { TauriJavaProjectDeclarationAdapter } from "./java-project-declaration-tauri";
+export { TauriJavaEditorDiagnosticsAdapter } from "./java-editor-diagnostics-tauri";

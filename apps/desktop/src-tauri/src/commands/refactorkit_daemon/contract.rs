@@ -1,5 +1,6 @@
 //! Closed command DTOs and normalized, source-free response contracts.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,41 @@ pub struct PreviewRequest {
     pub(super) workspace_id: String,
     pub(super) workspace_generation: u64,
     pub(super) selection_generation: u64,
+    pub(super) request_id: String,
+}
+
+/// Read-only Maven module rename preview against the selected workspace snapshot.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MavenModuleRenamePreviewRequest {
+    pub(super) old_module_dir: String,
+    pub(super) new_module_dir: String,
+    pub(super) new_artifact_id: Option<String>,
+    pub(super) expected_snapshot_hash: String,
+    pub(super) expected_context_hash: String,
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
+    pub(super) selection_generation: u64,
+    pub(super) request_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MavenModuleRenameApplyRequest {
+    pub(super) plan_id: String,
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
+    pub(super) selection_generation: u64,
+    pub(super) request_id: String,
+    pub(super) approval: ApprovalEvidence,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MavenModuleRenameRollbackRequest {
+    pub(super) transaction_id: String,
+    pub(super) workspace_id: String,
+    pub(super) workspace_generation: u64,
     pub(super) request_id: String,
 }
 
@@ -78,44 +114,130 @@ pub struct RollbackRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RefactoringOperation {
+    CreateMavenModule,
+    CreateGradleModule,
+    RenameGradleModule,
     RenameClass,
     RenameMember,
     RenameLocalVariable,
     MoveClass,
+    MovePackage,
+    MoveSourceRoot,
     ChangeMethodSignature,
+    ChangeMethodParameterType,
+    AddMethodParameter,
+    RemoveMethodParameter,
+    ReorderMethodParameters,
+    MakeStatic,
+    MakePublic,
+    ChangeFieldType,
+    InlineVariable,
+    InlineMethod,
+    IntroduceParameterObject,
+    ExtractDelegate,
+    InlineConstant,
+    ExtractConstant,
+    ExtractVariable,
+    ExtractMethod,
+    ExtractParameter,
+    ExtractField,
+    ExtractInterface,
+    ExtractSuperclass,
+    PullUpMember,
+    PushDownMember,
+    MoveMember,
+    EncapsulateField,
     SafeDelete,
+    FormatFile,
+    OrganizeImports,
+    BatchCleanup,
 }
 
 impl RefactoringOperation {
     pub(super) fn as_str(self) -> &'static str {
         match self {
+            RefactoringOperation::CreateMavenModule => "create-maven-module",
+            RefactoringOperation::CreateGradleModule => "create-gradle-module",
+            RefactoringOperation::RenameGradleModule => "rename-gradle-module",
             RefactoringOperation::RenameClass => "rename-class",
             RefactoringOperation::RenameMember => "rename-member",
             RefactoringOperation::RenameLocalVariable => "rename-local-variable",
             RefactoringOperation::MoveClass => "move-class",
+            RefactoringOperation::MovePackage => "move-package",
+            RefactoringOperation::MoveSourceRoot => "move-source-root",
             RefactoringOperation::ChangeMethodSignature => "change-method-signature",
+            RefactoringOperation::ChangeMethodParameterType => "change-method-parameter-type",
+            RefactoringOperation::AddMethodParameter => "add-method-parameter",
+            RefactoringOperation::RemoveMethodParameter => "remove-method-parameter",
+            RefactoringOperation::ReorderMethodParameters => "reorder-method-parameters",
+            RefactoringOperation::MakeStatic => "make-static",
+            RefactoringOperation::MakePublic => "make-public",
+            RefactoringOperation::ChangeFieldType => "change-field-type",
+            RefactoringOperation::InlineVariable => "inline-variable",
+            RefactoringOperation::InlineMethod => "inline-method",
+            RefactoringOperation::IntroduceParameterObject => "introduce-parameter-object",
+            RefactoringOperation::ExtractDelegate => "extract-delegate",
+            RefactoringOperation::InlineConstant => "inline-constant",
+            RefactoringOperation::ExtractConstant => "extract-constant",
+            RefactoringOperation::ExtractVariable => "extract-variable",
+            RefactoringOperation::ExtractMethod => "extract-method",
+            RefactoringOperation::ExtractParameter => "extract-parameter",
+            RefactoringOperation::ExtractField => "extract-field",
+            RefactoringOperation::ExtractInterface => "extract-interface",
+            RefactoringOperation::ExtractSuperclass => "extract-superclass",
+            RefactoringOperation::PullUpMember => "pull-up-member",
+            RefactoringOperation::PushDownMember => "push-down-member",
+            RefactoringOperation::MoveMember => "move-member",
+            RefactoringOperation::EncapsulateField => "encapsulate-field",
             RefactoringOperation::SafeDelete => "safe-delete",
+            RefactoringOperation::FormatFile => "format-file",
+            RefactoringOperation::OrganizeImports => "organize-imports",
+            RefactoringOperation::BatchCleanup => "batch-cleanup",
         }
     }
 }
 
 /// True when an operation requires operation-specific change intent to execute.
-/// Only `safe-delete` needs no intent.
+/// File operations and bounded selection-independent actions do not take intent.
 pub(super) fn refactor_operation_requires_intent(operation: RefactoringOperation) -> bool {
-    !matches!(operation, RefactoringOperation::SafeDelete)
+    !matches!(
+        operation,
+        RefactoringOperation::SafeDelete
+            | RefactoringOperation::FormatFile
+            | RefactoringOperation::OrganizeImports
+            | RefactoringOperation::MakeStatic
+            | RefactoringOperation::MakePublic
+            | RefactoringOperation::InlineVariable
+            | RefactoringOperation::InlineMethod
+            | RefactoringOperation::InlineConstant
+            | RefactoringOperation::EncapsulateField
+    )
 }
 
 /// Operation-specific mutation intent required by the real engine before a
 /// rename/move/signature preview or apply can execute. The intent is optional on
 /// the request but validated: an operation that requires intent but has none is
 /// honestly refused (never fabricated). The `operation` discriminator must match
-/// the request `operation`. `safe-delete` requires no intent. Field names mirror
-/// the engine change descriptor (newName/fromName/newPackage/sourcePath/targetPath/
-/// oldParameter/newParameter).
+/// the request `operation`. File operations and bounded no-parameter actions
+/// such as Make Static, Make Public, Inline Method, Safe Delete and Encapsulate Field require no intent.
+/// Field names mirror the engine change descriptor (newName/fromName/newPackage/
+/// to/sourcePath/targetPath/oldParameter/newParameter/parameterName/newType).
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RefactorKitChangeIntent {
     pub(super) operation: RefactoringOperation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) actions: Option<Vec<JavaCleanupAction>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) module_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) build_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) old_project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_project_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) new_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -123,14 +245,74 @@ pub struct RefactorKitChangeIntent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) new_package: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) from_package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) to_package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) source_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) target_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_module_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) old_parameter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) new_parameter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parameter_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parameter_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) type_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parameters: Option<[String; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) members: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) default_expression: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) include_hierarchy: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) accept_external_consumer_risk: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) migrate_functional_references: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) new_order: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) method_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) interface_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) superclass_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_position: Option<JavaSelectionPosition>,
 }
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct JavaSelectionPosition {
+    pub(super) line: u64,
+    pub(super) character: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct JavaCleanupAction {
+    pub(super) operation: JavaCleanupOperation,
+    pub(super) path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JavaCleanupOperation { FormatFile, OrganizeImports }
 
 impl RefactorKitChangeIntent {
     /// Validates the intent discriminator against the request operation and the
@@ -144,7 +326,126 @@ impl RefactorKitChangeIntent {
                 operation.as_str()
             ));
         }
+        if operation != RefactoringOperation::BatchCleanup && self.actions.is_some() {
+            return Err("Only batch-cleanup accepts cleanup actions.".into());
+        }
+        if operation != RefactoringOperation::IntroduceParameterObject
+            && (self.parameters.is_some()
+                || (self.type_name.is_some() && operation != RefactoringOperation::ExtractDelegate))
+        {
+            return Err("Unexpected parameter object fields.".into());
+        }
+        if operation != RefactoringOperation::ExtractDelegate && self.members.is_some() {
+            return Err("Only Extract Delegate accepts a group of members.".into());
+        }
+        if self.migrate_functional_references.is_some() && operation != RefactoringOperation::AddMethodParameter {
+            return Err("Only Add Parameter supports static method-reference migration.".into());
+        }
+        if self.migrate_functional_references == Some(true) && self.include_hierarchy == Some(true) {
+            return Err("Method and constructor reference adaptation cannot be combined with hierarchy changes.".into());
+        }
+        if !matches!(operation, RefactoringOperation::AddMethodParameter | RefactoringOperation::RemoveMethodParameter |
+            RefactoringOperation::ReorderMethodParameters | RefactoringOperation::ChangeMethodParameterType)
+            && (self.include_hierarchy.is_some() || self.accept_external_consumer_risk.is_some()) {
+            return Err("Only parameter signature changes accept hierarchy and external-consumer risk options.".into());
+        }
+        if self.include_hierarchy == Some(true) && self.accept_external_consumer_risk != Some(true) {
+            return Err("Hierarchy changes require explicit acceptance of external-consumer risk.".into());
+        }
+        let valid_name = |value: &str| {
+            !value.is_empty()
+                && value.encode_utf16().count() <= 256
+                && !value.chars().any(|ch| ch.is_whitespace() || ch.is_control() || ch == '\u{feff}')
+        };
         match operation {
+            RefactoringOperation::ExtractDelegate => {
+                let fields = serde_json::to_value(self).map_err(|_| PROTOCOL_FAILED)?;
+                let mut names = std::collections::HashSet::new();
+                if fields.as_object().unwrap().keys().any(|key| {
+                    !matches!(key.as_str(), "operation" | "typeName" | "members")
+                }) || !self.type_name.as_deref().is_some_and(valid_name)
+                    || !self.members.as_ref().is_some_and(|members| {
+                        members.len() >= 2
+                            && members.iter().all(|name| valid_name(name) && names.insert(name))
+                    })
+                {
+                    return Err("Enter a delegate type name and at least two distinct member names.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::IntroduceParameterObject => {
+                let fields = serde_json::to_value(self).map_err(|_| PROTOCOL_FAILED)?;
+                if fields.as_object().unwrap().keys().any(|key| {
+                    !matches!(key.as_str(), "operation" | "typeName" | "parameters")
+                })
+                    || !self.type_name.as_deref().is_some_and(valid_name)
+                    || !self.parameters.as_ref().is_some_and(|[first, second]| {
+                        first != second && valid_name(first) && valid_name(second)
+                    })
+                {
+                    return Err("Enter a type name and two different parameter names in declaration order.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::BatchCleanup => {
+                let fields = serde_json::to_value(self).map_err(|_| PROTOCOL_FAILED)?;
+                if fields.as_object().unwrap().keys().any(|key| key != "operation" && key != "actions") {
+                    return Err("Batch cleanup accepts only its explicit actions.".into());
+                }
+                let actions = self.actions.as_ref().filter(|actions| (2..=16).contains(&actions.len()))
+                    .ok_or("Batch cleanup requires 2–16 actions on distinct saved Java files.")?;
+                let mut paths = std::collections::HashSet::new();
+                for action in actions {
+                    if action.path.len() > 4096 || !action.path.ends_with(".java") ||
+                        !valid_workspace_relative_build_root(&action.path) || action.path == "." ||
+                        !paths.insert(&action.path) {
+                        return Err("Batch cleanup requires distinct normalized Java source paths.".into());
+                    }
+                }
+                Ok(())
+            }
+            RefactoringOperation::CreateMavenModule => {
+                let name = self
+                    .module_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty() && value.len() <= 256)
+                    .ok_or_else(|| {
+                        "create-maven-module requires a bounded moduleName.".to_string()
+                    })?;
+                if name
+                    .chars()
+                    .any(|ch| ch.is_control() || ch == '/' || ch == '\\')
+                {
+                    return Err("create-maven-module requires a moduleName without path separators or control characters.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::RenameGradleModule => {
+                if !self.build_root.as_deref().is_some_and(|root| root == "." || valid_workspace_relative_build_root(root)) ||
+                    !self.old_project_path.as_deref().is_some_and(valid_gradle_project_path) ||
+                    !self.new_project_path.as_deref().is_some_and(valid_gradle_project_path) ||
+                    self.old_project_path == self.new_project_path {
+                    return Err("rename-gradle-module requires a workspace-relative buildRoot and two different canonical project paths.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::CreateGradleModule => {
+                self.build_root
+                    .as_deref()
+                    .filter(|value| *value == "." || valid_workspace_relative_build_root(value))
+                    .ok_or_else(|| {
+                        "create-gradle-module requires a workspace-relative buildRoot.".to_string()
+                    })?;
+                self
+                    .project_path
+                    .as_deref()
+                    .filter(|value| valid_gradle_project_path(value))
+                    .ok_or_else(|| {
+                        "create-gradle-module requires a canonical nested projectPath such as :library or :services:catalog.".to_string()
+                    })?;
+                Ok(())
+            }
             RefactoringOperation::RenameClass | RefactoringOperation::RenameMember => {
                 require_intent_field(&self.new_name, "newName")
             }
@@ -152,14 +453,190 @@ impl RefactorKitChangeIntent {
                 require_intent_field(&self.from_name, "fromName")?;
                 require_intent_field(&self.new_name, "newName")
             }
-            RefactoringOperation::MoveClass => require_intent_field(&self.new_package, "newPackage"),
+            RefactoringOperation::MoveClass => {
+                require_intent_field(&self.new_package, "newPackage")?;
+                if self.target_module_id.as_ref().is_some_and(|module| {
+                    module.trim().is_empty()
+                        || module.len() > 1024
+                        || module.chars().any(char::is_control)
+                }) {
+                    return Err("move-class requires a bounded targetModuleId without control characters when supplied.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::MovePackage => {
+                require_intent_field(&self.from_package, "fromPackage")?;
+                require_intent_field(&self.to_package, "toPackage")
+            }
+            RefactoringOperation::MoveSourceRoot => require_intent_field(&self.to, "to"),
             RefactoringOperation::ChangeMethodSignature => {
                 require_intent_field(&self.old_parameter, "oldParameter")?;
                 require_intent_field(&self.new_parameter, "newParameter")
             }
-            RefactoringOperation::SafeDelete => Ok(()),
+            RefactoringOperation::ChangeFieldType => require_bounded_intent_field(&self.new_type, "newType"),
+            RefactoringOperation::ChangeMethodParameterType => {
+                require_bounded_intent_field(&self.parameter_name, "parameterName")?;
+                require_bounded_intent_field(&self.new_type, "newType")
+            }
+            RefactoringOperation::AddMethodParameter => {
+                require_intent_field(&self.parameter_type, "parameterType")?;
+                require_intent_field(&self.parameter_name, "parameterName")?;
+                require_intent_field(&self.default_expression, "defaultExpression")
+            }
+            RefactoringOperation::RemoveMethodParameter => {
+                require_bounded_intent_field(&self.parameter_name, "parameterName")
+            }
+            RefactoringOperation::ReorderMethodParameters => {
+                require_intent_field(&self.new_order, "newOrder")?;
+                let order = self
+                    .new_order
+                    .as_deref()
+                    .ok_or_else(|| "change intent requires a non-empty newOrder.".to_string())?;
+                if order.len() > 4096 || order.contains('\0') {
+                    return Err("newOrder must be bounded and contain no NUL characters.".into());
+                }
+                let names: Vec<_> = order.split(',').map(str::trim).collect();
+                let unique: HashSet<_> = names.iter().copied().collect();
+                if names.len() < 2
+                    || names.iter().any(|name| name.is_empty())
+                    || unique.len() != names.len()
+                {
+                    return Err("newOrder requires at least two distinct parameter names.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::ExtractConstant
+            | RefactoringOperation::ExtractVariable
+            | RefactoringOperation::ExtractParameter
+            | RefactoringOperation::ExtractField => require_intent_field(&self.name, "name"),
+            RefactoringOperation::ExtractMethod => require_extract_method_name(&self.method_name),
+            RefactoringOperation::ExtractInterface => {
+                self
+                    .interface_name
+                    .as_deref()
+                    .filter(|value| {
+                        !value.trim().is_empty()
+                            && value.encode_utf16().count() <= 256
+                            && !value.contains('\0')
+                    })
+                    .ok_or_else(|| {
+                        "interfaceName must be non-empty, at most 256 UTF-16 units, and contain no NUL.".to_string()
+                    })?;
+                require_extract_method_name(&self.method_name)
+            }
+            RefactoringOperation::ExtractSuperclass => {
+                self.superclass_name
+                    .as_deref()
+                    .filter(|value| {
+                        !value.trim().is_empty()
+                            && value.encode_utf16().count() <= 256
+                            && !value.contains('\0')
+                    })
+                    .ok_or_else(|| {
+                        "superclassName must be non-empty, at most 256 UTF-16 units, and contain no NUL.".to_string()
+                    })?;
+                require_extract_method_name(&self.method_name)
+            }
+            RefactoringOperation::PullUpMember => {
+                self
+                    .target_type
+                    .as_deref()
+                    .filter(|value| {
+                        !value.trim().is_empty()
+                            && value.encode_utf16().count() <= 4096
+                            && !value.contains('\0')
+                    })
+                    .ok_or_else(|| {
+                        "targetType must be non-empty, at most 4096 UTF-16 units, and contain no NUL.".to_string()
+                    })?;
+                Ok(())
+            }
+            RefactoringOperation::PushDownMember => {
+                self
+                    .target_type
+                    .as_deref()
+                    .filter(|value| {
+                        !value.trim().is_empty()
+                            && value.encode_utf16().count() <= 4096
+                            && !value.contains('\0')
+                    })
+                    .ok_or_else(|| {
+                        "targetType must be non-empty, at most 4096 UTF-16 units, and contain no NUL.".to_string()
+                    })?;
+                Ok(())
+            }
+            RefactoringOperation::MoveMember => {
+                require_bounded_intent_field(&self.target_type, "targetType")?;
+                let path = self
+                    .target_path
+                    .as_deref()
+                    .filter(|value| *value != "." && valid_workspace_relative_build_root(value))
+                    .ok_or_else(|| {
+                        "move-member requires a safe workspace-relative targetPath.".to_string()
+                    })?;
+                if !path.ends_with(".java") {
+                    return Err("move-member targetPath must identify a Java source file.".into());
+                }
+                let position = self
+                    .target_position
+                    .as_ref()
+                    .ok_or_else(|| "move-member requires targetPosition.".to_string())?;
+                if position.line > 9_007_199_254_740_991
+                    || position.character > 9_007_199_254_740_991
+                {
+                    return Err("move-member targetPosition is outside the supported range.".into());
+                }
+                Ok(())
+            }
+            RefactoringOperation::SafeDelete
+            | RefactoringOperation::FormatFile
+            | RefactoringOperation::OrganizeImports
+            | RefactoringOperation::MakeStatic
+            | RefactoringOperation::MakePublic
+            | RefactoringOperation::InlineVariable
+            | RefactoringOperation::InlineMethod
+            | RefactoringOperation::InlineConstant
+            | RefactoringOperation::EncapsulateField => Ok(()),
         }
     }
+}
+
+fn valid_workspace_relative_build_root(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4096
+        && value == value.trim()
+        && !value.starts_with('/')
+        && !value.contains('\\')
+        && !value.contains(':')
+        && !value.chars().any(char::is_control)
+        && value
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+fn valid_gradle_project_path(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > 2048
+        || value != value.trim()
+        || !value.starts_with(':')
+        || value.chars().any(char::is_control)
+        || value.contains('/')
+        || value.contains('\\')
+    {
+        return false;
+    }
+    let segments: Vec<_> = value[1..].split(':').collect();
+    !segments.is_empty()
+        && segments.len() <= 32
+        && segments.iter().all(|segment| {
+            !segment.is_empty()
+                && segment.len() <= 255
+                && *segment != "."
+                && *segment != ".."
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
+        })
 }
 
 fn require_intent_field(value: &Option<String>, name: &str) -> Result<(), String> {
@@ -169,6 +646,33 @@ fn require_intent_field(value: &Option<String>, name: &str) -> Result<(), String
         .filter(|value| !value.is_empty())
         .map(|_| ())
         .ok_or_else(|| format!("{} requires a non-empty {name}.", "change intent"))
+}
+
+fn require_bounded_intent_field(value: &Option<String>, name: &str) -> Result<(), String> {
+    let Some(value) = value.as_ref().map(|value| value.trim()) else {
+        return Err(format!("change intent requires a non-empty {name}."));
+    };
+    if value.is_empty() {
+        return Err(format!("change intent requires a non-empty {name}."));
+    }
+    if value.len() > 4096 || value.contains('\0') {
+        return Err(format!(
+            "{name} must be bounded and contain no NUL characters."
+        ));
+    }
+    Ok(())
+}
+
+fn require_extract_method_name(value: &Option<String>) -> Result<(), String> {
+    let Some(value) = value.as_ref() else {
+        return Err("change intent requires a non-empty methodName.".into());
+    };
+    if value.trim().is_empty() || value.encode_utf16().count() > 256 || value.contains('\0') {
+        return Err(
+            "methodName must be non-empty, at most 256 UTF-16 units, and contain no NUL.".into(),
+        );
+    }
+    Ok(())
 }
 
 /// An exact semantic Java target bound by the IDE for a refactoring request.
@@ -463,9 +967,7 @@ pub(super) fn normalize_refactoring_rollback(
     }))
 }
 
-pub(super) fn normalize_refactoring_evidence(
-    value: Option<&Value>,
-) -> Result<Vec<Value>, String> {
+pub(super) fn normalize_refactoring_evidence(value: Option<&Value>) -> Result<Vec<Value>, String> {
     array(value)?
         .iter()
         .map(|item| {

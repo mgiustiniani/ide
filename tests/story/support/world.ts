@@ -6,6 +6,7 @@ import {
 } from "./application-content-layout.js";
 import { NativeApplicationContentLayoutSession } from "./native-application-content-layout.js";
 import { NativeDesktopFileOpenSession } from "./native-desktop-file-open.js";
+import { NativeJavaSourceFileCreationSession } from "./native-java-source-file-creation.js";
 import { NativePiWorkspaceAgentStorySession } from "./native-pi-workspace-agent.js";
 import { NativeRefactorKitJavaImportSession } from "./native-refactorkit-java-import.js";
 import { NativeXcom2MachineSettingsMissingSteamSession } from "./native-xcom2-machine-settings-missing-steam.js";
@@ -44,6 +45,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
   #nativeApplicationContentLayoutSession?: NativeApplicationContentLayoutSession;
   #nativeDesktopFileOpenSession?: NativeDesktopFileOpenSession;
   #nativeDesktopEvidenceAttached = false;
+  #nativeJavaSourceFileCreationSession?: NativeJavaSourceFileCreationSession;
   #nativeRefactorKitJavaImportSession?: NativeRefactorKitJavaImportSession;
   #nativeRefactorKitJavaImportEvidenceAttached = false;
   #nativeXcom2MachineSettingsMissingSteamSession?: NativeXcom2MachineSettingsMissingSteamSession;
@@ -393,6 +395,27 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#nativeDesktopEvidenceAttached = true;
   }
 
+  createNativeJavaSourceFileCreationSession(): NativeJavaSourceFileCreationSession {
+    if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
+      throw new TypeError(
+        `The native Java source-creation Story requires desktop/tauri-webdriver, received ${this.targetProfile.name}/${this.targetProfile.driver}`,
+      );
+    }
+    if (this.#nativeJavaSourceFileCreationSession) {
+      throw new Error("The native Java source-creation Story session has already been created");
+    }
+    const session = new NativeJavaSourceFileCreationSession();
+    this.#nativeJavaSourceFileCreationSession = session;
+    return session;
+  }
+
+  nativeJavaSourceFileCreationSession(): NativeJavaSourceFileCreationSession {
+    if (!this.#nativeJavaSourceFileCreationSession) {
+      throw new Error("The native Java source-creation Story session has not been created");
+    }
+    return this.#nativeJavaSourceFileCreationSession;
+  }
+
   createNativeXcom2MachineSettingsMissingSteamSession(): NativeXcom2MachineSettingsMissingSteamSession {
     if (this.targetProfile.name !== "desktop" || this.targetProfile.driver !== "tauri-webdriver") {
       throw new TypeError(
@@ -685,6 +708,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     const desktopPanelLayoutHarness = this.#desktopPanelLayoutHarness;
     const nativeApplicationContentLayoutSession = this.#nativeApplicationContentLayoutSession;
     const nativeDesktopFileOpenSession = this.#nativeDesktopFileOpenSession;
+    const nativeJavaSourceFileCreationSession = this.#nativeJavaSourceFileCreationSession;
     const nativeRefactorKitJavaImportSession = this.#nativeRefactorKitJavaImportSession;
     const nativeXcom2MachineSettingsMissingSteamSession =
       this.#nativeXcom2MachineSettingsMissingSteamSession;
@@ -705,6 +729,7 @@ export class StoryWorld extends World<StoryWorldParameters> {
     this.#desktopPanelLayoutHarness = undefined;
     this.#nativeApplicationContentLayoutSession = undefined;
     this.#nativeDesktopFileOpenSession = undefined;
+    this.#nativeJavaSourceFileCreationSession = undefined;
     this.#nativeRefactorKitJavaImportSession = undefined;
     this.#nativeXcom2MachineSettingsMissingSteamSession = undefined;
     this.#nativeXcom2ModuleActivationSession = undefined;
@@ -746,6 +771,18 @@ export class StoryWorld extends World<StoryWorldParameters> {
           }
         } finally {
           await nativeDesktopFileOpenSession.dispose();
+        }
+      }
+      if (nativeJavaSourceFileCreationSession) {
+        try {
+          await nativeJavaSourceFileCreationSession.dispose();
+        } finally {
+          await this.attach(
+            JSON.stringify(nativeJavaSourceFileCreationSession.evidence()),
+            "application/json",
+          );
+          const diagnostics = nativeJavaSourceFileCreationSession.diagnostics();
+          if (diagnostics) await this.attach(diagnostics, "text/plain");
         }
       }
       if (nativeRefactorKitJavaImportSession) {

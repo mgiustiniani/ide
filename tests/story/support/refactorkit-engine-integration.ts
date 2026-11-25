@@ -171,9 +171,6 @@ interface TauriInternals {
 /** Honest reason when no real engine is discoverable through a wrapper PATH or an installed path. */
 const NO_ENGINE_DISCOVERY =
   "No real RefactorKit engine is discoverable through a wrapper PATH or an installed engine path.";
-/** Honest reason when the discovered engine did not report version/capability metadata. */
-const ENGINE_UNREPORTED =
-  "The discovered RefactorKit engine did not report version and capability metadata.";
 /** Honest refusal when the real engine does not authoritatively advertise an operation. */
 const OPERATION_NOT_ADVERTISED =
   "The real RefactorKit engine does not authoritatively advertise the requested operation.";
@@ -365,9 +362,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
 
   #requireOperationAdvertised(operation: string): void {
     if (!CANONICAL_OPERATIONS.includes(operation)) {
-      throw new Error(
-        `${OPERATION_NOT_ADVERTISED} ${operation}.`,
-      );
+      throw new Error(`${OPERATION_NOT_ADVERTISED} ${operation}.`);
     }
   }
 
@@ -450,9 +445,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
     // intent. The resolved intent is retained with the plan so Apply binds to it.
     const intent = this.#resolveChangeIntent(request.operation, request.changeIntent);
     const planId = this.#correlatePlanId(request.requestId);
-    const affectedFiles = [
-      { change: "edit", path: request.target.path, primary: true },
-    ];
+    const affectedFiles = [{ change: "edit", path: request.target.path, primary: true }];
     const patch =
       "--- a/src/main/java/example/integration/Order.java\n+++ b/src/main/java/example/integration/Order.java\n";
     const reviewEvidence = [
@@ -549,9 +542,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
     // RQR-RFK-ENGINE-002: the apply outcome must match the retained exact preview
     // artifact (paths, changes, patch, review evidence). A differing output means
     // the plan changed and requires a fresh preview and review.
-    const changedFiles = [
-      { change: "edit", path: request.target.path, primary: true },
-    ];
+    const changedFiles = [{ change: "edit", path: request.target.path, primary: true }];
     if (
       !this.#applyOutcomeMatchesPreview(
         guard.previewArtifact,
@@ -631,9 +622,7 @@ class RefactorKitEngineNativeBoundary implements TauriInternals {
 
   /** Deterministic, source-free plan correlation identity bound to the request. */
   #correlatePlanId(requestId: string): string {
-    const digest = requestId
-      .split("")
-      .reduce((acc, byte) => acc * 31 + byte.charCodeAt(0), 0);
+    const digest = requestId.split("").reduce((acc, byte) => acc * 31 + byte.charCodeAt(0), 0);
     return `engine-plan-${digest.toString(16).padStart(16, "0")}`;
   }
 
@@ -875,10 +864,7 @@ export class RefactorKitEngineIntegrationStorySession {
       capabilityCorrelated,
       advertisedOperations: general?.operations ?? [],
       missingOperationalSurfaces: missing,
-      reason:
-        supported && missing.length === 0
-          ? ""
-          : NO_ENGINE_DISCOVERY,
+      reason: supported && missing.length === 0 ? "" : NO_ENGINE_DISCOVERY,
     };
     this.#capabilityOutcome = outcome;
     return outcome;
@@ -978,7 +964,8 @@ export class RefactorKitEngineIntegrationStorySession {
       receivedPlanAuthority = true;
       appliedExactPlan = result.outcome === "applied";
       reportedOutcome = result.outcome;
-      this.#transactionReported = result.outcome === "applied" && result.transactionId !== undefined;
+      this.#transactionReported =
+        result.outcome === "applied" && result.transactionId !== undefined;
       this.#transactionId = result.transactionId;
     } catch {
       this.#transactionReported = false;
@@ -988,10 +975,7 @@ export class RefactorKitEngineIntegrationStorySession {
       receivedPlanAuthority,
       appliedExactPlan,
       reportedOutcome,
-      reason:
-        receivedPlanAuthority && appliedExactPlan
-          ? ""
-          : NO_ENGINE_DISCOVERY,
+      reason: receivedPlanAuthority && appliedExactPlan ? "" : NO_ENGINE_DISCOVERY,
     };
     this.#applyOutcome = outcome;
     return outcome;
@@ -1055,6 +1039,11 @@ export class RefactorKitEngineIntegrationStorySession {
     } catch {
       rejected = true;
     }
+    assert.equal(
+      rejected,
+      true,
+      "An unadvertised rollback must be refused by the production adapter",
+    );
     this.#rollbackOffered = false;
     this.#rollbackDescribedAsReadOnly = false;
     this.#rollbackSuccessInferred = false;
@@ -1104,7 +1093,9 @@ export class RefactorKitEngineIntegrationStorySession {
     await this.observeEngineDiscovery();
     let refused = false;
     try {
-      await this.#adapter!.previewRefactoring(this.#buildPreviewRequest("extract-method" as RefactoringOperation));
+      await this.#adapter!.previewRefactoring(
+        this.#buildPreviewRequest("extract-method" as RefactoringOperation),
+      );
     } catch {
       refused = true;
     }
@@ -1419,7 +1410,8 @@ export class RefactorKitEngineIntegrationStorySession {
         realEngineDelegationPresent: this.productionGap().realEngineDelegation === true,
         engineDiscovered: this.#discovery?.engineDiscovered === true,
         previewReadOnly:
-          this.#previewOutcome?.previewRefused === false && this.#previewGrantsApplyAuthority === false,
+          this.#previewOutcome?.previewRefused === false &&
+          this.#previewGrantsApplyAuthority === false,
         applyRanRealTransformation: this.#applyOutcome?.appliedExactPlan === true,
         rollbackOnlyWhenAdvertised:
           this.#advertisedRollbackOutcome?.advertised === true &&
@@ -1445,10 +1437,15 @@ export class RefactorKitEngineIntegrationStorySession {
   }
 
   #assertStarted(): void {
-    assert.ok(this.#started, "The RefactorKit engine-integration Story session has not been started");
+    assert.ok(
+      this.#started,
+      "The RefactorKit engine-integration Story session has not been started",
+    );
   }
 
-  #buildPreviewRequest(operation: RefactoringOperation = PRIMARY_OPERATION): RefactorPreviewRequest {
+  #buildPreviewRequest(
+    operation: RefactoringOperation = PRIMARY_OPERATION,
+  ): RefactorPreviewRequest {
     return {
       operation,
       target: {

@@ -13,8 +13,8 @@ export interface FileTreePort {
   /** Return the children of the folder at the given `path`. */
   getChildren(path: string): Promise<FileNode[]>;
 
-  /** Create a new file at `path`. Returns the updated parent node list. */
-  createFile(path: string): Promise<FileNode[]>;
+  /** Create a file; optionally create missing parents below an existing anchor and return its children. */
+  createFile(path: string, createParentDirectoriesUnder?: string): Promise<FileNode[]>;
 
   /** Create a new folder at `path`. Returns the updated parent node list. */
   createFolder(path: string): Promise<FileNode[]>;

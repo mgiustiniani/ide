@@ -355,36 +355,41 @@ function ChangesView({
 }: ChangesViewProps): JSX.Element {
   if (changes.length === 0) return <Empty>No workspace changes detected.</Empty>;
   return (
-    <ol className="space-y-1" aria-label="Workspace changes">
-      {changes.map((change) => {
-        const review = reviews?.get(change.path);
-        return (
-          <li key={change.path} className="space-y-1">
-            <button
-              type="button"
-              className="flex w-full min-w-0 items-start justify-between gap-2 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-2 py-1.5 text-left disabled:cursor-default"
-              disabled={!onOpenChangedFile}
-              onClick={() => void onOpenChangedFile?.(change.path)}
-            >
-              <span className="min-w-0 break-all font-mono text-[0.68rem]">{change.path}</span>
-              <span className="shrink-0 text-[0.62rem] uppercase text-[var(--text-muted)]">
-                {change.status}
-              </span>
-            </button>
-            {review?.kind === "ok" ? (
-              <HunkPanel diff={review.diff} onOpenRange={onOpenRange} />
-            ) : review?.kind === "unavailable" ? (
-              <p
-                className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[0.66rem] text-[var(--text-muted)]"
-                role="note"
+    <>
+      <p className="mb-2 text-[0.66rem] text-[var(--text-muted)]">
+        Hunks show saved, unstaged changes. Unsaved editor edits are not included.
+      </p>
+      <ol className="space-y-1" aria-label="Workspace changes">
+        {changes.map((change) => {
+          const review = reviews?.get(change.path);
+          return (
+            <li key={change.path} className="space-y-1">
+              <button
+                type="button"
+                className="flex w-full min-w-0 items-start justify-between gap-2 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-2 py-1.5 text-left disabled:cursor-default"
+                disabled={!onOpenChangedFile}
+                onClick={() => void onOpenChangedFile?.(change.path)}
               >
-                Diff review unavailable: {review.reason}
-              </p>
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
+                <span className="min-w-0 break-all font-mono text-[0.68rem]">{change.path}</span>
+                <span className="shrink-0 text-[0.62rem] uppercase text-[var(--text-muted)]">
+                  {change.status}
+                </span>
+              </button>
+              {review?.kind === "ok" ? (
+                <HunkPanel diff={review.diff} onOpenRange={onOpenRange} />
+              ) : review?.kind === "unavailable" ? (
+                <p
+                  className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[0.66rem] text-[var(--text-muted)]"
+                  role="note"
+                >
+                  Diff review unavailable: {review.reason}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }
 
@@ -401,7 +406,8 @@ function HunkPanel({
       aria-label={`Read-only diff for ${diff.path}`}
     >
       {diff.hunks.map((hunk, index) => {
-        const endLine = hunk.newStart + hunk.newLines - 1;
+        const startLine = Math.max(1, hunk.newStart);
+        const endLine = Math.max(startLine, hunk.newStart + hunk.newLines - 1);
         return (
           <section
             key={`${diff.path}:${index}`}
@@ -416,8 +422,8 @@ function HunkPanel({
                 type="button"
                 className="shrink-0 rounded border border-[var(--border-default)] px-1.5 py-0.5 text-[0.62rem] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:cursor-default"
                 disabled={!onOpenRange}
-                aria-label={`Open range ${diff.path}:${hunk.newStart}-${endLine}`}
-                onClick={() => void onOpenRange?.(diff.path, hunk.newStart, endLine)}
+                aria-label={`Open range ${diff.path}:${startLine}-${endLine}`}
+                onClick={() => void onOpenRange?.(diff.path, startLine, endLine)}
               >
                 Open range
               </button>

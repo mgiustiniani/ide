@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
-import { access, readdir, readFile, readlink, realpath, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 
 import { remote } from "webdriverio";
+import { signalDriverProcessGroup } from "./native-driver-process.js";
+import {
+  nativeStartupDomObservation,
+  recordNativeStartupObservation,
+} from "./native-startup-observation.js";
 
 import {
   NativeScenarioEnvironmentLease,
@@ -15,6 +29,9 @@ import {
 export const NATIVE_OPEN_PROOF_FILE = "native-open-proof.ts";
 export const NATIVE_OPEN_PROOF_CONTENT =
   'export const nativeOpenProof = "REQ-DESKTOP-FILE-OPEN-001";';
+export const NATIVE_QUICK_OPEN_FILE = "src/main/java/example/deep/MainController.java";
+export const NATIVE_QUICK_OPEN_CONTENT =
+  "package example.deep;\n\npublic final class MainController {}";
 
 const DRIVER_START_TIMEOUT_MS = 10_000;
 const SESSION_START_TIMEOUT_MS = 20_000;
@@ -35,6 +52,8 @@ interface NativeEvidence {
   applicationProcessObserved?: boolean;
   fileExplorerReady?: boolean;
   accessibleFileItem?: string;
+  quickOpenDialog?: boolean;
+  quickOpenResult?: string;
   selectedPath?: string;
   selectedPathSource?: string;
   activeEditorTab?: string;
@@ -168,6 +187,7 @@ export class NativeDesktopFileOpenSession {
   };
   #lease?: NativeScenarioEnvironmentLease;
   #fixtureName?: string;
+  #fixtureRelativePath?: string;
   #fixtureContent?: string;
   #driver?: ChildProcess;
   #driverExit?: Promise<DriverExit>;
@@ -202,11 +222,28 @@ export class NativeDesktopFileOpenSession {
     assert.ok(isContained(this.workspace(), fixturePath));
     await writeFile(fixturePath, "", { encoding: "utf8", flag: "wx" });
     this.#fixtureName = fileName;
+    this.#fixtureRelativePath = fileName;
     this.#evidence.fixture = fileName;
   }
 
+  async createNestedJavaFixture(filePath: string): Promise<void> {
+    assert.equal(filePath, NATIVE_QUICK_OPEN_FILE);
+    assert.equal(this.#fixtureName, undefined, "native file-open fixture already exists");
+    const fixturePath = path.join(this.workspace(), filePath);
+    assert.ok(isContained(this.workspace(), fixturePath));
+    await mkdir(path.dirname(fixturePath), { recursive: true });
+    await writeFile(fixturePath, "", { encoding: "utf8", flag: "wx" });
+    this.#fixtureName = path.basename(filePath);
+    this.#fixtureRelativePath = filePath;
+    this.#evidence.fixture = filePath;
+  }
+
   async setExactFixtureContent(content: string): Promise<void> {
-    assert.equal(content, NATIVE_OPEN_PROOF_CONTENT);
+    const expectedContent =
+      this.#fixtureRelativePath === NATIVE_QUICK_OPEN_FILE
+        ? NATIVE_QUICK_OPEN_CONTENT
+        : NATIVE_OPEN_PROOF_CONTENT;
+    assert.equal(content, expectedContent);
     const fixturePath = this.fixturePath();
     await writeFile(fixturePath, content, { encoding: "utf8", flag: "w" });
     assert.equal(await readFile(fixturePath, "utf8"), content);
@@ -214,7 +251,7 @@ export class NativeDesktopFileOpenSession {
   }
 
   async launch(): Promise<void> {
-    assert.equal(this.#fixtureContent, NATIVE_OPEN_PROOF_CONTENT, "fixture content is not ready");
+    assert.ok(this.#fixtureContent, "fixture content is not ready");
     assert.equal(this.#driver, undefined, "native desktop session already launched");
     await Promise.all([
       access(this.#tauriDriverPath, fsConstants.X_OK),
@@ -236,7 +273,7 @@ export class NativeDesktopFileOpenSession {
         "--native-driver",
         this.#webKitWebDriverPath,
       ],
-      { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+      { detached: process.platform !== "win32", env: process.env, stdio: ["ignore", "pipe", "pipe"] },
     );
     this.#driver = driver;
     const capture = (chunk: Buffer): void => {
@@ -282,10 +319,53 @@ export class NativeDesktopFileOpenSession {
 
   async waitForFileExplorer(): Promise<void> {
     const explorer = await this.browser().$('[role="tree"][aria-label="File Explorer"]');
-    await explorer.waitForDisplayed({ timeout: 15_000, interval: 100 });
+    try {
+      await explorer.waitForDisplayed({ timeout: 15_000, interval: 100 });
+    } catch (error) {
+      const startup = await this.recordStartup("timeout");
+      this.#driverDiagnostic += `\nStartup DOM: ${JSON.stringify(startup)}`;
+      throw new Error(`${String(error)}\n${this.redactedDiagnostics()}`, { cause: error });
+    }
     assert.equal(await explorer.getAttribute("role"), "tree");
     assert.equal(await explorer.getAttribute("aria-label"), "File Explorer");
     this.#evidence.fileExplorerReady = true;
+    await this.recordStartup("ready");
+  }
+
+  async openGoToFile(): Promise<void> {
+    await this.browser().keys(["Control", "p"]);
+    const dialog = this.browser().$('[role="dialog"][aria-label="Go to File"]');
+    await dialog.waitForDisplayed({ timeout: 5_000, interval: 50 });
+    assert.equal(await dialog.getAttribute("aria-modal"), "true");
+    this.#evidence.quickOpenDialog = true;
+  }
+
+  async searchQuickOpen(query: string, filePath: string): Promise<void> {
+    assert.equal(query, "MainController");
+    assert.equal(filePath, NATIVE_QUICK_OPEN_FILE);
+    const input = this.browser().$('[role="combobox"][aria-label="Search workspace files"]');
+    await input.setValue(query);
+    const result = this.browser().$(`[role="option"][data-path="${cssAttribute(filePath)}"]`);
+    await result.waitForDisplayed({ timeout: 5_000, interval: 50 });
+    const label = await result.getComputedLabel();
+    assert.ok(label.includes(filePath), `Quick Open result did not expose ${filePath}: ${label}`);
+    this.#evidence.quickOpenResult = filePath;
+  }
+
+  async selectQuickOpenResult(filePath: string): Promise<void> {
+    assert.equal(filePath, NATIVE_QUICK_OPEN_FILE);
+    const result = this.browser().$(`[role="option"][data-path="${cssAttribute(filePath)}"]`);
+    this.#clickDeadline = Date.now() + 15_000;
+    await result.click();
+  }
+
+  private recordStartup(outcome: "ready" | "timeout") {
+    return recordNativeStartupObservation({
+      sandbox: this.#sandbox,
+      outcome,
+      applicationPid: this.#applicationProcessId,
+      capture: () => this.browser().execute(nativeStartupDomObservation),
+    });
   }
 
   async assertAccessibleFileItem(fileName: string): Promise<void> {
@@ -326,6 +406,7 @@ export class NativeDesktopFileOpenSession {
     this.assertSharedDeadline(seconds, fileName);
     const selector = `[role="tab"][data-path="${cssAttribute(fileName)}"]`;
     const tab = await this.browser().$(selector);
+    const tabLabel = path.posix.basename(fileName);
     let observedTabs = "[]";
     try {
       await this.browser().waitUntil(
@@ -367,7 +448,7 @@ export class NativeDesktopFileOpenSession {
     }
     assert.equal(await tab.getAttribute("data-path"), fileName);
     assert.equal(await tab.getAttribute("aria-selected"), "true");
-    assert.equal(await tab.getComputedLabel(), `${fileName} Close ${fileName}`);
+    assert.equal(await tab.getComputedLabel(), `${tabLabel} Close ${fileName}`);
     const declaredAccessibleName =
       (await tab.getAttribute("aria-label")) ?? (await tab.getAttribute("title"));
     assert.equal(declaredAccessibleName, fileName);
@@ -474,7 +555,10 @@ export class NativeDesktopFileOpenSession {
 
   async assertSandboxConfinement(): Promise<void> {
     await this.assertExecutableExited();
-    assert.deepEqual(await readdir(this.workspace()), [".ide", this.requiredFixtureName()]);
+    assert.deepEqual(
+      (await this.listWorkspaceFiles()).sort(),
+      [".ide/workspace.json", this.requiredFixtureRelativePath()].sort(),
+    );
     assert.equal(await readFile(this.fixturePath(), "utf8"), this.#fixtureContent);
     const workspaceStateDirectory = path.join(this.workspace(), ".ide");
     assert.ok(isContained(this.#sandbox, await realpath(workspaceStateDirectory)));
@@ -539,9 +623,10 @@ export class NativeDesktopFileOpenSession {
       this.#driver = undefined;
       this.#driverExit = undefined;
       if (driver && driverExit) {
-        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGTERM");
+        if (driver.exitCode === null && driver.signalCode === null) signalDriverProcessGroup(driver, "SIGTERM");
         await Promise.race([driverExit.catch(() => undefined), wait(2_000)]);
-        if (driver.exitCode === null && driver.signalCode === null) driver.kill("SIGKILL");
+        // The parent may have exited while its descendants still hold output pipes.
+        signalDriverProcessGroup(driver, "SIGKILL");
         await Promise.race([driverExit.catch(() => undefined), wait(1_000)]);
       }
 
@@ -585,8 +670,14 @@ export class NativeDesktopFileOpenSession {
     return this.#fixtureName;
   }
 
+  private requiredFixtureRelativePath(): string {
+    if (!this.#fixtureRelativePath)
+      throw new Error("native desktop fixture path has not been declared");
+    return this.#fixtureRelativePath;
+  }
+
   private fixturePath(): string {
-    return path.join(this.workspace(), this.requiredFixtureName());
+    return path.join(this.workspace(), this.requiredFixtureRelativePath());
   }
 
   private fileItem(fileName: string): ReturnType<Awaited<ReturnType<typeof remote>>["$"]> {
@@ -595,8 +686,24 @@ export class NativeDesktopFileOpenSession {
 
   private assertSharedDeadline(seconds: number, fileName: string): void {
     assert.equal(seconds, 15);
-    assert.equal(fileName, this.requiredFixtureName());
+    assert.ok(
+      fileName === this.requiredFixtureName() || fileName === this.requiredFixtureRelativePath(),
+    );
     assert.ok(this.#clickDeadline, "file item has not been clicked");
+  }
+
+  private async listWorkspaceFiles(relativeDirectory = ""): Promise<string[]> {
+    const absoluteDirectory = path.join(this.workspace(), relativeDirectory);
+    const result: string[] = [];
+    for (const entry of await readdir(absoluteDirectory, { withFileTypes: true })) {
+      const relativePath = path.posix.join(relativeDirectory, entry.name);
+      if (entry.isDirectory()) {
+        result.push(...(await this.listWorkspaceFiles(relativePath)));
+      } else if (entry.isFile()) {
+        result.push(relativePath);
+      }
+    }
+    return result;
   }
 
   private remainingClickTime(): number {

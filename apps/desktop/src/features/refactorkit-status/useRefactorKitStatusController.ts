@@ -18,12 +18,35 @@ export interface UseRefactorKitStatusControllerDependencies {
   deferWorkspaceActivation?: boolean;
 }
 
+export interface RefactorKitStatusSnapshot {
+  status: RefactorKitStatus | null;
+  capabilities: RefactorKitCapabilities | null;
+  /** Short source-safe detail when capability discovery failed. */
+  capabilitiesError?: string | null;
+}
+
+function safeCapabilityError(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const detail = error.message.trim();
+  if (
+    detail.length === 0 ||
+    detail.length > 240 ||
+    !/^\[tauri:get_refactorkit_(?:engine_)?capabilities\] /u.test(detail) ||
+    /[\\/]|\b(?:password|secret|credential|token|authorization|api key)\b/iu.test(detail) ||
+    !/^[\p{L}\p{N}\s.,:;()[\]_'"!?-]+$/u.test(detail)
+  )
+    return null;
+  return detail;
+}
+
 export interface RefactorKitStatusController {
   status: RefactorKitStatus | null;
   capabilities: RefactorKitCapabilities | null;
   isChecking: boolean;
   error: string | null;
   refresh(workspaceGeneration?: number): Promise<void>;
+  /** Refreshes and returns the exact status/capability snapshot for an immediate consumer. */
+  refreshWithSnapshot(workspaceGeneration?: number): Promise<RefactorKitStatusSnapshot>;
   workspaceCollaborator: RefactorKitStatusWorkspaceCollaborator;
 }
 
@@ -44,8 +67,8 @@ export function useRefactorKitStatusController(
   const [isChecking, setIsChecking] = useState(dependencies.deferWorkspaceActivation ?? false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(
-    async (workspaceGeneration?: number): Promise<void> => {
+  const refreshWithSnapshot = useCallback(
+    async (workspaceGeneration?: number): Promise<RefactorKitStatusSnapshot> => {
       const targetGeneration = workspaceGeneration ?? workspaceGenerationRef.current;
       const requestId = requestRef.current + 1;
       requestRef.current = requestId;
@@ -61,28 +84,34 @@ export function useRefactorKitStatusController(
           !mountedRef.current ||
           requestRef.current !== requestId ||
           workspaceGenerationRef.current !== targetGeneration
-        ) {
-          return;
-        }
+        )
+          return { status: null, capabilities: null };
 
         const errors: string[] = [];
+        let currentStatus: RefactorKitStatus | null = null;
+        let currentCapabilities: RefactorKitCapabilities | null = null;
         if (statusResult.status === "fulfilled") {
-          setStatus(statusResult.value);
+          currentStatus = statusResult.value;
+          setStatus(currentStatus);
         } else {
           setStatus(null);
           errors.push(STATUS_ERROR);
           console.error("[App] Failed to load RefactorKit status.");
         }
 
+        let capabilitiesError: string | null = null;
         if (capabilitiesResult.status === "fulfilled") {
-          setCapabilities(capabilitiesResult.value);
+          currentCapabilities = capabilitiesResult.value;
+          setCapabilities(currentCapabilities);
         } else {
           setCapabilities(null);
           errors.push(CAPABILITIES_ERROR);
+          capabilitiesError = safeCapabilityError(capabilitiesResult.reason);
           console.error("[App] Failed to load RefactorKit capabilities.");
         }
 
         setError(errors.length > 0 ? errors.join(" ") : null);
+        return { status: currentStatus, capabilities: currentCapabilities, capabilitiesError };
       } finally {
         if (
           mountedRef.current &&
@@ -94,6 +123,12 @@ export function useRefactorKitStatusController(
       }
     },
     [dependencies.refactorKit],
+  );
+  const refresh = useCallback(
+    async (workspaceGeneration?: number): Promise<void> => {
+      await refreshWithSnapshot(workspaceGeneration);
+    },
+    [refreshWithSnapshot],
   );
 
   const beginWorkspaceSwitch = useCallback((workspaceGeneration: number): number => {
@@ -140,8 +175,9 @@ export function useRefactorKitStatusController(
       isChecking,
       error,
       refresh,
+      refreshWithSnapshot,
       workspaceCollaborator,
     }),
-    [capabilities, error, isChecking, refresh, status, workspaceCollaborator],
+    [capabilities, error, isChecking, refresh, refreshWithSnapshot, status, workspaceCollaborator],
   );
 }

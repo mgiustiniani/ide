@@ -1,0 +1,39 @@
+--- a/src/org/eclipse/jdt/internal/compiler/ast/TypeDeclaration.java
++++ b/src/org/eclipse/jdt/internal/compiler/ast/TypeDeclaration.java
+@@ -9,6 +9,7 @@
+  * SPDX-License-Identifier: EPL-2.0
+  *
+  * Contributors:
++ *     IDE contributors - preserve host-derived implicit class names
+  *     IBM Corporation - initial API and implementation
+  *     Stephan Herrmann - Contributions for
+  *								Bug 360328 - [compiler][null] detect null problems in nested code (local class inside a loop)
+@@ -714,7 +715,7 @@
+  *	Common flow analysis for all types
+  */
+ private void internalAnalyseCode(FlowContext flowContext, final FlowInfo flowInfo) {
+-	if (CharOperation.equals(this.name, TypeConstants.YIELD)) {
++	if (!isImplicitType() && CharOperation.equals(this.name, TypeConstants.YIELD)) {
+ 		this.scope.problemReporter().validateRestrictedKeywords(this.name, this);
+ 	}
+ 
+@@ -1216,14 +1217,17 @@
+ 		return;
+ 	}
+ 	try {
+-		if (CharOperation.equals(this.name, TypeConstants.VAR)) {
++		if (!isImplicitType() && CharOperation.equals(this.name, TypeConstants.VAR)) {
+ 			if (this.scope.compilerOptions().sourceLevel < ClassFileConstants.JDK10) {
+ 				this.scope.problemReporter().varIsReservedTypeNameInFuture(this);
+ 			} else {
+ 				this.scope.problemReporter().varIsReservedTypeName(this);
+ 			}
+ 		}
+-		this.scope.problemReporter().validateRestrictedKeywords(this.name, this);
++		// An implicit class has a host-derived name, not a source TypeIdentifier.
++		if (!isImplicitType()) {
++			this.scope.problemReporter().validateRestrictedKeywords(this.name, this);
++		}
+ 		// resolve annotations and check @Deprecated annotation
+ 		long annotationTagBits = sourceType.getAnnotationTagBits();
+ 		boolean isDeprecated = (annotationTagBits & TagBits.AnnotationDeprecated) != 0;

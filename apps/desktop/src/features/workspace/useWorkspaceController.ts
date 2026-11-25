@@ -19,7 +19,9 @@ export type WorkspaceXcomSwitchToken = {
 };
 
 export interface WorkspaceControllerCollaborators {
+  transitionBlockReason?(): string | null;
   editor: {
+    hasUnsavedChanges?(): boolean;
     resetWorkspace(): void;
     restoreWorkspace?(): Promise<void>;
   };
@@ -143,6 +145,7 @@ export function useWorkspaceController(
   const activeFullRefreshRef = useRef<number | null>(null);
   const initialActivationRef = useRef(0);
   const initialActivationStartedRef = useRef(false);
+  const mountedRef = useRef(true);
   const fileTreeLoadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const metadataLoadingRef = useRef(true);
   const loadingRef = useRef(true);
@@ -173,6 +176,7 @@ export function useWorkspaceController(
   const refresh = useCallback(async (): Promise<void> => {
     const requestId = metadataRequestRef.current + 1;
     metadataRequestRef.current = requestId;
+    const workspaceGeneration = generationRef.current;
     metadataLoadingRef.current = true;
     setLoading(true);
     setError(null);
@@ -183,37 +187,26 @@ export function useWorkspaceController(
         return;
       }
 
-      const [workspaceResult, registryResult] = await Promise.allSettled([
-        dependencies.workspace.ensureCurrentWorkspace(),
-        dependencies.workspace.listWorkspaces(),
-      ]);
+      const registry = await dependencies.workspace.listWorkspaces();
+      if (metadataRequestRef.current !== requestId || generationRef.current !== workspaceGeneration)
+        return;
 
-      if (metadataRequestRef.current !== requestId) return;
-
-      const errors: string[] = [];
-      if (workspaceResult.status === "fulfilled") {
-        workspaceInfoRef.current = workspaceResult.value;
-        setWorkspaceInfo(workspaceResult.value);
-      } else {
-        errors.push(`current workspace: ${getErrorMessage(workspaceResult.reason)}`);
-        console.error("[Workspace] Failed to ensure current workspace", {
-          errorType: getErrorType(workspaceResult.reason),
-        });
+      const activeWorkspace = workspaceInfoRef.current;
+      const updated = activeWorkspace && registry.workspaces.find(
+        (workspace) =>
+          workspace.id === activeWorkspace.id && workspace.rootPath === activeWorkspace.rootPath,
+      );
+      if (updated) {
+        workspaceInfoRef.current = updated;
+        setWorkspaceInfo(updated);
       }
-
-      if (registryResult.status === "fulfilled") {
-        workspaceRegistryRef.current = registryResult.value;
-        setWorkspaceRegistry(registryResult.value);
-      } else {
-        errors.push(`workspace registry: ${getErrorMessage(registryResult.reason)}`);
-        console.error("[Workspace] Failed to list workspace registry", {
-          errorType: getErrorType(registryResult.reason),
-        });
-      }
-
-      setError(errors.length > 0 ? errors.join("; ") : null);
+      const authorized = updated ?? activeWorkspace;
+      const listed = authorized ? promoteWorkspaceRegistry(registry, authorized) : registry;
+      workspaceRegistryRef.current = listed;
+      setWorkspaceRegistry(listed);
     } catch (refreshError) {
-      if (metadataRequestRef.current !== requestId) return;
+      if (metadataRequestRef.current !== requestId || generationRef.current !== workspaceGeneration)
+        return;
       setError(getErrorMessage(refreshError));
       console.error("[Workspace] Failed to load workspace metadata", {
         errorType: getErrorType(refreshError),
@@ -239,6 +232,11 @@ export function useWorkspaceController(
       throw new Error(message);
     }
 
+    const blocked = collaborators.transitionBlockReason?.();
+    if (blocked) {
+      setError(blocked);
+      throw new Error(blocked);
+    }
     const requestId = fullRefreshRequestRef.current + 1;
     fullRefreshRequestRef.current = requestId;
     activeFullRefreshRef.current = requestId;
@@ -312,6 +310,7 @@ export function useWorkspaceController(
     setError(null);
 
     const isCurrent = (): boolean =>
+      mountedRef.current &&
       initialActivationRef.current === activationId &&
       generationRef.current === workspaceGeneration;
 
@@ -365,19 +364,52 @@ export function useWorkspaceController(
       const resetSemanticSymbols =
         collaborators.semanticSymbols?.resetWorkspace(workspaceGeneration) ?? Promise.resolve();
 
-      await Promise.all([
+      const coreLoads = [
         resetSemanticSymbols,
         ...(collaborators.editor.restoreWorkspace ? [collaborators.editor.restoreWorkspace()] : []),
         loadFileTree(collaborators.shell.loadFileTree),
-        collaborators.java.load(ensuredWorkspace.id, workspaceGeneration),
-        collaborators.ai.loadCommands(workspaceKey),
-        collaborators.refactorKitStatus.load(refactorKitStatusGeneration),
-        collaborators.xcom2ModuleActivation.loadWorkspace(
-          xcom2ModuleActivationToken,
-          ensuredWorkspace.id,
-        ),
-        collaborators.xcom.loadWorkspace(xcomToken, ensuredWorkspace.id),
-      ]);
+      ];
+      // Files and restored editor buffers do not depend on optional tool availability.
+      // Each provider keeps its own loading/error state and generation guards.
+      const background = (
+        service: string,
+        load: () => Promise<void>,
+        settleFailure?: () => void,
+      ): void => {
+        void (async () => {
+          try {
+            await load();
+          } catch (serviceError) {
+            if (!isCurrent()) return;
+            settleFailure?.();
+            console.error("[Workspace] Failed initial optional service check", {
+              service,
+              errorType: getErrorType(serviceError),
+            });
+          }
+        })();
+      };
+      background("Java", () => collaborators.java.load(ensuredWorkspace.id, workspaceGeneration));
+      background("Pi", () => collaborators.ai.loadCommands(workspaceKey));
+      const statusGeneration = refactorKitStatusGeneration;
+      background(
+        "RefactorKit",
+        () => collaborators.refactorKitStatus.load(statusGeneration),
+        () => collaborators.refactorKitStatus.settleFailedWorkspaceSwitch(statusGeneration),
+      );
+      const moduleToken = xcom2ModuleActivationToken,
+        setupToken = xcomToken;
+      background(
+        "XCOM project",
+        () => collaborators.xcom2ModuleActivation.loadWorkspace(moduleToken, ensuredWorkspace.id),
+        () => collaborators.xcom2ModuleActivation.settleFailedWorkspaceActivation(moduleToken),
+      );
+      background(
+        "XCOM setup",
+        () => collaborators.xcom.loadWorkspace(setupToken, ensuredWorkspace.id),
+        () => collaborators.xcom.settleFailedWorkspaceActivation?.(setupToken),
+      );
+      await Promise.all(coreLoads);
       if (!isCurrent()) return;
       setError(registryWarning);
     } catch (activationError) {
@@ -421,6 +453,17 @@ export function useWorkspaceController(
         const message = "Workspace collaborators unavailable";
         setError(message);
         throw new Error(message);
+      }
+
+      if (collaborators.editor.hasUnsavedChanges?.()) {
+        const message = "Save modified files before switching workspaces.";
+        setError(message);
+        throw new Error(message);
+      }
+      const blocked = collaborators.transitionBlockReason?.();
+      if (blocked) {
+        setError(blocked);
+        throw new Error(blocked);
       }
 
       // A user transition owns all subsequent completion; older cold starts and refreshes are stale.
@@ -506,7 +549,11 @@ export function useWorkspaceController(
   );
 
   useEffect(() => {
+    mountedRef.current = true;
     void activateInitialWorkspace();
+    return () => {
+      mountedRef.current = false;
+    };
   }, [activateInitialWorkspace]);
 
   return {

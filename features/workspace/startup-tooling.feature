@@ -7,6 +7,6 @@ Feature: Startup tooling appropriate to each workspace
     Given a person starts a generic standalone web workspace
     When the workspace is ready
     Then only core web tooling is offered
-    And that tooling includes an integrated terminal
+    And the terminal reports that process execution is unavailable in the browser
     But desktop-only Java tooling is not offered
     And desktop-only XCOM tooling is not offered

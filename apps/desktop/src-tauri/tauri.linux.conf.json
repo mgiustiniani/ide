@@ -1,0 +1,12 @@
+{
+  "build": {
+    "beforeBundleCommand": "node ../../scripts/stage-appimage-webkit.mjs"
+  },
+  "bundle": {
+    "linux": {
+      "appimage": {
+        "files": { "/usr": "target/appimage-webkit-runtime" }
+      }
+    }
+  }
+}

@@ -1,7 +1,37 @@
 import type {
   EditorTab as EditorTabType,
   JavaCompletionRequest,
+  JavaNavigationRequest,
+  JavaNavigationResult,
+  JavaNavigationLocation,
   JavaCompletionResponse,
+  JavaFormattingRequest,
+  JavaRangeFormattingRequest,
+  JavaOnTypeFormattingRequest,
+  JavaRangeFormattingResponse,
+  JavaFormattingResponse,
+  JavaCodeActionsRequest,
+  JavaCodeActionApplyRequest,
+  JavaCodeActionsResponse,
+  JavaRenameRequest,
+  JavaRenameResponse,
+  JavaDocumentSymbolsRequest,
+  JavaDocumentSymbolsResponse,
+  JavaDocumentHighlightsRequest,
+  JavaDocumentHighlightsResponse,
+  JavaImplementationsRequest,
+  JavaDefinitionsRequest,
+  JavaDefinitionsResponse,
+  JavaReferenceLocation,
+  JavaImplementationsResponse,
+  JavaCallHierarchyRequest,
+  JavaCallHierarchyResponse,
+  JavaReferencesRequest,
+  JavaReferencesResponse,
+  JavaSemanticTokensRequest,
+  JavaSemanticTokensResponse,
+  JavaInlayHintsRequest,
+  JavaInlayHintsResponse,
   JavaHoverRequest,
   JavaHoverResponse,
   JavaSemanticDocumentTarget,
@@ -9,6 +39,13 @@ import type {
   JavaSignatureHelpResponse,
   Language,
   LanguageServiceCancellationId,
+  JavaDebuggerSourceView,
+  CursorPosition,
+  LanguageRange,
+  JavaLibraryDefinition,
+  JavaCoverageLine,
+  WorkspaceEditorPreferences,
+  JavaEffectiveProjectContext,
 } from "@ide/contracts";
 import {
   Component,
@@ -37,6 +74,8 @@ export interface EditorRevealRequest {
   column?: number;
   /** Changes for every navigation, including repeated navigation to one location. */
   requestId: string | number;
+  /** Optional zero-based UTF-16 selection in the already validated document. */
+  selection?: LanguageRange;
 }
 
 export interface JavaEditorSemanticContext {
@@ -45,23 +84,212 @@ export interface JavaEditorSemanticContext {
   readonly document: Readonly<JavaSemanticDocumentTarget>;
 }
 
+export interface JavaWorkspaceDocumentChange {
+  readonly filePath: string;
+  readonly before: string;
+  readonly after: string;
+}
+
 /** Presentation boundary for semantics of the current synchronized Java document. */
 export interface JavaEditorSemantics {
   readonly context?: Readonly<JavaEditorSemanticContext>;
+  /** Exact buffer represented by context, used to wait for post-typing synchronization. */
+  readonly documentText?: string;
+  readonly semanticTokensEnabled?: boolean;
+  readonly formattingEnabled?: boolean;
+  readonly rangeFormattingEnabled?: boolean;
+  readonly onTypeFormattingTriggers?: readonly string[];
+  inlayHints?(request: JavaInlayHintsRequest): Promise<JavaInlayHintsResponse>;
   completion(request: JavaCompletionRequest): Promise<JavaCompletionResponse>;
+  formatDocument?(request: JavaFormattingRequest): Promise<JavaFormattingResponse>;
+  formatRange?(request: JavaRangeFormattingRequest): Promise<JavaRangeFormattingResponse>;
+  formatOnType?(request: JavaOnTypeFormattingRequest): Promise<JavaFormattingResponse>;
   hover(request: JavaHoverRequest): Promise<JavaHoverResponse>;
   signatureHelp(request: JavaSignatureHelpRequest): Promise<JavaSignatureHelpResponse>;
+  codeActions(request: JavaCodeActionsRequest): Promise<JavaCodeActionsResponse>;
+  applyCodeAction?(request: JavaCodeActionApplyRequest): Promise<boolean>;
+  rename?(request: JavaRenameRequest): Promise<JavaRenameResponse>;
+  documentSymbols(request: JavaDocumentSymbolsRequest): Promise<JavaDocumentSymbolsResponse>;
+  documentHighlights(
+    request: JavaDocumentHighlightsRequest,
+  ): Promise<JavaDocumentHighlightsResponse>;
+  implementations(request: JavaImplementationsRequest): Promise<JavaImplementationsResponse>;
+  definitions?(request: JavaDefinitionsRequest): Promise<JavaDefinitionsResponse>;
+  typeDefinitions?(request: JavaDefinitionsRequest): Promise<JavaDefinitionsResponse>;
+  callHierarchy?(request: JavaCallHierarchyRequest): Promise<JavaCallHierarchyResponse>;
+  references(request: JavaReferencesRequest): Promise<JavaReferencesResponse>;
+  semanticTokens(request: JavaSemanticTokensRequest): Promise<JavaSemanticTokensResponse>;
   cancel(cancellationId: LanguageServiceCancellationId): void | Promise<void>;
 }
 
+export interface JavaEditorNavigation {
+  readonly context: { workspaceId: string; generation: number };
+  readonly typeDefinitionAvailable?: boolean;
+  /** Read preview text from a current draft or a read-only workspace snapshot. */
+  readSource?(filePath: string, isCurrent: () => boolean): Promise<string | null>;
+  query(request: JavaNavigationRequest): Promise<JavaNavigationResult>;
+  /** Revoke local result presentation; the native RPC retains its bounded timeout. */
+  cancel(requestId: string): void;
+  openLocation(requestId: string, location: JavaNavigationLocation): Promise<boolean>;
+  navigateToImplementation?(
+    location: JavaNavigationLocation,
+    canReveal: (afterOpen: boolean) => boolean,
+  ): Promise<boolean>;
+  /** Open the provider-owned source file as an immutable library document. */
+  openDependencySource?(request: JavaNavigationRequest): Promise<void>;
+  queryDependencyDefinition?(
+    request: JavaNavigationRequest,
+    selection?: JavaNavigationResult,
+  ): Promise<JavaLibraryDefinition | null>;
+  openDependencyDefinition?(requestId: string, range: LanguageRange): Promise<boolean>;
+}
+
+export interface JavaEditorDebugger {
+  readonly context: { workspaceId: string; generation: number; sessionId?: string };
+  readonly mode?: "saved" | "live";
+  readonly canRunToCursor?: boolean;
+  source(document: { path: string; text: string; version: number }): Promise<
+    Pick<
+      JavaDebuggerSourceView,
+      "documentPath" | "documentVersion" | "sourcePath" | "executionLine"
+    > & {
+      breakpoints: { line: number; verified: boolean; enabled?: boolean }[];
+    }
+  >;
+  toggleBreakpoint(
+    document: { path: string; text: string; version: number },
+    line: number,
+  ): Promise<void>;
+  runToCursor(
+    document: { path: string; text: string; version: number },
+    line: number,
+  ): Promise<void>;
+}
+
+/** Measured Java line coverage bound to one source path and completed test session. */
+export interface JavaEditorCoverage {
+  readonly context: { workspaceId: string; generation: number; sessionId: string };
+  readonly filePath: string;
+  readonly lines: readonly JavaCoverageLine[];
+  readonly sourceCurrent: boolean;
+}
+
+/** Launch discovery uses provider-owned identities for this exact saved editor frame. */
+export interface JavaEditorLaunch {
+  readonly context: { workspaceId: string; generation: number };
+  readonly available: boolean;
+  run(
+    document: {
+      path: string;
+      text: string;
+      version: number;
+      position?: { line: number; character: number };
+    },
+    isCurrent: () => boolean,
+    operation?: "run" | "debug",
+  ): Promise<void>;
+}
+
+export interface JavaEditorFileActions {
+  readonly context: { workspaceId: string; generation: number };
+  readonly operations: readonly (
+    | "format-file"
+    | "organize-imports"
+    | "rename-class"
+    | "rename-member"
+    | "add-method-parameter"
+    | "remove-method-parameter"
+    | "change-method-signature"
+    | "reorder-method-parameters"
+    | "make-static"
+    | "make-public"
+    | "change-field-type"
+    | "change-method-parameter-type"
+    | "inline-variable"
+    | "inline-method"
+    | "introduce-parameter-object"
+    | "extract-delegate"
+    | "inline-constant"
+    | "extract-constant"
+    | "extract-variable"
+    | "extract-method"
+    | "extract-parameter"
+    | "extract-field"
+    | "extract-interface"
+    | "extract-superclass"
+    | "pull-up-member"
+    | "push-down-member"
+    | "move-member"
+    | "lsp-change-visibility"
+    | "lsp-extract-parameter"
+    | "lsp-extract-superclass"
+  )[];
+  review(
+    operation:
+      | "format-file"
+      | "organize-imports"
+      | "rename-class"
+      | "rename-member"
+      | "add-method-parameter"
+      | "remove-method-parameter"
+      | "change-method-signature"
+      | "reorder-method-parameters"
+      | "make-static"
+      | "make-public"
+      | "change-field-type"
+      | "change-method-parameter-type"
+      | "inline-variable"
+      | "inline-method"
+      | "introduce-parameter-object"
+      | "extract-delegate"
+      | "inline-constant"
+      | "extract-constant"
+      | "extract-variable"
+      | "extract-method"
+      | "extract-parameter"
+      | "extract-field"
+      | "extract-interface"
+      | "extract-superclass"
+      | "pull-up-member"
+      | "push-down-member"
+      | "move-member",
+    document: { path: string; text: string; version?: number },
+    cursor?: CursorPosition,
+    selection?: { start: number; end: number },
+  ): void;
+  reviewLsp?(
+    operation: "lsp-change-visibility" | "lsp-extract-parameter" | "lsp-extract-superclass",
+    document: { path: string; text: string; version?: number },
+    cursor?: CursorPosition,
+    selection?: { start: number; end: number },
+  ): void;
+}
+
 export interface EditorProps {
+  onCursorPositionChange?(filePath: string, position: CursorPosition): void;
+  /** Opens Java Intelligence and searches JDT LS references from this editor cursor. */
+  onFindJavaReferences?(filePath: string, position: CursorPosition): void;
+  /** Resolves the current Java editor cursor through JDT LS and opens its workspace definition. */
+  onGoToJavaDefinition?(filePath: string, position: CursorPosition): void | Promise<void>;
+  /** Opens a correlated JDT LS definition returned as a fallback for RefactorKit navigation. */
+  onNavigateJavaDefinition?(
+    location: JavaReferenceLocation,
+    isCurrent: (afterOpen: boolean) => boolean,
+  ): boolean | Promise<boolean>;
   content: string;
   language: Language;
   onChange: (value: string) => void;
+  /** Commit a validated multi-file Java edit to the open workspace buffers. */
+  onWorkspaceDocumentChanges?: (changes: readonly JavaWorkspaceDocumentChange[]) => boolean;
   /** An empty path means that no document is active. */
   filePath: string;
+  /** Acknowledge a reveal only after Monaco has applied it to the active model. */
+  onRevealHandled?(requestId: string | number): void;
   isLoading?: boolean;
+  /** Prevent typing while an application-owned workspace transformation is running. */
+  readOnly?: boolean;
   tabs?: EditorTabType[];
+  tabLabels?: Readonly<Record<string, string>>;
   onTabActivate?: (filePath: string) => void;
   onTabClose?: (filePath: string) => void;
   /** Requests creation of a validated basename. Filesystem work remains application-owned. */
@@ -73,10 +301,25 @@ export interface EditorProps {
   welcomeRecentFiles?: { name: string; path: string }[];
   revealRequest?: EditorRevealRequest | null;
   diagnostics?: readonly LanguageDiagnostic[];
-  documentIdentity?: LanguageDocumentIdentity;
+  /** URI of the open workspace file, available before the language service starts. */
+  modelUri?: string;
+  /** Markers require the exact document path; language-service URI metadata is optional. */
+  documentIdentity?: Pick<LanguageDocumentIdentity, "path"> & Partial<LanguageDocumentIdentity>;
   diagnosticOwner?: string;
   /** Omit this value, or its context, to disable interactive Java semantics. */
   javaSemantics?: JavaEditorSemantics;
+  /** Current RefactorKit context used to offer test templates only for known test source sets. */
+  javaTemplateProjectContext?: JavaEffectiveProjectContext;
+  /** Workspace-relative project root for context source-root resolution. */
+  javaTemplateProjectPath?: string;
+  /** Saved-source binding navigation is independent of the JDT LS completion session. */
+  javaNavigation?: JavaEditorNavigation;
+  javaDebugger?: JavaEditorDebugger;
+  javaLaunch?: JavaEditorLaunch;
+  javaCoverage?: JavaEditorCoverage;
+  javaFileActions?: JavaEditorFileActions;
+  /** Workspace indentation supplied to Monaco and Java formatter requests. */
+  workspaceEditorPreferences?: WorkspaceEditorPreferences;
 }
 
 type MonacoLazyBoundaryProps = {
@@ -294,6 +537,7 @@ export function Editor(props: EditorProps): JSX.Element {
             <EditorTab
               key={tab.filePath}
               tab={tab}
+              label={props.tabLabels?.[tab.filePath]}
               onActivate={(path) => props.onTabActivate?.(path)}
               onClose={(path) => props.onTabClose?.(path)}
             />
@@ -326,11 +570,26 @@ export function Editor(props: EditorProps): JSX.Element {
                 <MonacoLazyBoundary attempt={attempt} onFailure={handleMonacoFailure}>
                   <Suspense fallback={null}>
                     <LazyMonacoCodeEditor
+                      key={
+                        /^(?:refactorkit-java-source|refactorkit-java-platform-source):\/\//.test(
+                          filePath,
+                        )
+                          ? filePath
+                          : "workspace"
+                      }
                       attempt={attempt}
                       content={content}
+                      readOnly={props.readOnly}
                       language={language}
                       onChange={onChange}
+                      onWorkspaceDocumentChanges={props.onWorkspaceDocumentChanges}
+                      onCursorPositionChange={props.onCursorPositionChange}
+                      onFindJavaReferences={props.onFindJavaReferences}
+                      onGoToJavaDefinition={props.onGoToJavaDefinition}
+                      onNavigateJavaDefinition={props.onNavigateJavaDefinition}
+                      onRevealHandled={props.onRevealHandled}
                       filePath={filePath}
+                      modelUri={props.modelUri}
                       initialSize={{ width: monacoHost.width, height: monacoHost.height }}
                       isRenderable={monacoHost.renderable}
                       revealRequest={revealRequest}
@@ -338,6 +597,14 @@ export function Editor(props: EditorProps): JSX.Element {
                       documentIdentity={props.documentIdentity}
                       diagnosticOwner={props.diagnosticOwner}
                       javaSemantics={props.javaSemantics}
+                      javaTemplateProjectContext={props.javaTemplateProjectContext}
+                      javaTemplateProjectPath={props.javaTemplateProjectPath}
+                      javaNavigation={props.javaNavigation}
+                      javaDebugger={props.javaDebugger}
+                      javaLaunch={props.javaLaunch}
+                      javaCoverage={props.javaCoverage}
+                      javaFileActions={props.javaFileActions}
+                      workspaceEditorPreferences={props.workspaceEditorPreferences}
                       onFailure={handleMonacoFailure}
                       onReadyChange={handleMonacoReady}
                     />

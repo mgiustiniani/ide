@@ -18,3 +18,5 @@ overrides:
   tsx: 4.20.6
   undici@6: 6.28.0
   undici@7: 7.29.0
+patchedDependencies:
+  monaco-editor@0.52.2: patches/monaco-editor@0.52.2.patch

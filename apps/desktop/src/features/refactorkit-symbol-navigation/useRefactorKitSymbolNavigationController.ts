@@ -42,8 +42,13 @@ const UNAUTHORIZED_REASON = "Authorize a desktop workspace before using semantic
 const CAPABILITY_REASON = "Accepted experimental language-server evidence is unavailable.";
 const JAVA_DEFINITION_ERROR = "The Java definition could not be resolved.";
 const JAVA_REFERENCES_ERROR = "The Java references could not be resolved.";
+const JAVA_DEFINITION_OPEN_ERROR =
+  "The resolved Java definition could not be opened in the editor.";
+const JAVA_REFERENCE_OPEN_ERROR = "The selected Java reference could not be opened in the editor.";
 const JAVA_UNAVAILABLE_REASON =
   "Java symbol navigation is unavailable: the provider does not advertise the Java definition/references capability.";
+const JAVA_SOURCE_ANALYSIS_UNAVAILABLE_REASON =
+  "Java symbol navigation is unavailable because source analysis is not qualified for this project context.";
 
 export interface SemanticNavigationWorkspaceContext {
   generation: number;
@@ -74,12 +79,13 @@ export interface UseRefactorKitSymbolNavigationControllerDependencies {
   refactorKit: RefactorKitPort;
   status: RefactorKitStatus | null;
   capabilities: RefactorKitCapabilities | null;
+  javaSourceAnalysisAvailable?: boolean;
   isCheckingCapabilities: boolean;
   workspaceInfo: WorkspaceInfo | null;
   workspaceGeneration: number;
   getWorkspaceContext(): SemanticNavigationWorkspaceContext;
   getRelevantBuffers(): readonly SemanticNavigationEditorBuffer[];
-  navigateToPoint(filePath: string, point: EditorPoint): Promise<void>;
+  navigateToPoint(filePath: string, point: EditorPoint): Promise<boolean>;
 }
 
 export interface RefactorKitSymbolNavigationController {
@@ -119,7 +125,7 @@ export interface RefactorKitSymbolNavigationController {
   setJavaSymbol(symbol: string): void;
   resolveJavaDefinition(symbol: string): Promise<void>;
   resolveJavaReferences(symbol: string): Promise<void>;
-  selectJavaReference(location: JavaSymbolLocation): Promise<void>;
+  selectJavaReference(location: JavaSymbolLocation): Promise<boolean>;
   workspaceCollaborator: RefactorKitSymbolNavigationWorkspaceCollaborator;
 }
 
@@ -404,7 +410,9 @@ export function useRefactorKitSymbolNavigationController(
   const [javaSymbol, setJavaSymbolState] = useState("");
   const [javaError, setJavaError] = useState<string | null>(null);
   const [javaResult, setJavaResult] = useState<RefactorKitCommandResult | null>(null);
-  const [javaLatestOperation, setJavaLatestOperation] = useState<JavaNavigationOperation | null>(null);
+  const [javaLatestOperation, setJavaLatestOperation] = useState<JavaNavigationOperation | null>(
+    null,
+  );
   const [isJavaBusy, setIsJavaBusy] = useState(false);
 
   const enqueue = useCallback((operation: SessionOperation): Promise<void> => {
@@ -945,14 +953,23 @@ export function useRefactorKitSymbolNavigationController(
           context.generation !== currentDependencies.workspaceGeneration
         ) {
           if (mountedRef.current && requestRef.current === requestId) {
-            setJavaError(boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON));
+            setJavaError(
+              boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON),
+            );
             setIsJavaBusy(false);
           }
           return;
         }
-        if (!javaNavigationAdvertised(capabilities, "definition")) {
+        if (
+          currentDependencies.javaSourceAnalysisAvailable === false ||
+          !javaNavigationAdvertised(capabilities, "definition")
+        ) {
           if (mountedRef.current && requestRef.current === requestId) {
-            setJavaError(JAVA_UNAVAILABLE_REASON);
+            setJavaError(
+              currentDependencies.javaSourceAnalysisAvailable === false
+                ? JAVA_SOURCE_ANALYSIS_UNAVAILABLE_REASON
+                : JAVA_UNAVAILABLE_REASON,
+            );
             setIsJavaBusy(false);
           }
           return;
@@ -967,8 +984,18 @@ export function useRefactorKitSymbolNavigationController(
             return;
           }
           const location = javaLocationFrom(result.locations[0]!);
-          await currentDependencies.navigateToPoint(location.filePath, location.point);
+          let opened: boolean;
+          try {
+            opened = await currentDependencies.navigateToPoint(location.filePath, location.point);
+          } catch {
+            if (isRequestCurrent(requestId, workspace.id, context.generation)) {
+              setJavaError(JAVA_DEFINITION_OPEN_ERROR);
+              setIsJavaBusy(false);
+            }
+            return;
+          }
           if (isRequestCurrent(requestId, workspace.id, context.generation)) {
+            if (!opened) setJavaError(JAVA_DEFINITION_OPEN_ERROR);
             setIsJavaBusy(false);
           }
         } catch {
@@ -1006,14 +1033,23 @@ export function useRefactorKitSymbolNavigationController(
           context.generation !== currentDependencies.workspaceGeneration
         ) {
           if (mountedRef.current && requestRef.current === requestId) {
-            setJavaError(boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON));
+            setJavaError(
+              boundedMessage(!workspace ? UNAUTHORIZED_REASON : JAVA_UNAVAILABLE_REASON),
+            );
             setIsJavaBusy(false);
           }
           return;
         }
-        if (!javaNavigationAdvertised(capabilities, "references")) {
+        if (
+          currentDependencies.javaSourceAnalysisAvailable === false ||
+          !javaNavigationAdvertised(capabilities, "references")
+        ) {
           if (mountedRef.current && requestRef.current === requestId) {
-            setJavaError(JAVA_UNAVAILABLE_REASON);
+            setJavaError(
+              currentDependencies.javaSourceAnalysisAvailable === false
+                ? JAVA_SOURCE_ANALYSIS_UNAVAILABLE_REASON
+                : JAVA_UNAVAILABLE_REASON,
+            );
             setIsJavaBusy(false);
           }
           return;
@@ -1038,7 +1074,7 @@ export function useRefactorKitSymbolNavigationController(
   );
 
   const selectJavaReference = useCallback(
-    async (location: JavaSymbolLocation): Promise<void> => {
+    async (location: JavaSymbolLocation): Promise<boolean> => {
       const currentDependencies = dependenciesRef.current;
       const workspace = currentDependencies.workspaceInfo;
       const context = currentDependencies.getWorkspaceContext();
@@ -1049,9 +1085,39 @@ export function useRefactorKitSymbolNavigationController(
         context.workspaceId !== workspace.id ||
         context.generation !== currentDependencies.workspaceGeneration
       ) {
-        return;
+        return false;
       }
-      await currentDependencies.navigateToPoint(location.filePath, location.point);
+      try {
+        const opened = await currentDependencies.navigateToPoint(location.filePath, location.point);
+        const latestDependencies = dependenciesRef.current;
+        const latestContext = latestDependencies.getWorkspaceContext();
+        if (
+          latestDependencies.workspaceInfo?.id !== workspace.id ||
+          latestDependencies.workspaceGeneration !== context.generation ||
+          latestContext.workspaceId !== workspace.id ||
+          latestContext.generation !== context.generation ||
+          latestContext.isSwitching ||
+          latestContext.isMetadataLoading
+        ) {
+          return false;
+        }
+        if (!opened) setJavaError(JAVA_REFERENCE_OPEN_ERROR);
+        return opened;
+      } catch {
+        const latestDependencies = dependenciesRef.current;
+        const latestContext = latestDependencies.getWorkspaceContext();
+        if (
+          latestDependencies.workspaceInfo?.id === workspace.id &&
+          latestDependencies.workspaceGeneration === context.generation &&
+          latestContext.workspaceId === workspace.id &&
+          latestContext.generation === context.generation &&
+          !latestContext.isSwitching &&
+          !latestContext.isMetadataLoading
+        ) {
+          setJavaError(JAVA_REFERENCE_OPEN_ERROR);
+        }
+        return false;
+      }
     },
     [],
   );
@@ -1142,6 +1208,7 @@ export function useRefactorKitSymbolNavigationController(
     query.trim().length > 0 &&
     !isBusy;
   const javaCapabilityAvailable =
+    dependencies.javaSourceAnalysisAvailable !== false &&
     javaNavigationAdvertised(dependencies.capabilities, "definition") &&
     javaNavigationAdvertised(dependencies.capabilities, "references");
   const javaAvailability: JavaNavigationAvailability = javaError
@@ -1151,9 +1218,11 @@ export function useRefactorKitSymbolNavigationController(
       : "unavailable";
   const javaAvailabilityReason = javaError
     ? null
-    : !authorized
-      ? UNAUTHORIZED_REASON
-      : !dependencies.status?.available || !javaCapabilityAvailable
+      : !authorized
+        ? UNAUTHORIZED_REASON
+        : dependencies.javaSourceAnalysisAvailable === false
+          ? JAVA_SOURCE_ANALYSIS_UNAVAILABLE_REASON
+        : !dependencies.status?.available || !javaCapabilityAvailable
         ? JAVA_UNAVAILABLE_REASON
         : null;
 

@@ -22,9 +22,12 @@ Then<StoryWorld>("only core web tooling is offered", async function () {
   assert.deepEqual(await this.standaloneWebApp().offeredToolNames(), ["Terminal"]);
 });
 
-Then<StoryWorld>("that tooling includes an integrated terminal", async function () {
-  assert.equal(await this.standaloneWebApp().integratedTerminalIsVisible(), true);
-});
+Then<StoryWorld>(
+  "the terminal reports that process execution is unavailable in the browser",
+  async function () {
+    assert.equal(await this.standaloneWebApp().terminalReportsBrowserUnavailable(), true);
+  },
+);
 
 Then<StoryWorld>("desktop-only Java tooling is not offered", async function () {
   const offeredTools = await this.standaloneWebApp().offeredToolNames();

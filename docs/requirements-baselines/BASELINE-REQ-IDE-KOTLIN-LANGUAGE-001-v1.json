@@ -1,0 +1,73 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-KOTLIN-LANGUAGE-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "One of the project goals is to realize IntelliJ-Ultimate-class multi-language features. The updated RefactorKit (0.7.0, repo cdadcbb3) now runtime-supports Kotlin (kotlin-compiler K2) with definition/references/symbols. For the newly available languages, prepare the supporting features (syntax highlighting) IN ADDITION to RefactorKit's own features. This slice covers Kotlin: (a) supporting feature — Kotlin syntax highlighting in the editor (.kt/.kts -> Monaco built-in Kotlin tokenizer via the monacoLanguage extension/alias map); (b) RefactorKit feature — Kotlin navigation (go-to-definition, find-references, document/workspace symbols) via the engine kotlin commands (refactorkit kotlin definition/references/symbols, position-based --file/--line/--character, toolchain-qualified --jdk-home/--compiler-jar), with honest-unavailable when the Kotlin toolchain or capability is absent.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE. Java TEST infra (JavaSpec/Maven/JUnit/dataset) and Java-only RefactorKit rules as workflow refactoring authority remain EXCLUDED.",
+      "evidence": "ADR 0015"
+    },
+    {
+      "id": "APR-DECISION-MULTILANGUAGE-REFACTORKIT-001",
+      "statement": "User directed realizing IntelliJ-Ultimate multi-language features; for the newly available RefactorKit languages, prepare supporting features (syntax highlighting) in addition to RefactorKit's own features.",
+      "evidence": "user directive 2026-09-22"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-KOTLIN-LANGUAGE-001",
+    "title": "Kotlin syntax highlighting and navigation wired in the IDE",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "Kotlin supporting feature (syntax highlighting) + RefactorKit navigation (go-to-definition, find-references, symbols). (a) monacoLanguage.ts maps .kt/.kts and language kotlin to the Monaco built-in Kotlin language so the editor highlights Kotlin. (b) The IDE resolves a Kotlin symbol definition and references via the RefactorKit engine kotlin commands (position-based, toolchain-qualified), presents them, and navigates/reveals the selected location in the editor (reusing documentNavigation.navigateToLocation + editor.revealRequest). Honest-unavailable when the Kotlin toolchain or capability is absent. Kotlin refactoring is a separate later slice.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "A Kotlin document (.kt/.kts or language kotlin) resolves to the Monaco Kotlin language and receives syntax highlighting (not plaintext)."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Given a Kotlin position (file/line/character) and the Kotlin toolchain, the IDE resolves go-to-definition via the engine kotlin definition command and reveals the location in the editor."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "Given a Kotlin position, the IDE resolves find-references via the engine kotlin references command, presents them, and navigating/reveals a selected reference."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "The flow follows extract -> delegate -> response with no hidden domain policy; absent Kotlin toolchain or capability reports honest unavailable/error, never fabricated result."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri Kotlin implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-006",
+        "criterion": "Status is evidence-based with an explicit state, never inferred from shells; live Tauri-window Kotlin navigation E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + tauri-rust-coder (engine kotlin navigation commands) + tauri-adapter-coder (adapter + controller) + browser-adapter-coder + frontend-ui-coder (highlighting) + frontend-core-coder (view-model)",
+    "scope": "Kotlin syntax highlighting (a corredo) + Kotlin navigation (definition/references/symbols via engine kotlin). Kotlin refactoring (rename/move-declaration/organize-imports/change-signature) is a separate later slice. Existing Java/TS/JS slices stay as-is.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Kotlin refactoring (separate slice)",
+      "C/C++ (separate slice)",
+      "TypeScript/JS expansion (separate slice)",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": "cdadcbb3",
+    "status": "baseline-created",
+    "openQuestions": [
+      "Highlighting: extend monacoLanguage.ts extension/alias map (.kt/.kts -> kotlin) relying on Monaco built-in Kotlin tokenizer (no custom Monarch). Confirmed.",
+      "Navigation source: engine kotlin definition/references/symbols (position-based, toolchain-qualified --jdk-home/--compiler-jar). Confirmed.",
+      "Toolchain absence: honest-unavailable when the Kotlin compiler toolchain/capability is absent. Confirmed.",
+      "Editor wiring: desktop-harness evidence (same pattern as prior slices). Confirmed."
+    ]
+  }
+}

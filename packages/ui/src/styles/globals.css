@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+.monaco-editor .java-debug-breakpoint-verified,
+.monaco-editor .java-debug-breakpoint-pending {
+  background: radial-gradient(circle, #dc2626 0 5px, transparent 6px);
+  cursor: pointer;
+}
+.monaco-editor .java-debug-breakpoint-disabled {
+  background: transparent;
+  border: 2px solid #9ca3af;
+  border-radius: 50%;
+}
+.monaco-editor .java-debug-breakpoint-pending {
+  background: radial-gradient(circle, transparent 0 3px, #dc2626 4px 5px, transparent 6px);
+}
+.monaco-editor .java-debug-execution-glyph {
+  background: #d97706;
+  clip-path: polygon(20% 25%, 60% 25%, 60% 10%, 90% 50%, 60% 90%, 60% 75%, 20% 75%);
+}
+.monaco-editor .java-debug-execution-line {
+  background: rgb(217 119 6 / 18%);
+}
+.monaco-editor .java-coverage-line-covered {
+  background: rgb(22 163 74 / 10%);
+}
+.monaco-editor .java-coverage-line-uncovered {
+  background: rgb(220 38 38 / 10%);
+}
+.monaco-editor .java-coverage-line-partial {
+  background: rgb(202 138 4 / 12%);
+}
+
 /* ---------------------------------------------------------------------------
    IDE Dark Theme — applied via `.dark` on <html>
    --------------------------------------------------------------------------- */
@@ -621,21 +651,27 @@
 
   /* ─── File tree children (expand/collapse animation) ─── */
   .file-tree-children {
-    max-height: 0;
-    overflow: hidden;
+    display: grid;
+    grid-template-rows: 0fr;
     transition:
-      max-height 200ms ease,
+      grid-template-rows 200ms ease,
       opacity 150ms ease;
     opacity: 0;
   }
 
   .file-tree-children--open {
-    max-height: 2000px; /* large enough for any folder */
+    grid-template-rows: 1fr;
     opacity: 1;
   }
 
+  .file-tree-children:not(.file-tree-children--open) {
+    visibility: hidden;
+  }
+
   .file-tree-children-inner {
-    overflow: visible;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
 
   /* ─── Editor tab bar ─── */

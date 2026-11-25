@@ -60,6 +60,12 @@ const items: ProblemItem[] = [
 ];
 
 describe("ProblemsPanel", () => {
+  it("explains unavailable diagnostics without inventing a source problem or reporting success", () => {
+    render(<ProblemsPanel items={[]} notice="Java 26 preview requires a compatible compiler." />);
+    expect(screen.getByRole("alert").textContent).toContain("Java 26 preview");
+    expect(screen.queryByText("No problems detected.")).toBeNull();
+    expect(screen.queryByRole("treeitem")).toBeNull();
+  });
   it("sorts by severity, file, and zero-based position and creates normalized groups", () => {
     expect(sortProblems(items).map((item) => item.id)).toEqual([
       "error-first",
@@ -109,6 +115,25 @@ describe("ProblemsPanel", () => {
     expect(onNavigate).toHaveBeenLastCalledWith("src/A.java", items[1].range);
     expect(problem.getAttribute("aria-label")).toContain("line 5, column 3");
     expect(within(problem).getByText(/Java\(7\)/)).toBeDefined();
+  });
+
+  it("passes the provider problem identity to the guarded navigation handler", () => {
+    const onNavigateProblem = vi.fn(),
+      onNavigate = vi.fn();
+    render(
+      <ProblemsPanel
+        items={[items[1]]}
+        onNavigateProblem={onNavigateProblem}
+        onNavigate={onNavigate}
+      />,
+    );
+    const problem = screen.getByRole("treeitem");
+    fireEvent.click(problem);
+    fireEvent.keyDown(problem, { key: "Enter" });
+    fireEvent.keyDown(problem, { key: " " });
+    expect(onNavigateProblem).toHaveBeenCalledTimes(3);
+    expect(onNavigateProblem).toHaveBeenLastCalledWith(items[1]);
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
   it("shows an accessible empty state", () => {

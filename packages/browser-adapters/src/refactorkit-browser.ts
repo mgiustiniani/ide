@@ -4,6 +4,13 @@ import type {
   DiscardRefactorKitPlanRequest,
   DiscardRefactorKitPlanResult,
   PreviewExternalJavaImportRequest,
+  MavenModuleRenameApplyRequest,
+  MavenModuleRenameApplyResult,
+  MavenModuleRenameDiscardRequest,
+  MavenModuleRenamePreview,
+  MavenModuleRenamePreviewRequest,
+  MavenModuleRenameRollbackRequest,
+  MavenModuleRenameRollbackResult,
   RefactorApplyRequest,
   RefactorApplyResult,
   RefactorKitCapabilities,
@@ -146,6 +153,28 @@ export class BrowserRefactorKitAdapter implements RefactorKitPort {
   }
 
   previewRefactoring(_request: RefactorPreviewRequest): Promise<RefactorPreviewResult> {
+    return unavailable();
+  }
+
+  previewMavenModuleRename(
+    _request: MavenModuleRenamePreviewRequest,
+  ): Promise<MavenModuleRenamePreview> {
+    return unavailable();
+  }
+
+  discardMavenModuleRenamePreview(_request: MavenModuleRenameDiscardRequest): Promise<boolean> {
+    return unavailable();
+  }
+
+  applyMavenModuleRename(
+    _request: MavenModuleRenameApplyRequest,
+  ): Promise<MavenModuleRenameApplyResult> {
+    return unavailable();
+  }
+
+  rollbackMavenModuleRename(
+    _request: MavenModuleRenameRollbackRequest,
+  ): Promise<MavenModuleRenameRollbackResult> {
     return unavailable();
   }
 

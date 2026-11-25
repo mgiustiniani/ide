@@ -121,16 +121,20 @@ export class StandaloneWebApp {
     return names.map((name) => name.trim()).filter((name) => name.length > 0);
   }
 
-  async integratedTerminalIsVisible(): Promise<boolean> {
+  async terminalReportsBrowserUnavailable(): Promise<boolean> {
     const page = this.#requirePage();
     const terminalTab = this.#toolWindowTabs().getByRole("tab", {
       name: "Terminal",
       exact: true,
     });
+    const terminalOutput = (await page.locator(".xterm-rows").innerText()).replace(/\s+/g, " ");
     return (
       (await terminalTab.isVisible()) &&
       (await terminalTab.getAttribute("title")) === "Integrated terminal" &&
-      (await page.getByText("Session active", { exact: true }).isVisible())
+      (await page.getByText("Session inactive", { exact: true }).isVisible()) &&
+      terminalOutput.includes(
+        "Interactive terminals are unavailable in the browser. Use the desktop application.",
+      )
     );
   }
 

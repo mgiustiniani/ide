@@ -43,9 +43,6 @@ import type { StoryWorld } from "../support/world.js";
 import {
   RefactorKitEngineIntegrationStorySession,
   REQUIREMENT,
-  TARGET_FILE,
-  WORKSPACE_ID,
-  ENGINE_OPERATIONS,
 } from "../support/refactorkit-engine-integration.js";
 
 /** Tag scope that disambiguates this slice's shared step wording from other slices. */
@@ -168,9 +165,17 @@ Then<StoryWorld>(
   async function () {
     const session = sessionFor(this);
     assert.equal(session.fabricatedEngine(), false, `${REQUIREMENT}: an engine was fabricated`);
-    assert.equal(session.fabricatedCapability(), false, `${REQUIREMENT}: a capability was fabricated`);
+    assert.equal(
+      session.fabricatedCapability(),
+      false,
+      `${REQUIREMENT}: a capability was fabricated`,
+    );
     assert.equal(session.fabricatedPlan(), false, `${REQUIREMENT}: a plan was fabricated`);
-    assert.equal(session.fabricatedSuccess(), false, `${REQUIREMENT}: a successful result was fabricated`);
+    assert.equal(
+      session.fabricatedSuccess(),
+      false,
+      `${REQUIREMENT}: a successful result was fabricated`,
+    );
     await attachEvidence(session, this);
   },
 );
@@ -279,11 +284,7 @@ Then<StoryWorld>(
         ["applied", "refused", "stale", "failed", "indeterminate"].includes(outcome),
       `${REQUIREMENT}: the IDE did not report an honest outcome`,
     );
-    assert.equal(
-      session.fabricatedSuccess(),
-      false,
-      `${REQUIREMENT}: the IDE fabricated success`,
-    );
+    assert.equal(session.fabricatedSuccess(), false, `${REQUIREMENT}: the IDE fabricated success`);
     await attachEvidence(session, this);
   },
 );
@@ -342,14 +343,11 @@ Then<StoryWorld>(
   },
 );
 
-When<StoryWorld>(
-  "the capability is exercised through the browser profile",
-  async function () {
-    const session = sessionFor(this);
-    await session.observeBrowserCapability();
-    await attachEvidence(session, this);
-  },
-);
+When<StoryWorld>("the capability is exercised through the browser profile", async function () {
+  const session = sessionFor(this);
+  await session.observeBrowserCapability();
+  await attachEvidence(session, this);
+});
 
 Then<StoryWorld>(
   "capability access to the real-engine capability is defined through ports, not platform APIs",
@@ -363,11 +361,7 @@ Then<StoryWorld>(
         true,
         `${REQUIREMENT}: ${port.port} does not declare a port interface`,
       );
-      assert.equal(
-        port.tauriImports,
-        0,
-        `${REQUIREMENT}: ${port.port} imports a platform API`,
-      );
+      assert.equal(port.tauriImports, 0, `${REQUIREMENT}: ${port.port} imports a platform API`);
     }
     await attachEvidence(session, this);
   },
@@ -378,7 +372,7 @@ Then<StoryWorld>(
 // -----------------------------------------------------------------------------
 
 Then<StoryWorld>(
-  "the requirement ID \"@REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001\" is repository-unique and reconciled",
+  'the requirement ID "@REQ-IDE-REFACTORKIT-ENGINE-INTEGRATION-001" is repository-unique and reconciled',
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
@@ -388,7 +382,11 @@ Then<StoryWorld>(
       `${REQUIREMENT}: requirement ID is not declared`,
     );
     const uniqueness = session.requirementOccurrences();
-    assert.equal(uniqueness.unique, true, `${REQUIREMENT}: requirement ID is not repository-unique`);
+    assert.equal(
+      uniqueness.unique,
+      true,
+      `${REQUIREMENT}: requirement ID is not repository-unique`,
+    );
     assert.ok(
       uniqueness.occurrences >= 5,
       `${REQUIREMENT}: requirement ID is not reconciled across scenarios`,
@@ -407,7 +405,11 @@ Then<StoryWorld>(
     // separately and not claimed here.
     const evidence = session.evidence();
     assert.equal(evidence.evidenceKind, "tauri-harness", `${REQUIREMENT}: evidence kind mismatch`);
-    assert.equal(evidence.nativeGui, false, `${REQUIREMENT}: native GUI evidence is not reported separately`);
+    assert.equal(
+      evidence.nativeGui,
+      false,
+      `${REQUIREMENT}: native GUI evidence is not reported separately`,
+    );
     assert.equal(evidence.e2e, false, `${REQUIREMENT}: e2e evidence is not reported separately`);
     assert.equal(
       evidence.packagedApplication,

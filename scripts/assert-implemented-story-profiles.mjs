@@ -1,69 +1,21 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import * as cucumberProfiles from "../cucumber.js";
 import { evaluateDeclaredStoryRouting, scenarioKey } from "./story-profile-policy.mjs";
+import { discoverCucumberSelection } from "./cucumber-selection.mjs";
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const cucumberEntry = path.join(repositoryRoot, "node_modules/@cucumber/cucumber/bin/cucumber.js");
 const desktopStatusOnly = process.argv.slice(2).includes("--desktop-status");
 
 function discover(profile) {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      cucumberEntry,
-      "--config",
-      "cucumber.js",
-      "--profile",
-      profile,
-      "--dry-run",
-      "--format",
-      "message",
-    ],
-    {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-      killSignal: "SIGTERM",
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 30_000,
-    },
+  return discoverCucumberSelection({ repositoryRoot, profile, cucumberEntry }).map(
+    ({ uri, line, name, tags }) => ({ uri, line, name, tags: new Set(tags) }),
   );
-
-  if (result.error || result.status !== 0) {
-    process.stdout.write(result.stdout ?? "");
-    process.stderr.write(result.stderr ?? "");
-    const outcome = result.error?.message ?? `exit code ${result.status ?? "unknown"}`;
-    throw new Error(`Cucumber profile ${profile} discovery failed with ${outcome}`);
-  }
-
-  const scenariosByPickleId = new Map();
-  const selectedPickleIds = new Set();
-  for (const line of result.stdout.split("\n")) {
-    if (!line.trim()) continue;
-    const envelope = JSON.parse(line);
-    if (envelope.pickle) {
-      scenariosByPickleId.set(envelope.pickle.id, {
-        uri: envelope.pickle.uri,
-        line: envelope.pickle.location.line,
-        name: envelope.pickle.name,
-        tags: new Set(envelope.pickle.tags.map(({ name }) => name)),
-      });
-    }
-    if (envelope.testCase) selectedPickleIds.add(envelope.testCase.pickleId);
-  }
-
-  return [...selectedPickleIds].map((pickleId) => {
-    const scenario = scenariosByPickleId.get(pickleId);
-    if (!scenario) throw new Error(`${profile} selected unknown Cucumber pickle ${pickleId}`);
-    return scenario;
-  });
 }
 
 function assertWorldParameters(profileName, expected, failures) {
@@ -101,6 +53,7 @@ try {
   const desktopTauriWebdriver = discover("implementedDesktopTauriWebdriver");
   const idePackagingTauriHarness = discover("idePackagingTauriHarness");
   const javaImportNativeGui = discover("refactorKitJavaImportNativeGui");
+  const javaSourceFileCreationNativeGui = discover("javaSourceFileCreationNativeGui");
   const desktopLayoutNativeGui = discover("desktopLayoutNativeGui");
   const piWorkspaceAgentNativeGui = discover("piWorkspaceAgentNativeGui");
   const xcom2MachineSettingsMissingSteamNativeGui = discover(
@@ -163,6 +116,7 @@ try {
   assertWorldParameters("idePackagingTauriHarness", idePackagingTauriHarnessEvidence, failures);
   assertWorldParameters("desktopTauriWebdriver", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopFileOpenNativeGui", desktopTauriWebdriverEvidence, failures);
+  assertWorldParameters("javaSourceFileCreationNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("refactorKitJavaImportNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("desktopLayoutNativeGui", desktopTauriWebdriverEvidence, failures);
   assertWorldParameters("piWorkspaceAgentNativeGui", desktopTauriWebdriverEvidence, failures);
@@ -189,7 +143,11 @@ try {
   compareProfileSelection(
     "implementedDesktop",
     validatedDesktop,
-    [...routing.expectedDesktopTauriWebdriver, ...routing.expectedIdePackagingTauriHarness, ...routing.unsupportedValidatedDesktop],
+    [
+      ...routing.expectedDesktopTauriWebdriver,
+      ...routing.expectedIdePackagingTauriHarness,
+      ...routing.unsupportedValidatedDesktop,
+    ],
     failures,
   );
   compareProfileSelection(
@@ -214,6 +172,12 @@ try {
     "refactorKitJavaImportNativeGui",
     javaImportNativeGui,
     declared.filter(({ tags }) => tags.has("@REQ-REFACTORKIT-JAVA-IMPORT-002")),
+    failures,
+  );
+  compareProfileSelection(
+    "javaSourceFileCreationNativeGui",
+    javaSourceFileCreationNativeGui,
+    declared.filter(({ tags }) => tags.has("@REQ-IDE-JAVA-FILE-CREATION-NATIVE-001")),
     failures,
   );
   compareProfileSelection(

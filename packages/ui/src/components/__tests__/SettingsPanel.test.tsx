@@ -4,7 +4,7 @@
 
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DEFAULT_PI_AGENT_SETTINGS, XCOM2_STEAM_PRODUCTS } from "@ide/contracts";
 import type {
   PiAgentSettings,
@@ -55,6 +55,10 @@ const javaLanguageServiceStatus: LanguageServiceStatus = {
   javaVersion: "21.0.4",
   workspaceId: "global-tooling",
   generation: 2,
+  gradleImportEnabled: false,
+  gradleSettingsConfigured: false,
+  activeMavenProfiles: [],
+  inactiveMavenProfiles: [],
   checkedAt: "2026-07-11T16:30:00.000Z",
   capabilities: {
     documentSync: true,
@@ -165,10 +169,13 @@ describe("SettingsPanel", () => {
     expect(screen.getByRole("tab", { name: /AI Agents/i }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect((screen.getByRole("tab", { name: /Workspace/i }) as HTMLButtonElement).disabled).toBe(
+    expect(
+      (screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect((screen.getByRole("tab", { name: /Editor/i }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    expect((screen.getByRole("tab", { name: /Editor/i }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Pi Agent runtime")).toBeDefined();
     expect(screen.getByText("Native Agent authority")).toBeDefined();
     expect(screen.getByText("Native Pi TUI / PTY")).toBeDefined();
@@ -184,6 +191,192 @@ describe("SettingsPanel", () => {
     expect(
       (screen.getByRole("button", { name: /Pi Agent detected/i }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("edits workspace Java indentation and describes Eclipse formatter profiles", () => {
+    const onChangeWorkspaceEditorPreferences = vi.fn();
+    const { rerender } = render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: { tabSize: 2, insertSpaces: true },
+        onChangeWorkspaceEditorPreferences,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    expect(screen.getByRole("heading", { name: "Java formatting defaults" })).toBeDefined();
+    expect(screen.getByText(/Eclipse formatter profile exported as XML/u)).toBeDefined();
+    fireEvent.change(screen.getByRole("combobox", { name: "Java indentation size" }), {
+      target: { value: "4" },
+    });
+    expect(onChangeWorkspaceEditorPreferences).toHaveBeenLastCalledWith({
+      tabSize: 4,
+      insertSpaces: true,
+    });
+
+    rerender(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: { tabSize: 4, insertSpaces: true },
+        onChangeWorkspaceEditorPreferences,
+      }),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Java indentation character" }), {
+      target: { value: "tabs" },
+    });
+    expect(onChangeWorkspaceEditorPreferences).toHaveBeenLastCalledWith({
+      tabSize: 4,
+      insertSpaces: false,
+    });
+    expect(screen.getByText(/Preferences for Project Alpha/u)).toBeDefined();
+  });
+
+  it("applies a workspace-relative Eclipse formatter profile with its exact exported name", () => {
+    const onChangeWorkspaceEditorPreferences = vi.fn();
+    render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: { tabSize: 2, insertSpaces: true },
+        onChangeWorkspaceEditorPreferences,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Eclipse formatter XML path" }), {
+      target: { value: "config/java-formatter.xml" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Eclipse formatter profile name" }), {
+      target: { value: "Team Java" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply formatter profile" }));
+
+    expect(onChangeWorkspaceEditorPreferences).toHaveBeenCalledWith({
+      tabSize: 2,
+      insertSpaces: true,
+      javaFormatterProfile: {
+        path: "config/java-formatter.xml",
+        profileName: "Team Java",
+      },
+    });
+  });
+
+  it("uses the host formatter XML picker without exposing native dialog APIs", async () => {
+    const onSelectWorkspaceFormatterProfile = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValue("config/team-format.xml");
+    render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: { tabSize: 2, insertSpaces: true },
+        onChangeWorkspaceEditorPreferences: vi.fn(),
+        onSelectWorkspaceFormatterProfile,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Browse XML" }));
+
+    await waitFor(() => expect(onSelectWorkspaceFormatterProfile).toHaveBeenCalledOnce());
+    expect(
+      (screen.getByRole("textbox", { name: "Eclipse formatter XML path" }) as HTMLInputElement)
+        .value,
+    ).toBe("config/team-format.xml");
+  });
+
+  it("lists saved Eclipse profile names and applies only the chosen name", async () => {
+    const onListWorkspaceFormatterProfiles = vi.fn(async () => ["Compact", "Team & Java"]);
+    const onChangeWorkspaceEditorPreferences = vi.fn();
+    render(React.createElement(SettingsPanel, {
+      workspaceInfo,
+      workspaceEditorPreferences: { tabSize: 2, insertSpaces: true },
+      onListWorkspaceFormatterProfiles,
+      onChangeWorkspaceEditorPreferences,
+    }));
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Eclipse formatter XML path" }), {
+      target: { value: "config/team.xml" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Read profile names" }));
+    const profiles = await screen.findByRole("combobox", { name: "Eclipse formatter profile name" });
+    expect(onListWorkspaceFormatterProfiles).toHaveBeenCalledWith("config/team.xml");
+    expect(onChangeWorkspaceEditorPreferences).not.toHaveBeenCalled();
+    fireEvent.change(profiles, { target: { value: "Team & Java" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply formatter profile" }));
+    expect(onChangeWorkspaceEditorPreferences).toHaveBeenCalledWith({
+      tabSize: 2,
+      insertSpaces: true,
+      javaFormatterProfile: { path: "config/team.xml", profileName: "Team & Java" },
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Eclipse formatter XML path" }), {
+      target: { value: "config/other.xml" },
+    });
+    expect(screen.queryByRole("combobox", { name: "Eclipse formatter profile name" })).toBeNull();
+
+    let finishRead!: (names: string[]) => void;
+    onListWorkspaceFormatterProfiles.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Read profile names" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Eclipse formatter XML path" }), {
+      target: { value: "config/current.xml" },
+    });
+    await act(async () => { finishRead(["Outdated"]); });
+    expect(screen.queryByRole("option", { name: "Outdated" })).toBeNull();
+  });
+
+  it("opens the configured workspace formatter XML in the regular editor", async () => {
+    const onOpenWorkspaceFormatterProfile = vi.fn<(path: string) => Promise<void>>();
+    onOpenWorkspaceFormatterProfile.mockResolvedValue(undefined);
+    render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: {
+          tabSize: 2,
+          insertSpaces: true,
+          javaFormatterProfile: {
+            path: "config/team-format.xml",
+            profileName: "Team Java",
+          },
+        },
+        onOpenWorkspaceFormatterProfile,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+
+    await waitFor(() =>
+      expect(onOpenWorkspaceFormatterProfile).toHaveBeenCalledWith("config/team-format.xml"),
+    );
+    expect(screen.getByText(/restart Eclipse JDT LS to load the updated profile/u)).toBeDefined();
+  });
+
+  it("reports when the configured formatter XML cannot be opened", async () => {
+    const onOpenWorkspaceFormatterProfile = vi
+      .fn<(path: string) => Promise<void>>()
+      .mockRejectedValue(new Error("The formatter profile could not be opened."));
+    render(
+      React.createElement(SettingsPanel, {
+        workspaceInfo,
+        workspaceEditorPreferences: {
+          tabSize: 2,
+          insertSpaces: true,
+          javaFormatterProfile: {
+            path: "config/team-format.xml",
+            profileName: "Team Java",
+          },
+        },
+        onOpenWorkspaceFormatterProfile,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Editor/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "The formatter profile could not be opened.",
+    );
+    expect(screen.queryByText(/Opened formatter XML in the editor/u)).toBeNull();
   });
 
   it("presents Languages / Language tooling while keeping Eclipse JDT controls explicit", () => {
@@ -388,11 +581,13 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }));
 
-    expect(screen.getByRole("tab", { name: /Workspace/i }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(
+      screen
+        .getByRole("tab", { name: "WorkspaceWorkspace metadata" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     expect(screen.getByText("Current workspace")).toBeDefined();
     expect(screen.getAllByText("Project Alpha").length).toBeGreaterThan(0);
     expect(screen.getByText("workspace-alpha")).toBeDefined();
@@ -420,7 +615,7 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }));
 
     const heading = screen.getByRole("heading", { name: "Current workspace" });
     const controls = heading.closest("div.mb-5");
@@ -443,7 +638,7 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }));
 
     const status = screen.getByRole("status");
     expect(status.textContent).toBe("Checking XCOM 2 project configuration…");
@@ -470,7 +665,7 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }));
 
     expect(screen.getByText("Current")).toBeDefined();
     const switchButton = screen.getByRole("button", { name: /Switch/i });
@@ -501,7 +696,7 @@ describe("SettingsPanel", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: /Workspace/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "WorkspaceWorkspace metadata" }));
     fireEvent.click(screen.getByRole("button", { name: /Refresh workspace/i }));
 
     await waitFor(() => expect(onRefreshWorkspace).toHaveBeenCalledTimes(1));

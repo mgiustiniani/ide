@@ -321,6 +321,448 @@ describe("FileTree", () => {
     expect(onPasteJavaClass).toHaveBeenCalledWith(directory);
   });
 
+  it("creates and opens a new file from the selected directory context menu", async () => {
+    const onCreateFile = vi.fn(async () => undefined);
+    const directory = nodeAt("orders", "folder", "src/main/java/com/example/orders", [
+      nodeAt("Order.java", "file", "src/main/java/com/example/orders/Order.java"),
+    ]);
+    const nodes = javaTree("main", chain(["com", "example"], directory));
+    const expanded = new Set([
+      "src",
+      "src/main",
+      "src/main/java",
+      "src/main/java/com",
+      "src/main/java/com/example",
+    ]);
+    render(
+      React.createElement(FileTree, {
+        nodes,
+        expandedPaths: expanded,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateFile,
+      }),
+    );
+
+    await userEvent.pointer({
+      target: screen.getByText("com.example.orders"),
+      keys: "[MouseRight]",
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New File…" }));
+    const dialog = screen.getByRole("dialog", { name: "Create file" });
+    expect(dialog.textContent).toContain("src/main/java/com/example/orders");
+    await userEvent.type(screen.getByRole("textbox", { name: "File name" }), "OrderService.java");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onCreateFile).toHaveBeenCalledWith(directory, "OrderService.java");
+    expect(screen.queryByRole("dialog", { name: "Create file" })).toBeNull();
+  });
+
+  it("creates a Java type as an explicit source draft from the package context menu", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const javaTypeProjectContextForDirectory = vi.fn(() => ({
+      effectiveSourceLevel: 17,
+      packageName: "com.example.orders",
+      isSourceRoot: false,
+    }));
+    const directory = nodeAt("orders", "folder", "src/main/java/com/example/orders");
+    const nodes = javaTree("main", chain(["com", "example"], directory));
+    const expanded = new Set([
+      "src",
+      "src/main",
+      "src/main/java",
+      "src/main/java/com",
+      "src/main/java/com/example",
+    ]);
+    render(
+      React.createElement(FileTree, {
+        nodes,
+        expandedPaths: expanded,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory,
+      }),
+    );
+
+    const row = screen.getByText("com.example.orders").closest<HTMLElement>('[role="treeitem"]')!;
+    await userEvent.pointer({ target: row, keys: "[MouseRight]" });
+    expect(screen.queryByRole("menuitem", { name: "New Java Module Descriptor…" })).toBeNull();
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "OrderStatus");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "enum");
+    expect((screen.getByRole("textbox", { name: "Package name" }) as HTMLInputElement).value).toBe(
+      "com.example.orders",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+
+    expect(onCreateJavaType).toHaveBeenCalledExactlyOnceWith(directory, {
+      name: "OrderStatus",
+      packageName: "com.example.orders",
+      kind: "enum",
+      source: "package com.example.orders;\n\npublic enum OrderStatus {\n}\n",
+    });
+    expect(screen.queryByRole("dialog", { name: "Create Java type" })).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("creates a module descriptor draft only at a provider-declared Java source root", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const directory = nodeAt("java", "folder", "src/main/java");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory: (directoryPath) =>
+          directoryPath === "src/main/java"
+            ? { effectiveSourceLevel: 17, packageName: "", isSourceRoot: true }
+            : null,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("java"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Module Descriptor…" }));
+    expect(screen.getByRole("dialog", { name: "Create Java module descriptor" })).toBeDefined();
+    expect(screen.queryByRole("textbox", { name: "Package name" })).toBeNull();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Module name" }),
+      "com.example.orders",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create module descriptor" }));
+
+    expect(onCreateJavaType).toHaveBeenCalledExactlyOnceWith(directory, {
+      name: "com.example.orders",
+      packageName: "",
+      kind: "module",
+      source: "module com.example.orders {\n}\n",
+    });
+  });
+
+  it("disables module descriptors for provider-declared Java 8 source roots", async () => {
+    const directory = nodeAt("java", "folder", "src/main/java");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType: vi.fn(async () => undefined),
+        javaTypeProjectContextForDirectory: () => ({
+          effectiveSourceLevel: 8,
+          packageName: "",
+          isSourceRoot: true,
+        }),
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("java"), keys: "[MouseRight]" });
+    expect(
+      (
+        screen.getByRole("menuitem", {
+          name: "New Java Module Descriptor…",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("refuses module descriptor creation when source-root authority expires before submission", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const directory = nodeAt("java", "folder", "src/main/java");
+    let sourceRootContext: {
+      effectiveSourceLevel: number;
+      packageName: string;
+      isSourceRoot: boolean;
+    } | null = { effectiveSourceLevel: 17, packageName: "", isSourceRoot: true };
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory: () => sourceRootContext,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("java"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Module Descriptor…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Module name" }), "example.module");
+    sourceRootContext = null;
+    await userEvent.click(screen.getByRole("button", { name: "Create module descriptor" }));
+
+    expect(onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("ordinary source root");
+    expect(screen.getByRole("dialog", { name: "Create Java module descriptor" })).toBeDefined();
+  });
+
+  it("rechecks restricted type names against the current source level before creating a draft", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    let release = 8;
+    const directory = nodeAt("src", "folder", "src/main/java/example");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory: () => ({
+          effectiveSourceLevel: release,
+          packageName: "example",
+          isSourceRoot: false,
+        }),
+      }),
+    );
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "record");
+    release = 21;
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+    expect(onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("not allowed in Java 21");
+    expect(screen.getByRole("dialog", { name: "Create Java type" })).toBeDefined();
+    release = 8;
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+    expect(onCreateJavaType).toHaveBeenCalledExactlyOnceWith(directory, {
+      name: "record",
+      packageName: "example",
+      kind: "class",
+      source: "package example;\n\npublic class record {\n}\n",
+    });
+  });
+
+  it("refuses a record when the synchronized source set is below Java 16", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const javaTypeProjectContextForDirectory = vi.fn(() => ({
+      effectiveSourceLevel: 11,
+      packageName: "example",
+      isSourceRoot: false,
+    }));
+    const directory = nodeAt("src", "folder", "src/main/java/example");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Person");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "record");
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+
+    expect(javaTypeProjectContextForDirectory).toHaveBeenCalledWith("src/main/java/example");
+    expect(onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("source set uses Java 11");
+    expect(screen.getByRole("dialog", { name: "Create Java type" })).toBeDefined();
+  });
+
+  it("allows a record when release information is unknown and states that it was not checked", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const directory = nodeAt("src", "folder", "src/main/java/example");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory: () => null,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Person");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "record");
+    expect(screen.getByRole("status").textContent).toContain("compatibility cannot be checked");
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+
+    expect(onCreateJavaType).toHaveBeenCalledWith(
+      directory,
+      expect.objectContaining({ kind: "record", name: "Person" }),
+    );
+  });
+
+  it("keeps invalid Java package declarations in the type wizard for correction", async () => {
+    const onCreateJavaType = vi.fn(async () => undefined);
+    const directory = nodeAt("src", "folder", "src");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Example");
+    await userEvent.type(screen.getByRole("textbox", { name: "Package name" }), "example..bad");
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+
+    expect(onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("dot-separated Java identifiers");
+    expect(screen.getByRole("dialog", { name: "Create Java type" })).toBeDefined();
+  });
+
+  it("rejects a directory path in the new file name and keeps the dialog open", async () => {
+    const onCreateFile = vi.fn(async () => undefined);
+    const directory = nodeAt("orders", "folder", "src/main/java/com/example/orders", [
+      nodeAt("Order.java", "file", "src/main/java/com/example/orders/Order.java"),
+    ]);
+    const nodes = javaTree("main", chain(["com", "example"], directory));
+    const expanded = new Set([
+      "src",
+      "src/main",
+      "src/main/java",
+      "src/main/java/com",
+      "src/main/java/com/example",
+    ]);
+    render(
+      React.createElement(FileTree, {
+        nodes,
+        expandedPaths: expanded,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateFile,
+      }),
+    );
+
+    await userEvent.pointer({
+      target: screen.getByText("com.example.orders"),
+      keys: "[MouseRight]",
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New File…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "File name" }), "nested/Order.java");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onCreateFile).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("without a directory path");
+    expect(screen.getByRole("dialog", { name: "Create file" })).toBeDefined();
+  });
+
+  it("traps keyboard focus in the new-file dialog and restores the directory focus on cancel", async () => {
+    const onCreateFile = vi.fn(async () => undefined);
+    const directory = nodeAt("src", "folder", "src");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateFile,
+      }),
+    );
+
+    const row = screen.getByText("src").closest<HTMLElement>('[role="treeitem"]')!;
+    await userEvent.pointer({ target: row, keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New File…" }));
+    const input = screen.getByRole("textbox", { name: "File name" });
+    expect(document.activeElement).toBe(input);
+    await userEvent.type(input, "Created.java");
+
+    await userEvent.keyboard("{Tab}");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.keyboard("{Tab}");
+    const createButton = screen.getByRole("button", { name: "Create" });
+    expect(document.activeElement).toBe(createButton);
+    await userEvent.keyboard("{Tab}");
+    expect(document.activeElement).toBe(input);
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(createButton);
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Create file" })).toBeNull();
+    expect(document.activeElement).toBe(row);
+    expect(onCreateFile).not.toHaveBeenCalled();
+  });
+
+  it("creates a child directory from the selected Java package context menu", async () => {
+    const onCreateFolder = vi.fn(async () => undefined);
+    const directory = nodeAt("orders", "folder", "src/main/java/com/example/orders");
+    const nodes = javaTree("main", chain(["com", "example"], directory));
+    const expanded = new Set([
+      "src",
+      "src/main",
+      "src/main/java",
+      "src/main/java/com",
+      "src/main/java/com/example",
+    ]);
+    render(
+      React.createElement(FileTree, {
+        nodes,
+        expandedPaths: expanded,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateFolder,
+      }),
+    );
+
+    const row = screen.getByText("com.example.orders").closest<HTMLElement>('[role="treeitem"]')!;
+    await userEvent.pointer({
+      target: row,
+      keys: "[MouseRight]",
+    });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Folder…" }));
+    const dialog = screen.getByRole("dialog", { name: "Create folder" });
+    expect(dialog.textContent).toContain("src/main/java/com/example/orders");
+    await userEvent.type(screen.getByRole("textbox", { name: "Folder name" }), "service");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onCreateFolder).toHaveBeenCalledWith(directory, "service");
+    expect(screen.queryByRole("dialog", { name: "Create folder" })).toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("keeps folder creation errors visible in the dialog", async () => {
+    const onCreateFolder = vi.fn(async () => {
+      throw new Error("Path already exists");
+    });
+    const directory = nodeAt("src", "folder", "src");
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths,
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateFolder,
+      }),
+    );
+
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Folder…" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Folder name" }), "main");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onCreateFolder).toHaveBeenCalledWith(directory, "main");
+    expect(screen.getByRole("alert").textContent).toBe("Path already exists");
+    expect(screen.getByRole("dialog", { name: "Create folder" })).toBeDefined();
+  });
+
   it("handles Ctrl/Cmd+V only inside the tree with a selected directory", async () => {
     const onPasteJavaClass = vi.fn();
     const directory = nodeAt("src", "folder", "src");
@@ -447,3 +889,175 @@ function renderTree(nodes: FileNode[], onToggle = vi.fn()): void {
     }),
   );
 }
+
+describe("compact Java source creation", () => {
+  function compactTree(
+    context: () => {
+      effectiveSourceLevel: number;
+      packageName: string;
+      isSourceRoot: boolean;
+      moduleName?: string | null;
+      sourceRoot?: string;
+      isGeneratedSource?: boolean;
+    } | null,
+  ) {
+    const directory = nodeAt("src", "folder", "src/main/java/example");
+    const onCreateJavaType = vi.fn(async () => undefined);
+    render(
+      React.createElement(FileTree, {
+        nodes: [directory],
+        expandedPaths: new Set<string>(),
+        selectedFilePath: null,
+        onSelect: vi.fn(),
+        onToggle: vi.fn(),
+        onCreateJavaType,
+        javaTypeProjectContextForDirectory: context,
+      }),
+    );
+    return { directory, onCreateJavaType };
+  }
+  async function openCompact() {
+    await userEvent.pointer({ target: screen.getByText("src"), keys: "[MouseRight]" });
+    await userEvent.click(screen.getByRole("menuitem", { name: "New Java Type…" }));
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Java type" }),
+      "compact-source",
+    );
+  }
+  it("omits a prefilled package from a compact draft and accepts a contextual type-name spelling", async () => {
+    const f = compactTree(() => ({
+      effectiveSourceLevel: 25,
+      packageName: "example",
+      isSourceRoot: false,
+    }));
+    await openCompact();
+    expect(screen.getByRole("dialog", { name: "Create compact Java source" })).toBeDefined();
+    expect(screen.queryByRole("textbox", { name: "Package name" })).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Java 25");
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "record");
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledExactlyOnceWith(f.directory, {
+      name: "record",
+      kind: "compact-source",
+      packageName: "",
+      source: "void main() {\n}\n",
+    });
+  });
+  it("rechecks the current release at submission and preserves the form after refusal", async () => {
+    let release = 25;
+    const f = compactTree(() => ({
+      effectiveSourceLevel: release,
+      packageName: "example",
+      isSourceRoot: false,
+    }));
+    await openCompact();
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "Main");
+    release = 24;
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("require Java 25");
+    expect((screen.getByRole("textbox", { name: "Source name" }) as HTMLInputElement).value).toBe(
+      "Main",
+    );
+    release = 25;
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledOnce();
+  });
+  it("states that compatibility is unchecked when source-set information is unavailable", async () => {
+    const f = compactTree(() => null);
+    await openCompact();
+    expect(screen.queryByLabelText("Generated Java sources")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("compatibility cannot be checked");
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "Main");
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledOnce();
+  });
+  it("retains the person's package when switching back to an ordinary type", async () => {
+    compactTree(() => ({ effectiveSourceLevel: 25, packageName: "example", isSourceRoot: false }));
+    await openCompact();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "class");
+    expect((screen.getByRole("textbox", { name: "Package name" }) as HTMLInputElement).value).toBe(
+      "example",
+    );
+  });
+  it("previews the destination as package, form and name change beneath one source root", async () => {
+    const f = compactTree(() => ({ effectiveSourceLevel: 25, packageName: "example", isSourceRoot: false, sourceRoot: "src/main/java" }));
+    await openCompact();
+    const destination = () => screen.getByLabelText("Java source destination").textContent;
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "record");
+    expect(destination()).toBe("Destination: src/main/java/record.java");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "class");
+    expect(destination()).toBe("Destination: src/main/java/example/record.java");
+    await userEvent.clear(screen.getByRole("textbox", { name: "Type name" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Created");
+    await userEvent.clear(screen.getByRole("textbox", { name: "Package name" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Package name" }), "other.orders");
+    expect(destination()).toBe("Destination: src/main/java/other/orders/Created.java");
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+  });
+  it("explains known generated ownership while retaining the explicit selected-directory destination", async () => {
+    const f = compactTree(() => ({ effectiveSourceLevel: 25, packageName: "", isSourceRoot: false, isGeneratedSource: true }));
+    await openCompact();
+    expect(screen.getByLabelText("Generated Java sources").textContent).toContain("can replace its contents");
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "Example");
+    expect(screen.getByLabelText("Java source destination").textContent).toBe("Destination: src/main/java/example/Example.java");
+    expect(screen.getByRole("button", { name: "Create compact source" }).hasAttribute("disabled")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+  });
+  it("previews the selected directory when provider source ownership is unknown", async () => {
+    const f = compactTree(() => null);
+    await openCompact();
+    expect(screen.queryByLabelText("Generated Java sources")).toBeNull();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "class");
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Created");
+    await userEvent.type(screen.getByRole("textbox", { name: "Package name" }), "other.orders");
+    expect(screen.getByLabelText("Java source destination").textContent).toBe("Destination: src/main/java/example/Created.java");
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+  });
+  it("submits compact sources opened in a package with the provider-owned root", async () => {
+    const f = compactTree(() => ({ effectiveSourceLevel: 25, packageName: "example", isSourceRoot: false, sourceRoot: "src/main/java" }));
+    await openCompact();
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "record");
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledExactlyOnceWith(f.directory, {
+      name: "record", kind: "compact-source", packageName: "", source: "void main() {\n}\n",
+    }, "src/main/java");
+  });
+  it("uses the current provider source root when submitting a changed package", async () => {
+    let sourceRoot = "old/source";
+    const f = compactTree(() => ({ effectiveSourceLevel: 25, packageName: "example", isSourceRoot: false, sourceRoot }));
+    await openCompact();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "class");
+    await userEvent.type(screen.getByRole("textbox", { name: "Type name" }), "Created");
+    await userEvent.clear(screen.getByRole("textbox", { name: "Package name" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Package name" }), "other.orders");
+    sourceRoot = "current/source";
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledExactlyOnceWith(f.directory, {
+      name: "Created", packageName: "other.orders", kind: "class", source: "package other.orders;\n\npublic class Created {\n}\n",
+    }, "current/source");
+  });
+
+  it("rechecks named-module facts, preserves rejected inputs and accepts a named package", async () => {
+    let moduleName: string | null = null;
+    const f = compactTree(() => ({ effectiveSourceLevel: 25, packageName: "", isSourceRoot: true, moduleName }));
+    await openCompact();
+    await userEvent.type(screen.getByRole("textbox", { name: "Source name" }), "Runner");
+    moduleName = "example.app";
+    await userEvent.click(screen.getByRole("button", { name: "Create compact source" }));
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("named module 'example.app'");
+    expect((screen.getByRole("textbox", { name: "Source name" }) as HTMLInputElement).value).toBe("Runner");
+    expect(screen.getByRole("status").textContent).toContain("Named module: example.app");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Java type" }), "class");
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+    expect(f.onCreateJavaType).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("requires a package name");
+    await userEvent.type(screen.getByRole("textbox", { name: "Package name" }), "example");
+    await userEvent.click(screen.getByRole("button", { name: "Create Java type" }));
+    expect(f.onCreateJavaType).toHaveBeenCalledExactlyOnceWith(f.directory, {
+      name: "Runner", packageName: "example", kind: "class", source: "package example;\n\npublic class Runner {\n}\n",
+    });
+  });
+});

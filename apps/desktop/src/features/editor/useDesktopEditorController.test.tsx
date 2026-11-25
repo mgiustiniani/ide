@@ -72,6 +72,7 @@ function createHarness() {
       discardedThrough = openIntent;
       openIntent += 1;
     }),
+    invalidateWorkspaceOperations: vi.fn(),
     restoreSession: vi.fn(async () => undefined),
     switchActiveFile: vi.fn((path: string) => {
       state.activeFilePath = path;
@@ -82,6 +83,7 @@ function createHarness() {
     createFile: vi.fn(async (parentPath: string, name: string) =>
       parentPath ? `${parentPath}/${name}` : name,
     ),
+    createFolder: vi.fn(async (_parentPath: string, _name: string) => undefined),
     subscribeToFileSelection: vi.fn(() => vi.fn()),
   };
   const clearFileTreeSelection = vi.fn();
@@ -224,9 +226,63 @@ describe("DesktopEditorController", () => {
       "backend/exact-created.ts",
     );
 
-    expect(h.fileTreeViewModel.createFile).toHaveBeenCalledWith("src", "created.ts");
+    expect(h.fileTreeViewModel.createFile).toHaveBeenCalledWith(
+      "src",
+      "created.ts",
+      expect.any(Function),
+    );
     expect(h.fileTreeViewModel.selectFile).toHaveBeenCalledWith("backend/exact-created.ts");
     expect(h.editorViewModel.openFile).toHaveBeenCalledWith("backend/exact-created.ts");
+  });
+
+  it("opens the nested path returned by guarded package creation", async () => {
+    const h = createHarness();
+    h.fileTreeViewModel.createFile.mockResolvedValueOnce("src/example/orders/Created.java");
+    await expect(h.controller.createFile("src", "Created.java", "example/orders")).resolves.toBe("src/example/orders/Created.java");
+    expect(h.fileTreeViewModel.createFile).toHaveBeenCalledWith("src", "Created.java", expect.any(Function), "example/orders");
+    expect(h.editorViewModel.openFile).toHaveBeenCalledWith("src/example/orders/Created.java");
+  });
+
+  it("creates a folder only in the workspace that started the request", async () => {
+    const h = createHarness();
+
+    await h.controller.createFolder("src/main", "java");
+
+    expect(h.fileTreeViewModel.createFolder).toHaveBeenCalledWith(
+      "src/main",
+      "java",
+      expect.any(Function),
+    );
+    expect(h.editorViewModel.openFile).not.toHaveBeenCalled();
+  });
+
+  it("refuses folder creation while workspace metadata is changing", async () => {
+    const h = createHarness();
+    h.workspace.isMetadataLoading = true;
+
+    await expect(h.controller.createFolder("src", "new-package")).rejects.toThrow(
+      "Wait for the workspace switch to finish before creating a folder.",
+    );
+
+    expect(h.fileTreeViewModel.createFolder).not.toHaveBeenCalled();
+  });
+
+  it("does not publish a folder creation after workspace authority changes", async () => {
+    const h = createHarness();
+    let isCurrent: (() => boolean) | undefined;
+    h.fileTreeViewModel.createFolder.mockImplementationOnce(
+      async (_parentPath: string, _name: string, current?: () => boolean) => {
+        isCurrent = current;
+        h.workspace.generation += 1;
+        return undefined;
+      },
+    );
+
+    await expect(h.controller.createFolder("src", "new-package")).rejects.toThrow(
+      "The workspace changed while the folder was being created.",
+    );
+    expect(isCurrent?.()).toBe(false);
+    expect(h.editorViewModel.openFile).not.toHaveBeenCalled();
   });
 
   it("derives restored tabs while idle and an honest no-document state", () => {
@@ -265,6 +321,7 @@ describe("useDesktopEditorController", () => {
     const fileTreeViewModel = {
       selectFile: vi.fn(),
       createFile: vi.fn(),
+      createFolder: vi.fn(),
       subscribeToFileSelection: vi.fn(() => vi.fn()),
     };
     invokeMock.mockResolvedValue({

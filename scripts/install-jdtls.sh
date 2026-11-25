@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly JDTLS_VERSION="1.61.0-202607102111"
-readonly JDTLS_ARTIFACT="jdt-language-server-${JDTLS_VERSION}.tar.gz"
-readonly JDTLS_URL="https://download.eclipse.org/jdtls/snapshots/${JDTLS_ARTIFACT}"
+readonly JDTLS_UPSTREAM_VERSION="1.63.0-202610191322"
+readonly JDTLS_VERSION="${JDTLS_UPSTREAM_VERSION}-idecompact1"
+readonly JDTLS_ARTIFACT="jdt-language-server-${JDTLS_UPSTREAM_VERSION}.tar.gz"
+readonly JDTLS_URL="https://download.eclipse.org/jdtls/milestones/1.63.0/${JDTLS_ARTIFACT}"
 readonly JDTLS_CHECKSUM_URL="${JDTLS_URL}.sha256"
-readonly JDTLS_SHA256="319b60ef9566a0f33204331b3ad8265551e19684297bb018dc701c5a8c5d398a"
+readonly JDTLS_SHA256="b1f2abe0b3cccb462cf64fb4a5587c7d09df60cf8be7748b152cbd89d018bdc4"
 readonly DATA_HOME="${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}"
 readonly INSTALL_ROOT="${DATA_HOME}/ide/tools/jdtls"
 readonly VERSION_DIR="${INSTALL_ROOT}/${JDTLS_VERSION}"
 readonly CURRENT_LINK="${INSTALL_ROOT}/current"
+readonly JDTLS_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly JDTLS_PATCH_BUILDER="${JDTLS_SCRIPT_DIR}/prepare-jdtls-compact-names.py"
+readonly JDTLS_PATCH_RECIPE="${JDTLS_SCRIPT_DIR}/../tools/jdtls/compact-class-names.json"
 
 usage() {
   printf 'Usage: %s [--verify-only]\n' "${0##*/}"
@@ -70,10 +74,13 @@ verify_install() {
   manifest="${directory}/install-manifest.json"
   [[ -s "${manifest}" ]] || fail "missing installation manifest: ${manifest}"
   grep -Fq '"version": "'"${JDTLS_VERSION}"'"' "${manifest}" || fail "manifest version does not match"
+  grep -Fq '"minimumRuntimeJava": 25' "${manifest}" || fail "manifest runtime requirement does not match"
   grep -Fq '"sha256": "'"${JDTLS_SHA256}"'"' "${manifest}" || fail "manifest checksum does not match"
   grep -Fq '"sourceUrl": "'"${JDTLS_URL}"'"' "${manifest}" || fail "manifest source URL does not match"
   grep -Fq '"launcher": "'"${relative_launcher}"'"' "${manifest}" || fail "manifest launcher does not match"
-  printf 'Verified Eclipse JDT LS %s\nLauncher: %s\n' "${JDTLS_VERSION}" "${launcher}"
+  command -v python3 >/dev/null 2>&1 || fail 'required command is unavailable: python3'
+  python3 "${JDTLS_PATCH_BUILDER}" --verify-home "${directory}" || fail 'derived compiler verification failed'
+  printf 'Verified JDT LS %s (IDE compact-class name correction)\nLauncher: %s\n' "${JDTLS_VERSION}" "${launcher}"
 }
 
 verify_only=false
@@ -92,7 +99,7 @@ if [[ "${verify_only}" == true ]]; then
   exit 0
 fi
 
-for command in curl sha256sum tar; do
+for command in curl sha256sum tar patch python3; do
   command -v "${command}" >/dev/null 2>&1 || fail "required command is unavailable: ${command}"
 done
 
@@ -108,15 +115,21 @@ else
   cleanup() { rm -rf -- "${work_dir}"; }
   trap cleanup EXIT HUP INT TERM
 
-  curl --fail --location --silent --show-error \
+  if [[ -n "${IDE_JDTLS_ARCHIVE_CACHE:-}" ]]; then
+    cp -- "${IDE_JDTLS_ARCHIVE_CACHE}" "${archive}"
+    acquisition="pinned archive cache"
+  else
+    curl --fail --location --silent --show-error \
     --proto '=https' --tlsv1.2 --retry 4 --retry-all-errors --retry-delay 2 \
     --connect-timeout 15 --max-time 1800 --continue-at - --output "${archive}" "${JDTLS_URL}"
-  curl --fail --location --silent --show-error \
+    curl --fail --location --silent --show-error \
     --proto '=https' --tlsv1.2 --retry 4 --retry-all-errors --retry-delay 2 \
     --connect-timeout 15 --max-time 120 --output "${checksum_file}" "${JDTLS_CHECKSUM_URL}"
 
-  official_sha256="$(grep -Eo '[[:xdigit:]]{64}' "${checksum_file}" | head -n 1 | tr '[:upper:]' '[:lower:]')"
-  [[ "${official_sha256}" == "${JDTLS_SHA256}" ]] || fail "official checksum document does not match the pinned checksum"
+    official_sha256="$(grep -Eo '[[:xdigit:]]{64}' "${checksum_file}" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+    [[ "${official_sha256}" == "${JDTLS_SHA256}" ]] || fail "official checksum document does not match the pinned checksum"
+    acquisition="verified upstream download"
+  fi
   printf '%s  %s\n' "${JDTLS_SHA256}" "${archive}" | sha256sum --check --status \
     || fail "artifact checksum verification failed"
 
@@ -131,17 +144,39 @@ else
   installed_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   cat > "${stage_dir}/install-manifest.json" <<EOF
 {
-  "version": "${JDTLS_VERSION}",
+  "version": "${JDTLS_UPSTREAM_VERSION}",
+  "minimumRuntimeJava": 25,
   "sourceUrl": "${JDTLS_URL}",
   "checksumUrl": "${JDTLS_CHECKSUM_URL}",
   "sha256": "${JDTLS_SHA256}",
   "installedAt": "${installed_at}",
+  "sourceAcquisition": "${acquisition}",
   "launcher": "${relative_launcher}"
 }
 EOF
 
+  source_file="${work_dir}/TypeDeclaration.java"
+  if [[ -n "${IDE_JDTLS_TYPE_DECLARATION_SOURCE_CACHE:-}" ]]; then
+    cp -- "${IDE_JDTLS_TYPE_DECLARATION_SOURCE_CACHE}" "${source_file}"
+  else
+    source_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sourceUrl"])' "${JDTLS_PATCH_RECIPE}")"
+    curl --fail --location --silent --show-error \
+      --proto '=https' --tlsv1.2 --retry 4 --retry-all-errors --retry-delay 2 \
+      --connect-timeout 15 --max-time 120 --output "${source_file}" "${source_url}"
+  fi
+  if [[ -n "${IDE_JDTLS_JAVA_HOME:-}" ]]; then
+    build_java="${IDE_JDTLS_JAVA_HOME}/bin/java"
+  elif [[ -n "${JAVA_HOME:-}" ]]; then
+    build_java="${JAVA_HOME}/bin/java"
+  else
+    build_java="$(command -v java)" || fail 'a full JDK 17 or later is required to prepare the compiler correction'
+  fi
+  derived_stage="${work_dir}/derived"
+  python3 "${JDTLS_PATCH_BUILDER}" --input-home "${stage_dir}" --output-home "${derived_stage}" \
+    --source-file "${source_file}" --java "${build_java}" || fail 'cannot prepare the source-derived compiler correction'
+
   # The complete staged tree is validated before this same-filesystem atomic rename.
-  mv -- "${stage_dir}" "${VERSION_DIR}"
+  mv -- "${derived_stage}" "${VERSION_DIR}"
   trap - EXIT HUP INT TERM
   cleanup
 fi

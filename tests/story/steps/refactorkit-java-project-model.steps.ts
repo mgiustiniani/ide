@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tests/story/steps/refactorkit-java-project-model.steps.ts
 // Story BDD steps for REQ-IDE-JAVA-PROJECT-MODEL-001
-// (features/refactorkit/java-project-model.feature, 5 scenarios / 31 Gherkin steps).
+// (features/refactorkit/java-project-model.feature, 6 scenarios / 32 Gherkin steps).
 //
 // GREEN (meaningful, honest): the Java project-model controller IS now wired.
 // The production controller
@@ -20,24 +20,26 @@
 //   - AC-001: the engine symbols scan returns packages/classes/symbols (TRUE via
 //     the controller-driven adapter request) and the controller presents them as
 //     the project model (modelPresented=true) -> PASS.
-//   - AC-002: the engine is absent (status.unavailable) or the capability is not
+//   - AC-002: selecting a model location uses the guarded Java navigation
+//     controller (TRUE through the production panel and controller) -> PASS.
+//   - AC-003: the engine is absent (status.unavailable) or the capability is not
 //     advertised (operationalSurface missing scan/symbols) and the controller
 //     reports honest unavailable/error, never fabricating (TRUE) -> PASS.
-//   - AC-003: the adapter extracts -> delegates -> returns (TRUE), and the
+//   - AC-004: the adapter extracts -> delegates -> returns (TRUE), and the
 //     project model comes from RefactorKit, presented by the wired controller
 //     (modelFromRefactorKit=true) -> PASS.
-//   - AC-004: web-first layers stay Tauri-free and capability access is through
+//   - AC-005: web-first layers stay Tauri-free and capability access is through
 //     ports (TRUE) -> PASS (static).
-//   - AC-005: feature stays @not-implemented (live Tauri-window project-model E2E
-//     is unvalidated headless), requirement unique/reconciled, and production
-//     presence (controllerProjectModelWired=true) does not silently promote the
-//     status (TRUE) -> PASS (static).
+//   - AC-006: feature stays @partial, requirement unique/reconciled, and the
+//     deterministic production-path harness is distinct from direct real-CLI
+//     and live GUI qualification (TRUE) -> PASS (static).
 //
-// Shared step wording (adapter extract/delegate/response, web-first, status
-// reconciliation) lives in shared-operational.steps.ts and is dispatched by tag
-// scope; this file owns only feature-specific java-project-model steps. The
-// focused runner imports this file plus shared-operational and the support glob,
-// so no step text is defined twice for the focused run.
+// Shared step wording (workspace authorization, adapter
+// extract/delegate/response, web-first, status reconciliation) lives in
+// shared-operational.steps.ts and is dispatched by tag scope; this file owns
+// only feature-specific java-project-model steps. The focused runner imports
+// this file plus shared-operational and the support glob, so no step text is
+// defined twice for the focused run.
 // -----------------------------------------------------------------------------
 
 import { After, Given, Then, When } from "@cucumber/cucumber";
@@ -46,9 +48,6 @@ import type { StoryWorld } from "../support/world.js";
 import {
   RefactorKitJavaProjectModelStorySession,
   REQUIREMENT,
-  PACKAGE,
-  CLASS_FQN,
-  SYMBOLS,
   PROJECT_MODEL_OPERATIONS,
   getRefactorKitJavaProjectModelSession,
   disposeRefactorKitJavaProjectModelSession,
@@ -73,14 +72,10 @@ async function attachEvidence(
 // controller presents the project model (GREEN)
 // -----------------------------------------------------------------------------
 
-Given<StoryWorld>(
-  "an authorized Java workspace with a workspace root is presented in the IDE",
-  async function () {
-    const session = sessionFor(this);
-    await session.start();
-    await attachEvidence(session, this);
-  },
-);
+// Given "an authorized Java workspace with a workspace root is presented in the
+// IDE" is shared wording with java-build-run and is defined once in
+// shared-operational.steps.ts with tag-scope dispatch (see the workspace
+// authorization section there).
 
 Given<StoryWorld>(
   "the provider authoritatively advertises the Java project-model capability for that workspace",
@@ -161,9 +156,60 @@ Then<StoryWorld>(
 );
 
 // -----------------------------------------------------------------------------
-// AC-002 — the engine is absent or the surface is not advertised and the wired
+// AC-003 — the engine is absent or the surface is not advertised and the wired
 // controller reports honest unavailable/error (GREEN)
 // -----------------------------------------------------------------------------
+
+Given<StoryWorld>(
+  "the Java project model contains a type or member with an engine-reported path and line",
+  async function () {
+    const session = sessionFor(this);
+    await session.start();
+    await session.prepareProjectModelNavigation();
+    await attachEvidence(session, this);
+  },
+);
+
+When<StoryWorld>("the developer selects that type or member", async function () {
+  const session = sessionFor(this);
+  await session.selectProjectModelLocation();
+  await attachEvidence(session, this);
+});
+
+Then<StoryWorld>(
+  "the IDE opens its reported source location through the shared Java navigation controller",
+  async function () {
+    const session = sessionFor(this);
+    const outcome = await session.verifyProjectModelNavigation();
+    assert.equal(
+      outcome.selectedLocationMatchesEngine,
+      true,
+      `${REQUIREMENT}: the panel did not select the engine-reported path and line`,
+    );
+    assert.equal(
+      outcome.openedLocationMatchesSelection,
+      true,
+      `${REQUIREMENT}: the shared Java navigation controller did not open the selected location`,
+    );
+    assert.equal(
+      outcome.applicationUsesSharedNavigationController,
+      true,
+      `${REQUIREMENT}: App.tsx does not route project-model navigation through the shared controller`,
+    );
+    await attachEvidence(session, this);
+  },
+);
+
+Then<StoryWorld>("workspace-generation and active-workspace guards still apply", async function () {
+  const session = sessionFor(this);
+  const outcome = session.projectModelNavigationOutcome();
+  assert.ok(outcome, `${REQUIREMENT}: Java navigation verification is missing`);
+  assert.equal(outcome.workspaceGenerationRefused, true, `${REQUIREMENT}: stale generation was accepted`);
+  assert.equal(outcome.inactiveWorkspaceRefused, true, `${REQUIREMENT}: inactive workspace was accepted`);
+  assert.equal(outcome.switchingWorkspaceRefused, true, `${REQUIREMENT}: navigation during workspace switching was accepted`);
+  assert.equal(outcome.metadataLoadingRefused, true, `${REQUIREMENT}: navigation during metadata loading was accepted`);
+  await attachEvidence(session, this);
+});
 
 When<StoryWorld>(
   "the engine is absent or the engine symbols scan fails for that workspace root",
@@ -196,14 +242,26 @@ Then<StoryWorld>(
   "it neither fabricates a project model, a package\\/class\\/symbol list, a successful result, nor a fallback textual rewrite",
   async function () {
     const session = sessionFor(this);
-    assert.equal(session.fabricatedProjectModel(), false, `${REQUIREMENT}: a project model was fabricated`);
+    assert.equal(
+      session.fabricatedProjectModel(),
+      false,
+      `${REQUIREMENT}: a project model was fabricated`,
+    );
     assert.equal(
       session.fabricatedPackageClassSymbolList(),
       false,
       `${REQUIREMENT}: a package/class/symbol list was fabricated`,
     );
-    assert.equal(session.fabricatedSuccess(), false, `${REQUIREMENT}: a successful result was fabricated`);
-    assert.equal(session.fallbackRewrite(), false, `${REQUIREMENT}: a fallback textual rewrite was fabricated`);
+    assert.equal(
+      session.fabricatedSuccess(),
+      false,
+      `${REQUIREMENT}: a successful result was fabricated`,
+    );
+    assert.equal(
+      session.fallbackRewrite(),
+      false,
+      `${REQUIREMENT}: a fallback textual rewrite was fabricated`,
+    );
     await attachEvidence(session, this);
   },
 );
@@ -223,7 +281,7 @@ Then<StoryWorld>(
 );
 
 // -----------------------------------------------------------------------------
-// AC-003 — adapters use extract/delegate/response and the presented model is
+// AC-004 — adapters use extract/delegate/response and the presented model is
 // sourced from RefactorKit (GREEN)
 // -----------------------------------------------------------------------------
 
@@ -310,7 +368,7 @@ Then<StoryWorld>(
 );
 
 // -----------------------------------------------------------------------------
-// AC-004 — web frontend stays Tauri-free at the platform boundary (PASS, static)
+// AC-005 — web frontend stays Tauri-free at the platform boundary (PASS, static)
 // -----------------------------------------------------------------------------
 
 When<StoryWorld>(
@@ -334,22 +392,55 @@ Then<StoryWorld>(
         true,
         `${REQUIREMENT}: ${port.port} does not declare a port interface`,
       );
-      assert.equal(
-        port.tauriImports,
-        0,
-        `${REQUIREMENT}: ${port.port} imports a platform API`,
-      );
+      assert.equal(port.tauriImports, 0, `${REQUIREMENT}: ${port.port} imports a platform API`);
     }
     await attachEvidence(session, this);
   },
 );
 
 // -----------------------------------------------------------------------------
-// AC-005 — implementation status is evidence-based and stays @not-implemented (PASS, static)
+// AC-006 — implementation status reflects partial verification (PASS, static)
 // -----------------------------------------------------------------------------
 
+Given<StoryWorld>(
+  "the production project-model controller, adapter, and panel are implemented",
+  async function () {
+    const session = sessionFor(this);
+    await session.start();
+    const gap = session.productionGap();
+    assert.equal(gap.engineDefinesScanSymbolsCommands, true, `${REQUIREMENT}: engine scan/symbols are missing`);
+    assert.equal(gap.adapterDelegatesScanSymbols, true, `${REQUIREMENT}: adapter scan/symbols delegation is missing`);
+    assert.equal(gap.controllerProjectModelWired, true, `${REQUIREMENT}: production controller/panel wiring is missing`);
+    await attachEvidence(session, this);
+  },
+);
+
 Then<StoryWorld>(
-  "the requirement ID \"@REQ-IDE-JAVA-PROJECT-MODEL-001\" is repository-unique and reconciled",
+  'the Java project-model feature declares exactly one effective status "@partial" at feature level',
+  async function () {
+    const session = sessionFor(this);
+    const reconciliation = session.featureReconciliation();
+    assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
+    assert.equal(
+      new Set(reconciliation.featureStatusTags).size,
+      1,
+      `${REQUIREMENT}: feature must declare exactly one effective status at feature level`,
+    );
+    assert.ok(
+      reconciliation.featureStatusTags.includes("@partial"),
+      `${REQUIREMENT}: feature does not declare @partial`,
+    );
+    assert.equal(
+      reconciliation.scenarioStatusTags.length,
+      0,
+      `${REQUIREMENT}: a scenario overrides the feature-level status`,
+    );
+    await attachEvidence(session, this);
+  },
+);
+
+Then<StoryWorld>(
+  'the requirement ID "@REQ-IDE-JAVA-PROJECT-MODEL-001" is repository-unique and reconciled',
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
@@ -359,7 +450,11 @@ Then<StoryWorld>(
       `${REQUIREMENT}: requirement ID is not declared`,
     );
     const uniqueness = session.requirementOccurrences();
-    assert.equal(uniqueness.unique, true, `${REQUIREMENT}: requirement ID is not repository-unique`);
+    assert.equal(
+      uniqueness.unique,
+      true,
+      `${REQUIREMENT}: requirement ID is not repository-unique`,
+    );
     assert.ok(
       uniqueness.occurrences >= 5,
       `${REQUIREMENT}: requirement ID is not reconciled across scenarios`,
@@ -369,16 +464,11 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "contracts, shells, import Stories, diagnostics, or hard-coded\\/fake packages, classes, or symbols do not promote this status",
+  "production code and deterministic controller tests do not imply direct real CLI qualification",
   async function () {
     const session = sessionFor(this);
-    // Honest GREEN status evidence: the engine defines run_engine_scan /
-    // run_engine_symbols, the real adapter delegates scan() / symbols(), and the
-    // CONTROLLER PROJECT-MODEL PATH is now WIRED (real production behavior).
-    // Production presence does not promote the declared status: the feature still
-    // reconciles @not-implemented because live Tauri-window project-model E2E is
-    // unvalidated headless, and no fabricated package/class/symbol result
-    // promotes it.
+    // The production path is present, but the deterministic harness does not
+    // qualify direct real-CLI scan/symbols output through the live panel.
     const gap = session.productionGap();
     assert.equal(
       gap.engineDefinesScanSymbolsCommands,
@@ -393,36 +483,36 @@ Then<StoryWorld>(
     assert.equal(
       gap.controllerProjectModelWired,
       true,
-      `${REQUIREMENT}: the controller project-model path is not wired — GREEN requires the wired controller loadProjectModel path and App.tsx panel wiring`,
+      `${REQUIREMENT}: the controller project-model path is not wired — GREEN requires the controller path and App.tsx panel wiring`,
     );
-    assert.equal(session.fabricatedProjectModel(), false, `${REQUIREMENT}: a hard-coded/fake project model promotes the status`);
-    assert.equal(
-      session.fabricatedPackageClassSymbolList(),
-      false,
-      `${REQUIREMENT}: a hard-coded/fake package/class/symbol list promotes the status`,
-    );
+    const evidence = session.evidence();
+    assert.equal(evidence.evidenceKind, "tauri-harness", `${REQUIREMENT}: harness evidence kind mismatch`);
+    assert.equal(evidence.nativeGui, false, `${REQUIREMENT}: harness evidence claims native GUI coverage`);
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
     assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT}: production presence promoted the declared status`,
+      reconciliation.featureStatusTags.includes("@partial"),
+      `${REQUIREMENT}: declared status does not match the implemented partial scope`,
     );
     await attachEvidence(session, this);
   },
 );
 
 Then<StoryWorld>(
-  "real-engine scan\\/symbols resolution, live editor or native GUI wiring, packaging, and platform coverage are reported separately",
+  "direct scan\\/symbols CLI verification, live GUI behavior, packaging, and platform coverage are reported separately",
   async function () {
     const session = sessionFor(this);
-    // Honest GREEN evidence boundaries: this GREEN drives the REAL controller and
-    // adapter through a deterministic in-process engine boundary behind the fake
-    // Tauri invoke seam; real-engine scan/symbols CLI resolution, live
-    // editor/native-GUI wiring, packaging, and platform coverage are reported
-    // separately and not claimed here.
+    // This GREEN drives the real controller and adapter through a deterministic
+    // in-process boundary behind the fake Tauri invoke seam. It does not prove
+    // direct real-CLI scan/symbols output through the live panel, packaging, or
+    // platform coverage.
     const evidence = session.evidence();
     assert.equal(evidence.evidenceKind, "tauri-harness", `${REQUIREMENT}: evidence kind mismatch`);
-    assert.equal(evidence.nativeGui, false, `${REQUIREMENT}: native GUI evidence is not reported separately`);
+    assert.equal(
+      evidence.nativeGui,
+      false,
+      `${REQUIREMENT}: native GUI evidence is not reported separately`,
+    );
     assert.equal(evidence.e2e, false, `${REQUIREMENT}: e2e evidence is not reported separately`);
     assert.equal(
       evidence.packagedApplication,
@@ -434,14 +524,14 @@ Then<StoryWorld>(
 );
 
 Then<StoryWorld>(
-  "live Tauri-window project-model E2E may remain unvalidated headless without silently upgrading the declared status",
+  "headless or bounded GUI evidence does not silently upgrade the declared status",
   async function () {
     const session = sessionFor(this);
     const reconciliation = session.featureReconciliation();
     assert.ok(reconciliation, `${REQUIREMENT}: reconciliation is missing`);
     assert.ok(
-      reconciliation.featureStatusTags.includes("@not-implemented"),
-      `${REQUIREMENT}: unvalidated headless e2e silently upgraded the declared status`,
+      reconciliation.featureStatusTags.includes("@partial"),
+      `${REQUIREMENT}: bounded GUI evidence silently upgraded the declared status`,
     );
     assert.equal(
       reconciliation.scenarioStatusTags.length,

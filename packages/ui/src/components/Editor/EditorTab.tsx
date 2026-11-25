@@ -9,13 +9,14 @@ import { Icon } from "../ui/Icon";
 
 export interface EditorTabProps {
   tab: EditorTabType;
+  label?: string;
   /** Called when the user clicks the tab to activate it. */
   onActivate: (filePath: string) => void;
   /** Called when the user clicks the close button. */
   onClose: (filePath: string) => void;
 }
 
-export function EditorTab({ tab, onActivate, onClose }: EditorTabProps): JSX.Element {
+export function EditorTab({ tab, label, onActivate, onClose }: EditorTabProps): JSX.Element {
   const tabClass = tab.isActive ? "editor-tab editor-tab--active" : "editor-tab";
 
   return (
@@ -37,7 +38,7 @@ export function EditorTab({ tab, onActivate, onClose }: EditorTabProps): JSX.Ele
       {/* File icon based on extension */}
       <Icon type={fileIconType(tab.filePath)} size={14} className="shrink-0" />
 
-      <span className="truncate max-w-[160px]">{tab.filePath.split("/").pop()}</span>
+      <span className="truncate max-w-[160px]">{label ?? tab.filePath.split("/").pop()}</span>
 
       {tab.isDirty && (
         <span

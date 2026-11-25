@@ -1,6 +1,7 @@
 import type { WorkspaceInfo, WorkspaceRegistry } from "@ide/contracts";
 import type { WorkspacePort } from "@ide/web-core/ports";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   useWorkspaceController,
@@ -196,6 +197,123 @@ afterEach(() => {
 });
 
 describe("useWorkspaceController", () => {
+  it("completes initial activation once during StrictMode effect replay", async () => {
+    const harness = createHarness();
+    harness.controller.unmount();
+    const initialCalls = harness.workspaceMocks.ensureCurrentWorkspace.mock.calls.length;
+    const collaboratorsRef = { current: harness.collaborators };
+    const controller = renderHook(
+      () => useWorkspaceController({ workspace: harness.workspace, collaboratorsRef }),
+      { wrapper: ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode> },
+    );
+
+    await waitFor(() => expect(controller.result.current.isLoading).toBe(false));
+    expect(controller.result.current.currentWorkspaceId).toBe(workspaceOne.id);
+    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(initialCalls + 1);
+    controller.unmount();
+  });
+
+  it("does not settle an optional startup failure after unmount", async () => {
+    const harness = createHarness();
+    const moduleLoad = deferred<void>();
+    vi.mocked(harness.collaborators.xcom2ModuleActivation.loadWorkspace).mockReturnValueOnce(
+      moduleLoad.promise,
+    );
+    await waitForInitialRefresh(harness);
+    harness.controller.unmount();
+
+    await act(async () => {
+      moduleLoad.reject(new Error("old provider failed"));
+      await Promise.resolve();
+    });
+
+    expect(
+      harness.collaborators.xcom2ModuleActivation.settleFailedWorkspaceActivation,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("makes authorized files ready after editor restoration while optional provider checks remain pending", async () => {
+    const provider = deferred<void>();
+    const editor = deferred<void>();
+    const harness = createHarness();
+    vi.mocked(harness.collaborators.editor.restoreWorkspace!).mockImplementationOnce(
+      () => editor.promise,
+    );
+    vi.mocked(harness.collaborators.java.load).mockImplementationOnce(() => provider.promise);
+    vi.mocked(harness.collaborators.ai.loadCommands).mockImplementationOnce(() => provider.promise);
+    vi.mocked(harness.collaborators.refactorKitStatus.load).mockImplementationOnce(
+      () => provider.promise,
+    );
+    vi.mocked(harness.collaborators.xcom2ModuleActivation.loadWorkspace).mockImplementationOnce(
+      () => provider.promise,
+    );
+    vi.mocked(harness.collaborators.xcom.loadWorkspace).mockImplementationOnce(
+      () => provider.promise,
+    );
+    await waitFor(() => expect(harness.collaborators.shell.loadFileTree).toHaveBeenCalled());
+    expect(harness.controller.result.current.isLoading).toBe(true);
+    await act(async () => editor.resolve());
+    await waitFor(() => expect(harness.controller.result.current.isLoading).toBe(false));
+    expect(harness.controller.result.current.getContext()).toMatchObject({
+      workspaceId: workspaceOne.id,
+      isSwitching: false,
+    });
+    expect(harness.controller.result.current.error).toBeNull();
+    await act(async () => provider.resolve());
+  });
+
+  it("settles a failed optional project check independently of successful initial file access", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const provider = deferred<void>();
+    const harness = createHarness();
+    vi.mocked(harness.collaborators.xcom2ModuleActivation.loadWorkspace).mockImplementationOnce(
+      () => provider.promise,
+    );
+    await waitForInitialRefresh(harness);
+    await act(async () => provider.reject(new Error("provider failed")));
+    await waitFor(() =>
+      expect(
+        harness.collaborators.xcom2ModuleActivation.settleFailedWorkspaceActivation,
+      ).toHaveBeenCalledWith({ generation: 1, previousWorkspaceId: workspaceOne.id }),
+    );
+    expect(harness.controller.result.current.isLoading).toBe(false);
+    expect(harness.controller.result.current.error).toBeNull();
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
+  });
+
+  it("does not settle a new workspace with an older background provider failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const provider = deferred<void>();
+    const harness = createHarness();
+    vi.mocked(harness.collaborators.xcom2ModuleActivation.loadWorkspace).mockImplementationOnce(
+      () => provider.promise,
+    );
+    await waitForInitialRefresh(harness);
+    await act(() => harness.controller.result.current.switchWorkspace(workspaceTwo.id));
+    await act(async () => provider.reject(new Error("retired provider failed")));
+    expect(
+      harness.collaborators.xcom2ModuleActivation.settleFailedWorkspaceActivation,
+    ).not.toHaveBeenCalled();
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceTwo);
+    expect(harness.controller.result.current.error).toBeNull();
+  });
+
+  it("refuses a switch before resetting buffers when unsaved changes exist", async () => {
+    const harness = createHarness();
+    await waitForInitialRefresh(harness);
+    const generation = harness.controller.result.current.generation;
+    harness.collaborators.editor.hasUnsavedChanges = () => true;
+    await act(async () => {
+      await expect(
+        harness.controller.result.current.switchWorkspace(workspaceTwo.id),
+      ).rejects.toThrow("Save modified files before switching workspaces.");
+    });
+    expect(harness.workspaceMocks.switchWorkspace).not.toHaveBeenCalled();
+    expect(harness.collaborators.editor.resetWorkspace).not.toHaveBeenCalled();
+    expect(harness.controller.result.current.generation).toBe(generation);
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
+  });
+
   it("starts with a positive generation and loads the initial workspace registry", async () => {
     const harness = createHarness();
     const generation = harness.controller.result.current.generation;
@@ -361,7 +479,7 @@ describe("useWorkspaceController", () => {
       projectRefreshes,
     );
     expect(harness.collaborators.shell.loadFileTree).toHaveBeenCalledTimes(fileTreeLoads);
-    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(2);
+    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(1);
     expect(harness.workspaceMocks.listWorkspaces).toHaveBeenCalledTimes(2);
   });
 
@@ -391,7 +509,7 @@ describe("useWorkspaceController", () => {
       generation,
       workspaceOne.id,
     );
-    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(ensureCalls + 1);
+    expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(ensureCalls);
     expect(harness.workspaceMocks.listWorkspaces).toHaveBeenCalledTimes(listCalls + 1);
     expect(harness.controller.result.current.isLoading).toBe(true);
 
@@ -405,31 +523,25 @@ describe("useWorkspaceController", () => {
     expect(harness.controller.result.current.isLoading).toBe(false);
   });
 
-  it("keeps the fulfilled half of partial registry refreshes without erasing prior metadata", async () => {
+  it("preserves the active workspace when listing the registry fails or refers to another workspace", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const harness = createHarness();
     await waitForInitialRefresh(harness);
 
-    harness.workspaceMocks.ensureCurrentWorkspace.mockResolvedValueOnce(workspaceTwo);
     harness.workspaceMocks.listWorkspaces.mockRejectedValueOnce(new Error("registry offline"));
     await act(() => harness.controller.result.current.refresh());
 
-    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceTwo);
-    expect(harness.controller.result.current.workspaceRegistry).toEqual(
-      registryFor(workspaceOne.id),
-    );
-    expect(harness.controller.result.current.error).toBe("workspace registry: registry offline");
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
+    expect(harness.controller.result.current.workspaceRegistry).toEqual(registryFor(workspaceOne.id));
+    expect(harness.controller.result.current.error).toBe("registry offline");
 
     const updatedRegistry = registryFor(workspaceThree.id);
-    harness.workspaceMocks.ensureCurrentWorkspace.mockRejectedValueOnce(
-      new Error("current unavailable"),
-    );
     harness.workspaceMocks.listWorkspaces.mockResolvedValueOnce(updatedRegistry);
     await act(() => harness.controller.result.current.refresh());
 
-    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceTwo);
-    expect(harness.controller.result.current.workspaceRegistry).toEqual(updatedRegistry);
-    expect(harness.controller.result.current.error).toBe("current workspace: current unavailable");
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
+    expect(harness.controller.result.current.workspaceRegistry).toEqual(registryFor(workspaceOne.id));
+    expect(harness.controller.result.current.error).toBeNull();
     expect(harness.controller.result.current.isLoading).toBe(false);
     consoleError.mockRestore();
   });
@@ -437,11 +549,7 @@ describe("useWorkspaceController", () => {
   it("suppresses stale metadata results when refreshes overlap", async () => {
     const harness = createHarness();
     await waitForInitialRefresh(harness);
-    const staleCurrent = deferred<WorkspaceInfo>();
     const staleRegistry = deferred<WorkspaceRegistry>();
-    harness.workspaceMocks.ensureCurrentWorkspace.mockImplementationOnce(
-      () => staleCurrent.promise,
-    );
     harness.workspaceMocks.listWorkspaces.mockImplementationOnce(() => staleRegistry.promise);
 
     let staleRefresh!: Promise<void>;
@@ -449,25 +557,23 @@ describe("useWorkspaceController", () => {
       staleRefresh = harness.controller.result.current.refresh();
     });
     await waitFor(() =>
-      expect(harness.workspaceMocks.ensureCurrentWorkspace).toHaveBeenCalledTimes(2),
+      expect(harness.workspaceMocks.listWorkspaces).toHaveBeenCalledTimes(2),
     );
 
-    harness.workspaceMocks.ensureCurrentWorkspace.mockResolvedValueOnce(workspaceThree);
     harness.workspaceMocks.listWorkspaces.mockResolvedValueOnce(registryFor(workspaceThree.id));
     await act(() => harness.controller.result.current.refresh());
 
-    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceThree);
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
     expect(harness.controller.result.current.workspaceRegistry).toEqual(
-      registryFor(workspaceThree.id),
+      registryFor(workspaceOne.id),
     );
 
-    staleCurrent.resolve(workspaceTwo);
     staleRegistry.resolve(registryFor(workspaceTwo.id));
     await act(async () => staleRefresh);
 
-    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceThree);
+    expect(harness.controller.result.current.workspaceInfo).toEqual(workspaceOne);
     expect(harness.controller.result.current.workspaceRegistry).toEqual(
-      registryFor(workspaceThree.id),
+      registryFor(workspaceOne.id),
     );
     expect(harness.controller.result.current.error).toBeNull();
     expect(harness.controller.result.current.isLoading).toBe(false);
@@ -671,4 +777,21 @@ describe("useWorkspaceController", () => {
     expect(harness.controller.result.current.isLoading).toBe(false);
     expect(harness.controller.result.current.switchingWorkspaceId).toBeNull();
   });
+});
+
+it("refuses database-blocked workspace transitions before generation, editor, or native authority changes", async () => {
+  const harness = createHarness();
+  await waitForInitialRefresh(harness);
+  const generation = harness.controller.result.current.generation;
+  const reason = "Commit or roll back the database transaction first.";
+  harness.collaborators.transitionBlockReason = () => reason;
+  harness.order.length = 0;
+  await act(async () => {
+    await expect(harness.controller.result.current.switchWorkspace(workspaceTwo.id)).rejects.toThrow(reason);
+    await expect(harness.controller.result.current.refreshWorkspace()).rejects.toThrow(reason);
+  });
+  expect(harness.controller.result.current.generation).toBe(generation);
+  expect(harness.order).toEqual([]);
+  expect(harness.workspaceMocks.switchWorkspace).not.toHaveBeenCalled();
+  expect(harness.controller.result.current.error).toBe(reason);
 });

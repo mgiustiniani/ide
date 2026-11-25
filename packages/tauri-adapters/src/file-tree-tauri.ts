@@ -6,8 +6,8 @@
 // ---------------------------------------------------------------------------
 
 import { invokeTauri } from "./errors";
-import type { FileNode, FileSelectionEvent } from "@ide/contracts";
-import type { FileTreePort } from "@ide/web-core/ports";
+import type { FileNode, FileSelectionEvent, WorkspaceFileSearchResult } from "@ide/contracts";
+import type { FileTreePort, WorkspaceFileSearchPort } from "@ide/web-core/ports";
 
 /**
  * Parses a raw FileEntry from Rust into the contract FileNode shape.
@@ -98,6 +98,57 @@ function nodeIdFromPath(path: string): string {
   return `node-${path.replace(/[\/\.]/g, "-")}`;
 }
 
+function normalizeWorkspaceFileSearchResult(
+  value: unknown,
+  expectedGeneration: number,
+): WorkspaceFileSearchResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid workspace file search response.");
+  }
+  const data = value as Record<string, unknown>;
+  if (
+    data.workspaceGeneration !== expectedGeneration ||
+    !Array.isArray(data.files) ||
+    data.files.length > 200 ||
+    typeof data.truncated !== "boolean" ||
+    typeof data.partial !== "boolean"
+  )
+    throw new Error("Invalid or stale workspace file search response.");
+
+  const seen = new Set<string>();
+  const files = data.files.map((entry): { name: string; path: string } => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Invalid workspace file search result.");
+    }
+    const file = entry as Record<string, unknown>;
+    if (
+      typeof file.name !== "string" ||
+      file.name.length === 0 ||
+      file.name.length > 512 ||
+      typeof file.path !== "string" ||
+      file.path.length === 0 ||
+      file.path.length > 4096 ||
+      file.path.startsWith("/") ||
+      file.path.includes("\\") ||
+      file.path.includes("\0") ||
+      file.path
+        .split("/")
+        .some((segment) => segment === "" || segment === "." || segment === "..") ||
+      file.path.split("/").at(-1) !== file.name ||
+      seen.has(file.path)
+    )
+      throw new Error("Invalid workspace file search result.");
+    seen.add(file.path);
+    return { name: file.name, path: file.path };
+  });
+
+  return {
+    files,
+    truncated: data.truncated,
+    partial: data.partial,
+  };
+}
+
 function fileEntryToNode(
   entry: Record<string, unknown>,
   parentNodePath: string,
@@ -126,11 +177,28 @@ function fileEntryToNode(
   return node;
 }
 
-export class TauriFileTreeAdapter implements FileTreePort {
+export class TauriFileTreeAdapter implements FileTreePort, WorkspaceFileSearchPort {
   private workspaceRootPath: string | null = null;
+  private workspaceGeneration: number | null = null;
+
+  private expectedWorkspaceRoot(): string {
+    if (!this.workspaceRootPath) {
+      throw new Error("The file tree must load its workspace before changing files.");
+    }
+    return this.workspaceRootPath;
+  }
+
+  private expectedWorkspaceGeneration(): number {
+    if (this.workspaceGeneration === null) {
+      throw new Error("The file tree must load its workspace before changing files.");
+    }
+    return this.workspaceGeneration;
+  }
 
   /** Retrieve the root-level nodes from the project directory. */
   async getRoot(): Promise<FileNode[]> {
+    this.workspaceRootPath = null;
+    this.workspaceGeneration = null;
     // Use the current working directory as the root. The Rust command
     // list_directory expects a path; we send "." for the project root.
     const result = await invokeTauri<Record<string, unknown>>("list_directory", {
@@ -140,6 +208,12 @@ export class TauriFileTreeAdapter implements FileTreePort {
     const entry = result as Record<string, unknown>;
     const children = entry.children as Array<Record<string, unknown>> | undefined;
     this.workspaceRootPath = entryPath(entry);
+    this.workspaceGeneration =
+      typeof entry.workspaceGeneration === "number" &&
+      Number.isSafeInteger(entry.workspaceGeneration) &&
+      entry.workspaceGeneration >= 0
+        ? entry.workspaceGeneration
+        : null;
 
     if (!Array.isArray(children)) {
       return [];
@@ -168,18 +242,46 @@ export class TauriFileTreeAdapter implements FileTreePort {
     );
   }
 
-  /** Create a new file at `path`. Returns the updated parent node list. */
-  async createFile(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>("create_file", { path });
+  async searchFiles(query: string): Promise<WorkspaceFileSearchResult> {
+    const workspaceRoot = this.expectedWorkspaceRoot();
+    const currentGeneration = this.expectedWorkspaceGeneration();
+    if (query.trim().length === 0) {
+      return {
+        files: [],
+        truncated: false,
+        partial: false,
+      };
+    }
 
-    // After creation, return the parent's children.
-    const parentPath = path.split("/").slice(0, -1).join("/");
+    const result = await invokeTauri<unknown>("search_workspace_files", {
+      query,
+      expectedWorkspaceRoot: workspaceRoot,
+      expectedWorkspaceGeneration: currentGeneration,
+    });
+    return normalizeWorkspaceFileSearchResult(result, currentGeneration);
+  }
+
+  /** Create a new file at `path`. Returns the updated parent node list. */
+  async createFile(path: string, createParentDirectoriesUnder?: string): Promise<FileNode[]> {
+    await invokeTauri<Record<string, unknown>>("create_file", {
+      path,
+      ...(createParentDirectoriesUnder !== undefined ? { createParentDirectoriesUnder } : {}),
+      expectedWorkspaceRoot: this.expectedWorkspaceRoot(),
+      expectedWorkspaceGeneration: this.expectedWorkspaceGeneration(),
+    });
+
+    // Nested creation refreshes the existing anchor, including newly created folders.
+    const parentPath = createParentDirectoriesUnder ?? path.split("/").slice(0, -1).join("/");
     return this.getChildren(parentPath || ".");
   }
 
   /** Create a new folder at `path`. Returns the updated parent node list. */
   async createFolder(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>("create_directory", { path });
+    await invokeTauri<Record<string, unknown>>("create_directory", {
+      path,
+      expectedWorkspaceRoot: this.expectedWorkspaceRoot(),
+      expectedWorkspaceGeneration: this.expectedWorkspaceGeneration(),
+    });
 
     const parentPath = path.split("/").slice(0, -1).join("/");
     return this.getChildren(parentPath || ".");
@@ -187,7 +289,11 @@ export class TauriFileTreeAdapter implements FileTreePort {
 
   /** Delete the node at `path`. Returns the updated parent node list. */
   async delete(path: string): Promise<FileNode[]> {
-    await invokeTauri<Record<string, unknown>>("delete_path", { path });
+    await invokeTauri<Record<string, unknown>>("delete_path", {
+      path,
+      expectedWorkspaceRoot: this.expectedWorkspaceRoot(),
+      expectedWorkspaceGeneration: this.expectedWorkspaceGeneration(),
+    });
 
     const parentPath = path.split("/").slice(0, -1).join("/");
     return this.getChildren(parentPath || ".");
@@ -198,6 +304,8 @@ export class TauriFileTreeAdapter implements FileTreePort {
     await invokeTauri<Record<string, unknown>>("rename_path", {
       path,
       newName,
+      expectedWorkspaceRoot: this.expectedWorkspaceRoot(),
+      expectedWorkspaceGeneration: this.expectedWorkspaceGeneration(),
     });
 
     const parentPath = path.split("/").slice(0, -1).join("/");

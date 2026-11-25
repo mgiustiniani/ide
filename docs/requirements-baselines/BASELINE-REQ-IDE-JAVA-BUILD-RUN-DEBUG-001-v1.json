@@ -1,0 +1,70 @@
+{
+  "schema": "ide.initial-requirements-baseline/v1",
+  "baselineId": "BASELINE-REQ-IDE-JAVA-BUILD-RUN-DEBUG-001-v1",
+  "receiptStatus": "confirmed-before-production",
+  "initialUserIntent": "Complete the Java build/run/debug part of JetBrains-style IDE management: build (compile) and run a Java workspace, presenting build/run status and output honestly, with debug deferred if the engine lacks a debug capability. Current state: the IDE has NO Java build/run/debug (java_language.rs is a language service only; RefactorKit engine real_engine.rs has scan/symbols/definition/references/diagnostics/refactoring only, no build/run/debug). The RefactorKit tool has a Kotlin/JVM build-model projection (build.gradle.kts, build model/source-set provider contract, workspace/executeCommand, buildSymbols) but no build/run/debug execution. This slice makes Java build/run operational in the IDE by consuming the RefactorKit build model + a real build/run execution path, with honest-unavailable when the capability is absent.",
+  "approvedChanges": [
+    {
+      "id": "APR-DECISION-PI-MULTI-AGENT-001",
+      "statement": "Pi is, in the future, ONE of the usable agents in the IDE, not the sole AI/model authority.",
+      "evidence": "ADR 0014"
+    },
+    {
+      "id": "APR-DECISION-REFACTORKIT-PRODUCT-FEATURE-001",
+      "statement": "User authorized RefactorKit as a PRODUCT FEATURE. Java TEST infra (JavaSpec/Maven/JUnit/dataset) and Java-only RefactorKit rules as workflow refactoring authority remain EXCLUDED.",
+      "evidence": "ADR 0015"
+    },
+    {
+      "id": "APR-DECISION-JAVA-PROJECT-MODEL-INSIDE-REFACTORKIT-001",
+      "statement": "No standalone Java Project Model Kit. Project-model capabilities remain internal, modular RefactorKit components, extracted later only if independent external consumers and a stable reusable contract emerge.",
+      "evidence": "obs 2026-07-11"
+    }
+  ],
+  "requirement": {
+    "id": "REQ-IDE-JAVA-BUILD-RUN-DEBUG-001",
+    "title": "Java build and run presented in the IDE via RefactorKit",
+    "classification": "Story BDD + Spec BDD for pure view-model decisions",
+    "capability": "Build (compile) and run a Java workspace, presenting build/run status and output honestly. Consumes the RefactorKit build model (Kotlin/JVM build-model projection) + a real build/run execution path behind the engine, with honest-unavailable when the capability is absent or the build/run fails. Debug is deferred (engine lacks a debug capability) and recorded honestly.",
+    "acceptanceCriteria": [
+      {
+        "id": "AC-001",
+        "criterion": "Given a Java workspace, the IDE requests the RefactorKit build capability and presents the build status/output (compile) honestly."
+      },
+      {
+        "id": "AC-002",
+        "criterion": "Given a successful build, the IDE requests the RefactorKit run capability and presents the run status/output honestly; debug is recorded as deferred/unavailable if absent."
+      },
+      {
+        "id": "AC-003",
+        "criterion": "Given the build/run capability is absent or the build/run fails, the IDE reports honest unavailable/error and never fabricates build/run output."
+      },
+      {
+        "id": "AC-004",
+        "criterion": "Boundary invariant: packages/ui, packages/web-core, apps/web never import @tauri-apps/api; browser/Tauri build/run implementations live behind frontend ports."
+      },
+      {
+        "id": "AC-005",
+        "criterion": "Status is evidence-based with an explicit state, never inferred from shells; live Tauri-window build/run E2E may remain unvalidated if headless (recorded honestly)."
+      }
+    ],
+    "owner": "bdd-ts-domain-expert (domain research) + bdd-ts-gherkin-writer (feature) + ts-story-driven (Story) + tauri-rust-coder (engine build/run) + tauri-adapter-coder + browser-adapter-coder + frontend-core-coder/frontend-app-coder (view-model + controller wiring)",
+    "scope": "Java build (compile) + run presented in the IDE by consuming the RefactorKit build model + a real build/run execution path. Debug deferred (engine lacks debug capability, recorded honestly). The existing Java language service, navigation, project-model, refactoring, engine-integration slices stay as-is.",
+    "exclusions": [
+      "JavaSpec, Maven, JUnit-specific policy, Java datasets as workflow test infra",
+      "Java-only RefactorKit rules as the workflow's own refactoring authority",
+      "Standalone Java Project Model Kit (prior decision: stays inside RefactorKit)",
+      "REQ-IDE-AI-CHAT (deferred)",
+      "Java debug (deferred; engine lacks debug capability)",
+      "Java packaging (later slice)",
+      "Provider/retention/privacy policy decisions"
+    ],
+    "baselineCommit": null,
+    "status": "baseline-created",
+    "openQuestions": [
+      "Source: whether the build/run comes from a new RefactorKit engine build/run command (real_engine.rs) or a Java build tool (javac/Java toolchain) behind the engine — confirm the primary source.",
+      "Scope: build (compile) only, or build+run — confirm run is in scope for this slice.",
+      "Debug: confirm debug is deferred (engine lacks debug capability) and recorded honestly.",
+      "Editor wiring: whether build/run presentation is proven wired into a live panel or a desktop-harness renderer is acceptable evidence."
+    ]
+  }
+}

@@ -4,6 +4,9 @@
 // Source-only contracts for managed, workspace-scoped language services.
 // These types intentionally do not expose JDT LS or raw LSP wire types.
 
+import type { JavaGradleSettings } from "./java-project-context";
+import type { JavaFormatterProfile } from "./editor";
+
 /** Lifecycle and availability state of a managed language-service session. */
 export type LanguageServiceState =
   | "unavailable"
@@ -41,8 +44,27 @@ export interface LanguageServiceCapabilities {
   hover: boolean;
   signature: boolean;
   definition: boolean;
+  typeDefinition?: boolean;
   references: boolean;
   symbols: boolean;
+  /** Exact support for current-document outline requests; optional for older adapters. */
+  documentSymbols?: boolean;
+  /** Exact support for same-document symbol occurrence highlights; optional for older adapters. */
+  documentHighlights?: boolean;
+  /** Exact support for Java implementation queries; optional for older adapters. */
+  implementation?: boolean;
+  /** Exact support for caller/callee queries on the synchronized Java document. */
+  callHierarchy?: boolean;
+  /** Exact support for workspace-wide symbol search; optional for older adapters. */
+  workspaceSymbols?: boolean;
+  /** Exact support for full-document semantic tokens; optional for older adapters. */
+  semanticTokens?: boolean;
+  /** Exact support for range-based Java inlay hints; optional for older adapters. */
+  inlayHints?: boolean;
+  /** Exact support for formatting only the selected range; optional for older adapters. */
+  rangeFormatting?: boolean;
+  /** Characters advertised by the server for formatting after typing. */
+  onTypeFormattingTriggers?: string[];
   codeActions: boolean;
   formatting: boolean;
   rename: boolean;
@@ -69,6 +91,25 @@ export interface LanguageServiceStatus {
   /** Resolved Java executable used to launch the service, when discovered. */
   javaExecutable?: string;
   javaVersion?: string;
+  /** Explicit full JDK home selected to launch the language server, when configured. */
+  serverJdkHome?: string;
+  /** Project JDK selection; separate from the Java runtime launching the service. */
+  projectJdkHome?: string;
+  projectJdkVersion?: string;
+  /** Whether this session may import Gradle projects and execute their build scripts. */
+  gradleImportEnabled: boolean;
+  /** Whether this session has the Java Project panel's selected Gradle settings. */
+  gradleSettingsConfigured: boolean;
+  /** Workspace-relative RefactorKit project whose Maven profiles feed this session. */
+  projectPath?: string;
+  /** Selected Maven local repository applied to JDT LS project import. */
+  mavenRepository?: string;
+  /** Active Maven profiles applied to JDT LS Maven projects in this session. */
+  activeMavenProfiles: string[];
+  /** Inactive Maven profiles applied to JDT LS Maven projects in this session. */
+  inactiveMavenProfiles: string[];
+  /** Workspace-relative Eclipse formatter profile applied to this JDT LS session. */
+  javaFormatterProfile?: JavaFormatterProfile;
   /** Resolved external language-server installation or executable path. */
   serverPath?: string;
   serverVersion?: string;
@@ -168,6 +209,16 @@ export interface DidCloseLanguageDocumentRequest extends LanguageServiceRequestC
   document: VersionedLanguageDocument;
 }
 
+/** Recompute diagnostics for the current open version without saving or changing text. */
+export interface RevalidateLanguageDocumentRequest extends LanguageServiceRequestContext {
+  document: VersionedLanguageDocument;
+}
+
+/** A workspace file was saved; the provider may refresh its imported configuration. */
+export interface DidSaveLanguageWorkspaceFileRequest extends LanguageServiceRequestContext {
+  document: LanguageDocumentIdentity;
+}
+
 /** Target for querying one workspace's current session status. */
 export interface LanguageSessionTarget {
   workspaceId: string;
@@ -175,6 +226,22 @@ export interface LanguageSessionTarget {
 
 export interface StartLanguageSessionRequest extends LanguageServiceRequestContext {
   workspaceId: string;
+  /** Full JDK used for Java project analysis. Omission restores provider discovery. */
+  projectJdkHome?: string;
+  /** Full JDK used to launch JDT LS. Omission uses IDE_JDTLS_JAVA_HOME and normal discovery. */
+  serverJdkHome?: string;
+  /** Explicit, session-only authorization for JDT LS Gradle project import. */
+  gradleImportEnabled: boolean;
+  /** Workspace-relative project selected in the Java Project panel. */
+  projectPath?: string;
+  /** Selected Maven local repository used when importing Maven projects. */
+  mavenRepository?: string;
+  activeMavenProfiles?: string[];
+  inactiveMavenProfiles?: string[];
+  /** Selected Gradle tool and user settings used if this session imports Gradle projects. */
+  gradle?: JavaGradleSettings;
+  /** Optional workspace-contained Eclipse formatter profile XML and selected profile name. */
+  javaFormatterProfile?: JavaFormatterProfile;
 }
 
 /** Generation prevents a stale caller from stopping a replacement session. */
@@ -187,6 +254,21 @@ export interface StopLanguageSessionRequest extends LanguageServiceRequestContex
 export interface RestartLanguageSessionRequest extends LanguageServiceRequestContext {
   workspaceId: string;
   generation: number;
+  projectJdkHome?: string;
+  /** Full JDK used to launch JDT LS. Omission uses IDE_JDTLS_JAVA_HOME and normal discovery. */
+  serverJdkHome?: string;
+  /** Explicit, session-only authorization for JDT LS Gradle project import. */
+  gradleImportEnabled: boolean;
+  /** Workspace-relative project selected in the Java Project panel. */
+  projectPath?: string;
+  /** Selected Maven local repository used when importing Maven projects. */
+  mavenRepository?: string;
+  activeMavenProfiles?: string[];
+  inactiveMavenProfiles?: string[];
+  /** Selected Gradle tool and user settings used if this session imports Gradle projects. */
+  gradle?: JavaGradleSettings;
+  /** Optional workspace-contained Eclipse formatter profile XML and selected profile name. */
+  javaFormatterProfile?: JavaFormatterProfile;
 }
 
 export interface LanguageServiceStatusEvent {
@@ -204,6 +286,8 @@ export interface LanguageServiceProgressEvent {
 
 export interface LanguageServiceDiagnosticsEvent {
   type: "diagnostics";
+  /** The provider cannot diagnose this document with its current compiler settings. */
+  unavailableReason?: string;
   workspaceId: string;
   generation: number;
   provider: string;

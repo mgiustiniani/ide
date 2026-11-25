@@ -24,8 +24,9 @@ import type {
   Xcom2SetupTransactionDetail,
   Xcom2SetupTransactionEvent,
   Xcom2SetupTransactionSummary,
+  WorkspaceEditorPreferences,
 } from "@ide/contracts";
-import { DEFAULT_PI_AGENT_SETTINGS } from "@ide/contracts";
+import { DEFAULT_PI_AGENT_SETTINGS, DEFAULT_WORKSPACE_EDITOR_PREFERENCES } from "@ide/contracts";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import {
@@ -48,6 +49,10 @@ export interface SettingsPanelProps {
   aiAgentStatus?: PiAgentStatus | null;
   /** Current workspace metadata supplied by the host app. */
   workspaceInfo?: WorkspaceInfo | null;
+  /** Current workspace-scoped indentation used by Monaco and Java formatting requests. */
+  workspaceEditorPreferences?: WorkspaceEditorPreferences;
+  /** Preference read/write failure supplied by the host app. */
+  workspaceEditorPreferencesError?: string | null;
   /** User-level registry of known workspaces supplied by the host app. */
   workspaceRegistry?: WorkspaceRegistry | null;
   /** Workspace adapter or registry error to display. */
@@ -60,6 +65,9 @@ export interface SettingsPanelProps {
   javaLanguageServiceStatus?: LanguageServiceStatus | null;
   /** Whether Java language-service status is being refreshed. */
   isJavaLanguageServiceRefreshing?: boolean;
+  /** Persisted JDK home used to launch JDT LS, independent of the project JDK. */
+  javaLanguageServerRuntimeJdkHome?: string;
+  javaLanguageServerRuntimePreferenceError?: string | null;
   /** Host-managed global RefactorKit availability. */
   javaRefactorKitStatus?: RefactorKitStatus | null;
   /** Backend-reported RefactorKit language capability discovery. */
@@ -101,6 +109,14 @@ export interface SettingsPanelProps {
   onInstallPiAgent?: () => PiAgentInstallResult | void | Promise<PiAgentInstallResult | void>;
   /** Refreshes workspace metadata through the host app. */
   onRefreshWorkspace?: () => void | Promise<void>;
+  /** Persists indentation preferences for the current workspace. */
+  onChangeWorkspaceEditorPreferences?: (preferences: WorkspaceEditorPreferences) => void;
+  /** Opens the native XML picker and returns a path relative to the current workspace. */
+  onSelectWorkspaceFormatterProfile?: () => Promise<string | null>;
+  /** Lists the usable profile names in saved workspace XML. */
+  onListWorkspaceFormatterProfiles?: (path: string) => Promise<readonly string[]>;
+  /** Opens the currently selected workspace formatter XML in the regular editor. */
+  onOpenWorkspaceFormatterProfile?: (path: string) => Promise<void>;
   /** Switches to a known workspace through the host app. */
   onSwitchWorkspace?: (workspaceId: string) => void | Promise<void>;
   /** Starts the host-managed global Java language service. */
@@ -109,6 +125,8 @@ export interface SettingsPanelProps {
   onStopJavaLanguageService?: () => void | Promise<void>;
   /** Restarts the host-managed global Java language service. */
   onRestartJavaLanguageService?: () => void | Promise<void>;
+  /** Persists the JDT LS process runtime JDK preference. */
+  onSaveJavaLanguageServerRuntimeJdkHome?: (home: string) => boolean;
   /** Refreshes Java language-service status. */
   onRefreshJavaLanguageService?: () => void | Promise<void>;
   /** Requests the host-owned JDT LS setup flow. */
@@ -169,8 +187,7 @@ const TAB_ITEMS: Array<{
   {
     id: "editor",
     label: "Editor",
-    description: "Coming soon",
-    disabled: true,
+    description: "Workspace editing defaults",
   },
 ];
 
@@ -216,6 +233,29 @@ function formatDateTime(value?: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validFormatterProfileDraft(path: string, profileName: string): boolean {
+  const normalizedPath = path.trim();
+  const normalizedName = profileName.trim();
+  if (!normalizedPath && !normalizedName) return true;
+  return Boolean(
+    normalizedPath &&
+    normalizedName &&
+    normalizedPath === path &&
+    normalizedName === profileName &&
+    normalizedPath.length <= 4096 &&
+    normalizedPath.toLowerCase().endsWith(".xml") &&
+    !normalizedPath.startsWith("/") &&
+    !/^[A-Za-z]:/.test(normalizedPath) &&
+    !/[\u0000-\u001f\u007f]/.test(normalizedPath) &&
+    !normalizedPath
+      .replace(/\\/g, "/")
+      .split("/")
+      .some((part) => part === "" || part === "." || part === "..") &&
+    normalizedName.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/.test(normalizedName),
+  );
 }
 
 function hasAvailableIntegrationProbe(metadata?: Record<string, unknown>): boolean {
@@ -296,12 +336,16 @@ export function SettingsPanel({
   aiAgentSettings,
   aiAgentStatus,
   workspaceInfo,
+  workspaceEditorPreferences = DEFAULT_WORKSPACE_EDITOR_PREFERENCES,
+  workspaceEditorPreferencesError,
   workspaceRegistry,
   workspaceError,
   xcom2ModuleConfigurationDiagnosticPresentation,
   isXcom2ModuleConfigurationChecking = false,
   javaLanguageServiceStatus,
   isJavaLanguageServiceRefreshing = false,
+  javaLanguageServerRuntimeJdkHome,
+  javaLanguageServerRuntimePreferenceError,
   javaRefactorKitStatus,
   javaRefactorKitCapabilities,
   isJavaRefactorKitChecking = false,
@@ -323,10 +367,15 @@ export function SettingsPanel({
   onSaveAiAgentSettings,
   onInstallPiAgent,
   onRefreshWorkspace,
+  onChangeWorkspaceEditorPreferences,
+  onSelectWorkspaceFormatterProfile,
+  onListWorkspaceFormatterProfiles,
+  onOpenWorkspaceFormatterProfile,
   onSwitchWorkspace,
   onStartJavaLanguageService,
   onStopJavaLanguageService,
   onRestartJavaLanguageService,
+  onSaveJavaLanguageServerRuntimeJdkHome,
   onRefreshJavaLanguageService,
   onSetupJavaLanguageService,
   onRefreshJavaRefactorKit,
@@ -347,6 +396,20 @@ export function SettingsPanel({
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const [workspaceFeedback, setWorkspaceFeedback] = useState<FeedbackMessage | null>(null);
+  const [formatterProfileDraft, setFormatterProfileDraft] = useState({ path: "", profileName: "" });
+  const [formatterPickerBusy, setFormatterPickerBusy] = useState(false);
+  const [formatterPickerError, setFormatterPickerError] = useState<string | null>(null);
+  const [formatterLookup, setFormatterLookup] = useState<{
+    path: string;
+    workspaceId: string | undefined;
+    names?: readonly string[];
+    error?: string;
+  } | null>(null);
+  const currentFormatterLookup = formatterLookup?.path === formatterProfileDraft.path.trim() &&
+    formatterLookup.workspaceId === workspaceInfo?.id ? formatterLookup : null;
+  const [formatterProfileOpenBusy, setFormatterProfileOpenBusy] = useState(false);
+  const [formatterProfileOpenError, setFormatterProfileOpenError] = useState<string | null>(null);
+  const [formatterProfileOpenStatus, setFormatterProfileOpenStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(toDraft(aiAgentSettings));
@@ -355,6 +418,21 @@ export function SettingsPanel({
   useEffect(() => {
     setStatus(aiAgentStatus ?? null);
   }, [aiAgentStatus]);
+
+  useEffect(() => {
+    setFormatterProfileDraft({
+      path: workspaceEditorPreferences?.javaFormatterProfile?.path ?? "",
+      profileName: workspaceEditorPreferences?.javaFormatterProfile?.profileName ?? "",
+    });
+    setFormatterPickerError(null);
+    setFormatterLookup(null);
+    setFormatterProfileOpenError(null);
+    setFormatterProfileOpenStatus(null);
+  }, [
+    workspaceInfo?.id,
+    workspaceEditorPreferences?.javaFormatterProfile?.path,
+    workspaceEditorPreferences?.javaFormatterProfile?.profileName,
+  ]);
 
   useEffect(() => {
     if (!isOpen || !onClose) return undefined;
@@ -398,7 +476,9 @@ export function SettingsPanel({
         ? "Inspect language capability discovery and manage provider-specific language tooling. Eclipse JDT LS controls remain Java-specific."
         : activeSection === "xcom2"
           ? "Manage global machine setup. Project tools will activate only for detected or configured XCOM modules (future capability)."
-          : "View current workspace metadata and the user workspace registry.";
+          : activeSection === "editor"
+            ? "Set workspace-specific indentation defaults used by the editor and Java formatting commands."
+            : "View current workspace metadata and the user workspace registry.";
 
   if (!isOpen) return null;
 
@@ -758,6 +838,9 @@ export function SettingsPanel({
                   presentationMode="settings"
                   languageServiceStatus={javaLanguageServiceStatus}
                   isLanguageServiceRefreshing={isJavaLanguageServiceRefreshing}
+                  serverJdkHomePreference={javaLanguageServerRuntimeJdkHome}
+                  serverJdkHomePreferenceError={javaLanguageServerRuntimePreferenceError}
+                  onSaveServerJdkHomePreference={onSaveJavaLanguageServerRuntimeJdkHome}
                   status={javaRefactorKitStatus}
                   capabilities={javaRefactorKitCapabilities}
                   isChecking={isJavaRefactorKitChecking}
@@ -925,6 +1008,286 @@ export function SettingsPanel({
                     </p>
                   ) : null}
                 </aside>
+              </div>
+            ) : activeSection === "editor" ? (
+              <div className="grid gap-5">
+                <section className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-panel)] p-5">
+                  <div className="mb-5">
+                    <h4 className="text-base font-semibold text-[var(--text-primary)]">
+                      Java formatting defaults
+                    </h4>
+                    <p className="mt-1 max-w-3xl text-sm text-[var(--text-secondary)]">
+                      These settings control editor indentation and the options sent with Format
+                      Document and Format Selection. You can also apply an Eclipse formatter profile
+                      exported as XML; its rules, such as brace placement, are supplied to JDT LS
+                      for this workspace.
+                    </p>
+                  </div>
+
+                  {workspaceEditorPreferencesError ? (
+                    <p
+                      className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                      role="alert"
+                    >
+                      {workspaceEditorPreferencesError}
+                    </p>
+                  ) : null}
+
+                  {workspaceInfo ? (
+                    <fieldset
+                      className="grid max-w-xl gap-4"
+                      disabled={!onChangeWorkspaceEditorPreferences}
+                    >
+                      <label className="grid gap-1 text-sm">
+                        <span className="font-medium text-[var(--text-primary)]">
+                          Java indentation size
+                        </span>
+                        <select
+                          aria-label="Java indentation size"
+                          className="rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2"
+                          value={workspaceEditorPreferences.tabSize}
+                          onChange={(event) =>
+                            onChangeWorkspaceEditorPreferences?.({
+                              ...workspaceEditorPreferences,
+                              tabSize: Number(event.target.value),
+                            })
+                          }
+                        >
+                          {Array.from({ length: 8 }, (_, index) => index + 1).map((size) => (
+                            <option key={size} value={size}>
+                              {size} {size === 1 ? "space or tab column" : "spaces or tab columns"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-1 text-sm">
+                        <span className="font-medium text-[var(--text-primary)]">
+                          Java indentation character
+                        </span>
+                        <select
+                          aria-label="Java indentation character"
+                          className="rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2"
+                          value={workspaceEditorPreferences.insertSpaces ? "spaces" : "tabs"}
+                          onChange={(event) =>
+                            onChangeWorkspaceEditorPreferences?.({
+                              ...workspaceEditorPreferences,
+                              insertSpaces: event.target.value === "spaces",
+                            })
+                          }
+                        >
+                          <option value="spaces">Spaces</option>
+                          <option value="tabs">Tabs</option>
+                        </select>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={workspaceEditorPreferences.formatJavaOnType === true}
+                          onChange={(event) => onChangeWorkspaceEditorPreferences?.({
+                            ...workspaceEditorPreferences, formatJavaOnType: event.target.checked,
+                          })}
+                        />
+                        Format Java while typing
+                      </label>
+                      <p className="text-sm text-[var(--text-secondary)]">
+                        Use the Java language service to format after its supported characters. Changes stay in the editor until you save.
+                      </p>
+                      <label className="grid gap-1 text-sm">
+                        <span className="font-medium text-[var(--text-primary)]">
+                          Eclipse formatter XML path
+                        </span>
+                        <div className="flex gap-2">
+                          <input
+                            aria-label="Eclipse formatter XML path"
+                            className="min-w-0 flex-1 rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2"
+                            placeholder="config/java-formatter.xml"
+                            value={formatterProfileDraft.path}
+                            onChange={(event) => {
+                              setFormatterLookup(null);
+                              setFormatterProfileDraft((draft) => ({
+                                ...draft,
+                                path: event.target.value,
+                              }));
+                            }}
+                          />
+                          {onSelectWorkspaceFormatterProfile ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={formatterPickerBusy}
+                              onClick={() => {
+                                setFormatterPickerBusy(true);
+                                setFormatterPickerError(null);
+                                void onSelectWorkspaceFormatterProfile()
+                                  .then((path) => {
+                                    if (path) {
+                                      setFormatterLookup(null);
+                                      setFormatterProfileDraft((draft) => ({ ...draft, path }));
+                                    }
+                                  })
+                                  .catch((failure: unknown) => {
+                                    setFormatterPickerError(getErrorMessage(failure));
+                                  })
+                                  .finally(() => setFormatterPickerBusy(false));
+                              }}
+                            >
+                              {formatterPickerBusy ? "Choosing…" : "Browse XML"}
+                            </Button>
+                          ) : null}
+                          {onOpenWorkspaceFormatterProfile &&
+                          workspaceEditorPreferences.javaFormatterProfile ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={formatterProfileOpenBusy}
+                              onClick={() => {
+                                const { path } = workspaceEditorPreferences.javaFormatterProfile!;
+                                setFormatterProfileOpenBusy(true);
+                                setFormatterProfileOpenError(null);
+                                setFormatterProfileOpenStatus(null);
+                                void onOpenWorkspaceFormatterProfile(path)
+                                  .then(() => {
+                                    setFormatterProfileOpenStatus(
+                                      "Opened formatter XML in the editor. Save changes, then restart Eclipse JDT LS to load the updated profile.",
+                                    );
+                                  })
+                                  .catch((failure: unknown) => {
+                                    setFormatterProfileOpenError(getErrorMessage(failure));
+                                  })
+                                  .finally(() => setFormatterProfileOpenBusy(false));
+                              }}
+                            >
+                              {formatterProfileOpenBusy ? "Opening…" : "Open in editor"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </label>
+                      {formatterPickerError ? (
+                        <p
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                          role="alert"
+                        >
+                          {formatterPickerError}
+                        </p>
+                      ) : null}
+                      {formatterProfileOpenError ? (
+                        <p
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                          role="alert"
+                        >
+                          {formatterProfileOpenError}
+                        </p>
+                      ) : null}
+                      {formatterProfileOpenStatus ? (
+                        <p className="text-xs text-[var(--text-muted)]" role="status">
+                          {formatterProfileOpenStatus}
+                        </p>
+                      ) : null}
+                      <label className="grid gap-1 text-sm">
+                        <span className="font-medium text-[var(--text-primary)]">
+                          Profile name in XML
+                        </span>
+                        {currentFormatterLookup?.names ? (
+                          <select
+                            aria-label="Eclipse formatter profile name"
+                            className="rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2"
+                            value={currentFormatterLookup.names.includes(formatterProfileDraft.profileName)
+                              ? formatterProfileDraft.profileName : ""}
+                            onChange={(event) => {
+                              const profileName = event.target.value;
+                              setFormatterProfileDraft((draft) => ({ ...draft, profileName }));
+                            }}
+                          >
+                            <option value="">Choose a profile</option>
+                            {currentFormatterLookup.names.map((name) => <option key={name} value={name}>{name}</option>)}
+                          </select>
+                        ) : <input
+                          aria-label="Eclipse formatter profile name"
+                          className="rounded border border-[var(--border-default)] bg-[var(--surface-editor)] px-3 py-2"
+                          placeholder="My Java Profile"
+                          value={formatterProfileDraft.profileName}
+                          onChange={(event) =>
+                            setFormatterProfileDraft((draft) => ({
+                              ...draft,
+                              profileName: event.target.value,
+                            }))
+                          }
+                        />}
+                      </label>
+                      {onListWorkspaceFormatterProfiles ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!formatterProfileDraft.path.trim() ||
+                            Boolean(currentFormatterLookup && !currentFormatterLookup.names && !currentFormatterLookup.error)}
+                          onClick={() => {
+                            const pending = { path: formatterProfileDraft.path.trim(), workspaceId: workspaceInfo?.id };
+                            setFormatterLookup(pending);
+                            void onListWorkspaceFormatterProfiles(pending.path)
+                              .then((names) => setFormatterLookup((current) => current === pending ? { ...pending, names } : current))
+                              .catch((error: unknown) => setFormatterLookup((current) => current === pending
+                                ? { ...pending, error: getErrorMessage(error) } : current));
+                          }}
+                        >
+                          Read profile names
+                        </Button>
+                      ) : null}
+                      {currentFormatterLookup?.error ? (
+                        <p role="alert" className="text-sm text-red-300">{currentFormatterLookup.error}</p>
+                      ) : null}
+                      {onChangeWorkspaceEditorPreferences ? (
+                        <div className="grid gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={
+                              Boolean(workspaceEditorPreferencesError) ||
+                              Boolean(currentFormatterLookup?.names && !currentFormatterLookup.names.includes(formatterProfileDraft.profileName)) ||
+                              !validFormatterProfileDraft(
+                                formatterProfileDraft.path,
+                                formatterProfileDraft.profileName,
+                              )
+                            }
+                            onClick={() =>
+                              onChangeWorkspaceEditorPreferences?.({
+                                ...workspaceEditorPreferences,
+                                javaFormatterProfile:
+                                  formatterProfileDraft.path.trim() &&
+                                  formatterProfileDraft.profileName.trim()
+                                    ? {
+                                        path: formatterProfileDraft.path.trim(),
+                                        profileName: formatterProfileDraft.profileName.trim(),
+                                      }
+                                    : undefined,
+                              })
+                            }
+                          >
+                            Apply formatter profile
+                          </Button>
+                          <p className="text-xs text-[var(--text-muted)]" role="status">
+                            Use a workspace-relative XML path and the exact profile name exported in
+                            that file. Applying changes restarts JDT LS and reopens editor
+                            documents; unsaved text remains in the editor.
+                          </p>
+                        </div>
+                      ) : null}
+                      {onChangeWorkspaceEditorPreferences && !workspaceEditorPreferencesError ? (
+                        <p className="text-xs text-[var(--text-muted)]" role="status">
+                          Preferences for {workspaceInfo.name}. Changes save immediately and apply
+                          to open editor tabs.
+                        </p>
+                      ) : !onChangeWorkspaceEditorPreferences ? (
+                        <p className="text-xs text-[var(--text-muted)]" role="status">
+                          Workspace editor preferences cannot be changed in this host.
+                        </p>
+                      ) : null}
+                    </fieldset>
+                  ) : (
+                    <p className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-editor)] p-4 text-sm text-[var(--text-secondary)]">
+                      Open a workspace to configure its editor and Java indentation defaults.
+                    </p>
+                  )}
+                </section>
               </div>
             ) : (
               <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-panel)] p-6 text-[var(--text-secondary)]">

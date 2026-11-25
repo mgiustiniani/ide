@@ -1,149 +1,23 @@
-# System Context Diagram (C1)
+# C4 System Context
 
-> **CURRENT/AS-BUILT VIEW.** The desktop Agent activity attaches xterm to a backend-owned workspace Pi pseudoterminal; native commands derive caller authority while the Workspace Registry, File Explorer, editor, renderer, backend process, and Pi retain separate authorities. The editor is Monaco-only and bundles its Java language contribution locally. Guarded Java semantics do not imply Java module activation. **Paste Java Class from Clipboard** is a separate managed RefactorKit transaction. Desktop XCOM 2 activation evaluates native-issued facts while Rust retains accepted-root authority. The matching activity can inspect and approve metadata for one Default Build recipe without executing project input; browser support is unavailable. Machine Settings remains independent. Focused native evidence covers the exact accessible missing-Steam monitor presentation from isolated empty directories; the broader machine Settings lifecycle remains harness-only. See the [frozen Java inventory](target-java-intelligence.md) and mixed-boundary [XCOM 2](target-xcom2-setup.md) views.
+Architecture description: [ARC42 chapter 3](../../ARC42.md#section-3-system-context--external-actors).
 
-```text
-Developer ──uses──> IDE Application
-                       ├── Web App ──> Web Browser
-                       │    └─ core Terminal only; no Java/XCOM polling
-                       └── Desktop App ──> OS File System and bounded native tools
-                            ├─ directory tree: Paste Java Class action + tree-scoped Ctrl/Cmd+V
-                            │    └─ capability gate → preview/acknowledgement/apply/discard
-                            ├─ Monaco-only editor + local Java syntax highlighting
-                            │    └─ synchronized Java model → completion / hover / signature help
-                            ├─ Files activity: existing File Explorer + Workspace Explorer
-                            ├─ Agent activity: raw native Pi TUI in a workspace-owned PTY
-                            │    ├─ actual WebView label → fixed view ID → registry/pin + attachment recheck
-                            │    ├─ targeted output/status + current generation/sequence resize authority
-                            │    ├─ full detail only for the caller; retained sessions are rootless summaries
-                            │    └─ Changes/Activity/Resources/Sessions are read-only accessories
-                            ├─ core Terminal bottom tool
-                            ├─ project Problems while ready Java context or projected items exist
-                            ├─ XCOM 2 Project activity after accepted native activation
-                            │    ├─ cached presentation cannot restore native root authority
-                            │    └─ token-free metadata review + one-shot approval; no execution
-                            ├─ global New XCOM 2 Project dialog
-                            │    └─ authoritative native render → digest-bound preview
-                            │       → one-shot Apply
-                            │          ├─ present destination → terminal refusal without writes
-                            │          └─ absent destination → atomic publication or bounded cleanup outcome
-                            └─ Settings
-                               ├─ Workspace > Current workspace: neutral checking or one atomic warning
-                               └─ separate XCOM machine Settings
-                                  ├─ exact accessible missing-Steam monitor state
-                                  └─ Prepare/Apply/Restore/rollback/recovery
+```mermaid
+flowchart LR
+    Developer[Developer] --> IDE[IDE application]
+    IDE --> Files[Workspace filesystem and Git]
+    IDE --> JDT[Eclipse JDT LS]
+    IDE --> RK[RefactorKit]
+    IDE --> Tools[JDK, Maven and Gradle]
+    IDE -->|Requests external login| Browser[System browser]
+    Developer -->|Reviews login and consent| Browser
+    Browser --> Identity[User-selected authorization server]
+    Browser -->|Loopback authorization response| IDE
+    IDE -->|Explicit token exchange| Identity
+    IDE --> Http[User-selected HTTP service]
+    IDE --> Database[User-selected JDBC database]
+    IDE --> Pi[Pi interactive runtime]
+    IDE --> XCOM[Steam and XCOM installation]
 ```
 
-## External Systems
-
-| System                                  | Interaction                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Web Browser**                         | Runs the SPA and browser storage. The XCOM setup adapter explicitly reports unavailable unless simulation is deliberately enabled; normal composition starts no XCOM polling, subscription, or simulated native state. Local JDT LS and RefactorKit are likewise unavailable without simulation.                                                                                                                       |
-| **OS File System**                      | Stores authorized workspaces and service data. Native XCOM activation binds fixed `.ide/xcom2.json` and bounded Option A facts to opaque handles and retains accepted roots in volatile state. Recipe inspection reads contained no-follow metadata for one accepted root; it never executes `.scripts/build.ps1` or writes project input. Project Foundry and RefactorKit retain their separate mutation authorities. |
-| **OS Clipboard**                        | Read once for an explicit directory-tree paste only after RefactorKit advertises the required API and exact import/apply/discard/rollback method features. Missing or incomplete required methods remain unavailable with zero clipboard reads; other normalized metadata is retained evidence rather than blanket authorization.                                                                                      |
-| **Full Java JDK**                       | External, non-bundled tooling capability-probed through `java` and `javac`; a JRE alone is insufficient.                                                                                                                                                                                                                                                                                                               |
-| **Eclipse JDT LS**                      | External, non-bundled language server managed over LSP/stdio. Desktop currently consumes provider-neutral diagnostic events, projects active-editor diagnostics and project Problems, and provides completion, hover, signature help, and cancellation for the exact synchronized Java document. This does not imply project activation or any capability in the frozen unscheduled inventory.                         |
-| **RefactorKit Engine**                  | Used for provider status/capability discovery and the managed Java-import transaction. Provider version is diagnostic; the advertised API and exact import/apply/discard/rollback method features gate the import. Rust owns one canonical-workspace/generation-scoped NDJSON daemon. RefactorKit is the sole import writer and rollback authority, while the current user flow exposes no rollback action.            |
-| **Local Steam Installation Metadata**   | Desktop-only, bounded read-only evidence for monitor and setup. Prepare validates vanilla AppID `602410` and journals build, manifest, and SDK root fingerprint without exporting paths or proprietary content.                                                                                                                                                                                                        |
-| **Installed WOTC Game and Vanilla SDK** | External installation audited by the concrete setup flow. Only the 15 reviewed reversible operations are eligible, including one allowlisted CookedPCConsole symlink to the installed game.                                                                                                                                                                                                                            |
-| **External SDK Write Approval**         | Grants Apply only for an exact reviewed digest and one transaction. It does not authorize optional provisioning or future transactions.                                                                                                                                                                                                                                                                                |
-| **Pi Interactive Runtime**              | Runs the real interactive terminal UI in a backend-owned portable PTY rooted at the registered workspace. Pi exclusively owns conversation history, tools, models, commands, extensions, trust, compaction, and retry. The deterministic `ide-{workspaceId}` identity is supplied through fixed argv. A controlled test executable may replace only the internal process-launch seam; it is not this external system.  |
-| **OS Programs**                         | Receive bounded one-shot direct-argv execution outside the separately modeled persistent Pi PTY runtime.                                                                                                                                                                                                                                                                                                               |
-
-## Workspace-native Pi Agent Boundary
-
-The existing Workspace Registry selects the canonical workspace root. The desktop **Files** activity continues to delegate file opening to the existing editor. The **Agent** activity adds no parallel workspace, file, editor, chat, or history model.
-
-The native boundary derives `docked:main` only from the actual `main` WebView and `detached:pi-agent` only from the actual `pi-agent` WebView. Forged view IDs and unrelated labels fail closed. Main access rechecks the current registry workspace ID and canonical root; detached access rechecks the immutable pin and, for post-attach operations, its current attachment. A stale main view may remove only its own attachment after a switch.
-
-The Rust Backend owns one portable PTY process per workspace and launches the fixed `pi` executable in the canonical root with session identity `ide-{workspaceId}`. Its one-MiB terminal tail exists only for byte-transport continuity when a renderer reattaches; Pi remains the sole history and conversation authority. Docked and detached renderers never own process lifetime, and only a separately confirmed **Stop Pi** request kills the selected workspace process during normal application operation.
-
-An authorized caller receives full detail only for its current session. Other retained processes appear through a closed rootless summary rather than another workspace snapshot. Output and status are targeted only to authorized attached WebViews. The strict adapter validates these shapes, and the controller suppresses stale workspace, generation, and sequence state before terminal delivery. Resize uses the current attachment request and accepted process generation, so stale geometry or error completions cannot affect another attachment or workspace.
-
-**Changes**, IDE **Activity**, package/command **Resources**, and process **Sessions** are bounded read-only accessories. The desktop shell does not render the legacy RPC chat surface. Package and command discovery may use bounded Pi metadata calls, but never substitutes for the interactive TUI or reads its conversation. A deterministic executable can replace the resolved `pi` binary only at the controlled integration-test launch seam; the C1 external system remains the real Pi runtime.
-
-## Project Foundry Rendering, Refusal, and Creation Boundary
-
-The desktop header exposes **New XCOM 2 Project** independently from Workspace Settings, XCOM machine Settings, and workspace-scoped project activation. `main.tsx` injects the strict Tauri composition into `App.tsx`; it includes selection, rendering, one-shot Apply, and revocation ports. The selection API remains a seam and does not assert native chooser or WebKit/native E2E behavior.
-
-The controller serializes selection and Apply authority, rejects stale session results, and revokes grants when ownership ends. TypeScript validates the complete native plan, computes its digest, and prepares one immutable Apply request containing only live grants, ModId, and the approved digest. It synchronously consumes creation authority before the call and never supplies output bytes or authoritative output metadata.
-
-Rust mints revocable in-memory grants. The shared in-process `git2` renderer is the sole output authority for Preview and Apply: it reads pinned commit, tree, and reachable blobs and ignores working-tree files, processes, and network services. Preview returns the plan body while Rust retains output bytes by operation identity.
-
-Native Apply consumes the operation grant before destination validation or filesystem work. If the destination is present, it returns the bounded pre-commit `destination-present` refusal. The existing conflict, source repository, destination parent, and siblings remain unchanged; no stage, journal, receipt, output, or other filesystem residue is created. Reusing the consumed native request has no authority.
-
-Every pre-commit failure carries the closed `cleanupStatus` value `verified-complete` or `not-verified`; malformed or incomplete results fail closed. TypeScript maps the exact `destination-present` refusal to the fixed atomic **Project location conflict** presentation. It separately maps only the exact `failed` / `pre-commit` / `stage-write-failed` / `verified-complete` result to **Project creation stopped safely**, which states that the destination and temporary transaction items are absent. Every other result uses the fixed **Project creation needs attention** fallback. These non-interpolating presentations disclose no conflict or cleanup metadata, paths, sibling listings, transaction names, commands, provider/backend identity, raw causes, persisted diagnostics, or support bundles.
-
-Both bespoke outcomes are terminal for the approved Preview. Publishing either clears controller grant memory and completes `revokeAll`. The reviewed plan may remain only as non-authoritative context; source and destination selection, ModId, Preview, retry, and Create are disabled. Cancel is the only enabled action, Escape is equivalent, and the modal focus boundary remains active. Dismissal clears controlled state and authority, preserves the filesystem, closes the dialog, and returns focus to **New XCOM 2 Project**.
-
-For an absent destination, Apply revalidates live authority, re-renders through the shared renderer, binds the canonical plan digest and retained bytes, stages and journals privately beside the destination, verifies and synchronizes the complete set, and publishes by non-replacing atomic rename. Every pre-commit failure returns a cleanup status. Production returns `verified-complete` only for a stage-write failure after operation-owned stage identity and tracked-topology checks, tracked-entry removal, journal identity revalidation and removal, no-follow absence observations for stage, journal, and destination, and synchronization of the same revalidated selected parent all succeed. Any unmet condition returns `not-verified`; unverified state is preserved, malformed or invalid results fail closed, and no positive cleanup wording is authorized. Post-publication failure preserves the destination and recovery journal.
-
-Current atomic publication is Linux-only. This boundary claims no native chooser or WebKit/native E2E behavior, other fault point or conflict/failure/cleanup/recovery matrix, Windows support, or package, build, deploy, launch, auto-open, or product-publication capability. It does not execute template content. XCOM product publication remains separately gated by distributable-module extraction and license/notice approval. Foundry remains separate from RefactorKit imports, workspace activation, Settings, and SDK setup transactions.
-
-## XCOM 2 Native Activation and Metadata-only Build Recipe Review
-
-Native begin binds the authorized workspace, fixed configuration read, convention scan, and module identities to one opaque activation-attempt receipt and opaque per-root handles. An attempt that reaches generation reservation receives one positive JavaScript-safe `inspectionGeneration`; acceptance carries that value into the exact native inspection authority. Failed attempts consume reserved values, a later accepted authority receives a later value, and exhaustion fails closed without wrapping or accepting authority. Trusted TypeScript applies the established evaluators and acknowledges only the selected handles. Rust requires the exact complete active set, retains accepted roots in volatile native state, and synchronously revokes on refresh, switch or activation start, failure, newer generation, exit, and cached React restoration.
-
-Recipe inspection keeps the exact token-free request `{ workspaceId, generation, moduleRoot }`; neither the activation receipt nor an evidence handle becomes an inspection credential. Native code matches it to an exact accepted root and returns only bounded metadata: fixed script-relative path, size, SHA-256, the complete MIT X2ModBuildCommon attribution notice, dependency roles, unresolved prerequisites, and the accepted authority's stable `inspectionGeneration`. Repeated unchanged native inspections under that exact authority return identical candidate facts. Script, notice, or conventional metadata changes retain the authority generation but alter freshly bound facts and the resulting TypeScript-owned digest. Native inspection checks workspace-registry freshness before and after filesystem reads and rechecks the exact accepted authority after the read, so stale work fails closed. The UI renders the complete notice as escaped text in an accessible **attribution notice** field, separately from **notice identity**. Empty, hostile command/script-like, path-bearing, control-bearing, non-normalized, or oversized notices refuse instead of rendering. Project-local Highlander source remains distinct from its unresolved Workshop runtime.
-
-The TypeScript policy owns closed validation, digest custody, and one volatile one-shot approval. Provider-neutral asynchronous `consumeApproval(request)` is a decision seam only: it synchronously removes approval authority before awaiting a fresh exact `{ workspaceId, generation, moduleRoot }` inspection, fully revalidates and reconciles the digest and current metadata, and authorizes only identical bound facts once. Script, notice, provenance, license, context, inspection-authority generation, or any other bound-fact change; invalid metadata; inspection errors; concurrent requests; and replay refuse or leave authority revoked or consumed. Refresh and context changes remain synchronous revocation events.
-
-No production component calls that seam. The production UI exposes review, **Approve exact recipe**, and **Discard**, with no Consume, Execute, Build, Deploy, Cook, or Launch control. There is no watcher or polling; unseen filesystem mutation is detected only by fresh inspection for a requested consumption decision, while authority is unavailable. This architecture has no recipe execution consumer and no process, network, workspace-write, SDK, game, prefix, proprietary-content, deployment, cooking, or launch authority. `.ide/xcom2.json` is unchanged. Browser adapters reject activation and inspection without simulating metadata, approval, or success.
-
-## Paste Java Class from Clipboard — Current Delivery Boundary
-
-- The directory tree offers a directory-only context action and tree-scoped `Ctrl/Cmd+V`. Normal Monaco/editor paste is not intercepted, and the feature does not copy raw Java.
-- The coordinator validates the selected directory, then probes RefactorKit compatibility. Clipboard text is read explicitly only when the advertised API and exact `targetDirectory` import/apply/discard/rollback method features are accepted; incomplete providers stay unavailable before clipboard access, with no force path. Provider version is not an authorization input, and normalized safety metadata is evidence rather than a blanket gate.
-- Rust starts one `bin/refactorkit-daemon` NDJSON process scoped to the canonical workspace and workspace generation. It validates the required import method features, retains other normalized metadata, normalizes the rich preview, applies only the exact approved `planId`, and discards cancelled or invalidated plans. Rollback remains implemented behind contracts, adapters, Rust, and provider authority; the current import UI has no rollback action.
-- The preview presents placement, affected files, diff, diagnostics, provenance/license, risk, conflicts, staleness, and blockers. Unknown or high-risk license/provenance requires per-plan acknowledgement before Apply.
-- Preview/no-write means no imported target or other project-content write before Apply. It is not a byte-identical hidden-workspace-metadata guarantee: provider `project.open` may create `.refactorkit/workspace.lock`.
-- Cancellation and selection/workspace invalidation invoke `refactor.discard`. Malformed output, timeout, workspace switch, or app exit kills the daemon rather than continuing with uncertain state.
-- Tree refresh/open uses only backend-authoritative changed/primary paths.
-- The IDE never infers a package, constructs or writes a fallback patch, or forces an incomplete provider. Clipboard source is transient, is never logged, and has no path to workspace Pi Agent.
-
-## Corrected Current Boundary
-
-- **Desktop left sidebar:** **File Explorer** appears above **Workspace Explorer** as independently collapsible sections. Workspace Explorer lists registered workspaces and exposes switching, refresh, loading, and errors; the duplicate header select is removed.
-- **Desktop activities and BottomPanel:** **Files** retains the existing File Explorer and Workspace Explorer; **Agent** hosts the workspace-native Pi screen. The dynamic BottomPanel contributes core **Terminal** plus project-scoped **Problems** while a ready Java context or projected problem items exist. This visibility guard is not module activation.
-- **Web BottomPanel:** the same host contract, currently with core **Terminal** only.
-- **No global technology tabs:** neither Java nor XCOM is a global BottomPanel technology tab; current Problems is a guarded diagnostic projection rather than a Java technology tab.
-- **Global Java Settings:** owns JDK/JDT LS lifecycle/status and RefactorKit availability/version/path/capability discovery. Interactive completion, hover, and signature help live in the exact synchronized Monaco Java model rather than Settings. Settings does not expose Java workspace scan, definition/references, symbols, results, navigation, or refactoring.
-- **Global XCOM Settings:** presents the exact accessible missing-Steam monitor state through the native desktop path when started from isolated empty directories. The broader open/close machine Settings lifecycle remains implemented with harness-only evidence and stays separate from project activation.
-- **Current concrete setup:** stable Prepare validates vanilla AppID `602410` and emits exactly 15 reversible operations: two Day0 INI removals, one SourceControl/GameAssetDatabase INI patch, eleven exact DLC_3 TLE quarantines, and one allowlisted CookedPCConsole symlink to the installed game.
-- **Current transaction engine:** journals Steam build/manifest/root fingerprint and preserves original bytes, hashes, modes, directory inventory, and symlink absence in content-addressed backups. Apply requires exact-digest external approval scoped to one transaction. Restore returns to the exact captured baseline; conflicts never overwrite, and rollback precedes Prepare Again.
-- **Future exclusion:** Protontricks, Steam shortcut, compatibility-prefix, package-manager, and interactive work remain FUTURE/TARGET and non-executable.
-- **Generic web behavior:** no hidden Java/XCOM polling or project scan. The browser setup adapter is explicitly unavailable without deliberate simulation.
-- **Desktop XCOM project activation:** each activation jointly correlates a strict read of project-owned `.ide/xcom2.json` with the dedicated read-only convention scan. The exact activation-only schema is `{ "version": 1, "target": "wotc", "moduleRoots": [...] }`; roots are unique normalized workspace-relative existing directories with no symlink component and no escape from the authorized workspace.
-- **Exact safe mapping:** only `configuration-unreadable`, `configuration-too-large`, `configuration-invalid-utf8`, `configuration-invalid-json`, `configuration-invalid-schema`, `configuration-unsupported-version`, `configuration-unsupported-target`, and `configuration-invalid-module-roots` cross into presentation. Each maps exhaustively to fixed, non-interpolated title, `.ide/xcom2.json` label, summary, remediation, and support identifier copy.
-- **Atomic accessible presentation:** **Settings > Workspace > Current workspace** shows one shared atomic `alert`. Invalid configuration alone creates no **XCOM 2 Project** activity. If strong Option A recognition independently preserves the activity, its panel mirrors the same complete alert instead of showing a raw code.
-- **Activation semantics:** valid configuration supplies source `configured` and activation confidence `explicit`; convention recognition confidence remains separate. Invalid configuration removes configured authority without suppressing independently active Option A recognition.
-- **Explicit refresh only:** full **Workspace Refresh** synchronously clears prior decisions and diagnostics, shows neutral checking, advances correlation authority, and accepts only the exact current configuration/read/scan result. Late or stale results restore nothing. There is no configuration or evidence watcher or polling.
-- **Read-only ownership:** the IDE never creates, writes, reformats, or deletes `.ide/xcom2.json` or Option A inputs, and never adds them to `.gitignore`. Application-owned `.ide/workspace.json` marker/registry metadata is outside this XCOM project-input no-write scope.
-- **No disclosure or authority:** warning copy contains no configuration bytes, submitted roots, absolute paths, parser/provider/native details, secrets, or raw causes. It grants no edit, open, write, process, tool, project action, external-root, or mutation authority.
-- **No plugin runtime:** the fixed first-party XCOM contracts do not constitute extension installation/removal, third-party loading, or arbitrary plugin execution.
-
-## Current Java IntelliSense Boundary
-
-- Monaco is the only editor. Java syntax highlighting comes from a locally bundled Monarch/basic language contribution, with no network language assets or native fallback.
-- The desktop app projects provider-neutral diagnostic events into active-editor diagnostics and `ProblemItem` entries, and contributes Problems while a ready Java context or retained projected items exist.
-- Completion, hover, signature help, and cancellation cross provider-neutral contracts, typed Tauri adapters, and the Rust JDT LS transport. Managed JDT LS configuration enables `java.signatureHelp.enabled=true`.
-- Providers register only for Java and activate only for the exact synchronized Monaco model. Workspace ID, session generation, path, URI, optimistic document version, request ID, and cancellation ID are checked across boundaries.
-- Each edit advances the model version optimistically. A serialized full-text `didChange` flush completes before any semantic request, preventing requests from overtaking synchronization.
-- Cancellation, workspace/session/model changes, mismatched response metadata, and disposed providers suppress stale or late results.
-- Completion maps only the primary edit. Additional edits, cross-document/workspace edits, and commands are intentionally suppressed. Rendered Markdown is untrusted and HTML is disabled.
-
-## XCOM Project Activation Lifecycle and Scope
-
-Workspace switches and explicit full **Workspace Refresh** synchronously remove the prior XCOM activity before native reads. Configuration results carry workspace, workspace-generation, activation-generation, and read identity; scan results retain their independent scan correlation. The controller accepts only a jointly matching candidate, so stale or overlapping results cannot recreate a contribution.
-
-The activity displays active module roots, activation source and confidence, separate recognition confidence, ordered reasons, and scan limitations. Any current configuration diagnostic appears as one complete atomic warning under **Settings > Workspace > Current workspace**. It is mirrored in the activity only when strong independent Option A recognition leaves an active decision; a diagnostic never creates the activity.
-
-The diagnostic grants no authority. The activity adds only metadata review, complete bounded notice presentation, exact approval, and discard for an accepted root. It does not expose the provider-neutral consumption seam and provides no operational Build, Execute, Deploy, Cook, Launch, Problems, Logs, language support, process execution, external-root authority, write control, mutation authority, or bottom contribution. Machine setup remains separately XCOM-machine-Settings-owned and cannot activate a project.
-
-## Java Roadmap Freeze and XCOM Target Boundary
-
-Java module activation, definition/references, symbols/hierarchy, code actions, formatting, rename, contextual Java tooling, general Java refactoring, and broader JDT LS expansion are **UNSCHEDULED TODO / FROZEN HISTORICAL INVENTORY**. They are not target architecture, active milestones, or implied commitments. Current diagnostics/Problems, completion, hover, signature help, synchronization, cancellation, and stale guards remain maintained as-built.
-
-RefactorKit scope includes status/capability discovery, the managed Java import transaction, and saved-snapshot TypeScript/JavaScript diagnostics. The approved capability-specific source-built-provider exception covers those diagnostics and separately approved saved-snapshot semantic navigation; it does not authorize provider foundations, experimental references/rename, or general refactoring. Each capability remains governed by strict typed bounded machine-readable contracts, structured outcomes, authorized locations, request/result authority correlation, and immutable provider evidence. Human stdout is never parsed as an IDE protocol.
-
-XCOM remains independently governed by its mixed boundary. Native begin combines the fixed read-only configuration reader and convention scanner with opaque evidence handles; trusted TypeScript evaluates safe facts, and Rust retains accepted roots. The activity contributes metadata-only recipe review but no executable project action or bottom tool. Manual confirmation, external roots, optional provisioning, operational Build/Deploy/Cook/Launch, Problems, Logs, language support, and other project tooling remain separate.
+Detailed model and relationships: [workspace.dsl](workspace.dsl), view `IdeSystemContext`.

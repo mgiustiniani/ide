@@ -246,6 +246,21 @@ describe("PiWorkspaceAgentScreen", () => {
     expect(input.onOpenRange).toHaveBeenCalledWith("src/App.tsx", 5, 8);
   });
 
+  it("opens a positive source line for a deletion-only hunk", () => {
+    const input = props({
+      reviews: new Map([["src/App.tsx", { kind: "ok", diff: {
+        path: "src/App.tsx", readOnly: true,
+        range: { path: "src/App.tsx", startLine: 1, endLine: 1 },
+        hunks: [{ oldStart: 1, oldLines: 1, newStart: 0, newLines: 0, text: "-old" }],
+      } }]]),
+      onOpenRange: vi.fn(),
+    });
+    render(<PiWorkspaceAgentScreen {...input} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Changes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Open range src/App.tsx:1-1" }));
+    expect(input.onOpenRange).toHaveBeenCalledWith("src/App.tsx", 1, 1);
+  });
+
   it("shows an honest unavailable note with the review reason", () => {
     const input = props({
       reviews: new Map([

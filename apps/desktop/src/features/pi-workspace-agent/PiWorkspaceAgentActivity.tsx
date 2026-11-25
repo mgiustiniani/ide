@@ -15,6 +15,7 @@ import { usePiWorkspaceAgentController } from "./usePiWorkspaceAgentController";
 export interface PiWorkspaceAgentActivityProps {
   port: PiWorkspaceAgentPort;
   workspace: WorkspaceInfo | null;
+  workspaceGeneration?: number;
   detached?: boolean;
   onOpenWorkspaceFile?: (node: FileNode) => void | Promise<void>;
   onOpenRange?: (path: string, startLine: number, endLine: number) => void | Promise<void>;
@@ -33,6 +34,7 @@ function fileNode(path: string): FileNode {
 export function PiWorkspaceAgentActivity({
   port,
   workspace,
+  workspaceGeneration = 0,
   detached = false,
   onOpenWorkspaceFile,
   onOpenRange,
@@ -43,49 +45,72 @@ export function PiWorkspaceAgentActivity({
     viewKind: detached ? "detached" : "docked",
   });
 
-  // Real desktop git diff-review service composed from the three async
-  // Tauri adapters (git_status_modified / git_diff_hunks / editor_open_range).
+  const scope = useMemo(
+    () => ({
+      workspaceId: workspace?.id,
+      rootPath: workspace?.rootPath,
+      generation: workspaceGeneration,
+    }),
+    [workspace?.id, workspace?.rootPath, workspaceGeneration],
+  );
   const service = useMemo(
     () =>
       new ChangesReviewService(
-        new TauriWorkspaceChangesAdapter(),
-        new TauriReadOnlyDiffAdapter(),
-        new TauriEditorOpenRangeAdapter(),
+        new TauriWorkspaceChangesAdapter(scope.rootPath),
+        new TauriReadOnlyDiffAdapter(scope.rootPath),
+        new TauriEditorOpenRangeAdapter(scope.rootPath),
       ),
-    [],
+    [scope],
   );
-
-  const [reviews, setReviews] = useState<
-    ReadonlyMap<string, DiffReviewOutcome> | undefined
-  >(undefined);
+  const [reviewState, setReviewState] = useState<{
+    scope: typeof scope;
+    reviews: ReadonlyMap<string, DiffReviewOutcome>;
+  }>();
+  const reviews = reviewState?.scope === scope ? reviewState.reviews : undefined;
 
   // Fetch a read-only hunk-level diff review for each changed path whenever
   // the accessory changes list changes. Skip any outcome that is neither ok
   // nor unavailable (never fabricate a review).
   useEffect(() => {
+    setReviewState(undefined);
     const changes = controller.accessories?.changes;
-    if (!changes || changes.length === 0) {
-      setReviews(undefined);
+    if (
+      !scope.workspaceId ||
+      controller.accessories?.workspaceId !== scope.workspaceId ||
+      !changes ||
+      changes.length === 0
+    ) {
+      setReviewState(undefined);
       return undefined;
     }
     let disposed = false;
     void (async () => {
       const next = new Map<string, DiffReviewOutcome>();
       for (const change of changes) {
-        const outcome = await service.produceReview(change.path);
+        if (disposed) return;
+        let outcome: DiffReviewOutcome;
+        try {
+          outcome = await service.produceReview(change.path);
+        } catch {
+          outcome = {
+            kind: "unavailable",
+            reason: "Git changes are unavailable. Refresh and try again.",
+          };
+        }
+        if (disposed) return;
         if (outcome.kind !== "ok" && outcome.kind !== "unavailable") {
           continue;
         }
         next.set(change.path, outcome);
       }
       if (!disposed) {
-        setReviews(next);
+        setReviewState({ scope, reviews: next });
       }
     })();
     return () => {
       disposed = true;
     };
-  }, [controller.accessories?.changes, service]);
+  }, [controller.accessories?.changes, controller.accessories?.workspaceId, scope, service]);
 
   if (!workspace) {
     return (

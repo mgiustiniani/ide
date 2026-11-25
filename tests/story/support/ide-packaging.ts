@@ -404,50 +404,26 @@ export class IdePackagingStorySession implements IdePackagingStoryDriver {
       // its /proc ppid chain. The real ide-desktop is a child of the AppImage
       // runtime, so its _NET_WM_PID is an owned child PID.
       const ownedPids = ownedProcessPids(appPid);
-      const clientList = execFileSync("xprop", ["-root", "_NET_CLIENT_LIST"], {
-        env: { ...process.env, DISPLAY: displayEnv },
-        encoding: "utf8",
-      });
-      const ids = clientList.match(/0x[0-9a-f]+/gi) ?? [];
-      for (const id of ids) {
-        try {
-          const info = execFileSync(
-            "xprop",
-            ["-id", id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME", "WM_CLASS"],
-            {
-              env: { ...process.env, DISPLAY: displayEnv },
-              encoding: "utf8",
-            },
-          );
-          // xprop prints an optional type annotation between the property name
-          // and '=', e.g. _NET_WM_PID(CARDINAL) = 145751 or
-          // WM_CLASS(STRING) = "ide-desktop", "Ide-desktop". Allow an optional
-          // (...) suffix so the regexes match the real xprop output.
-          const pidMatch = info.match(/_NET_WM_PID(?:\s*\([^)]*\))?\s*=\s*(\d+)/);
-          const wmNameMatch = info.match(/_NET_WM_NAME(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
-          const wmClassMatch = info.match(/WM_CLASS(?:\s*\([^)]*\))?\s*=\s*"(.*)"/);
-          const wmName = wmNameMatch ? wmNameMatch[1] : null;
-const legacyWmNameMatch = info.match(/^WM_NAME(?:\s*\([^)]*\))?\s*=\s*"(.*)"/m);
-const legacyWmName = legacyWmNameMatch ? legacyWmNameMatch[1] : null;
-          const wmClass = wmClassMatch ? wmClassMatch[1] : null;
-          const pid = pidMatch ? Number(pidMatch[1]) : null;
-          const ownedPid = pid !== null && ownedPids.has(pid);
-          const ideDesktopClass =
-            wmClass !== null && (wmClass.includes("ide-desktop") || wmClass.includes("IDE"));
-          // AC-005 strict: acceptance requires a native window whose exact
-          // WM_NAME is "IDE" (matches the independent probe). Keep detection
-          // robust by also accepting windows that carry an owned descendant
-          // PID or an ide-desktop/IDE WM_CLASS, but never accept a window that
-          // does not carry the exact IDE window name.
-const exactIdeName = wmName !== null && wmName.trim() === "IDE" && legacyWmName !== null && legacyWmName.trim() === "IDE";
-          if (exactIdeName && (pid === appPid || ownedPid || ideDesktopClass)) {
-            return parseInt(id, 16);
-          }
-        } catch {
-          // window vanished during scan
-        }
-      }
-      return null;
+      const script = join(PROJECT_ROOT, "tests/story/support/native-x11-close.py");
+      const windows = JSON.parse(
+        execFileSync("python3", [script, "--list"], {
+          env: { ...process.env, DISPLAY: displayEnv },
+          encoding: "utf8",
+        }),
+      ) as Array<{
+        windowId: number;
+        pid: number | null;
+        wmName: string;
+        closeable: boolean;
+      }>;
+      const matching = windows.filter(
+        (window) =>
+          window.pid !== null &&
+          ownedPids.has(window.pid) &&
+          window.wmName.trim() === "IDE" &&
+          window.closeable,
+      );
+      return matching.length === 1 ? matching[0]!.windowId : null;
     } catch {
       return null;
     }

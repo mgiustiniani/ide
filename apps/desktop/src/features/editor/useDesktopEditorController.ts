@@ -23,13 +23,15 @@ export interface DesktopEditorStoreState extends EditorOpenStoreState {
 export interface DesktopEditorViewModel {
   openFile(filePath: string): Promise<void>;
   cancelPendingOpen(): void;
+  invalidateWorkspaceOperations(): void;
   restoreSession(): Promise<void>;
   switchActiveFile(filePath: string): void;
 }
 
 export interface DesktopFileTreeViewModel {
   selectFile(filePath: string): void;
-  createFile(parentPath: string, name: string): Promise<string>;
+  createFile(parentPath: string, name: string, isCurrent?: () => boolean, relativeDirectory?: string): Promise<string>;
+  createFolder(parentPath: string, name: string, isCurrent?: () => boolean): Promise<void>;
   subscribeToFileSelection(): () => void;
 }
 
@@ -63,7 +65,11 @@ export type DesktopEditorPresentation = {
 
 const WORKSPACE_SWITCH_CREATE_MESSAGE =
   "Wait for the workspace switch to finish before creating a file.";
+const WORKSPACE_SWITCH_CREATE_FOLDER_MESSAGE =
+  "Wait for the workspace switch to finish before creating a folder.";
 const WORKSPACE_CHANGED_CREATE_MESSAGE = "The workspace changed while the file was being created.";
+const WORKSPACE_CHANGED_CREATE_FOLDER_MESSAGE =
+  "The workspace changed while the folder was being created.";
 const NO_WORKSPACE_CREATE_MESSAGE = "No active workspace is available.";
 const SAFE_DIAGNOSTIC_PATH = "Selected file";
 
@@ -128,23 +134,30 @@ export class DesktopEditorController {
     );
   }
 
-  async createFile(parentPath: string, name: string): Promise<string> {
-    const startedWorkspace = this.dependencies.getWorkspaceContext();
-    if (startedWorkspace.isSwitching || startedWorkspace.isMetadataLoading) {
-      throw new Error(WORKSPACE_SWITCH_CREATE_MESSAGE);
-    }
-    if (!startedWorkspace.workspaceId) throw new Error(NO_WORKSPACE_CREATE_MESSAGE);
+  async createFile(parentPath: string, name: string, relativeDirectory?: string): Promise<string> {
+    const startedWorkspace = this.createWorkspaceContext("file");
 
-    const createdPath = await this.dependencies.fileTreeViewModel.createFile(parentPath, name);
-    this.assertWorkspaceUnchanged(startedWorkspace);
+    const isCurrent = () => this.workspaceMatches(startedWorkspace);
+    const createdPath = relativeDirectory
+      ? await this.dependencies.fileTreeViewModel.createFile(parentPath, name, isCurrent, relativeDirectory)
+      : await this.dependencies.fileTreeViewModel.createFile(parentPath, name, isCurrent);
+    this.assertWorkspaceUnchanged(startedWorkspace, WORKSPACE_CHANGED_CREATE_MESSAGE);
 
     const opened = await this.openPath(createdPath);
-    this.assertWorkspaceUnchanged(startedWorkspace);
+    this.assertWorkspaceUnchanged(startedWorkspace, WORKSPACE_CHANGED_CREATE_MESSAGE);
     if (!opened) {
       const current = this.coordinator.state;
       throw new Error(current.status === "error" ? current.safeMessage : EDITOR_OPEN_ERROR_MESSAGE);
     }
     return createdPath;
+  }
+
+  async createFolder(parentPath: string, name: string): Promise<void> {
+    const startedWorkspace = this.createWorkspaceContext("folder");
+    await this.dependencies.fileTreeViewModel.createFolder(parentPath, name, () =>
+      this.workspaceMatches(startedWorkspace),
+    );
+    this.assertWorkspaceUnchanged(startedWorkspace, WORKSPACE_CHANGED_CREATE_FOLDER_MESSAGE);
   }
 
   /** Restore persisted tabs, then re-assert a newer user open if restore clobbered it. */
@@ -180,6 +193,30 @@ export class DesktopEditorController {
     this.dependencies.fileTreeViewModel.selectFile(filePath);
   }
 
+  /** Adopt paths already committed by the editor transaction, preserving newer open intents. */
+  reconcileBufferRenames(changes: readonly { oldPath: string; path: string }[]): void {
+    const workspace = this.dependencies.getWorkspaceContext();
+    const current = this.coordinator.state;
+    if (
+      workspace.isSwitching ||
+      workspace.isMetadataLoading ||
+      current.status === "opening" ||
+      current.status === "error"
+    )
+      return;
+    const state = this.dependencies.getEditorState();
+    const change = changes.find(
+      (change) => change.oldPath !== change.path && change.path === state.activeFilePath,
+    );
+    if (
+      !change ||
+      !hasReadyBuffer(state, change.path) ||
+      (current.status === "ready" && current.activePath !== change.oldPath)
+    )
+      return;
+    this.activateTab(change.path);
+  }
+
   fileClosed(filePath: string): void {
     const current = this.coordinator.state;
     if (
@@ -199,6 +236,7 @@ export class DesktopEditorController {
 
   resetWorkspace(): void {
     this.restoreSequence += 1;
+    this.dependencies.editorViewModel.invalidateWorkspaceOperations();
     this.coordinator.reset();
     this.dependencies.clearFileTreeSelection();
     this.dependencies.resetEditorBuffers();
@@ -239,14 +277,33 @@ export class DesktopEditorController {
     };
   }
 
-  private assertWorkspaceUnchanged(startedWorkspace: DesktopEditorWorkspaceContext): void {
+  private createWorkspaceContext(kind: "file" | "folder"): DesktopEditorWorkspaceContext {
     const current = this.dependencies.getWorkspaceContext();
-    if (
-      current.generation !== startedWorkspace.generation ||
-      current.workspaceId !== startedWorkspace.workspaceId ||
-      current.isSwitching
-    ) {
-      throw new Error(WORKSPACE_CHANGED_CREATE_MESSAGE);
+    if (current.isSwitching || current.isMetadataLoading) {
+      throw new Error(
+        kind === "file" ? WORKSPACE_SWITCH_CREATE_MESSAGE : WORKSPACE_SWITCH_CREATE_FOLDER_MESSAGE,
+      );
+    }
+    if (!current.workspaceId) throw new Error(NO_WORKSPACE_CREATE_MESSAGE);
+    return { ...current };
+  }
+
+  private workspaceMatches(startedWorkspace: DesktopEditorWorkspaceContext): boolean {
+    const current = this.dependencies.getWorkspaceContext();
+    return (
+      current.generation === startedWorkspace.generation &&
+      current.workspaceId === startedWorkspace.workspaceId &&
+      !current.isSwitching &&
+      !current.isMetadataLoading
+    );
+  }
+
+  private assertWorkspaceUnchanged(
+    startedWorkspace: DesktopEditorWorkspaceContext,
+    message: string,
+  ): void {
+    if (!this.workspaceMatches(startedWorkspace)) {
+      throw new Error(message);
     }
   }
 }
@@ -260,8 +317,10 @@ export interface UseDesktopEditorControllerDependencies extends DesktopEditorCon
 export type UseDesktopEditorControllerResult = DesktopEditorPresentation & {
   selectTreeFile(node: FileNode): Promise<boolean>;
   openFileProgrammatically(node: FileNode, rejectOnError?: boolean): Promise<boolean>;
-  createFile(parentPath: string, name: string): Promise<string>;
+  createFile(parentPath: string, name: string, relativeDirectory?: string): Promise<string>;
+  createFolder(parentPath: string, name: string): Promise<void>;
   activateTab(filePath: string): void;
+  reconcileBufferRenames(changes: readonly { oldPath: string; path: string }[]): void;
   fileClosed(filePath: string): void;
   cancel(): void;
   resetWorkspace(): void;
@@ -347,11 +406,20 @@ export function useDesktopEditorController(
   );
 
   const createFile = useCallback(
-    (parentPath: string, name: string) => controller.createFile(parentPath, name),
+    (parentPath: string, name: string, relativeDirectory?: string) => controller.createFile(parentPath, name, relativeDirectory),
+    [controller],
+  );
+  const createFolder = useCallback(
+    (parentPath: string, name: string) => controller.createFolder(parentPath, name),
     [controller],
   );
   const activateTab = useCallback(
     (filePath: string) => controller.activateTab(filePath),
+    [controller],
+  );
+  const reconcileBufferRenames = useCallback(
+    (changes: readonly { oldPath: string; path: string }[]) =>
+      controller.reconcileBufferRenames(changes),
     [controller],
   );
   const fileClosed = useCallback(
@@ -368,7 +436,9 @@ export function useDesktopEditorController(
     selectTreeFile,
     openFileProgrammatically,
     createFile,
+    createFolder,
     activateTab,
+    reconcileBufferRenames,
     fileClosed,
     cancel,
     resetWorkspace,

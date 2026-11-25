@@ -150,6 +150,19 @@ const CAPABILITIES = {
   },
 } as const;
 
+async function waitForStoryState(
+  condition: () => boolean,
+  description: string,
+  timeoutMs = 1500,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
 function planFor(
   request: PreviewExternalJavaImportRequest,
   status: "ready" | "stale" = "ready",
@@ -712,14 +725,22 @@ export class JavaImportDesktopHarness {
       provider: "refactorkit",
       providerVersion: "0.6.2",
     });
-    await waitFor(() => {
-      assert.ok(this.#requireSurface().getByText(TRANSACTION_ID));
-      assert.equal(this.#readFilePaths.includes(path), true);
-      const monaco = this.#requireSurface().getByTestId(
+    await waitForStoryState(
+      () => this.#requireSurface().queryByText(TRANSACTION_ID) !== null,
+      `the applied transaction ${TRANSACTION_ID}`,
+    );
+    await waitForStoryState(
+      () => this.#readFilePaths.includes(path),
+      `the production editor read of ${path}`,
+    );
+    await waitForStoryState(() => {
+      const failure = this.#requireSurface().queryByTestId("editor-failure-placeholder");
+      if (failure) throw new Error(`The production Editor failed to mount: ${failure.textContent}`);
+      const monaco = this.#requireSurface().queryByTestId(
         "story-monaco-editor",
-      ) as HTMLTextAreaElement;
-      assert.equal(monaco.value, this.#clipboardText);
-    });
+      ) as HTMLTextAreaElement | null;
+      return monaco?.value === this.#clipboardText;
+    }, "the exact clipboard content at the mocked Monaco boundary");
     assert.equal(await readFile(this.#absolute(path), "utf8"), this.#clipboardText);
   }
 
@@ -751,7 +772,11 @@ export class JavaImportDesktopHarness {
   }
 
   assertEditorCompositionLogicalContent(): void {
-    const rendererStack = this.#requireSurface().getByTestId("editor-renderer-stack");
+    const rendererStack = this.#requireSurface().queryByTestId("editor-renderer-stack");
+    assert.ok(
+      rendererStack,
+      `Editor failure: ${this.#requireSurface().queryByTestId("editor-failure-placeholder")?.textContent ?? "no failure placeholder"}`,
+    );
     const monacoLayer = within(rendererStack).getByTestId("editor-monaco-layer");
     const mockedMonacoBoundary = within(monacoLayer).getByTestId(
       "story-monaco-editor",
@@ -1021,6 +1046,10 @@ export class JavaImportDesktopHarness {
               ? this.#workspaceRoot
               : this.#otherWorkspaceRoot,
           generation: 1,
+          gradleImportEnabled: false,
+          gradleSettingsConfigured: false,
+          activeMavenProfiles: [],
+          inactiveMavenProfiles: [],
           capabilities: {
             documentSync: true,
             diagnostics: false,
@@ -1029,7 +1058,10 @@ export class JavaImportDesktopHarness {
             definition: false,
             references: false,
             documentSymbols: false,
+            documentHighlights: false,
+            implementation: false,
             workspaceSymbols: false,
+            semanticTokens: false,
             rename: false,
             codeActions: false,
             formatting: false,
@@ -1048,6 +1080,19 @@ export class JavaImportDesktopHarness {
           path: "/opt/refactorkit/refactorkit",
           version: "0.6.2",
           checkedAt: FIXED_TIME,
+        };
+      case "get_refactorkit_engine_capabilities":
+        return {
+          engineDiscovered: false,
+          path: null,
+          version: null,
+          workspaceId: WORKSPACE_ID,
+          operations: [],
+          managedOperations: [],
+          operationalSurface: [],
+          rollbackAdvertised: false,
+          previewReadOnly: true,
+          reason: "No real RefactorKit engine is installed in this deterministic harness.",
         };
       case "get_refactorkit_capabilities": {
         const capabilities = structuredClone(CAPABILITIES) as RefactorKitCapabilities;

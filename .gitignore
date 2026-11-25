@@ -6,6 +6,7 @@ node_modules/
 dist/
 target/
 coverage/
+!/apps/desktop/src-tauri/src/commands/java_execution/coverage/
 .turbo/
 build/
 out/
